@@ -23,6 +23,7 @@ final class AppModelTests: XCTestCase {
         overlayModel.listen(sessionID: sessionID, startedAt: .now)
 
         XCTAssertEqual(presenter.states.last?.sessionID, sessionID)
+        withExtendedLifetime(model) {}
     }
 
     func testActiveOverlayStyleChangeUpdatesPresenterImmediately() {
@@ -36,6 +37,7 @@ final class AppModelTests: XCTestCase {
         model.setActivityOverlayStyle(.minimal)
 
         XCTAssertEqual(presenter.styles.last, .minimal)
+        withExtendedLifetime(model) {}
     }
 
     func testReadSelectionPressedPreprocessesAndSpeaksUserRequest() async {

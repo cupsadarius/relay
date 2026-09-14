@@ -69,7 +69,9 @@ final class ActivityOverlayWindowController: ActivityOverlayPresenting {
     private var pinnedSessionID: UUID?
     private var pinnedScreen: ActivityOverlayScreen?
     private var lastSize: CGSize?
+    private var lastAppliedStyle: ActivityOverlayStyle?
     private var isPanelVisible = false
+    private var hasReportedFailure = false
     private nonisolated(unsafe) var screenParametersObserver: NSObjectProtocol?
 
     init(
@@ -94,8 +96,7 @@ final class ActivityOverlayWindowController: ActivityOverlayPresenting {
     }
 
     func update(state: ActivityOverlayState, style: ActivityOverlayStyle) {
-        guard let presentation = ActivityOverlayPresentation.make(state: state, style: style, reduceMotion: false),
-              let sessionID = state.sessionID else {
+        guard !state.isHidden, let sessionID = state.sessionID else {
             hide()
             return
         }
@@ -106,30 +107,72 @@ final class ActivityOverlayWindowController: ActivityOverlayPresenting {
         }
         guard let screen = pinnedScreen else { return }
 
+        guard let presentation = ActivityOverlayPresentation.make(state: state, style: style, reduceMotion: false) else {
+            // Style is `.off` while a session is still active: hide the panel but keep the
+            // pinned session/screen so switching back to a visible style mid-session reuses it.
+            orderOut()
+            return
+        }
+
         show(size: presentation.size, style: style, on: screen)
+    }
+
+    /// Re-applies the pinned screen's current geometry. Called after the active display's
+    /// parameters change (resolution, arrangement, etc.); falls back to a fresh screen pick
+    /// if the pinned screen has disappeared. Does nothing while the panel isn't shown.
+    func relayoutForScreenChange() {
+        guard isPanelVisible, let previousScreen = pinnedScreen, let size = lastSize else { return }
+        let refreshed = screens.screen(withID: previousScreen.id) ?? screens.screenForNewSession()
+        pinnedScreen = refreshed
+        do {
+            host.setFrame(origin: ActivityOverlayPlacement.origin(panelSize: size, visibleFrame: refreshed.visibleFrame), size: size)
+            try host.orderFront(on: refreshed)
+            recordShowSucceeded()
+        } catch {
+            recordFailure()
+        }
     }
 
     private func show(size: CGSize, style: ActivityOverlayStyle, on screen: ActivityOverlayScreen) {
         do {
             try host.createIfNeeded()
-            host.setContent(model: model, style: style, onAction: onAction)
+            if lastAppliedStyle != style {
+                host.setContent(model: model, style: style, onAction: onAction)
+                lastAppliedStyle = style
+            }
             host.setFrame(origin: ActivityOverlayPlacement.origin(panelSize: size, visibleFrame: screen.visibleFrame), size: size)
             host.setIgnoresMouseEvents(style != .interactive)
             try host.orderFront(on: screen)
             isPanelVisible = true
             lastSize = size
+            recordShowSucceeded()
         } catch {
-            diagnostics?.record(.overlayFailed)
+            recordFailure()
         }
     }
 
-    private func hide() {
-        pinnedSessionID = nil
-        pinnedScreen = nil
-        lastSize = nil
+    private func orderOut() {
         guard isPanelVisible else { return }
         isPanelVisible = false
         host.orderOut()
+    }
+
+    private func hide() {
+        orderOut()
+        pinnedSessionID = nil
+        pinnedScreen = nil
+        lastSize = nil
+        hasReportedFailure = false
+    }
+
+    private func recordFailure() {
+        guard !hasReportedFailure else { return }
+        hasReportedFailure = true
+        diagnostics?.record(.overlayFailed)
+    }
+
+    private func recordShowSucceeded() {
+        hasReportedFailure = false
     }
 
     private func observeScreenParameterChanges() {
@@ -138,19 +181,7 @@ final class ActivityOverlayWindowController: ActivityOverlayPresenting {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.relayoutForScreenParameterChange() }
-        }
-    }
-
-    private func relayoutForScreenParameterChange() {
-        guard isPanelVisible, let previousScreen = pinnedScreen, let size = lastSize else { return }
-        let refreshed = screens.screen(withID: previousScreen.id) ?? screens.screenForNewSession()
-        pinnedScreen = refreshed
-        do {
-            host.setFrame(origin: ActivityOverlayPlacement.origin(panelSize: size, visibleFrame: refreshed.visibleFrame), size: size)
-            try host.orderFront(on: refreshed)
-        } catch {
-            diagnostics?.record(.overlayFailed)
+            Task { @MainActor [weak self] in self?.relayoutForScreenChange() }
         }
     }
 }
