@@ -1,5 +1,12 @@
 @MainActor
-final class SpeechCoordinator {
+protocol SpeechCoordinating: AnyObject {
+    func speak(_ request: SpeechRequest) async throws
+    func stop()
+    func replayLast() async throws
+}
+
+@MainActor
+final class SpeechCoordinator: SpeechCoordinating {
     private let router: TTSRouter
     private let options: () -> TTSOptions
     private var lastRequest: SpeechRequest?

@@ -21,7 +21,7 @@ enum HotkeyAction: String, Codable, CaseIterable, Sendable {
     case toggleAutoRead
 }
 
-enum DictationMode: String, Codable, Sendable {
+enum DictationMode: String, Codable, CaseIterable, Sendable {
     case holdToTalk
     case toggle
 }

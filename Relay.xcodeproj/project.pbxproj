@@ -10,6 +10,7 @@
 		010EFDE2D6C4A73206572BBE /* SpeechToTextBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E124777F58D54CEDE5CA61 /* SpeechToTextBackend.swift */; };
 		131B33B0A7200D30823A1201 /* SpeechModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA7F679F877AB1E080B262A1 /* SpeechModels.swift */; };
 		18A0B28B851CB76A0406F54E /* AppSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED330EE6049AE116AFB2F072 /* AppSettingsTests.swift */; };
+		1B2725CA66C51A1BABB55DB1 /* Relay.xcodeproj in Resources */ = {isa = PBXBuildFile; fileRef = 32539428F5D6B5BB7D14FEC5 /* Relay.xcodeproj */; };
 		23E6C9B2DB1F71CE066D828B /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC1EE06D54321DF43FE4A78E /* SettingsStore.swift */; };
 		3025C432DE8ACDA88701092F /* ClipboardService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE24F398C26E7C916733EF1 /* ClipboardService.swift */; };
 		312A67F8371459CA07993365 /* AppleTTSBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = E575530E2E604E20E5161DF6 /* AppleTTSBackend.swift */; };
@@ -17,6 +18,7 @@
 		4F2437BBF321F303DFF307C5 /* TTSRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA1878571E35A1485700DA5C /* TTSRouter.swift */; };
 		5804D315DC8C4E5826740B25 /* SelectionReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9310CC2B63FAED92154DB23 /* SelectionReader.swift */; };
 		581FC3101A3FE16E88052CDC /* TextToSpeechBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7357E0F76AF76DF9C69ACD1 /* TextToSpeechBackend.swift */; };
+		5BB20F6CC812C4783D7205B6 /* GlobalHotkeyManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CE61334B063F0337C2E6BB7 /* GlobalHotkeyManagerTests.swift */; };
 		629B951FA84E58D245591D7B /* MenuBarContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DCE840658936E7271FAB146 /* MenuBarContentView.swift */; };
 		63950769791664D8A9424529 /* HotkeyDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36BC1C589CC6F88B197B1EF0 /* HotkeyDefinition.swift */; };
 		70155993155C43ABD4EACFE4 /* SpeechBackendContractsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B3B42F4D8ADC705985B0C3 /* SpeechBackendContractsTests.swift */; };
@@ -24,10 +26,12 @@
 		7D36578865E64A7D1ACDBA52 /* AccessibilityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 483B44390B4757DC9D7B7505 /* AccessibilityService.swift */; };
 		8364B21972FCCAC67036630C /* BackendAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1230C06958285AB1CAE2418A /* BackendAvailability.swift */; };
 		83A8BA29AC759A450A261572 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 359767A5465051721E7F2076 /* Assets.xcassets */; };
+		8C7FB013D71A83B74950862F /* GlobalHotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2499709E52B7C2AE389E0A68 /* GlobalHotkeyManager.swift */; };
 		912B483ECC93452865AC4A29 /* ClipboardServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 929A7ED797B49CEE115E1DA6 /* ClipboardServiceTests.swift */; };
 		91CA532F4429D5B65476BEBC /* ProjectSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D080F5789BE1F241509F1C2 /* ProjectSmokeTests.swift */; };
 		9756AF051A9C26FDF8B4BA30 /* RulesSpeechPreprocessorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75A5D0DD6ECBB171B17FC747 /* RulesSpeechPreprocessorTests.swift */; };
 		9ED060105B789ED3C5278037 /* RelayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82F98404629EA6F3162215CC /* RelayTests.swift */; };
+		B2E2ACBD73D895AA81FBD1B4 /* AppModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5BF4958844B2771537AF08D /* AppModelTests.swift */; };
 		B5059A51D144C468B1843122 /* RelayApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75C54FA6D0E67AA81510F66A /* RelayApp.swift */; };
 		B6A7E723B9BA8FE5CCF0BFD6 /* TTSRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 264D3B761DD35FEF92E86BAC /* TTSRouterTests.swift */; };
 		B785675C6885A59D2FD6BB18 /* AccessibilityServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6354F61BA4CE6CE9E6F5206D /* AccessibilityServiceTests.swift */; };
@@ -55,7 +59,9 @@
 		1230C06958285AB1CAE2418A /* BackendAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendAvailability.swift; sourceTree = "<group>"; };
 		1BE24F398C26E7C916733EF1 /* ClipboardService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardService.swift; sourceTree = "<group>"; };
 		1D080F5789BE1F241509F1C2 /* ProjectSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectSmokeTests.swift; sourceTree = "<group>"; };
+		2499709E52B7C2AE389E0A68 /* GlobalHotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotkeyManager.swift; sourceTree = "<group>"; };
 		264D3B761DD35FEF92E86BAC /* TTSRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSRouterTests.swift; sourceTree = "<group>"; };
+		32539428F5D6B5BB7D14FEC5 /* Relay.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Relay.xcodeproj; sourceTree = "<group>"; };
 		359767A5465051721E7F2076 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		36BC1C589CC6F88B197B1EF0 /* HotkeyDefinition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyDefinition.swift; sourceTree = "<group>"; };
 		3772B7BC9E1856FB2551A9D4 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
@@ -68,6 +74,7 @@
 		763A6DE20D54E1A785D7D61F /* SelectionReaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionReaderTests.swift; sourceTree = "<group>"; };
 		82F98404629EA6F3162215CC /* RelayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayTests.swift; sourceTree = "<group>"; };
 		85842060D11E3427D905C000 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		8CE61334B063F0337C2E6BB7 /* GlobalHotkeyManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotkeyManagerTests.swift; sourceTree = "<group>"; };
 		919335F17510788FF73D5500 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		929A7ED797B49CEE115E1DA6 /* ClipboardServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardServiceTests.swift; sourceTree = "<group>"; };
 		A7357E0F76AF76DF9C69ACD1 /* TextToSpeechBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextToSpeechBackend.swift; sourceTree = "<group>"; };
@@ -82,14 +89,24 @@
 		E575530E2E604E20E5161DF6 /* AppleTTSBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleTTSBackend.swift; sourceTree = "<group>"; };
 		EAB0B39FEA02933CC4354E8D /* SpeechBackendError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechBackendError.swift; sourceTree = "<group>"; };
 		ED330EE6049AE116AFB2F072 /* AppSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsTests.swift; sourceTree = "<group>"; };
+		F5BF4958844B2771537AF08D /* AppModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModelTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
+		09120AE87014631DA64D6551 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				F5BF4958844B2771537AF08D /* AppModelTests.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
 		1D5C6A10CD6B121EB1EF0031 /* System */ = {
 			isa = PBXGroup;
 			children = (
 				483B44390B4757DC9D7B7505 /* AccessibilityService.swift */,
 				1BE24F398C26E7C916733EF1 /* ClipboardService.swift */,
+				2499709E52B7C2AE389E0A68 /* GlobalHotkeyManager.swift */,
 				C9310CC2B63FAED92154DB23 /* SelectionReader.swift */,
 				AC1EE06D54321DF43FE4A78E /* SettingsStore.swift */,
 			);
@@ -109,6 +126,7 @@
 			children = (
 				6354F61BA4CE6CE9E6F5206D /* AccessibilityServiceTests.swift */,
 				929A7ED797B49CEE115E1DA6 /* ClipboardServiceTests.swift */,
+				8CE61334B063F0337C2E6BB7 /* GlobalHotkeyManagerTests.swift */,
 				763A6DE20D54E1A785D7D61F /* SelectionReaderTests.swift */,
 			);
 			path = System;
@@ -178,6 +196,7 @@
 			isa = PBXGroup;
 			children = (
 				359767A5465051721E7F2076 /* Assets.xcassets */,
+				32539428F5D6B5BB7D14FEC5 /* Relay.xcodeproj */,
 				A3B1078494319AB67E3172D5 /* App */,
 				FDEA6DBE16EC5221B53015C6 /* Domain */,
 				370CCB652C846F1DC6580429 /* SpeechIn */,
@@ -192,6 +211,7 @@
 			children = (
 				1D080F5789BE1F241509F1C2 /* ProjectSmokeTests.swift */,
 				82F98404629EA6F3162215CC /* RelayTests.swift */,
+				09120AE87014631DA64D6551 /* App */,
 				A89903B3BCFD871D73F30B39 /* Domain */,
 				6C1A6BC3ACEA9AC2F35DFD6B /* SpeechOut */,
 				55F9F67CCCD674A771BA3A40 /* System */,
@@ -287,6 +307,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				83A8BA29AC759A450A261572 /* Assets.xcassets in Resources */,
+				1B2725CA66C51A1BABB55DB1 /* Relay.xcodeproj in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -298,8 +319,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				B785675C6885A59D2FD6BB18 /* AccessibilityServiceTests.swift in Sources */,
+				B2E2ACBD73D895AA81FBD1B4 /* AppModelTests.swift in Sources */,
 				18A0B28B851CB76A0406F54E /* AppSettingsTests.swift in Sources */,
 				912B483ECC93452865AC4A29 /* ClipboardServiceTests.swift in Sources */,
+				5BB20F6CC812C4783D7205B6 /* GlobalHotkeyManagerTests.swift in Sources */,
 				91CA532F4429D5B65476BEBC /* ProjectSmokeTests.swift in Sources */,
 				9ED060105B789ED3C5278037 /* RelayTests.swift in Sources */,
 				9756AF051A9C26FDF8B4BA30 /* RulesSpeechPreprocessorTests.swift in Sources */,
@@ -320,6 +343,7 @@
 				312A67F8371459CA07993365 /* AppleTTSBackend.swift in Sources */,
 				8364B21972FCCAC67036630C /* BackendAvailability.swift in Sources */,
 				3025C432DE8ACDA88701092F /* ClipboardService.swift in Sources */,
+				8C7FB013D71A83B74950862F /* GlobalHotkeyManager.swift in Sources */,
 				63950769791664D8A9424529 /* HotkeyDefinition.swift in Sources */,
 				629B951FA84E58D245591D7B /* MenuBarContentView.swift in Sources */,
 				B5059A51D144C468B1843122 /* RelayApp.swift in Sources */,

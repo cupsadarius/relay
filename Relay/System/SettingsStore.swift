@@ -1,7 +1,13 @@
 import Foundation
 
 @MainActor
-final class SettingsStore {
+protocol SettingsStoring: AnyObject {
+    func load() -> AppSettings
+    func save(_ value: AppSettings) throws
+}
+
+@MainActor
+final class SettingsStore: SettingsStoring {
     private let defaults: UserDefaults
     private let key = "relay.settings.v1"
 
