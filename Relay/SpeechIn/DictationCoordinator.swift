@@ -18,7 +18,6 @@ protocol DictationActivityPublishing: AnyObject {
 protocol DictationCoordinating: AnyObject {
     func start() async
     func finish() async
-    /// No-op unless `sessionID` matches the session currently starting, recording, or finishing.
     func cancel(sessionID: UUID) async
     func toggle() async
 }
@@ -30,6 +29,11 @@ final class DictationCoordinator: DictationCoordinating {
         case starting(UUID)
         case recording(UUID)
         case finishing(UUID)
+        /// Tearing down after a `cancel(sessionID:)` call: the overlay has already been told to
+        /// hide, and `microphone.cancel()` is in flight. `start()`'s `.idle` guard refuses a
+        /// hotkey press admitted during this window, so it's silently dropped rather than
+        /// racing the in-progress teardown.
+        case cancelling(UUID)
     }
 
     private let microphone: any MicrophoneCapturing
@@ -79,6 +83,9 @@ final class DictationCoordinator: DictationCoordinating {
         stopSpeech()
         do {
             try await microphone.start(onLevel: { [weak self] level in
+                // Each level batch hops to the main actor via its own `Task`, so relative
+                // ordering between rapid batches isn't guaranteed. That's acceptable for a
+                // meter, which only ever needs a recent value, not a precise sequence.
                 Task { @MainActor in
                     guard let self, self.isRecording(session) else { return }
                     self.activity.updateLevel(level, sessionID: session)
@@ -132,20 +139,23 @@ final class DictationCoordinator: DictationCoordinating {
         else { await finish() }
     }
 
+    /// No-op unless `sessionID` is currently starting, recording, or finishing — in particular,
+    /// a second `cancel(sessionID:)` call for a session already `.cancelling` does nothing.
     func cancel(sessionID: UUID) async {
-        if isStarting(sessionID) || isRecording(sessionID) {
-            state = .idle
-            finishRequested = false
-            await microphone.cancel()
-            activity.cancel(sessionID: sessionID)
-        } else if isFinishing(sessionID) {
+        guard isStarting(sessionID) || isRecording(sessionID) || isFinishing(sessionID) else { return }
+        if isFinishing(sessionID) {
             processingTask?.cancel()
             processingTask = nil
             processingSession = nil
-            state = .idle
-            await microphone.cancel()
-            activity.cancel(sessionID: sessionID)
         }
+        finishRequested = false
+        state = .cancelling(sessionID)
+        // Published before awaiting `microphone.cancel()` so the capsule hides instantly, and so
+        // a `start()` admitted mid-teardown (which the `.cancelling` state above already blocks)
+        // can never race this cancel out from under the overlay's own session guard.
+        activity.cancel(sessionID: sessionID)
+        await microphone.cancel()
+        state = .idle
     }
 
     private func isStarting(_ session: UUID) -> Bool {
@@ -191,20 +201,22 @@ final class DictationCoordinator: DictationCoordinating {
         let text = processor.process(transcript.text)
         guard !text.isEmpty else {
             state = .idle
+            diagnostics?.record(.dictation(.failed(.transcription)))
             activity.fail(sessionID: session, category: .noUsableAudio, message: "No speech was recognized.")
             status("No speech was recognized. Try again.")
             return
         }
 
+        // `textInserter.insert` is synchronous with no suspension point after the guard above,
+        // so once started it can't be interrupted by a concurrent cancel(); there's nothing to
+        // re-check before applying its result.
         do {
             let mechanism = try textInserter.insert(text)
-            guard !Task.isCancelled, isFinishing(session) else { return }
             state = .idle
             diagnostics?.record(.dictation(.inserted(mechanism)))
             activity.complete(sessionID: session)
             status("Inserted dictation")
         } catch {
-            guard !Task.isCancelled, isFinishing(session) else { return }
             fail(error, at: .insertion, session: session)
         }
     }

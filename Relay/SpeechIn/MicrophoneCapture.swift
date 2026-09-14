@@ -103,14 +103,19 @@ actor MicrophoneCapture: MicrophoneCapturing {
             case let .failedStarting(failedSession, error) where failedSession == session:
                 transitionToIdle()
                 throw error
-            default:
-                // Either a concurrent `cancel()` requested cancellation while this call was
-                // still setting up, or the actor moved on for some other reason. Either way,
-                // `source.start()` has now definitely returned, so this is the one place that
-                // can safely tear the real source down without racing its own setup.
+            case .starting(session):
+                // `startCancelRequested` is true and the actor is still `.starting` — nobody
+                // else has progressed past this frame, so it still owns the source and must
+                // tear it down. `source.start()` has now definitely returned, so this is safe.
                 try? await source.stop()
                 accumulator.reset()
                 transitionToIdle()
+                return
+            default:
+                // The actor has already moved on (e.g. a newer session admitted after this one
+                // was cancelled is now recording or further along). This stale frame owns
+                // nothing anymore, so touching the source here would tear down whatever session
+                // actually owns it now — do nothing.
                 return
             }
         } catch {

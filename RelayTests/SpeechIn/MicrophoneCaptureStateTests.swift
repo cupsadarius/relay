@@ -142,6 +142,36 @@ final class MicrophoneCaptureStateTests: XCTestCase {
         try await capture.start(onLevel: { _ in })
     }
 
+    /// Regression test: a stale, already-cancelled session's `start()` frame used to tear down
+    /// whatever session the actor had moved on to by the time it finally resumed. Here session 1
+    /// fails and is cancelled (an immediate, non-waiting path) while its own `source.start()`
+    /// call is still parked; session 2 is then admitted and starts recording before session 1's
+    /// stale frame is released. Session 2 must survive untouched.
+    func testStaleFrameFromCancelledSessionDoesNotTearDownANewerSession() async throws {
+        let source = FakeAudioSource(
+            terminalErrorDuringStart: MicrophoneCaptureError.unavailable("boom"),
+            blockStart: true
+        )
+        let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
+
+        let startSession1 = Task { try await capture.start(onLevel: { _ in }) }
+        await source.waitForStart()
+        // Session 1 already landed `.failedStarting` before parking; `cancel()` from that state
+        // doesn't wait, so the actor is idle again right away while session 1's frame is parked.
+        await capture.cancel()
+
+        // Session 2 is admitted and starts recording while session 1's stale frame is still
+        // parked inside `source.start()`.
+        try await capture.start(onLevel: { _ in })
+
+        await source.releaseStart()
+        _ = try? await startSession1.value
+
+        await source.emit([0.3])
+        let audio = try await capture.stop()
+        XCTAssertEqual(audio.samples, [0.3])
+    }
+
     func testStartThenStopReturnsMono16KAudioAndReturnsToIdle() async throws {
         let source = FakeAudioSource()
         let capture = MicrophoneCapture(

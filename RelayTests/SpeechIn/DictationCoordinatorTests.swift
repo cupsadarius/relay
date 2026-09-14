@@ -183,7 +183,7 @@ final class DictationCoordinatorTests: XCTestCase {
             activity: RecordingActivityOverlay()
         )
         let firstStart = Task { await coordinator.start() }
-        while !(await microphone.didStart()) { await Task.yield() }
+        await waitUntil { await microphone.didStart() }
         await coordinator.finish()
         await microphone.failStart()
         await firstStart.value
@@ -278,6 +278,58 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(overlay.events, [.listening(session)])
     }
 
+    /// The overlay must hide the instant `cancel(sessionID:)` is called, not once
+    /// `microphone.cancel()` eventually finishes — otherwise a slow teardown would leave a stale
+    /// capsule on screen.
+    func testCancelPublishesOverlayCancelBeforeMicrophoneCancelCompletes() async {
+        let microphone = CancellableFakeMicrophone(blockCancel: true)
+        let overlay = RecordingActivityOverlay()
+        let coordinator = makeCoordinator(microphone: microphone, overlay: overlay)
+        await coordinator.start()
+        let session = overlay.sessionID!
+
+        let cancelTask = Task { await coordinator.cancel(sessionID: session) }
+        await waitUntil { microphone.cancelCount == 1 }
+
+        // `microphone.cancel()` is still blocked at this point; the overlay must already show
+        // cancelled.
+        XCTAssertEqual(overlay.events.last, .cancelled(session))
+
+        microphone.releaseCancel()
+        await cancelTask.value
+    }
+
+    /// While tearing down after a `cancel(sessionID:)` call, a hotkey-triggered `start()` must be
+    /// silently dropped: no new `begin`/`listen` overlay events and no status change, since the
+    /// coordinator isn't `.idle` yet.
+    func testStartDuringCancellationTeardownIsSilentlyDropped() async {
+        let microphone = CancellableFakeMicrophone(blockCancel: true)
+        let overlay = RecordingActivityOverlay()
+        var statuses: [String] = []
+        let coordinator = makeCoordinator(microphone: microphone, status: { statuses.append($0) }, overlay: overlay)
+        await coordinator.start()
+        let session = overlay.sessionID!
+
+        let cancelTask = Task { await coordinator.cancel(sessionID: session) }
+        await waitUntil { microphone.cancelCount == 1 }
+        statuses.removeAll()
+        let eventsDuringTeardown = overlay.events
+
+        await coordinator.start()
+
+        XCTAssertEqual(overlay.events, eventsDuringTeardown)
+        XCTAssertTrue(statuses.isEmpty)
+
+        microphone.releaseCancel()
+        await cancelTask.value
+
+        // Once the teardown completes, a fresh start works normally.
+        await coordinator.start()
+        let newSession = overlay.sessionID!
+        XCTAssertNotEqual(newSession, session)
+        XCTAssertEqual(overlay.events.last, .listening(newSession))
+    }
+
     func testRecordingLevelUpdatesReachOverlayWhileListening() async {
         let microphone = LevelCapturingMicrophone()
         let overlay = RecordingActivityOverlay()
@@ -313,7 +365,7 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.start()
         let session = overlay.sessionID!
         let finishTask = Task { await coordinator.finish() }
-        while backend.pendingCount < 1 { await Task.yield() }
+        await waitUntil { backend.pendingCount >= 1 }
 
         await coordinator.cancel(sessionID: session)
 
@@ -336,7 +388,7 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.start()
         let session = overlay.sessionID!
         let finishTask = Task { await coordinator.finish() }
-        while backend.pendingCount < 1 { await Task.yield() }
+        await waitUntil { backend.pendingCount >= 1 }
         await coordinator.cancel(sessionID: session)
         let eventsAfterCancel = overlay.events
 
@@ -361,7 +413,7 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.start()
         let sessionA = overlay.sessionID!
         let finishA = Task { await coordinator.finish() }
-        while backend.pendingCount < 1 { await Task.yield() }
+        await waitUntil { backend.pendingCount >= 1 }
 
         await coordinator.cancel(sessionID: sessionA)
 
@@ -369,7 +421,7 @@ final class DictationCoordinatorTests: XCTestCase {
         let sessionB = overlay.sessionID!
         XCTAssertNotEqual(sessionA, sessionB)
         let finishB = Task { await coordinator.finish() }
-        while backend.pendingCount < 2 { await Task.yield() }
+        await waitUntil { backend.pendingCount >= 2 }
 
         // Let session A's (already-cancelled) transcription resolve and run its cleanup. With
         // the fix, this must not touch `processingTask`, which by now belongs to session B.
@@ -404,13 +456,16 @@ final class DictationCoordinatorTests: XCTestCase {
 
     func testEmptyProcessedTranscriptReportsNoUsableAudioCategory() async {
         let overlay = RecordingActivityOverlay()
-        let coordinator = makeCoordinator(sttRouter: router(events: EventLog(), transcript: "   "), overlay: overlay)
+        let diagnostics = DiagnosticsRecorder()
+        let coordinator = makeCoordinator(sttRouter: router(events: EventLog(), transcript: "   "), overlay: overlay, diagnostics: diagnostics)
 
         await coordinator.start()
         let session = overlay.sessionID!
         await coordinator.finish()
 
         XCTAssertEqual(overlay.events.last, .failed(session, .noUsableAudio))
+        // Leaves a trace so repeated no-speech results are visible in diagnostics, not just silently dropped.
+        XCTAssertEqual(diagnostics.entries.last?.event, .dictation(.failed(.transcription)))
     }
 
     func testNoUsableAudioTranscriptionErrorReportsNoUsableAudioCategory() async {
@@ -468,6 +523,7 @@ final class DictationCoordinatorTests: XCTestCase {
         sttRouter: STTRouter? = nil,
         textInserter: (any TextInserting)? = nil,
         stopSpeech: @escaping () -> Void = {},
+        status: @escaping (String) -> Void = { _ in },
         overlay: RecordingActivityOverlay,
         diagnostics: DiagnosticsRecorder? = nil
     ) -> DictationCoordinator {
@@ -478,7 +534,7 @@ final class DictationCoordinatorTests: XCTestCase {
             processor: RulesTranscriptProcessor(),
             textInserter: textInserter ?? FakeTextInserter(events: events),
             stopSpeech: stopSpeech,
-            status: { _ in },
+            status: status,
             activity: overlay,
             diagnostics: diagnostics
         )
@@ -487,6 +543,26 @@ final class DictationCoordinatorTests: XCTestCase {
     private func router(events: EventLog, transcript: String = "text", error: SpeechBackendError? = nil) -> STTRouter {
         let backend = FakeBackend(events: events, transcript: transcript, error: error)
         return STTRouter(backends: [backend.id: backend], backendOrder: { [backend] in [backend.id] })
+    }
+
+    /// Polls `condition` (synchronous or async) until it returns `true`, or fails the test after
+    /// `timeout` instead of hanging forever — used in place of an unbounded
+    /// `while ... { await Task.yield() }` spin loop.
+    private func waitUntil(
+        timeout: TimeInterval = 2,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        _ condition: () async -> Bool
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while true {
+            if await condition() { return }
+            if Date() > deadline {
+                XCTFail("Timed out waiting for condition", file: file, line: line)
+                return
+            }
+            await Task.yield()
+        }
     }
 }
 
@@ -531,9 +607,25 @@ private struct NoUsableAudioMicrophone: MicrophoneCapturing {
 @MainActor
 private final class CancellableFakeMicrophone: MicrophoneCapturing {
     private(set) var cancelCount = 0
+    private let blockCancel: Bool
+    private var cancelWaiter: CheckedContinuation<Void, Never>?
+
+    init(blockCancel: Bool = false) {
+        self.blockCancel = blockCancel
+    }
+
     func start(onLevel: @escaping @Sendable (Float) -> Void) async throws {}
     func stop() async throws -> AudioInput { AudioInput(samples: [0.1], sampleRate: 16_000) }
-    func cancel() async { cancelCount += 1 }
+    func cancel() async {
+        cancelCount += 1
+        if blockCancel {
+            await withCheckedContinuation { cancelWaiter = $0 }
+        }
+    }
+    func releaseCancel() {
+        cancelWaiter?.resume()
+        cancelWaiter = nil
+    }
 }
 
 /// Captures the `onLevel` callback so a test can trigger level updates on demand.
