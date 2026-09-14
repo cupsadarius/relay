@@ -439,12 +439,14 @@ private final class FakeSelectionReader: SelectionReading {
 private final class FakeSpeechCoordinator: SpeechCoordinating {
     private(set) var requests: [SpeechRequest] = []
     private(set) var stopCount = 0
+    private(set) var stoppedSessionIDs: [UUID] = []
     private(set) var replayCount = 0
     let replayError: Error?
     init(replayError: Error? = nil) { self.replayError = replayError }
 
     func speak(_ request: SpeechRequest) async throws { requests.append(request) }
     func stop() { stopCount += 1 }
+    func stop(sessionID: UUID) { stoppedSessionIDs.append(sessionID) }
     func replayLast() async throws { replayCount += 1; if let replayError { throw replayError } }
 }
 

@@ -44,6 +44,7 @@ final class AppModel {
         let settings = settingsStore.load()
         let state = SettingsState(settings)
         let diagnostics = DiagnosticsRecorder()
+        let overlayModel = ActivityOverlayModel()
         let appleTTS = AppleTTSBackend()
         let router = TTSRouter(
             backends: [appleTTS.id: appleTTS],
@@ -56,7 +57,8 @@ final class AppModel {
                     voiceIdentifier: state.value.ttsVoiceIdentifier,
                     rate: state.value.ttsRate
                 )
-            }
+            },
+            overlay: overlayModel
         )
         let sttBackend = AppleSpeechBackend()
         let sttRegistry: [String: any SpeechToTextBackend] = [sttBackend.id: sttBackend]
@@ -75,7 +77,6 @@ final class AppModel {
             status: { _ in },
             diagnostics: diagnostics
         )
-        let overlayModel = ActivityOverlayModel()
         let overlayPresenter = ActivityOverlayWindowController(
             model: overlayModel,
             host: ActivityOverlayPanelHost(),

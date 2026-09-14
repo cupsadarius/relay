@@ -1,8 +1,12 @@
+import Foundation
+
 @MainActor
 final class TTSRouter {
     private let backends: [String: any TextToSpeechBackend]
     private let backendOrder: () -> [String]
     private var activeBackend: (any TextToSpeechBackend)?
+    private var activeSessionID: UUID?
+    private var eventHandler: (@MainActor (TTSPlaybackEvent) -> Void)?
 
     init(
         backends: [String: any TextToSpeechBackend],
@@ -10,9 +14,22 @@ final class TTSRouter {
     ) {
         self.backends = backends
         self.backendOrder = backendOrder
+        for backend in backends.values {
+            backend.setPlaybackEventHandler { [weak self, weak backend] event in
+                guard let backend else { return }
+                self?.forward(event, from: backend)
+            }
+        }
     }
 
-    func speak(text: String, options: TTSOptions) async throws {
+    /// Installs the single downstream listener for playback lifecycle
+    /// events. Only events raised by the currently active backend for the
+    /// currently active session are forwarded.
+    func setPlaybackEventHandler(_ handler: @escaping @MainActor (TTSPlaybackEvent) -> Void) {
+        eventHandler = handler
+    }
+
+    func speak(text: String, options: TTSOptions, sessionID: UUID) async throws {
         var lastError: SpeechBackendError = .unavailable("No TTS backend is available")
 
         for id in backendOrder() {
@@ -23,23 +40,35 @@ final class TTSRouter {
                 if let activeBackend, activeBackend !== backend {
                     activeBackend.stop()
                     self.activeBackend = nil
+                    activeSessionID = nil
                 }
-                try await backend.speak(text: text, options: options)
+                try await backend.speak(text: text, options: options, sessionID: sessionID)
                 activeBackend = backend
+                activeSessionID = sessionID
                 return
             } catch let error as SpeechBackendError where error.isFallbackWorthy {
                 lastError = error
             } catch {
+                eventHandler?(.failed(sessionID: sessionID))
                 throw error
             }
         }
 
+        eventHandler?(.failed(sessionID: sessionID))
         throw lastError
     }
 
     func stop() {
         activeBackend?.stop()
         activeBackend = nil
+        activeSessionID = nil
+    }
+
+    /// No-ops unless `sessionID` matches the session currently being routed,
+    /// so a stale Interactive Stop cannot cut off replacement speech.
+    func stop(sessionID: UUID) {
+        guard activeSessionID == sessionID else { return }
+        stop()
     }
 
     func pause() {
@@ -48,5 +77,11 @@ final class TTSRouter {
 
     func resume() {
         activeBackend?.resume()
+    }
+
+    private func forward(_ event: TTSPlaybackEvent, from backend: any TextToSpeechBackend) {
+        guard let activeBackend, activeBackend === backend,
+              let activeSessionID, event.sessionID == activeSessionID else { return }
+        eventHandler?(event)
     }
 }

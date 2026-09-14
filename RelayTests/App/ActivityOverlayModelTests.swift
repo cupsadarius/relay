@@ -137,8 +137,11 @@ final class ActivityOverlayModelTests: XCTestCase {
     }
 }
 
+/// Deterministic stand-in for `ActivityOverlayModel`'s real scheduler so
+/// tests can control the completion/error grace-period timers explicitly.
+/// Shared across overlay/speech test files.
 @MainActor
-private final class FakeOverlayScheduler: ActivityOverlayScheduling {
+final class FakeOverlayScheduler: ActivityOverlayScheduling {
     private var operations: [(delay: Duration, operation: @MainActor () -> Void)] = []
 
     func schedule(after delay: Duration, _ operation: @escaping @MainActor () -> Void) {
@@ -152,5 +155,11 @@ private final class FakeOverlayScheduler: ActivityOverlayScheduling {
 
     func run(at index: Int) {
         operations.remove(at: index).operation()
+    }
+
+    func runAll() {
+        while !operations.isEmpty {
+            operations.removeFirst().operation()
+        }
     }
 }

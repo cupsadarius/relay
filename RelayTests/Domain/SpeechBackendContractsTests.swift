@@ -83,7 +83,8 @@ private final class ContractTTSBackend: TextToSpeechBackend {
     let capabilities = TTSCapabilities([.pauseResume])
 
     func availability() async -> BackendAvailability { .available }
-    func speak(text: String, options: TTSOptions) async throws {}
+    func setPlaybackEventHandler(_ handler: @escaping @MainActor (TTSPlaybackEvent) -> Void) {}
+    func speak(text: String, options: TTSOptions, sessionID: UUID) async throws {}
     func stop() {}
     func pause() {}
     func resume() {}
