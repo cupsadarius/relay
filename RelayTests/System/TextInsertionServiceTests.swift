@@ -12,7 +12,8 @@ final class TextInsertionServiceTests: XCTestCase {
             accessibility: accessibility,
             clipboard: clipboard,
             pasteCommand: paste,
-            waiter: FakeInsertionWaiter()
+            waiter: FakeInsertionWaiter(),
+            canPostEvents: { true }
         )
 
         try service.insert("dictated text")
@@ -33,7 +34,8 @@ final class TextInsertionServiceTests: XCTestCase {
             accessibility: FakeTextAccessibility(focusedValue: "not an AX element" as CFString, canReplace: false),
             clipboard: clipboard,
             pasteCommand: paste,
-            waiter: waiter
+            waiter: waiter,
+            canPostEvents: { true }
         )
 
         try service.insert("dictated text")
@@ -51,7 +53,8 @@ final class TextInsertionServiceTests: XCTestCase {
             accessibility: FakeTextAccessibility(focusedValue: AXUIElementCreateSystemWide(), canReplace: false),
             clipboard: clipboard,
             pasteCommand: paste,
-            waiter: FakeInsertionWaiter()
+            waiter: FakeInsertionWaiter(),
+            canPostEvents: { true }
         )
 
         try service.insert("dictated text")
@@ -60,13 +63,33 @@ final class TextInsertionServiceTests: XCTestCase {
         XCTAssertEqual(clipboard.writtenStrings, ["dictated text"])
     }
 
+    func testDeniedPostEventPermissionDoesNotMutateClipboardOrPaste() {
+        let clipboard = FakeInsertionClipboard()
+        let paste = FakePasteCommand()
+        let service = TextInsertionService(
+            accessibility: FakeTextAccessibility(focusedValue: nil, canReplace: false),
+            clipboard: clipboard,
+            pasteCommand: paste,
+            waiter: FakeInsertionWaiter(),
+            canPostEvents: { false }
+        )
+
+        XCTAssertThrowsError(try service.insert("dictated text")) {
+            XCTAssertEqual($0 as? TextInsertionError, .accessibilityPermissionDenied)
+        }
+        XCTAssertTrue(clipboard.writtenStrings.isEmpty)
+        XCTAssertTrue(clipboard.restoredSnapshots.isEmpty)
+        XCTAssertEqual(paste.sendCount, 0)
+    }
+
     func testPasteFallbackWritesWaitsThenRestoresClipboardInOrder() throws {
         let events = InsertionEvents()
         let service = TextInsertionService(
             accessibility: FakeTextAccessibility(focusedValue: nil, canReplace: false),
             clipboard: FakeInsertionClipboard(events: events),
             pasteCommand: FakePasteCommand(events: events),
-            waiter: FakeInsertionWaiter(events: events)
+            waiter: FakeInsertionWaiter(events: events),
+            canPostEvents: { true }
         )
 
         try service.insert("dictated text")
@@ -82,7 +105,8 @@ final class TextInsertionServiceTests: XCTestCase {
             accessibility: FakeTextAccessibility(focusedValue: nil, canReplace: false),
             clipboard: clipboard,
             pasteCommand: paste,
-            waiter: FakeInsertionWaiter()
+            waiter: FakeInsertionWaiter(),
+            canPostEvents: { true }
         )
 
         XCTAssertThrowsError(try service.insert("dictated text"))
@@ -97,7 +121,8 @@ final class TextInsertionServiceTests: XCTestCase {
             accessibility: FakeTextAccessibility(focusedValue: nil, canReplace: false),
             clipboard: clipboard,
             pasteCommand: FakePasteCommand(error: TestInsertionError.failed),
-            waiter: FakeInsertionWaiter()
+            waiter: FakeInsertionWaiter(),
+            canPostEvents: { true }
         )
 
         XCTAssertThrowsError(try service.insert("dictated text"))

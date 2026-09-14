@@ -1,5 +1,6 @@
 import Observation
 @preconcurrency import AppKit
+import AVFoundation
 
 @MainActor
 @Observable
@@ -13,6 +14,7 @@ final class AppModel {
     }
 
     var statusText = "Ready"
+    private(set) var microphonePermissionGranted: Bool
     private(set) var settings: AppSettings
     private(set) var dictationPhase: HotkeyPhase?
     private(set) var hotkeyConflictMessage: String?
@@ -25,11 +27,15 @@ final class AppModel {
     @ObservationIgnored private let selectionReader: any SelectionReading
     @ObservationIgnored private let preprocessor: RulesSpeechPreprocessor
     @ObservationIgnored private let speechCoordinator: any SpeechCoordinating
+    @ObservationIgnored private let dictationCoordinator: (any DictationCoordinating)?
     @ObservationIgnored private let hotkeyManager: any HotkeyManaging
     @ObservationIgnored private let settingsState: SettingsState
     @ObservationIgnored private let permissionService: any GlobalPermissionAuthorizing
+    @ObservationIgnored private let microphonePermissions: any MicrophonePermissionStatusProviding
+    @ObservationIgnored private let privacySettingsOpener: any PrivacySettingsOpening
     @ObservationIgnored private let diagnostics: DiagnosticsRecorder
     @ObservationIgnored private var activationObserver: NSObjectProtocol?
+    @ObservationIgnored private var dictationTask: Task<Void, Never>?
 
     convenience init() {
         let settingsStore = SettingsStore()
@@ -50,6 +56,22 @@ final class AppModel {
                 )
             }
         )
+        let sttBackend = AppleSpeechBackend()
+        let sttRegistry: [String: any SpeechToTextBackend] = [sttBackend.id: sttBackend]
+        let dictation = DictationCoordinator(
+            microphone: MicrophoneCapture(),
+            sttRouter: STTRouter(
+                backends: sttRegistry,
+                backendOrder: {
+                    let configured = state.value.sttBackendOrder.filter { sttRegistry[$0] != nil }
+                    return configured.isEmpty ? [sttBackend.id] : configured
+                }
+            ),
+            processor: RulesTranscriptProcessor(),
+            textInserter: TextInsertionService(),
+            stopSpeech: { coordinator.stop() },
+            status: { _ in }
+        )
         self.init(
             settingsStore: settingsStore,
             selectionReader: SelectionReader(
@@ -62,8 +84,12 @@ final class AppModel {
             loadedSettings: settings,
             settingsState: state,
             permissionService: PermissionService(),
-            diagnostics: diagnostics
+            diagnostics: diagnostics,
+            dictationCoordinator: dictation,
+            microphonePermissions: SystemMicrophonePermissionStatusProvider(),
+            privacySettingsOpener: SystemPrivacySettingsOpener()
         )
+        dictation.setStatusHandler { [weak self] in self?.statusText = $0 }
     }
 
     init(
@@ -73,18 +99,26 @@ final class AppModel {
         speechCoordinator: any SpeechCoordinating,
         hotkeyManager: any HotkeyManaging,
         permissionService: any GlobalPermissionAuthorizing = PermissionService(),
-        diagnostics: DiagnosticsRecorder = DiagnosticsRecorder()
+        diagnostics: DiagnosticsRecorder = DiagnosticsRecorder(),
+        dictationCoordinator: (any DictationCoordinating)? = nil,
+        microphonePermissions: any MicrophonePermissionStatusProviding = SystemMicrophonePermissionStatusProvider(),
+        privacySettingsOpener: any PrivacySettingsOpening = SystemPrivacySettingsOpener()
     ) {
         let settings = settingsStore.load()
         self.settingsStore = settingsStore
         self.selectionReader = selectionReader
         self.preprocessor = preprocessor
         self.speechCoordinator = speechCoordinator
+        self.dictationCoordinator = dictationCoordinator
         self.hotkeyManager = hotkeyManager
         self.permissionService = permissionService
+        self.microphonePermissions = microphonePermissions
+        self.privacySettingsOpener = privacySettingsOpener
         self.diagnostics = diagnostics
         activationObserver = nil
+        dictationTask = nil
         permissionSnapshot = permissionService.snapshot()
+        microphonePermissionGranted = microphonePermissions.isGranted()
         self.settings = settings
         let state = SettingsState(settings)
         settingsState = state
@@ -101,17 +135,25 @@ final class AppModel {
         loadedSettings: AppSettings,
         settingsState: SettingsState,
         permissionService: any GlobalPermissionAuthorizing,
-        diagnostics: DiagnosticsRecorder
+        diagnostics: DiagnosticsRecorder,
+        dictationCoordinator: (any DictationCoordinating)?,
+        microphonePermissions: any MicrophonePermissionStatusProviding,
+        privacySettingsOpener: any PrivacySettingsOpening
     ) {
         self.settingsStore = settingsStore
         self.selectionReader = selectionReader
         self.preprocessor = preprocessor
         self.speechCoordinator = speechCoordinator
+        self.dictationCoordinator = dictationCoordinator
         self.hotkeyManager = hotkeyManager
         self.permissionService = permissionService
+        self.microphonePermissions = microphonePermissions
+        self.privacySettingsOpener = privacySettingsOpener
         self.diagnostics = diagnostics
         activationObserver = nil
+        dictationTask = nil
         permissionSnapshot = permissionService.snapshot()
+        microphonePermissionGranted = microphonePermissions.isGranted()
         settings = loadedSettings
         self.settingsState = settingsState
         registerHotkeys()
@@ -167,10 +209,24 @@ final class AppModel {
     func requestPermissions() {
         permissionService.requestPermissions()
         diagnostics.record(.permissionRequested)
+        permissionSnapshot = permissionService.snapshot()
+    }
+
+    func requestMicrophonePermission() async {
+        _ = await microphonePermissions.requestPermission()
+        microphonePermissionGranted = microphonePermissions.isGranted()
+        statusText = microphonePermissionGranted
+            ? "Microphone permission granted"
+            : "Allow Microphone permission in System Settings to dictate."
+    }
+
+    func openPrivacySettings(_ pane: PrivacySettingsPane) {
+        privacySettingsOpener.open(pane)
     }
 
     func recheckDiagnostics() {
         permissionSnapshot = permissionService.snapshot()
+        microphonePermissionGranted = microphonePermissions.isGranted()
         diagnostics.record(.permissionRechecked)
         registerHotkeys()
     }
@@ -188,12 +244,24 @@ final class AppModel {
         }
     }
 
-    deinit { if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) } }
+    deinit {
+        dictationTask?.cancel()
+        if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
+    }
 
     private func handleHotkey(_ action: HotkeyAction, phase: HotkeyPhase) {
         if action == .dictate {
             diagnostics.record(.actionDispatched(action: action, phase: phase))
             dictationPhase = phase
+            guard dictationCoordinator != nil else { return }
+            switch settings.dictationMode {
+            case .holdToTalk:
+                if phase == .pressed { enqueueDictation { await $0.start() } }
+                else { enqueueDictation { await $0.finish() } }
+            case .toggle:
+                guard phase == .pressed else { return }
+                enqueueDictation { await $0.toggle() }
+            }
             return
         }
         guard phase == .pressed else { return }
@@ -214,6 +282,18 @@ final class AppModel {
         case .toggleAutoRead:
             updateSettings { $0.autoReadEnabled.toggle() }
             statusText = settings.autoReadEnabled ? "Auto-read enabled" : "Auto-read disabled"
+        }
+    }
+
+    private func enqueueDictation(
+        _ operation: @escaping @MainActor (any DictationCoordinating) async -> Void
+    ) {
+        let previous = dictationTask
+        let coordinator = dictationCoordinator
+        dictationTask = Task { @MainActor in
+            await previous?.value
+            guard let coordinator else { return }
+            await operation(coordinator)
         }
     }
 

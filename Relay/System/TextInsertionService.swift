@@ -1,7 +1,13 @@
 import ApplicationServices
 
-enum TextInsertionError: Error {
+enum TextInsertionError: Error, Equatable {
     case clipboardWriteFailed
+    case accessibilityPermissionDenied
+}
+
+@MainActor
+protocol TextInserting: AnyObject {
+    func insert(_ text: String) throws
 }
 
 @MainActor
@@ -35,22 +41,25 @@ final class SystemAccessibilityTextInserter: AccessibilityTextInserting {
 }
 
 @MainActor
-final class TextInsertionService {
+final class TextInsertionService: TextInserting {
     private let accessibility: any AccessibilityTextInserting
     private let clipboard: any ClipboardPasteboard
     private let pasteCommand: any PasteCommandSending
     private let waiter: any ClipboardWaiting
+    private let canPostEvents: () -> Bool
 
     init(
         accessibility: any AccessibilityTextInserting = SystemAccessibilityTextInserter(),
         clipboard: any ClipboardPasteboard = GeneralClipboardPasteboard(),
         pasteCommand: any PasteCommandSending = SystemPasteCommand(),
-        waiter: any ClipboardWaiting = RunLoopClipboardWaiter()
+        waiter: any ClipboardWaiting = RunLoopClipboardWaiter(),
+        canPostEvents: @escaping () -> Bool = { CGPreflightPostEventAccess() }
     ) {
         self.accessibility = accessibility
         self.clipboard = clipboard
         self.pasteCommand = pasteCommand
         self.waiter = waiter
+        self.canPostEvents = canPostEvents
     }
 
     func insert(_ text: String) throws {
@@ -60,6 +69,10 @@ final class TextInsertionService {
             if accessibility.replaceSelectedText(text, in: focusedElement) {
                 return
             }
+        }
+
+        guard canPostEvents() else {
+            throw TextInsertionError.accessibilityPermissionDenied
         }
 
         let originalClipboard = clipboard.snapshot()

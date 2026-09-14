@@ -65,15 +65,65 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.diagnosticsEntries.first?.event, .ttsFailed)
     }
 
-    func testDictationPreservesBothPhasesForFutureWiring() {
+    func testHoldToTalkStartsOnPressAndFinishesOnRelease() async {
         let hotkeys = FakeHotkeyManager()
-        let model = makeModel(hotkeys: hotkeys)
+        let dictation = FakeDictationCoordinator()
+        let model = makeModel(hotkeys: hotkeys, dictation: dictation)
 
         hotkeys.send(.dictate, .pressed)
-        XCTAssertEqual(model.dictationPhase, .pressed)
-
         hotkeys.send(.dictate, .released)
+        await Task.yield()
+
         XCTAssertEqual(model.dictationPhase, .released)
+        XCTAssertEqual(dictation.events, ["start", "finish"])
+    }
+
+    func testToggleDictationAlternatesOnPressAndIgnoresRelease() async {
+        let hotkeys = FakeHotkeyManager()
+        let dictation = FakeDictationCoordinator()
+        let model = makeModel(hotkeys: hotkeys, dictation: dictation)
+        model.setDictationMode(.toggle)
+
+        hotkeys.send(.dictate, .pressed)
+        hotkeys.send(.dictate, .released)
+        hotkeys.send(.dictate, .pressed)
+        await Task.yield()
+
+        XCTAssertEqual(dictation.events, ["start", "finish"])
+    }
+
+    func testHoldToTalkQueuesReleaseUntilBlockedStartCompletes() async {
+        let hotkeys = FakeHotkeyManager()
+        let dictation = FakeDictationCoordinator(blockStart: true)
+        let model = makeModel(hotkeys: hotkeys, dictation: dictation)
+
+        hotkeys.send(.dictate, .pressed)
+        while dictation.events != ["start"] { await Task.yield() }
+        hotkeys.send(.dictate, .released)
+        await Task.yield()
+        XCTAssertEqual(dictation.events, ["start"])
+
+        dictation.resumeStart()
+        while dictation.events != ["start", "finish"] { await Task.yield() }
+        withExtendedLifetime(model) {}
+    }
+
+    func testToggleQueuesNewPressUntilBlockedFinishCompletes() async {
+        let hotkeys = FakeHotkeyManager()
+        let dictation = FakeDictationCoordinator(blockFinish: true)
+        let model = makeModel(hotkeys: hotkeys, dictation: dictation)
+        model.setDictationMode(.toggle)
+
+        hotkeys.send(.dictate, .pressed)
+        while dictation.events != ["start"] { await Task.yield() }
+        hotkeys.send(.dictate, .pressed)
+        while dictation.events != ["start", "finish"] { await Task.yield() }
+        hotkeys.send(.dictate, .pressed)
+        await Task.yield()
+        XCTAssertEqual(dictation.events, ["start", "finish"])
+
+        dictation.resumeFinish()
+        while dictation.events != ["start", "finish", "start"] { await Task.yield() }
     }
 
     func testToggleAutoReadPersistsAndReregistersImmediately() {
@@ -149,6 +199,42 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.permissionSnapshot.inputMonitoringGranted, false)
     }
 
+    func testRecheckRefreshesObservableMicrophonePermissionAfterExternalChange() {
+        let microphone = FakeMicrophonePermissionStatus(granted: false)
+        let model = makeModel(microphone: microphone)
+
+        XCTAssertFalse(model.microphonePermissionGranted)
+        microphone.grantedValue = true
+        model.recheckDiagnostics()
+
+        XCTAssertTrue(model.microphonePermissionGranted)
+        microphone.grantedValue = false
+        model.recheckDiagnostics()
+        XCTAssertFalse(model.microphonePermissionGranted)
+    }
+
+    func testRequestMicrophonePermissionRefreshesObservableState() async {
+        let microphone = FakeMicrophonePermissionStatus(granted: false, requestResult: true)
+        let model = makeModel(microphone: microphone)
+
+        await model.requestMicrophonePermission()
+
+        XCTAssertEqual(microphone.requestCount, 1)
+        XCTAssertTrue(model.microphonePermissionGranted)
+        XCTAssertEqual(model.statusText, "Microphone permission granted")
+    }
+
+    func testOpenPrivacySettingsDelegatesToInjectedOpener() {
+        let opener = FakePrivacySettingsOpener()
+        let model = makeModel(opener: opener)
+
+        model.openPrivacySettings(.microphone)
+        model.openPrivacySettings(.accessibility)
+        model.openPrivacySettings(.inputMonitoring)
+
+        XCTAssertEqual(opener.opened, [.microphone, .accessibility, .inputMonitoring])
+    }
+
     func testSaveFailureStillAppliesHotkeyImmediatelyAndSurfacesError() {
         let store = FakeSettingsStore(settings: .defaults, saveError: TestError.saveFailed)
         let hotkeys = FakeHotkeyManager()
@@ -167,7 +253,10 @@ final class AppModelTests: XCTestCase {
         selection: FakeSelectionReader? = nil,
         speech: FakeSpeechCoordinator? = nil,
         hotkeys: FakeHotkeyManager? = nil,
-        permissions: FakePermissionService? = nil
+        permissions: FakePermissionService? = nil,
+        dictation: FakeDictationCoordinator? = nil,
+        microphone: FakeMicrophonePermissionStatus? = nil,
+        opener: FakePrivacySettingsOpener? = nil
     ) -> AppModel {
         AppModel(
             settingsStore: store ?? FakeSettingsStore(settings: .defaults),
@@ -176,9 +265,41 @@ final class AppModelTests: XCTestCase {
             speechCoordinator: speech ?? FakeSpeechCoordinator(),
             hotkeyManager: hotkeys ?? FakeHotkeyManager(),
             permissionService: permissions ?? FakePermissionService(snapshot: .init(inputMonitoringGranted: true, accessibilityGranted: true)),
-            diagnostics: DiagnosticsRecorder(capacity: 10)
+            diagnostics: DiagnosticsRecorder(capacity: 10),
+            dictationCoordinator: dictation,
+            microphonePermissions: microphone ?? FakeMicrophonePermissionStatus(granted: true),
+            privacySettingsOpener: opener ?? FakePrivacySettingsOpener()
         )
     }
+}
+
+@MainActor
+private final class FakeDictationCoordinator: DictationCoordinating {
+    private(set) var events: [String] = []
+    private let blockStart: Bool
+    private let blockFinish: Bool
+    private var startContinuation: CheckedContinuation<Void, Never>?
+    private var finishContinuation: CheckedContinuation<Void, Never>?
+
+    init(blockStart: Bool = false, blockFinish: Bool = false) {
+        self.blockStart = blockStart
+        self.blockFinish = blockFinish
+    }
+
+    func start() async {
+        events.append("start")
+        if blockStart { await withCheckedContinuation { startContinuation = $0 } }
+    }
+    func finish() async {
+        events.append("finish")
+        if blockFinish { await withCheckedContinuation { finishContinuation = $0 } }
+    }
+    func toggle() async {
+        if events.last == "start" { await finish() }
+        else { await start() }
+    }
+    func resumeStart() { startContinuation?.resume(); startContinuation = nil }
+    func resumeFinish() { finishContinuation?.resume(); finishContinuation = nil }
 }
 
 @MainActor
@@ -188,6 +309,29 @@ private final class FakePermissionService: GlobalPermissionAuthorizing {
     init(snapshot: PermissionSnapshot) { value = snapshot }
     func snapshot() -> PermissionSnapshot { snapshotCount += 1; return value }
     func requestPermissions() {}
+}
+
+@MainActor
+private final class FakeMicrophonePermissionStatus: MicrophonePermissionStatusProviding {
+    var grantedValue: Bool
+    let requestResult: Bool
+    private(set) var requestCount = 0
+    init(granted: Bool, requestResult: Bool? = nil) {
+        grantedValue = granted
+        self.requestResult = requestResult ?? granted
+    }
+    func isGranted() -> Bool { grantedValue }
+    func requestPermission() async -> Bool {
+        requestCount += 1
+        grantedValue = requestResult
+        return requestResult
+    }
+}
+
+@MainActor
+private final class FakePrivacySettingsOpener: PrivacySettingsOpening {
+    private(set) var opened: [PrivacySettingsPane] = []
+    func open(_ pane: PrivacySettingsPane) { opened.append(pane) }
 }
 
 @MainActor

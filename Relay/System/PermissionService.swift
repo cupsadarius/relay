@@ -1,6 +1,51 @@
 import AVFoundation
+import AppKit
 @preconcurrency import ApplicationServices
 import CoreGraphics
+
+@MainActor
+protocol MicrophonePermissionStatusProviding: AnyObject {
+    func isGranted() -> Bool
+    func requestPermission() async -> Bool
+}
+
+@MainActor
+final class SystemMicrophonePermissionStatusProvider: MicrophonePermissionStatusProviding {
+    func isGranted() -> Bool {
+        AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+    }
+
+    func requestPermission() async -> Bool {
+        await SystemMicrophonePermissionAuthorizer().requestPermission()
+    }
+}
+
+enum PrivacySettingsPane: Equatable {
+    case microphone
+    case accessibility
+    case inputMonitoring
+
+    var url: URL {
+        let anchor = switch self {
+        case .microphone: "Privacy_Microphone"
+        case .accessibility: "Privacy_Accessibility"
+        case .inputMonitoring: "Privacy_ListenEvent"
+        }
+        return URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)")!
+    }
+}
+
+@MainActor
+protocol PrivacySettingsOpening: AnyObject {
+    func open(_ pane: PrivacySettingsPane)
+}
+
+@MainActor
+final class SystemPrivacySettingsOpener: PrivacySettingsOpening {
+    func open(_ pane: PrivacySettingsPane) {
+        NSWorkspace.shared.open(pane.url)
+    }
+}
 
 struct PermissionSnapshot: Equatable, Sendable {
     let inputMonitoringGranted: Bool

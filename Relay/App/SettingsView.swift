@@ -34,6 +34,34 @@ struct SettingsView: View {
                         Text(mode.title).tag(mode)
                     }
                 }
+
+                LabeledContent("Speech recognition") {
+                    Text("Apple Speech — On-device")
+                }
+                Text("Apple Speech is the only available dictation backend in this release. Your saved backend preference is retained for future backends.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Permissions") {
+                permissionRow(
+                    title: "Microphone",
+                    granted: model.microphonePermissionGranted,
+                    request: { Task { await model.requestMicrophonePermission() } },
+                    settings: { model.openPrivacySettings(.microphone) }
+                )
+                permissionRow(
+                    title: "Accessibility",
+                    granted: model.permissionSnapshot.accessibilityGranted,
+                    settings: { model.openPrivacySettings(.accessibility) }
+                )
+                permissionRow(
+                    title: "Input Monitoring",
+                    granted: model.permissionSnapshot.inputMonitoringGranted,
+                    settings: { model.openPrivacySettings(.inputMonitoring) }
+                )
+                Button("Request Accessibility & Input Monitoring") { model.requestPermissions() }
+                    .controlSize(.small)
             }
 
             Section("Global Hotkeys") {
@@ -63,6 +91,24 @@ struct SettingsView: View {
         }
         .padding()
         .frame(width: 620, height: 560)
+    }
+
+    private func permissionRow(
+        title: String,
+        granted: Bool,
+        request: (() -> Void)? = nil,
+        settings: @escaping () -> Void
+    ) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(granted ? "Allowed" : "Required")
+                .foregroundStyle(granted ? .green : .orange)
+            if !granted {
+                if let request { Button("Allow", action: request) }
+                Button("Open Settings", action: settings)
+            }
+        }
     }
 
     private var voiceBinding: Binding<String?> {
