@@ -43,6 +43,15 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("Activity Overlay") {
+                Picker("Style", selection: activityOverlayStyleBinding) {
+                    Text("Off").tag(ActivityOverlayStyle.off)
+                    Text("Minimal").tag(ActivityOverlayStyle.minimal)
+                    Text("Interactive").tag(ActivityOverlayStyle.interactive)
+                }
+                .pickerStyle(.segmented)
+            }
+
             Section("Permissions") {
                 permissionRow(
                     title: "Microphone",
@@ -90,7 +99,7 @@ struct SettingsView: View {
             }
         }
         .padding()
-        .frame(width: 620, height: 560)
+        .frame(width: 620, height: 610)
     }
 
     private func permissionRow(
@@ -129,6 +138,13 @@ struct SettingsView: View {
         Binding(
             get: { model.settings.dictationMode },
             set: { model.setDictationMode($0) }
+        )
+    }
+
+    private var activityOverlayStyleBinding: Binding<ActivityOverlayStyle> {
+        Binding(
+            get: { model.settings.activityOverlayStyle },
+            set: { model.setActivityOverlayStyle($0) }
         )
     }
 }

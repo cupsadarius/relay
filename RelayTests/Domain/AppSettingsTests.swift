@@ -2,6 +2,32 @@ import XCTest
 @testable import Relay
 
 final class AppSettingsTests: XCTestCase {
+    func testDefaultsUseInteractiveActivityOverlay() {
+        XCTAssertEqual(AppSettings.defaults.activityOverlayStyle, .interactive)
+    }
+
+    func testDecodingPreOverlaySettingsAddsInteractiveWithoutResettingOtherFields() throws {
+        var saved = AppSettings.defaults
+        saved.dictationMode = .toggle
+        saved.ttsVoiceIdentifier = "voice.test"
+        saved.ttsRate = 0.7
+        saved.autoReadEnabled = false
+        let encoded = try JSONEncoder().encode(saved)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "activityOverlayStyle")
+
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+
+        XCTAssertEqual(decoded.activityOverlayStyle, .interactive)
+        XCTAssertEqual(decoded.dictationMode, .toggle)
+        XCTAssertEqual(decoded.ttsVoiceIdentifier, "voice.test")
+        XCTAssertEqual(decoded.ttsRate, 0.7, accuracy: 0.0001)
+        XCTAssertFalse(decoded.autoReadEnabled)
+    }
+
     func testSettingsRoundTrip() throws {
         var value = AppSettings.defaults
         value.dictationMode = .toggle

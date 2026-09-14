@@ -185,6 +185,10 @@ final class AppModel {
         updateSettings { $0.ttsRate = rate }
     }
 
+    func setActivityOverlayStyle(_ style: ActivityOverlayStyle) {
+        updateSettings { $0.activityOverlayStyle = style }
+    }
+
     private func updateSettings(_ update: (inout AppSettings) -> Void) {
         update(&settings)
         settingsState.value = settings

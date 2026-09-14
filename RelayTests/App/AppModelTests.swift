@@ -3,6 +3,16 @@ import XCTest
 
 @MainActor
 final class AppModelTests: XCTestCase {
+    func testChangingActivityOverlayStylePersistsImmediately() {
+        let store = FakeSettingsStore(settings: .defaults)
+        let model = makeModel(store: store)
+
+        model.setActivityOverlayStyle(.minimal)
+
+        XCTAssertEqual(model.settings.activityOverlayStyle, .minimal)
+        XCTAssertEqual(store.saved.last?.activityOverlayStyle, .minimal)
+    }
+
     func testReadSelectionPressedPreprocessesAndSpeaksUserRequest() async {
         let selection = FakeSelectionReader(text: "Intro\n```swift\nsecret()\n```\nEnd")
         let speech = FakeSpeechCoordinator()

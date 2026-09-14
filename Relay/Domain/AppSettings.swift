@@ -1,5 +1,11 @@
 import Foundation
 
+enum ActivityOverlayStyle: String, Codable, CaseIterable, Sendable {
+    case off
+    case minimal
+    case interactive
+}
+
 struct AppSettings: Codable, Equatable, Sendable {
     var dictationMode: DictationMode
     var hotkeys: [HotkeyAction: HotkeyDefinition]
@@ -8,6 +14,47 @@ struct AppSettings: Codable, Equatable, Sendable {
     var ttsVoiceIdentifier: String?
     var ttsRate: Float
     var autoReadEnabled: Bool
+    var activityOverlayStyle: ActivityOverlayStyle
+
+    private enum CodingKeys: String, CodingKey {
+        case dictationMode, hotkeys, sttBackendOrder, ttsBackendOrder
+        case ttsVoiceIdentifier, ttsRate, autoReadEnabled, activityOverlayStyle
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        dictationMode = try values.decode(DictationMode.self, forKey: .dictationMode)
+        hotkeys = try values.decode([HotkeyAction: HotkeyDefinition].self, forKey: .hotkeys)
+        sttBackendOrder = try values.decode([String].self, forKey: .sttBackendOrder)
+        ttsBackendOrder = try values.decode([String].self, forKey: .ttsBackendOrder)
+        ttsVoiceIdentifier = try values.decodeIfPresent(String.self, forKey: .ttsVoiceIdentifier)
+        ttsRate = try values.decode(Float.self, forKey: .ttsRate)
+        autoReadEnabled = try values.decode(Bool.self, forKey: .autoReadEnabled)
+        activityOverlayStyle = try values.decodeIfPresent(
+            ActivityOverlayStyle.self,
+            forKey: .activityOverlayStyle
+        ) ?? .interactive
+    }
+
+    init(
+        dictationMode: DictationMode,
+        hotkeys: [HotkeyAction: HotkeyDefinition],
+        sttBackendOrder: [String],
+        ttsBackendOrder: [String],
+        ttsVoiceIdentifier: String?,
+        ttsRate: Float,
+        autoReadEnabled: Bool,
+        activityOverlayStyle: ActivityOverlayStyle
+    ) {
+        self.dictationMode = dictationMode
+        self.hotkeys = hotkeys
+        self.sttBackendOrder = sttBackendOrder
+        self.ttsBackendOrder = ttsBackendOrder
+        self.ttsVoiceIdentifier = ttsVoiceIdentifier
+        self.ttsRate = ttsRate
+        self.autoReadEnabled = autoReadEnabled
+        self.activityOverlayStyle = activityOverlayStyle
+    }
 
     static let defaults = AppSettings(
         dictationMode: .holdToTalk,
@@ -22,6 +69,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         ttsBackendOrder: ["apple-tts"],
         ttsVoiceIdentifier: nil,
         ttsRate: 0.5,
-        autoReadEnabled: true
+        autoReadEnabled: true,
+        activityOverlayStyle: .interactive
     )
 }
