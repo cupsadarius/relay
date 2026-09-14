@@ -45,3 +45,33 @@ Result: `TEST SUCCEEDED`; 41 XCTest cases passed with 0 failures, plus 1 Swift T
 
 - Live Accessibility and synthesized Command-C behavior still depends on the user granting the corresponding macOS permissions; unit coverage intentionally validates orchestration through fakes rather than prompting for those permissions.
 - Pasteboard representations backed only by lazy providers and unavailable as either immediate data or a serializable property list cannot be materialized. All immediately representable item/type data is preserved.
+
+## Fix Round 1
+
+Addressed the review finding that a successful focused-element lookup containing an unexpected CF type could crash at the forced cast. `AccessibilityService` now receives an injectable `AccessibilityElementAccessing` boundary, checks `CFGetTypeID(focusedValue) == AXUIElementGetTypeID()` before conversion, and treats mismatches as unavailable. Live AX calls remain in `SystemAccessibilityElementAccessor`.
+
+Covering test: `AccessibilityServiceTests.testUnexpectedFocusedAttributeTypeIsUnavailable` injects a successful `CFString` focused value, verifies the service returns nil, and verifies selected-text lookup is not attempted.
+
+RED command:
+
+```bash
+xcodegen generate && xcodebuild -project Relay.xcodeproj -scheme Relay -destination 'platform=macOS' -derivedDataPath .derived-data -only-testing:RelayTests/AccessibilityServiceTests test
+```
+
+RED output: `TEST FAILED`; compilation reported `cannot find type 'AccessibilityElementAccessing' in scope` and `argument passed to call that takes no arguments` before the injection seam existed.
+
+Focused GREEN command:
+
+```bash
+xcodegen generate && xcodebuild -project Relay.xcodeproj -scheme Relay -destination 'platform=macOS' -derivedDataPath .derived-data -only-testing:RelayTests/AccessibilityServiceTests test
+```
+
+Focused GREEN output: `TEST SUCCEEDED`; 1 test executed with 0 failures.
+
+Full-suite command:
+
+```bash
+xcodegen generate && xcodebuild -project Relay.xcodeproj -scheme Relay -destination 'platform=macOS' -derivedDataPath .derived-data test
+```
+
+Full-suite output: `TEST SUCCEEDED`; 42 XCTest cases executed with 0 failures, plus 1 Swift Testing test passed.
