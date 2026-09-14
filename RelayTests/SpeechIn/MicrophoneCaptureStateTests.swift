@@ -142,11 +142,22 @@ final class MicrophoneCaptureStateTests: XCTestCase {
         try await capture.start()
     }
 
-    func testTerminalSourceFailureDuringStartThrowsAndReturnsCaptureToIdle() async throws {
-        let source = FakeAudioSource(terminalErrorDuringStart: MicrophoneCaptureError.unavailable("conversion failed"))
+    func testTerminalFailureDuringStartRejectsCompetingStartUntilOriginalStartThrows() async throws {
+        let source = FakeAudioSource(
+            terminalErrorDuringStart: MicrophoneCaptureError.unavailable("conversion failed"),
+            blockStart: true
+        )
         let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
 
+        let firstStart = Task { try await capture.start() }
+        await source.waitForStart()
+
         await XCTAssertThrowsErrorAsync(try await capture.start()) { error in
+            XCTAssertEqual(error as? MicrophoneCaptureError, .alreadyRecording)
+        }
+
+        await source.releaseStart()
+        await XCTAssertThrowsErrorAsync(try await firstStart.value) { error in
             XCTAssertEqual(error as? MicrophoneCaptureError, .unavailable("conversion failed"))
         }
 
@@ -180,6 +191,7 @@ private actor FakeAudioSource: AudioCaptureSourcing {
     private var stopEnteredWaiter: CheckedContinuation<Void, Never>?
     private var hasEnteredStart = false
     private var hasEnteredStop = false
+    private var startInvocationCount = 0
 
     init(
         startError: Error? = nil,
@@ -202,14 +214,15 @@ private actor FakeAudioSource: AudioCaptureSourcing {
         onTerminalError: @escaping @Sendable (Error) async -> Void
     ) async throws {
         if let startError { throw startError }
+        startInvocationCount += 1
         sink = onSamples
         terminalErrorSink = onTerminalError
-        if let terminalErrorDuringStart {
+        if let terminalErrorDuringStart, startInvocationCount == 1 {
             await onTerminalError(terminalErrorDuringStart)
             sink = nil
             terminalErrorSink = nil
         }
-        if blockStart {
+        if blockStart, startInvocationCount == 1 {
             hasEnteredStart = true
             startEnteredWaiter?.resume()
             startEnteredWaiter = nil
