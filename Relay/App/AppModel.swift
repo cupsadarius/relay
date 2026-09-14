@@ -22,6 +22,7 @@ final class AppModel {
     private(set) var eventTapStatus: HotkeyRegistrationStatus = .unavailable("Not checked")
     var diagnosticsEntries: [DiagnosticEntry] { diagnostics.entries.reversed() }
     var diagnosticsCounters: DiagnosticsCounters { diagnostics.counters }
+    let overlayModel: ActivityOverlayModel
 
     @ObservationIgnored private let settingsStore: any SettingsStoring
     @ObservationIgnored private let selectionReader: any SelectionReading
@@ -34,6 +35,7 @@ final class AppModel {
     @ObservationIgnored private let microphonePermissions: any MicrophonePermissionStatusProviding
     @ObservationIgnored private let privacySettingsOpener: any PrivacySettingsOpening
     @ObservationIgnored private let diagnostics: DiagnosticsRecorder
+    @ObservationIgnored private let overlayPresenter: any ActivityOverlayPresenting
     @ObservationIgnored private var activationObserver: NSObjectProtocol?
     @ObservationIgnored private var dictationTask: Task<Void, Never>?
 
@@ -73,6 +75,13 @@ final class AppModel {
             status: { _ in },
             diagnostics: diagnostics
         )
+        let overlayModel = ActivityOverlayModel()
+        let overlayPresenter = ActivityOverlayWindowController(
+            model: overlayModel,
+            host: ActivityOverlayPanelHost(),
+            diagnostics: diagnostics,
+            onAction: { _ in } // Wired in Task 6
+        )
         self.init(
             settingsStore: settingsStore,
             selectionReader: SelectionReader(
@@ -88,7 +97,9 @@ final class AppModel {
             diagnostics: diagnostics,
             dictationCoordinator: dictation,
             microphonePermissions: SystemMicrophonePermissionStatusProvider(),
-            privacySettingsOpener: SystemPrivacySettingsOpener()
+            privacySettingsOpener: SystemPrivacySettingsOpener(),
+            overlayModel: overlayModel,
+            overlayPresenter: overlayPresenter
         )
         dictation.setStatusHandler { [weak self] in self?.statusText = $0 }
     }
@@ -103,7 +114,9 @@ final class AppModel {
         diagnostics: DiagnosticsRecorder = DiagnosticsRecorder(),
         dictationCoordinator: (any DictationCoordinating)? = nil,
         microphonePermissions: any MicrophonePermissionStatusProviding = SystemMicrophonePermissionStatusProvider(),
-        privacySettingsOpener: any PrivacySettingsOpening = SystemPrivacySettingsOpener()
+        privacySettingsOpener: any PrivacySettingsOpening = SystemPrivacySettingsOpener(),
+        overlayModel: ActivityOverlayModel = ActivityOverlayModel(),
+        overlayPresenter: any ActivityOverlayPresenting = NoOpActivityOverlayPresenter()
     ) {
         let settings = settingsStore.load()
         self.settingsStore = settingsStore
@@ -116,6 +129,8 @@ final class AppModel {
         self.microphonePermissions = microphonePermissions
         self.privacySettingsOpener = privacySettingsOpener
         self.diagnostics = diagnostics
+        self.overlayModel = overlayModel
+        self.overlayPresenter = overlayPresenter
         activationObserver = nil
         dictationTask = nil
         permissionSnapshot = permissionService.snapshot()
@@ -125,6 +140,7 @@ final class AppModel {
         settingsState = state
         registerHotkeys()
         observeAppActivation()
+        bindOverlayPresenter()
     }
 
     private init(
@@ -139,7 +155,9 @@ final class AppModel {
         diagnostics: DiagnosticsRecorder,
         dictationCoordinator: (any DictationCoordinating)?,
         microphonePermissions: any MicrophonePermissionStatusProviding,
-        privacySettingsOpener: any PrivacySettingsOpening
+        privacySettingsOpener: any PrivacySettingsOpening,
+        overlayModel: ActivityOverlayModel,
+        overlayPresenter: any ActivityOverlayPresenting
     ) {
         self.settingsStore = settingsStore
         self.selectionReader = selectionReader
@@ -151,6 +169,8 @@ final class AppModel {
         self.microphonePermissions = microphonePermissions
         self.privacySettingsOpener = privacySettingsOpener
         self.diagnostics = diagnostics
+        self.overlayModel = overlayModel
+        self.overlayPresenter = overlayPresenter
         activationObserver = nil
         dictationTask = nil
         permissionSnapshot = permissionService.snapshot()
@@ -159,6 +179,7 @@ final class AppModel {
         self.settingsState = settingsState
         registerHotkeys()
         observeAppActivation()
+        bindOverlayPresenter()
     }
 
     func setHotkey(_ definition: HotkeyDefinition, for action: HotkeyAction) {
@@ -189,6 +210,14 @@ final class AppModel {
 
     func setActivityOverlayStyle(_ style: ActivityOverlayStyle) {
         updateSettings { $0.activityOverlayStyle = style }
+        overlayPresenter.update(state: overlayModel.state, style: style)
+    }
+
+    private func bindOverlayPresenter() {
+        overlayModel.setStateHandler { [weak self] state in
+            guard let self else { return }
+            overlayPresenter.update(state: state, style: settingsState.value.activityOverlayStyle)
+        }
     }
 
     private func updateSettings(_ update: (inout AppSettings) -> Void) {
@@ -333,6 +362,12 @@ final class AppModel {
             statusText = error.localizedDescription
         }
     }
+}
+
+/// Default presenter for tests and any composition that doesn't host the overlay panel.
+@MainActor
+final class NoOpActivityOverlayPresenter: ActivityOverlayPresenting {
+    func update(state: ActivityOverlayState, style: ActivityOverlayStyle) {}
 }
 
 extension HotkeyAction {

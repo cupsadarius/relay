@@ -10,6 +10,7 @@ enum DiagnosticsEvent: Equatable, Sendable {
     case selectionAccessibility, selectionClipboard, selectionUnavailable
     case ttsSubmitted, ttsStopped, ttsReplayed, ttsFailed
     case dictation(DictationDiagnostic)
+    case overlayFailed
 
     var message: String {
         switch self {
@@ -30,6 +31,7 @@ enum DiagnosticsEvent: Equatable, Sendable {
         case .ttsReplayed: "Speech replayed"
         case .ttsFailed: "Speech failed"
         case let .dictation(diagnostic): diagnostic.message
+        case .overlayFailed: "Activity overlay failed"
         }
     }
 }

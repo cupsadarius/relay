@@ -13,6 +13,31 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(store.saved.last?.activityOverlayStyle, .minimal)
     }
 
+    func testOverlayLifecycleReachesInjectedPresenter() {
+        let presenter = FakeOverlayPresenter()
+        let overlayModel = ActivityOverlayModel()
+        let model = makeModel(overlayModel: overlayModel, overlayPresenter: presenter)
+        let sessionID = UUID()
+
+        overlayModel.begin(sessionID: sessionID)
+        overlayModel.listen(sessionID: sessionID, startedAt: .now)
+
+        XCTAssertEqual(presenter.states.last?.sessionID, sessionID)
+    }
+
+    func testActiveOverlayStyleChangeUpdatesPresenterImmediately() {
+        let presenter = FakeOverlayPresenter()
+        let overlayModel = ActivityOverlayModel()
+        let model = makeModel(overlayModel: overlayModel, overlayPresenter: presenter)
+        let sessionID = UUID()
+        overlayModel.begin(sessionID: sessionID)
+        overlayModel.listen(sessionID: sessionID, startedAt: .now)
+
+        model.setActivityOverlayStyle(.minimal)
+
+        XCTAssertEqual(presenter.styles.last, .minimal)
+    }
+
     func testReadSelectionPressedPreprocessesAndSpeaksUserRequest() async {
         let selection = FakeSelectionReader(text: "Intro\n```swift\nsecret()\n```\nEnd")
         let speech = FakeSpeechCoordinator()
@@ -278,7 +303,9 @@ final class AppModelTests: XCTestCase {
         permissions: FakePermissionService? = nil,
         dictation: FakeDictationCoordinator? = nil,
         microphone: FakeMicrophonePermissionStatus? = nil,
-        opener: FakePrivacySettingsOpener? = nil
+        opener: FakePrivacySettingsOpener? = nil,
+        overlayModel: ActivityOverlayModel? = nil,
+        overlayPresenter: (any ActivityOverlayPresenting)? = nil
     ) -> AppModel {
         AppModel(
             settingsStore: store ?? FakeSettingsStore(settings: .defaults),
@@ -290,8 +317,21 @@ final class AppModelTests: XCTestCase {
             diagnostics: DiagnosticsRecorder(capacity: 10),
             dictationCoordinator: dictation,
             microphonePermissions: microphone ?? FakeMicrophonePermissionStatus(granted: true),
-            privacySettingsOpener: opener ?? FakePrivacySettingsOpener()
+            privacySettingsOpener: opener ?? FakePrivacySettingsOpener(),
+            overlayModel: overlayModel ?? ActivityOverlayModel(),
+            overlayPresenter: overlayPresenter ?? NoOpActivityOverlayPresenter()
         )
+    }
+}
+
+@MainActor
+private final class FakeOverlayPresenter: ActivityOverlayPresenting {
+    private(set) var states: [ActivityOverlayState] = []
+    private(set) var styles: [ActivityOverlayStyle] = []
+
+    func update(state: ActivityOverlayState, style: ActivityOverlayStyle) {
+        states.append(state)
+        styles.append(style)
     }
 }
 

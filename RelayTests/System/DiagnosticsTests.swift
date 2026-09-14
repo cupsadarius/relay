@@ -49,6 +49,13 @@ import XCTest
         )
     }
 
+    func testOverlayFailedNeverAttachesRawErrorDetail() {
+        var buffer = DiagnosticsBuffer()
+        buffer.append(.overlayFailed)
+
+        XCTAssertEqual(buffer.copyText, "Activity overlay failed")
+    }
+
     func testRepeatedEventsHaveUniqueStableIDsAndClearResetsCounters() {
         let recorder = DiagnosticsRecorder(capacity: 3)
         recorder.record(.keyboardEventReceived)
