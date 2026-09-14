@@ -74,7 +74,7 @@ final class PermissionService: GlobalPermissionAuthorizing {
     private let native: any NativePermissionChecking
     init(native: any NativePermissionChecking = SystemNativePermissions()) { self.native = native }
     func snapshot() -> PermissionSnapshot {
-        .init(inputMonitoringGranted: native.canListenForEvents(), accessibilityGranted: native.canPostEvents() && native.isAccessibilityTrusted())
+        .init(inputMonitoringGranted: native.canListenForEvents(), accessibilityGranted: native.isAccessibilityTrusted())
     }
     func requestPermissions() {
         guard !snapshot().accessibilityGranted else { return }

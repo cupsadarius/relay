@@ -48,8 +48,12 @@ import XCTest
         XCTAssertEqual(entry.copyLine(formatter: DiagnosticTimestampFormatter.fixed), "00:00:00 Speech stopped")
     }
 
-    func testAccessibilityAloneGrantsEffectiveGlobalHotkeys() {
-        let native = FakeNativePermissions(inputMonitoring: false, accessibility: true)
+    func testAccessibilityTrustGrantsEffectiveGlobalHotkeysWhenPostingIsUnavailable() {
+        let native = FakeNativePermissions(
+            inputMonitoring: false,
+            canPostEvents: false,
+            isAccessibilityTrusted: true
+        )
         let service = PermissionService(native: native)
 
         let snapshot = service.snapshot()
@@ -59,8 +63,12 @@ import XCTest
         XCTAssertTrue(snapshot.globalHotkeysGranted)
     }
 
-    func testPermissionServiceRequestsOnlyMissingAccessibilityTrust() {
-        let native = FakeNativePermissions(inputMonitoring: false, accessibility: false)
+    func testPermissionServiceRequestsAccessibilityWhenTrustIsMissingEvenIfPostingIsAllowed() {
+        let native = FakeNativePermissions(
+            inputMonitoring: false,
+            canPostEvents: true,
+            isAccessibilityTrusted: false
+        )
         let service = PermissionService(native: native)
 
         service.requestPermissions()
@@ -70,8 +78,12 @@ import XCTest
         XCTAssertEqual(native.requestAccessibilityCount, 1)
     }
 
-    func testPermissionServiceDoesNotRequestAccessibilityWhenAlreadyGranted() {
-        let native = FakeNativePermissions(inputMonitoring: false, accessibility: true)
+    func testPermissionServiceDoesNotRequestAccessibilityWhenTrustedButPostingIsUnavailable() {
+        let native = FakeNativePermissions(
+            inputMonitoring: false,
+            canPostEvents: false,
+            isAccessibilityTrusted: true
+        )
         let service = PermissionService(native: native)
 
         service.requestPermissions()
@@ -84,19 +96,25 @@ import XCTest
 
 private final class FakeNativePermissions: NativePermissionChecking {
     var inputMonitoring: Bool
-    var accessibility: Bool
+    var postEvents: Bool
+    var accessibilityTrusted: Bool
     private(set) var requestListenCount = 0
     private(set) var requestPostCount = 0
     private(set) var requestAccessibilityCount = 0
 
-    init(inputMonitoring: Bool, accessibility: Bool) {
+    init(
+        inputMonitoring: Bool,
+        canPostEvents: Bool,
+        isAccessibilityTrusted: Bool
+    ) {
         self.inputMonitoring = inputMonitoring
-        self.accessibility = accessibility
+        postEvents = canPostEvents
+        accessibilityTrusted = isAccessibilityTrusted
     }
 
     func canListenForEvents() -> Bool { inputMonitoring }
-    func canPostEvents() -> Bool { accessibility }
-    func isAccessibilityTrusted() -> Bool { accessibility }
+    func canPostEvents() -> Bool { postEvents }
+    func isAccessibilityTrusted() -> Bool { accessibilityTrusted }
     func requestListenForEvents() { requestListenCount += 1 }
     func requestPostEvents() { requestPostCount += 1 }
     func requestAccessibilityTrust() { requestAccessibilityCount += 1 }
