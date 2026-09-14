@@ -57,3 +57,4 @@ logs/
 
 
 .claude/settings.local.json
+.superpowers/

@@ -10,9 +10,11 @@ struct RelayApp: App {
         }
         Settings {
             SettingsView(model: model)
+                .background(RelayWindowTagger(target: .settings).frame(width: 0, height: 0))
         }
         Window("Diagnostics", id: "diagnostics") {
             DiagnosticsView(model: model)
+                .background(RelayWindowTagger(target: .diagnostics).frame(width: 0, height: 0))
         }
     }
 }
