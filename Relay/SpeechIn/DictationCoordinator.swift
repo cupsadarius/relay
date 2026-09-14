@@ -16,6 +16,7 @@ final class DictationCoordinator: DictationCoordinating {
     private let processor: RulesTranscriptProcessor
     private let textInserter: any TextInserting
     private let stopSpeech: () -> Void
+    private let diagnostics: DiagnosticsRecorder?
     private var status: (String) -> Void
     private var state: State = .idle
     private var finishRequested = false
@@ -26,7 +27,8 @@ final class DictationCoordinator: DictationCoordinating {
         processor: RulesTranscriptProcessor,
         textInserter: any TextInserting,
         stopSpeech: @escaping () -> Void,
-        status: @escaping (String) -> Void
+        status: @escaping (String) -> Void,
+        diagnostics: DiagnosticsRecorder? = nil
     ) {
         self.microphone = microphone
         self.sttRouter = sttRouter
@@ -34,6 +36,7 @@ final class DictationCoordinator: DictationCoordinating {
         self.textInserter = textInserter
         self.stopSpeech = stopSpeech
         self.status = status
+        self.diagnostics = diagnostics
     }
 
     func setStatusHandler(_ handler: @escaping (String) -> Void) { status = handler }
@@ -46,6 +49,7 @@ final class DictationCoordinator: DictationCoordinating {
             try await microphone.start()
             state = .recording
             status("Listening…")
+            diagnostics?.record(.dictation(.listening))
             if finishRequested {
                 finishRequested = false
                 await finish()
@@ -53,6 +57,7 @@ final class DictationCoordinator: DictationCoordinating {
         } catch {
             state = .idle
             finishRequested = false
+            diagnostics?.record(.dictation(.failed(.microphoneCapture)))
             status("Could not start dictation: \(actionableMessage(for: error))")
         }
     }
@@ -64,27 +69,46 @@ final class DictationCoordinator: DictationCoordinating {
         }
         guard case .recording = state else { return }
         state = .finishing
+        let audio: AudioInput
         do {
-            let audio = try await microphone.stop()
-            let transcript = try await sttRouter.transcribe(audio: audio, options: .init())
-            let text = processor.process(transcript.text)
-            guard !text.isEmpty else {
-                state = .idle
-                status("No speech was recognized. Try again.")
-                return
-            }
+            audio = try await microphone.stop()
+        } catch {
+            fail(error, at: .microphoneCapture)
+            return
+        }
+        diagnostics?.record(.dictation(.processing))
+        let transcript: Transcript
+        do {
+            transcript = try await sttRouter.transcribe(audio: audio, options: .init())
+        } catch {
+            fail(error, at: .transcription)
+            return
+        }
+        let text = processor.process(transcript.text)
+        guard !text.isEmpty else {
+            state = .idle
+            status("No speech was recognized. Try again.")
+            return
+        }
+        do {
             try textInserter.insert(text)
             state = .idle
+            diagnostics?.record(.dictation(.inserted))
             status("Inserted dictation")
         } catch {
-            state = .idle
-            status("Dictation failed: \(actionableMessage(for: error))")
+            fail(error, at: .insertion)
         }
     }
 
     func toggle() async {
         if case .idle = state { await start() }
         else { await finish() }
+    }
+
+    private func fail(_ error: Error, at stage: DictationFailureStage) {
+        state = .idle
+        diagnostics?.record(.dictation(.failed(stage)))
+        status("Dictation failed: \(actionableMessage(for: error))")
     }
 
     private func actionableMessage(for error: Error) -> String {

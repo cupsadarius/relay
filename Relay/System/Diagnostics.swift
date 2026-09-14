@@ -9,6 +9,7 @@ enum DiagnosticsEvent: Equatable, Sendable {
     case actionDispatched(action: HotkeyAction, phase: HotkeyPhase)
     case selectionAccessibility, selectionClipboard, selectionUnavailable
     case ttsSubmitted, ttsStopped, ttsReplayed, ttsFailed
+    case dictation(DictationDiagnostic)
 
     var message: String {
         switch self {
@@ -28,6 +29,33 @@ enum DiagnosticsEvent: Equatable, Sendable {
         case .ttsStopped: "Speech stopped"
         case .ttsReplayed: "Speech replayed"
         case .ttsFailed: "Speech failed"
+        case let .dictation(diagnostic): diagnostic.message
+        }
+    }
+}
+
+enum DictationFailureStage: Equatable, Sendable {
+    case microphoneCapture, transcription, insertion
+
+    var message: String {
+        switch self {
+        case .microphoneCapture: "microphone capture"
+        case .transcription: "transcription"
+        case .insertion: "insertion"
+        }
+    }
+}
+
+enum DictationDiagnostic: Equatable, Sendable {
+    case listening, processing, inserted
+    case failed(DictationFailureStage)
+
+    var message: String {
+        switch self {
+        case .listening: "Dictation listening"
+        case .processing: "Dictation processing"
+        case .inserted: "Dictation inserted"
+        case let .failed(stage): "Dictation failed during \(stage.message)"
         }
     }
 }

@@ -35,6 +35,7 @@ actor MicrophoneCapture: MicrophoneCapturing {
         case starting(UUID)
         case failedStarting(UUID, Error)
         case recording(UUID)
+        case failedRecording(UUID, Error)
         case stopping(UUID)
     }
 
@@ -87,7 +88,17 @@ actor MicrophoneCapture: MicrophoneCapturing {
     }
 
     func stop() async throws -> AudioInput {
-        guard case let .recording(session) = state else { throw MicrophoneCaptureError.notRecording }
+        let session: UUID
+        switch state {
+        case let .recording(activeSession):
+            session = activeSession
+        case let .failedRecording(_, error):
+            accumulator.reset()
+            state = .idle
+            throw error
+        default:
+            throw MicrophoneCaptureError.notRecording
+        }
         state = .stopping(session)
 
         do {
@@ -113,9 +124,31 @@ actor MicrophoneCapture: MicrophoneCapturing {
         case let .recording(activeSession):
             guard activeSession == session else { return }
             accumulator.reset()
-            state = .idle
-        case .idle, .starting, .failedStarting, .recording, .stopping:
+            state = .failedRecording(session, error)
+        case .idle, .failedStarting, .failedRecording, .stopping:
             break
+        }
+    }
+}
+
+enum AudioConversionDisposition: Equatable {
+    case appendOutput
+    case awaitNextCallback
+    case fail
+
+    static func resolve(
+        status: AVAudioConverterOutputStatus,
+        hasConversionError: Bool,
+        frameLength: AVAudioFrameCount
+    ) -> Self {
+        guard !hasConversionError else { return .fail }
+        switch status {
+        case .haveData, .inputRanDry:
+            return frameLength > 0 ? .appendOutput : .awaitNextCallback
+        case .error, .endOfStream:
+            return .fail
+        @unknown default:
+            return .fail
         }
     }
 }
@@ -224,7 +257,16 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendab
                 supplier.next(inputStatus: inputStatus)
             }
 
-            guard status == .haveData else {
+            switch AudioConversionDisposition.resolve(
+                status: status,
+                hasConversionError: conversionError != nil,
+                frameLength: output.frameLength
+            ) {
+            case .appendOutput:
+                break
+            case .awaitNextCallback:
+                return
+            case .fail:
                 failCapture(conversionError ?? MicrophoneCaptureError.unavailable("Audio conversion failed with status \(status.rawValue)."), onTerminalError: onTerminalError)
                 return
             }

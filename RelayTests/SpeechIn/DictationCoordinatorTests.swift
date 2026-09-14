@@ -59,6 +59,62 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(statuses.last, "Dictation failed: Allow Microphone permission in System Settings, then try again.")
     }
 
+    func testRecordsFailureAtTranscriptionStage() async {
+        let events = EventLog()
+        let diagnostics = DiagnosticsRecorder()
+        let coordinator = DictationCoordinator(
+            microphone: FakeMicrophone(events: events),
+            sttRouter: router(events: events, error: .permissionDenied),
+            processor: RulesTranscriptProcessor(),
+            textInserter: FakeTextInserter(events: events),
+            stopSpeech: {},
+            status: { _ in },
+            diagnostics: diagnostics
+        )
+
+        await coordinator.start()
+        await coordinator.finish()
+
+        XCTAssertEqual(diagnostics.entries.map(\.event), [.dictation(.listening), .dictation(.processing), .dictation(.failed(.transcription))])
+    }
+
+    func testRecordsMicrophoneCaptureFailureAtStart() async {
+        let events = EventLog()
+        let diagnostics = DiagnosticsRecorder()
+        let coordinator = DictationCoordinator(
+            microphone: ThrowingMicrophone(error: .unavailable("capture unavailable")),
+            sttRouter: router(events: events),
+            processor: RulesTranscriptProcessor(),
+            textInserter: FakeTextInserter(events: events),
+            stopSpeech: {},
+            status: { _ in },
+            diagnostics: diagnostics
+        )
+
+        await coordinator.start()
+
+        XCTAssertEqual(diagnostics.entries.map(\.event), [.dictation(.failed(.microphoneCapture))])
+    }
+
+    func testRecordsFailureAtInsertionStage() async {
+        let events = EventLog()
+        let diagnostics = DiagnosticsRecorder()
+        let coordinator = DictationCoordinator(
+            microphone: FakeMicrophone(events: events),
+            sttRouter: router(events: events),
+            processor: RulesTranscriptProcessor(),
+            textInserter: ErrorTextInserter(error: TextInsertionError.clipboardWriteFailed),
+            stopSpeech: {},
+            status: { _ in },
+            diagnostics: diagnostics
+        )
+
+        await coordinator.start()
+        await coordinator.finish()
+
+        XCTAssertEqual(diagnostics.entries.last?.event, .dictation(.failed(.insertion)))
+    }
+
     func testDeniedInsertionPermissionDoesNotReportInsertedDictation() async {
         let events = EventLog()
         var statuses: [String] = []

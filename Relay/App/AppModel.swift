@@ -70,7 +70,8 @@ final class AppModel {
             processor: RulesTranscriptProcessor(),
             textInserter: TextInsertionService(),
             stopSpeech: { coordinator.stop() },
-            status: { _ in }
+            status: { _ in },
+            diagnostics: diagnostics
         )
         self.init(
             settingsStore: settingsStore,

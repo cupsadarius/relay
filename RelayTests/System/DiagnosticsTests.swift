@@ -25,6 +25,19 @@ import XCTest
         XCTAssertEqual(buffer.copyText, "")
     }
 
+    func testDictationLifecycleAndFailureDiagnosticsUseStablePrivacySafeMessages() {
+        var buffer = DiagnosticsBuffer()
+        buffer.append(.dictation(.listening))
+        buffer.append(.dictation(.processing))
+        buffer.append(.dictation(.inserted))
+        buffer.append(.dictation(.failed(.microphoneCapture)))
+
+        XCTAssertEqual(
+            buffer.copyText,
+            "Dictation listening\nDictation processing\nDictation inserted\nDictation failed during microphone capture"
+        )
+    }
+
     func testRepeatedEventsHaveUniqueStableIDsAndClearResetsCounters() {
         let recorder = DiagnosticsRecorder(capacity: 3)
         recorder.record(.keyboardEventReceived)

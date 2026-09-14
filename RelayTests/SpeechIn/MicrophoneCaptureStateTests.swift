@@ -1,7 +1,23 @@
 import XCTest
+import AVFoundation
 @testable import Relay
 
 final class MicrophoneCaptureStateTests: XCTestCase {
+    func testConversionDispositionAppendsFramesForHaveDataAndInputRanDry() {
+        XCTAssertEqual(AudioConversionDisposition.resolve(status: .haveData, hasConversionError: false, frameLength: 12), .appendOutput)
+        XCTAssertEqual(AudioConversionDisposition.resolve(status: .inputRanDry, hasConversionError: false, frameLength: 12), .appendOutput)
+    }
+
+    func testConversionDispositionWaitsForNextLiveCallbackWhenNoFramesWereProduced() {
+        XCTAssertEqual(AudioConversionDisposition.resolve(status: .haveData, hasConversionError: false, frameLength: 0), .awaitNextCallback)
+        XCTAssertEqual(AudioConversionDisposition.resolve(status: .inputRanDry, hasConversionError: false, frameLength: 0), .awaitNextCallback)
+    }
+
+    func testConversionDispositionFailsForConversionErrorsAndTerminalStatuses() {
+        XCTAssertEqual(AudioConversionDisposition.resolve(status: .haveData, hasConversionError: true, frameLength: 12), .fail)
+        XCTAssertEqual(AudioConversionDisposition.resolve(status: .error, hasConversionError: false, frameLength: 0), .fail)
+        XCTAssertEqual(AudioConversionDisposition.resolve(status: .endOfStream, hasConversionError: false, frameLength: 0), .fail)
+    }
     func testStartThenStopReturnsMono16KAudioAndReturnsToIdle() async throws {
         let source = FakeAudioSource()
         let capture = MicrophoneCapture(
@@ -132,13 +148,16 @@ final class MicrophoneCaptureStateTests: XCTestCase {
         try await capture.start()
     }
 
-    func testTerminalSourceFailureReturnsCaptureToIdle() async throws {
+    func testTerminalSourceFailureIsReturnedByNextStopThenCaptureReturnsToIdle() async throws {
         let source = FakeAudioSource()
         let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
         try await capture.start()
 
         await source.failTerminally(MicrophoneCaptureError.unavailable("conversion failed"))
 
+        await XCTAssertThrowsErrorAsync(try await capture.stop()) { error in
+            XCTAssertEqual(error as? MicrophoneCaptureError, .unavailable("conversion failed"))
+        }
         try await capture.start()
     }
 
@@ -173,6 +192,22 @@ final class MicrophoneCaptureStateTests: XCTestCase {
 
         let audio = try await capture.stop()
         XCTAssertEqual(audio.samples, [0.1, 0.2, -0.3])
+    }
+
+    func testTerminalCallbackWhileStoppingDoesNotReplaceStopResult() async throws {
+        let source = FakeAudioSource(blockStop: true)
+        let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
+        try await capture.start()
+        await source.emit([0.1])
+
+        let stop = Task { try await capture.stop() }
+        await source.waitForStop()
+        await source.failTerminally(MicrophoneCaptureError.unavailable("late failure"))
+        await source.releaseStop()
+
+        let audio = try await stop.value
+        XCTAssertEqual(audio.samples, [0.1])
+        try await capture.start()
     }
 }
 
