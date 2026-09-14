@@ -8,7 +8,10 @@ protocol MicrophoneCapturing: Sendable {
 
 protocol AudioCaptureSourcing: Sendable {
     /// `stop` does not return until no future sample callbacks can be accepted.
-    func start(onSamples: @escaping @Sendable ([Float]) -> Void) async throws
+    func start(
+        onSamples: @escaping @Sendable ([Float]) -> Void,
+        onTerminalError: @escaping @Sendable (Error) async -> Void
+    ) async throws
     func stop() async throws
 }
 
@@ -27,7 +30,12 @@ enum MicrophoneCaptureError: Error, Equatable, Sendable, LocalizedError {
 }
 
 actor MicrophoneCapture: MicrophoneCapturing {
-    private enum State { case idle, recording }
+    private enum State {
+        case idle
+        case starting(UUID)
+        case recording(UUID)
+        case stopping(UUID)
+    }
 
     private let permission: any MicrophonePermissionAuthorizing
     private let source: any AudioCaptureSourcing
@@ -43,15 +51,26 @@ actor MicrophoneCapture: MicrophoneCapturing {
     }
 
     func start() async throws {
-        guard state == .idle else { throw MicrophoneCaptureError.alreadyRecording }
-        guard await permission.requestPermission() else { throw SpeechBackendError.permissionDenied }
+        guard case .idle = state else { throw MicrophoneCaptureError.alreadyRecording }
+        let session = UUID()
+        state = .starting(session)
+        guard await permission.requestPermission() else {
+            state = .idle
+            throw SpeechBackendError.permissionDenied
+        }
 
         accumulator.reset()
         do {
-            try await source.start { [accumulator] samples in
-                accumulator.append(samples)
-            }
-            state = .recording
+            try await source.start(
+                onSamples: { [accumulator] samples in
+                    accumulator.append(samples)
+                },
+                onTerminalError: { [weak self] error in
+                    await self?.sourceTerminated(error, session: session)
+                }
+            )
+            guard case .starting(session) = state else { return }
+            state = .recording(session)
         } catch {
             accumulator.reset()
             state = .idle
@@ -60,7 +79,8 @@ actor MicrophoneCapture: MicrophoneCapturing {
     }
 
     func stop() async throws -> AudioInput {
-        guard state == .recording else { throw MicrophoneCaptureError.notRecording }
+        guard case let .recording(session) = state else { throw MicrophoneCaptureError.notRecording }
+        state = .stopping(session)
 
         do {
             // The source removes its tap before returning, so this drain includes every accepted callback.
@@ -73,6 +93,21 @@ actor MicrophoneCapture: MicrophoneCapturing {
             accumulator.reset()
             state = .idle
             throw error
+        }
+    }
+
+    private func sourceTerminated(_ error: Error, session: UUID) {
+        switch state {
+        case let .starting(activeSession):
+            guard activeSession == session else { return }
+            accumulator.reset()
+            state = .idle
+        case let .recording(activeSession):
+            guard activeSession == session else { return }
+            accumulator.reset()
+            state = .idle
+        case .idle, .starting, .recording, .stopping:
+            break
         }
     }
 }
@@ -103,7 +138,10 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendab
     private var isCapturing = false
     private var captureError: Error?
 
-    func start(onSamples: @escaping @Sendable ([Float]) -> Void) async throws {
+    func start(
+        onSamples: @escaping @Sendable ([Float]) -> Void,
+        onTerminalError: @escaping @Sendable (Error) async -> Void
+    ) async throws {
         try lock.withLock {
             guard !isCapturing else { throw MicrophoneCaptureError.alreadyRecording }
             let input = engine.inputNode
@@ -122,7 +160,13 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendab
 
             captureError = nil
             input.installTap(onBus: 0, bufferSize: 4_096, format: inputFormat) { [weak self] buffer, _ in
-                self?.convert(buffer, using: converter, outputFormat: outputFormat, onSamples: onSamples)
+                self?.convert(
+                    buffer,
+                    using: converter,
+                    outputFormat: outputFormat,
+                    onSamples: onSamples,
+                    onTerminalError: onTerminalError
+                )
             }
 
             do {
@@ -154,14 +198,15 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendab
         _ buffer: AVAudioPCMBuffer,
         using converter: AVAudioConverter,
         outputFormat: AVAudioFormat,
-        onSamples: @escaping @Sendable ([Float]) -> Void
+        onSamples: @escaping @Sendable ([Float]) -> Void,
+        onTerminalError: @escaping @Sendable (Error) async -> Void
     ) {
         lock.withLock {
             guard isCapturing, captureError == nil else { return }
             let ratio = outputFormat.sampleRate / buffer.format.sampleRate
             let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio + 1)
             guard let output = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else {
-                failCapture(MicrophoneCaptureError.unavailable("Unable to allocate an audio conversion buffer."))
+                failCapture(MicrophoneCaptureError.unavailable("Unable to allocate an audio conversion buffer."), onTerminalError: onTerminalError)
                 return
             }
 
@@ -172,22 +217,23 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendab
             }
 
             guard status == .haveData else {
-                failCapture(conversionError ?? MicrophoneCaptureError.unavailable("Audio conversion failed with status \(status.rawValue)."))
+                failCapture(conversionError ?? MicrophoneCaptureError.unavailable("Audio conversion failed with status \(status.rawValue)."), onTerminalError: onTerminalError)
                 return
             }
             guard let channel = output.floatChannelData?[0] else {
-                failCapture(MicrophoneCaptureError.unavailable("Converted audio has no float samples."))
+                failCapture(MicrophoneCaptureError.unavailable("Converted audio has no float samples."), onTerminalError: onTerminalError)
                 return
             }
             onSamples(Array(UnsafeBufferPointer(start: channel, count: Int(output.frameLength))))
         }
     }
 
-    private func failCapture(_ error: Error) {
+    private func failCapture(_ error: Error, onTerminalError: @escaping @Sendable (Error) async -> Void) {
         captureError = error
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         isCapturing = false
+        Task { await onTerminalError(error) }
     }
 }
 
