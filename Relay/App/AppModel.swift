@@ -14,6 +14,7 @@ final class AppModel {
     var statusText = "Ready"
     private(set) var settings: AppSettings
     private(set) var dictationPhase: HotkeyPhase?
+    private(set) var hotkeyConflictMessage: String?
 
     @ObservationIgnored private let settingsStore: any SettingsStoring
     @ObservationIgnored private let selectionReader: any SelectionReading
@@ -93,6 +94,15 @@ final class AppModel {
     }
 
     func setHotkey(_ definition: HotkeyDefinition, for action: HotkeyAction) {
+        if let conflictingAction = HotkeyAction.allCases.first(where: {
+            $0 != action && settings.hotkeys[$0] == definition
+        }) {
+            let message = "\(action.title) conflicts with \(conflictingAction.title). Choose a different shortcut."
+            hotkeyConflictMessage = message
+            statusText = message
+            return
+        }
+        hotkeyConflictMessage = nil
         updateSettings { $0.hotkeys[action] = definition }
     }
 
@@ -174,6 +184,18 @@ final class AppModel {
             statusText = "Replaying last speech"
         } catch {
             statusText = error.localizedDescription
+        }
+    }
+}
+
+extension HotkeyAction {
+    var title: String {
+        switch self {
+        case .dictate: "Dictate"
+        case .readSelection: "Read Selection"
+        case .stopSpeech: "Stop Speech"
+        case .replayLast: "Replay Last"
+        case .toggleAutoRead: "Toggle Auto-read"
         }
     }
 }

@@ -90,6 +90,31 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(hotkeys.registrations.last?.hotkeys[.readSelection], replacement)
     }
 
+    func testDuplicateHotkeyIsRejectedWithoutPersistenceOrReregistration() {
+        let store = FakeSettingsStore(settings: .defaults)
+        let hotkeys = FakeHotkeyManager()
+        let model = makeModel(store: store, hotkeys: hotkeys)
+        let existing = try! XCTUnwrap(model.settings.hotkeys[.replayLast])
+
+        model.setHotkey(existing, for: .readSelection)
+
+        XCTAssertEqual(model.settings, .defaults)
+        XCTAssertTrue(store.saved.isEmpty)
+        XCTAssertEqual(hotkeys.registrations.count, 1)
+    }
+
+    func testDuplicateHotkeyRejectionSurfacesActionableConflictMessage() {
+        let hotkeys = FakeHotkeyManager()
+        let model = makeModel(hotkeys: hotkeys)
+        let existing = try! XCTUnwrap(model.settings.hotkeys[.replayLast])
+
+        model.setHotkey(existing, for: .readSelection)
+
+        let expected = "Read Selection conflicts with Replay Last. Choose a different shortcut."
+        XCTAssertEqual(model.statusText, expected)
+        XCTAssertEqual(model.hotkeyConflictMessage, expected)
+    }
+
     func testRegistrationFailureSurfacesActionableStatus() {
         let hotkeys = FakeHotkeyManager(
             status: .unavailable("Enable Accessibility permission, then reopen Relay.")

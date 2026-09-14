@@ -50,6 +50,12 @@ struct SettingsView: View {
                     }
                 }
 
+                if let conflict = model.hotkeyConflictMessage {
+                    Text(conflict)
+                        .foregroundStyle(.red)
+                        .accessibilityIdentifier("hotkey-conflict-message")
+                }
+
                 Text("Click a shortcut, then press a key combination. The Fn key can be recorded by itself. Hotkeys are listen-only, so keys such as Escape still reach the active app.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -161,18 +167,6 @@ private final class HotkeyRecorderButton: NSButton {
         if flags.contains(.shift) { result.insert(.shift) }
         if flags.contains(.function) { result.insert(.function) }
         return result
-    }
-}
-
-private extension HotkeyAction {
-    var title: String {
-        switch self {
-        case .dictate: "Dictate"
-        case .readSelection: "Read Selection"
-        case .stopSpeech: "Stop Speech"
-        case .replayLast: "Replay Last"
-        case .toggleAutoRead: "Toggle Auto-read"
-        }
     }
 }
 

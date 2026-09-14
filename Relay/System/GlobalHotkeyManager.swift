@@ -32,9 +32,10 @@ struct HotkeyMatcher {
         switch event {
         case let .keyDown(keyCode, modifiers, isRepeat):
             guard !isRepeat else { return [] }
-            let actions = chordActions(keyCode: keyCode, modifiers: modifiers)
-                .filter { activeChordActions.insert($0).inserted }
-            return actions.map { HotkeyInvocation(action: $0, phase: .pressed) }
+            guard let action = chordAction(keyCode: keyCode, modifiers: modifiers),
+                  activeChordActions.insert(action).inserted
+            else { return [] }
+            return [HotkeyInvocation(action: action, phase: .pressed)]
 
         case let .keyUp(keyCode, _):
             let actions = HotkeyAction.allCases.filter { action in
@@ -52,9 +53,9 @@ struct HotkeyMatcher {
 
             if isDown, !functionIsDown {
                 guard modifiers == [.function] else { return [] }
-                let actions = modifierOnlyFunctionActions()
-                functionOnlyActions.formUnion(actions)
-                return actions.map { HotkeyInvocation(action: $0, phase: .pressed) }
+                guard let action = modifierOnlyFunctionAction() else { return [] }
+                functionOnlyActions.insert(action)
+                return [HotkeyInvocation(action: action, phase: .pressed)]
             }
 
             if !isDown, functionIsDown {
@@ -67,19 +68,19 @@ struct HotkeyMatcher {
         }
     }
 
-    private func chordActions(
+    private func chordAction(
         keyCode: UInt16,
         modifiers: Set<HotkeyModifier>
-    ) -> [HotkeyAction] {
-        HotkeyAction.allCases.filter { action in
+    ) -> HotkeyAction? {
+        HotkeyAction.allCases.first { action in
             guard case let .chord(definedKeyCode, definedModifiers) = definitions[action]
             else { return false }
             return definedKeyCode == keyCode && definedModifiers == modifiers
         }
     }
 
-    private func modifierOnlyFunctionActions() -> [HotkeyAction] {
-        HotkeyAction.allCases.filter { definitions[$0] == .modifierOnly(.function) }
+    private func modifierOnlyFunctionAction() -> HotkeyAction? {
+        HotkeyAction.allCases.first { definitions[$0] == .modifierOnly(.function) }
     }
 }
 

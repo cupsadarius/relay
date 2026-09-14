@@ -98,7 +98,7 @@ final class GlobalHotkeyManagerTests: XCTestCase {
         XCTAssertTrue(matcher.match(.flagsChanged(modifiers: [.shift])).isEmpty)
     }
 
-    func testDuplicateDefinitionsEmitEachActionInStableOrder() {
+    func testDuplicateDefinitionsEmitOnlyTheFirstActionInStableOrder() {
         var matcher = HotkeyMatcher(definitions: [
             .readSelection: .chord(keyCode: 15, modifiers: [.option]),
             .replayLast: .chord(keyCode: 15, modifiers: [.option]),
@@ -108,7 +108,6 @@ final class GlobalHotkeyManagerTests: XCTestCase {
             matcher.match(.keyDown(keyCode: 15, modifiers: [.option], isRepeat: false)),
             [
                 .init(action: .readSelection, phase: .pressed),
-                .init(action: .replayLast, phase: .pressed),
             ]
         )
     }

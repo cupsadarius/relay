@@ -9,6 +9,9 @@ targets:
     platform: macOS
     sources:
       - path: Relay
+        excludes:
+          - Relay.xcodeproj
+          - "**/*.xcworkspace"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.relaymac.Relay
