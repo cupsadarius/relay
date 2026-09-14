@@ -50,6 +50,10 @@ final class SystemPrivacySettingsOpener: PrivacySettingsOpening {
 struct PermissionSnapshot: Equatable, Sendable {
     let inputMonitoringGranted: Bool
     let accessibilityGranted: Bool
+
+    var globalHotkeysGranted: Bool {
+        inputMonitoringGranted || accessibilityGranted
+    }
 }
 
 protocol GlobalPermissionAuthorizing: AnyObject {
@@ -73,7 +77,8 @@ final class PermissionService: GlobalPermissionAuthorizing {
         .init(inputMonitoringGranted: native.canListenForEvents(), accessibilityGranted: native.canPostEvents() && native.isAccessibilityTrusted())
     }
     func requestPermissions() {
-        native.requestListenForEvents(); native.requestPostEvents(); native.requestAccessibilityTrust()
+        guard !snapshot().accessibilityGranted else { return }
+        native.requestAccessibilityTrust()
     }
 }
 

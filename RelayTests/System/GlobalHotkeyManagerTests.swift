@@ -2,6 +2,13 @@ import XCTest
 @testable import Relay
 
 final class GlobalHotkeyManagerTests: XCTestCase {
+    func testPermissionFailureExplainsAccessibilityAndListenOnlyAlternative() {
+        XCTAssertEqual(
+            GlobalHotkeyManager.permissionFailureMessage,
+            "Global hotkeys need Accessibility permission. Enable Relay in System Settings > Privacy & Security > Accessibility, then retry in Diagnostics. Input Monitoring is an alternative for listen-only access."
+        )
+    }
+
     func testChordEmitsPressedAndReleasedPhases() {
         var matcher = HotkeyMatcher(definitions: [
             .readSelection: .chord(keyCode: 15, modifiers: [.option]),

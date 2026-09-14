@@ -64,12 +64,7 @@ struct SettingsView: View {
                     granted: model.permissionSnapshot.accessibilityGranted,
                     settings: { model.openPrivacySettings(.accessibility) }
                 )
-                permissionRow(
-                    title: "Input Monitoring",
-                    granted: model.permissionSnapshot.inputMonitoringGranted,
-                    settings: { model.openPrivacySettings(.inputMonitoring) }
-                )
-                Button("Request Accessibility & Input Monitoring") { model.requestPermissions() }
+                Button("Request Accessibility") { model.requestPermissions() }
                     .controlSize(.small)
             }
 

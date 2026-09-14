@@ -100,6 +100,8 @@ protocol HotkeyManaging: AnyObject {
 
 @MainActor
 final class GlobalHotkeyManager: HotkeyManaging {
+    static let permissionFailureMessage = "Global hotkeys need Accessibility permission. Enable Relay in System Settings > Privacy & Security > Accessibility, then retry in Diagnostics. Input Monitoring is an alternative for listen-only access."
+
     private let diagnostics: DiagnosticsRecorder?
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
@@ -144,9 +146,7 @@ final class GlobalHotkeyManager: HotkeyManaging {
             userInfo: pointer
         ) else {
             diagnostics?.record(.eventTapUnavailable)
-            return .unavailable(
-                "Global hotkeys need Input Monitoring permission. Enable Relay in System Settings > Privacy & Security > Input Monitoring, then retry in Diagnostics."
-            )
+            return .unavailable(Self.permissionFailureMessage)
         }
 
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)

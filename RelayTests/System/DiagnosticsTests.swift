@@ -44,16 +44,37 @@ import XCTest
         XCTAssertEqual(entry.copyLine(formatter: DiagnosticTimestampFormatter.fixed), "00:00:00 Speech stopped")
     }
 
-    func testPermissionServiceReportsDistinctPermissionsAndRequestsBoth() {
+    func testAccessibilityAloneGrantsEffectiveGlobalHotkeys() {
         let native = FakeNativePermissions(inputMonitoring: false, accessibility: true)
         let service = PermissionService(native: native)
 
-        XCTAssertEqual(service.snapshot(), .init(inputMonitoringGranted: false, accessibilityGranted: true))
+        let snapshot = service.snapshot()
+
+        XCTAssertFalse(snapshot.inputMonitoringGranted)
+        XCTAssertTrue(snapshot.accessibilityGranted)
+        XCTAssertTrue(snapshot.globalHotkeysGranted)
+    }
+
+    func testPermissionServiceRequestsOnlyMissingAccessibilityTrust() {
+        let native = FakeNativePermissions(inputMonitoring: false, accessibility: false)
+        let service = PermissionService(native: native)
+
         service.requestPermissions()
 
-        XCTAssertEqual(native.requestListenCount, 1)
-        XCTAssertEqual(native.requestPostCount, 1)
+        XCTAssertEqual(native.requestListenCount, 0)
+        XCTAssertEqual(native.requestPostCount, 0)
         XCTAssertEqual(native.requestAccessibilityCount, 1)
+    }
+
+    func testPermissionServiceDoesNotRequestAccessibilityWhenAlreadyGranted() {
+        let native = FakeNativePermissions(inputMonitoring: false, accessibility: true)
+        let service = PermissionService(native: native)
+
+        service.requestPermissions()
+
+        XCTAssertEqual(native.requestListenCount, 0)
+        XCTAssertEqual(native.requestPostCount, 0)
+        XCTAssertEqual(native.requestAccessibilityCount, 0)
     }
 }
 
