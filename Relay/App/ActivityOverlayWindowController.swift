@@ -116,6 +116,14 @@ final class ActivityOverlayWindowController: ActivityOverlayPresenting {
             return
         }
 
+        guard style != .off else {
+            // Hide the panel but keep any existing pinned session/screen so switching back to a
+            // visible style mid-session reuses it. Never pin a screen or record a failure here:
+            // a missing screen doesn't matter when nothing should be shown anyway.
+            orderOut()
+            return
+        }
+
         if pinnedSessionID != sessionID {
             guard let screen = screens.screenForNewSession() else {
                 recordFailure()
@@ -127,8 +135,6 @@ final class ActivityOverlayWindowController: ActivityOverlayPresenting {
         guard let screen = pinnedScreen else { return }
 
         guard let presentation = ActivityOverlayPresentation.make(state: state, style: style, reduceMotion: false) else {
-            // Style is `.off` while a session is still active: hide the panel but keep the
-            // pinned session/screen so switching back to a visible style mid-session reuses it.
             orderOut()
             return
         }

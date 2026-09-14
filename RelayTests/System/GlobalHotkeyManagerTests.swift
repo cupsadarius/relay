@@ -1,6 +1,7 @@
 import XCTest
 @testable import Relay
 
+@MainActor
 final class GlobalHotkeyManagerTests: XCTestCase {
     func testPermissionFailureExplainsAccessibilityAndListenOnlyAlternative() {
         XCTAssertEqual(

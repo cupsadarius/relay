@@ -173,8 +173,13 @@ final class AppleTTSBackendTests: XCTestCase {
             delivered.fulfill()
         }
 
+        // Boxed for identity only: the background thread only forwards these references
+        // into a delegate callback, never mutates them, so the lack of `Sendable` conformance
+        // on `AVSpeechSynthesizer`/`AVSpeechUtterance` doesn't matter here.
+        let synthesizerBox = UncheckedSendableBox(value: realSynthesizer)
+        let utteranceBox = UncheckedSendableBox(value: utterance)
         Thread.detachNewThread {
-            backend.speechSynthesizer(realSynthesizer, didStart: utterance)
+            backend.speechSynthesizer(synthesizerBox.value, didStart: utteranceBox.value)
         }
 
         await fulfillment(of: [delivered], timeout: 2.0)
@@ -213,4 +218,10 @@ private final class FakeAppleSpeechSynthesizing: AppleSpeechSynthesizing {
         continueCount += 1
         return true
     }
+}
+
+/// Boxes a non-`Sendable` value for identity-only handoff across a thread boundary in tests.
+private final class UncheckedSendableBox<T>: @unchecked Sendable {
+    let value: T
+    init(value: T) { self.value = value }
 }

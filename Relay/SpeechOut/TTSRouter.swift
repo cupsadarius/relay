@@ -30,7 +30,10 @@ final class TTSRouter {
 
     /// Installs the single downstream listener for playback lifecycle
     /// events. Only events raised by the currently routed or active
-    /// backend, for the matching session, are forwarded.
+    /// backend, for the matching session, are forwarded — except router-
+    /// emitted `.failed` events, which bypass that filter by design so a
+    /// failure is never swallowed just because routing/activity state has
+    /// already moved on.
     func setPlaybackEventHandler(_ handler: @escaping @MainActor (TTSPlaybackEvent) -> Void) {
         eventHandler = handler
     }
@@ -77,10 +80,13 @@ final class TTSRouter {
     }
 
     /// No-ops unless `sessionID` matches the session currently being routed,
-    /// so a stale Interactive Stop cannot cut off replacement speech.
-    func stop(sessionID: UUID) {
-        guard activeSessionID == sessionID else { return }
+    /// so a stale Interactive Stop cannot cut off replacement speech. Returns
+    /// whether the ID matched and a stop was actually issued.
+    @discardableResult
+    func stop(sessionID: UUID) -> Bool {
+        guard activeSessionID == sessionID else { return false }
         stop()
+        return true
     }
 
     func pause() {

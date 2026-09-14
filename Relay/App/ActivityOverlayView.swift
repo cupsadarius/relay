@@ -11,7 +11,6 @@ struct ActivityOverlayView: View {
             state: model.state, style: style, reduceMotion: reduceMotion
         ) {
             capsule(for: presentation)
-                .frame(width: presentation.size.width, height: presentation.size.height)
                 .transition(presentation.usesScaleTransition ? .scale.combined(with: .opacity) : .opacity)
         }
     }
@@ -52,8 +51,11 @@ struct ActivityOverlayView: View {
             }
         }
         .padding(.horizontal, 14)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().fill(.black.opacity(0.48)))
+        .frame(width: presentation.size.width, height: presentation.size.height)
+        .background {
+            Capsule().fill(.ultraThinMaterial)
+            Capsule().fill(.black.opacity(0.48))
+        }
         .overlay(Capsule().stroke(accentGradient(for: presentation).opacity(0.45), lineWidth: 1))
         .shadow(color: .black.opacity(0.28), radius: 10, y: 4)
         .foregroundStyle(accentColor(for: presentation.accent))

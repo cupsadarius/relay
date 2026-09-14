@@ -56,6 +56,7 @@ struct PermissionSnapshot: Equatable, Sendable {
     }
 }
 
+@MainActor
 protocol GlobalPermissionAuthorizing: AnyObject {
     func snapshot() -> PermissionSnapshot
     func requestPermissions()

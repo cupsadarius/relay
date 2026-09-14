@@ -162,6 +162,21 @@ final class SpeechCoordinatorTests: XCTestCase {
         XCTAssertEqual(backend.stopCount, 1)
     }
 
+    func testMismatchedStopLeavesOverlaySpeaking() async throws {
+        let backend = FakeTTSBackend(id: "apple")
+        let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let coordinator = makeCoordinator(backend: backend, overlay: overlay)
+
+        try await coordinator.speak(request(text: "hello", mode: .userRequested))
+        let sessionID = backend.lastSessionID!
+        backend.emit(.started(sessionID: sessionID))
+
+        coordinator.stop(sessionID: UUID())
+
+        XCTAssertEqual(backend.stopCount, 0)
+        guard case .speaking = overlay.state else { return XCTFail("Expected speaking") }
+    }
+
     func testMatchingInteractiveStopStopsRouterAndHidesOverlay() async throws {
         let backend = FakeTTSBackend(id: "apple")
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())

@@ -40,6 +40,20 @@ final class AppModelTests: XCTestCase {
         withExtendedLifetime(model) {}
     }
 
+    func testSubsequentOverlayTransitionUsesNewlyPersistedStyle() {
+        let presenter = FakeOverlayPresenter()
+        let overlayModel = ActivityOverlayModel()
+        let model = makeModel(overlayModel: overlayModel, overlayPresenter: presenter)
+        let sessionID = UUID()
+
+        model.setActivityOverlayStyle(.minimal)
+        overlayModel.begin(sessionID: sessionID)
+        overlayModel.listen(sessionID: sessionID, startedAt: .now)
+
+        XCTAssertEqual(presenter.styles.last, .minimal)
+        withExtendedLifetime(model) {}
+    }
+
     func testReadSelectionPressedPreprocessesAndSpeaksUserRequest() async {
         let selection = FakeSelectionReader(text: "Intro\n```swift\nsecret()\n```\nEnd")
         let speech = FakeSpeechCoordinator()

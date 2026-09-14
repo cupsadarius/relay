@@ -54,17 +54,22 @@ final class SpeechCoordinator: SpeechCoordinating {
         if let currentSessionID {
             overlay.cancel(sessionID: currentSessionID)
         }
+        if let overlaySessionID = overlay.state.sessionID, overlaySessionID != currentSessionID {
+            overlay.cancel(sessionID: overlaySessionID)
+        }
         currentSessionID = nil
+        pendingAutomaticSessions.removeAll()
     }
 
     /// No-ops for a stale (already-replaced) session ID; otherwise stops the
     /// router and hides only the matching overlay session.
     func stop(sessionID: UUID) {
-        router.stop(sessionID: sessionID)
+        guard router.stop(sessionID: sessionID) else { return }
         overlay.cancel(sessionID: sessionID)
         if currentSessionID == sessionID {
             currentSessionID = nil
         }
+        pendingAutomaticSessions.remove(sessionID)
     }
 
     func replayLast() async throws {
