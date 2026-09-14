@@ -1,0 +1,141 @@
+import Foundation
+import Observation
+
+enum ActivityOverlayErrorCategory: Equatable, Sendable {
+    case microphone
+    case speechRecognition
+    case noUsableAudio
+    case speechPlayback
+    case insertion
+    case unexpected
+}
+
+enum ActivityOverlayState: Equatable, Sendable {
+    case hidden
+    case listening(sessionID: UUID, startedAt: Date, level: Float)
+    case processing(sessionID: UUID, startedAt: Date)
+    case speaking(sessionID: UUID, startedAt: Date)
+    case error(sessionID: UUID, category: ActivityOverlayErrorCategory, message: String)
+
+    var sessionID: UUID? {
+        switch self {
+        case .hidden:
+            nil
+        case let .listening(sessionID, _, _),
+             let .processing(sessionID, _),
+             let .speaking(sessionID, _),
+             let .error(sessionID, _, _):
+            sessionID
+        }
+    }
+
+    var isHidden: Bool {
+        if case .hidden = self { true } else { false }
+    }
+
+    var action: ActivityOverlayAction? {
+        switch self {
+        case let .listening(sessionID, _, _), let .processing(sessionID, _):
+            .cancelDictation(sessionID: sessionID)
+        case let .speaking(sessionID, _):
+            .stopSpeech(sessionID: sessionID)
+        case .hidden, .error:
+            nil
+        }
+    }
+}
+
+enum ActivityOverlayAction: Equatable, Sendable {
+    case cancelDictation(sessionID: UUID)
+    case stopSpeech(sessionID: UUID)
+}
+
+@MainActor
+protocol ActivityOverlayScheduling {
+    func schedule(after: Duration, _ operation: @escaping @MainActor () -> Void)
+}
+
+@MainActor
+struct MainActorOverlayScheduler: ActivityOverlayScheduling {
+    func schedule(after delay: Duration, _ operation: @escaping @MainActor () -> Void) {
+        Task { @MainActor in
+            try? await Task.sleep(for: delay)
+            operation()
+        }
+    }
+}
+
+@MainActor
+@Observable
+final class ActivityOverlayModel {
+    private(set) var state: ActivityOverlayState = .hidden
+    @ObservationIgnored private let scheduler: any ActivityOverlayScheduling
+    @ObservationIgnored private var activeSessionID: UUID?
+    @ObservationIgnored private var stateDidChange: (@MainActor (ActivityOverlayState) -> Void)?
+
+    init(scheduler: any ActivityOverlayScheduling = MainActorOverlayScheduler()) {
+        self.scheduler = scheduler
+    }
+
+    func setStateHandler(_ handler: @escaping @MainActor (ActivityOverlayState) -> Void) {
+        stateDidChange = handler
+        handler(state)
+    }
+
+    func begin(sessionID: UUID) {
+        activeSessionID = sessionID
+        setState(.hidden)
+    }
+
+    func listen(sessionID: UUID, startedAt: Date = .now) {
+        guard activeSessionID == sessionID else { return }
+        setState(.listening(sessionID: sessionID, startedAt: startedAt, level: 0))
+    }
+
+    func updateLevel(_ level: Float, sessionID: UUID) {
+        guard case let .listening(activeSessionID, startedAt, _) = state,
+              activeSessionID == sessionID else { return }
+        setState(.listening(sessionID: sessionID, startedAt: startedAt, level: min(max(level, 0), 1)))
+    }
+
+    func process(sessionID: UUID) {
+        guard case let .listening(activeSessionID, startedAt, _) = state,
+              activeSessionID == sessionID else { return }
+        setState(.processing(sessionID: sessionID, startedAt: startedAt))
+    }
+
+    func speak(sessionID: UUID, startedAt: Date = .now) {
+        guard activeSessionID == sessionID else { return }
+        setState(.speaking(sessionID: sessionID, startedAt: startedAt))
+    }
+
+    func complete(sessionID: UUID) {
+        guard activeSessionID == sessionID else { return }
+        scheduler.schedule(after: .milliseconds(180)) { [weak self] in
+            guard self?.activeSessionID == sessionID else { return }
+            self?.activeSessionID = nil
+            self?.setState(.hidden)
+        }
+    }
+
+    func cancel(sessionID: UUID) {
+        guard activeSessionID == sessionID else { return }
+        activeSessionID = nil
+        setState(.hidden)
+    }
+
+    func fail(sessionID: UUID, category: ActivityOverlayErrorCategory, message: String) {
+        guard activeSessionID == sessionID else { return }
+        setState(.error(sessionID: sessionID, category: category, message: message))
+        scheduler.schedule(after: .milliseconds(2_500)) { [weak self] in
+            guard self?.activeSessionID == sessionID else { return }
+            self?.activeSessionID = nil
+            self?.setState(.hidden)
+        }
+    }
+
+    private func setState(_ nextState: ActivityOverlayState) {
+        state = nextState
+        stateDidChange?(nextState)
+    }
+}
