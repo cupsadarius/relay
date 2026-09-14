@@ -11,6 +11,12 @@
 		629B951FA84E58D245591D7B /* MenuBarContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DCE840658936E7271FAB146 /* MenuBarContentView.swift */; };
 		83A8BA29AC759A450A261572 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 359767A5465051721E7F2076 /* Assets.xcassets */; };
 		91CA532F4429D5B65476BEBC /* ProjectSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D080F5789BE1F241509F1C2 /* ProjectSmokeTests.swift */; };
+		A21C00000000000000000001 /* SpeechBackendContractsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21C00000000000000000002 /* SpeechBackendContractsTests.swift */; };
+		A21C00000000000000000004 /* BackendAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21C00000000000000000005 /* BackendAvailability.swift */; };
+		A21C00000000000000000006 /* SpeechBackendError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21C00000000000000000007 /* SpeechBackendError.swift */; };
+		A21C00000000000000000008 /* SpeechModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21C00000000000000000009 /* SpeechModels.swift */; };
+		A21C0000000000000000000A /* SpeechToTextBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21C0000000000000000000B /* SpeechToTextBackend.swift */; };
+		A21C0000000000000000000C /* TextToSpeechBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21C0000000000000000000D /* TextToSpeechBackend.swift */; };
 		9ED060105B789ED3C5278037 /* RelayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82F98404629EA6F3162215CC /* RelayTests.swift */; };
 		B5059A51D144C468B1843122 /* RelayApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75C54FA6D0E67AA81510F66A /* RelayApp.swift */; };
 		D0CCD89167ACBB59A2D873B6 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3772B7BC9E1856FB2551A9D4 /* AppModel.swift */; };
@@ -34,6 +40,12 @@
 		75C54FA6D0E67AA81510F66A /* RelayApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayApp.swift; sourceTree = "<group>"; };
 		82F98404629EA6F3162215CC /* RelayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayTests.swift; sourceTree = "<group>"; };
 		919335F17510788FF73D5500 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A21C00000000000000000002 /* SpeechBackendContractsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechBackendContractsTests.swift; sourceTree = "<group>"; };
+		A21C00000000000000000005 /* BackendAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendAvailability.swift; sourceTree = "<group>"; };
+		A21C00000000000000000007 /* SpeechBackendError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechBackendError.swift; sourceTree = "<group>"; };
+		A21C00000000000000000009 /* SpeechModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechModels.swift; sourceTree = "<group>"; };
+		A21C0000000000000000000B /* SpeechToTextBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechToTextBackend.swift; sourceTree = "<group>"; };
+		A21C0000000000000000000D /* TextToSpeechBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextToSpeechBackend.swift; sourceTree = "<group>"; };
 		B2640FB004F58617990C7498 /* Relay.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Relay.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BABB516AF90FA95A49A1731E /* RelayTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RelayTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -59,6 +71,40 @@
 			path = App;
 			sourceTree = "<group>";
 		};
+		A21C00000000000000000003 /* Domain */ = {
+			isa = PBXGroup;
+			children = (
+				A21C00000000000000000002 /* SpeechBackendContractsTests.swift */,
+			);
+			path = Domain;
+			sourceTree = "<group>";
+		};
+		A21C0000000000000000000E /* Domain */ = {
+			isa = PBXGroup;
+			children = (
+				A21C00000000000000000005 /* BackendAvailability.swift */,
+				A21C00000000000000000007 /* SpeechBackendError.swift */,
+				A21C00000000000000000009 /* SpeechModels.swift */,
+			);
+			path = Domain;
+			sourceTree = "<group>";
+		};
+		A21C0000000000000000000F /* SpeechIn */ = {
+			isa = PBXGroup;
+			children = (
+				A21C0000000000000000000B /* SpeechToTextBackend.swift */,
+			);
+			path = SpeechIn;
+			sourceTree = "<group>";
+		};
+		A21C00000000000000000010 /* SpeechOut */ = {
+			isa = PBXGroup;
+			children = (
+				A21C0000000000000000000D /* TextToSpeechBackend.swift */,
+			);
+			path = SpeechOut;
+			sourceTree = "<group>";
+		};
 		DC658091D1A7F7FB428FB8C2 = {
 			isa = PBXGroup;
 			children = (
@@ -73,6 +119,9 @@
 			children = (
 				359767A5465051721E7F2076 /* Assets.xcassets */,
 				A3B1078494319AB67E3172D5 /* App */,
+				A21C0000000000000000000E /* Domain */,
+				A21C0000000000000000000F /* SpeechIn */,
+				A21C00000000000000000010 /* SpeechOut */,
 			);
 			path = Relay;
 			sourceTree = "<group>";
@@ -80,6 +129,7 @@
 		E9C14B8A9590FCA3EDCFEAEA /* RelayTests */ = {
 			isa = PBXGroup;
 			children = (
+				A21C00000000000000000003 /* Domain */,
 				1D080F5789BE1F241509F1C2 /* ProjectSmokeTests.swift */,
 				82F98404629EA6F3162215CC /* RelayTests.swift */,
 			);
@@ -172,6 +222,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A21C00000000000000000001 /* SpeechBackendContractsTests.swift in Sources */,
 				91CA532F4429D5B65476BEBC /* ProjectSmokeTests.swift in Sources */,
 				9ED060105B789ED3C5278037 /* RelayTests.swift in Sources */,
 			);
@@ -181,9 +232,14 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A21C00000000000000000004 /* BackendAvailability.swift in Sources */,
 				D0CCD89167ACBB59A2D873B6 /* AppModel.swift in Sources */,
 				629B951FA84E58D245591D7B /* MenuBarContentView.swift in Sources */,
 				B5059A51D144C468B1843122 /* RelayApp.swift in Sources */,
+				A21C00000000000000000006 /* SpeechBackendError.swift in Sources */,
+				A21C00000000000000000008 /* SpeechModels.swift in Sources */,
+				A21C0000000000000000000A /* SpeechToTextBackend.swift in Sources */,
+				A21C0000000000000000000C /* TextToSpeechBackend.swift in Sources */,
 				42DF91F35139107D11DE4F66 /* SettingsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
