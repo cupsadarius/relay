@@ -75,14 +75,16 @@ final class AppModel {
             textInserter: TextInsertionService(),
             stopSpeech: { coordinator.stop() },
             status: { _ in },
+            activity: overlayModel,
             diagnostics: diagnostics
         )
+        let actionDispatcher = ActivityOverlayActionDispatcher(dictation: dictation, speech: coordinator)
         let overlayPresenter = ActivityOverlayWindowController(
             model: overlayModel,
             host: ActivityOverlayPanelHost(),
             screens: SystemActivityOverlayScreens(),
             diagnostics: diagnostics,
-            onAction: { _ in } // Wired in Task 6
+            onAction: { [actionDispatcher] action in actionDispatcher.perform(action) }
         )
         self.init(
             settingsStore: settingsStore,

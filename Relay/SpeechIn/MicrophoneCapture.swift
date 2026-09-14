@@ -2,8 +2,24 @@ import AVFoundation
 import Foundation
 
 protocol MicrophoneCapturing: Sendable {
-    func start() async throws
+    /// `onLevel` receives only a normalized [0, 1] microphone level for each accepted sample
+    /// batch; raw audio samples are never exposed through this callback.
+    func start(onLevel: @escaping @Sendable (Float) -> Void) async throws
     func stop() async throws -> AudioInput
+    /// Abandons an in-progress start/recording without producing an `AudioInput`. Returns the
+    /// actor to `idle` without throwing; a no-op while already idle.
+    func cancel() async
+}
+
+/// Reduces a batch of raw audio samples to a single normalized loudness value for the activity
+/// overlay's level meter. Never exposes the samples themselves.
+enum MicrophoneLevelMeter {
+    static func normalized(samples: [Float]) -> Float {
+        guard !samples.isEmpty else { return 0 }
+        let meanSquare = samples.reduce(0) { $0 + $1 * $1 } / Float(samples.count)
+        let rms = sqrt(meanSquare)
+        return min(max(rms * 4, 0), 1)
+    }
 }
 
 protocol AudioCaptureSourcing: Sendable {
@@ -52,7 +68,7 @@ actor MicrophoneCapture: MicrophoneCapturing {
         self.source = source
     }
 
-    func start() async throws {
+    func start(onLevel: @escaping @Sendable (Float) -> Void) async throws {
         guard case .idle = state else { throw MicrophoneCaptureError.alreadyRecording }
         let session = UUID()
         state = .starting(session)
@@ -66,6 +82,7 @@ actor MicrophoneCapture: MicrophoneCapturing {
             try await source.start(
                 onSamples: { [accumulator] samples in
                     accumulator.append(samples)
+                    onLevel(MicrophoneLevelMeter.normalized(samples: samples))
                 },
                 onTerminalError: { [weak self] error in
                     await self?.sourceTerminated(error, session: session)
@@ -112,6 +129,32 @@ actor MicrophoneCapture: MicrophoneCapturing {
             accumulator.reset()
             state = .idle
             throw error
+        }
+    }
+
+    func cancel() async {
+        switch state {
+        case .idle:
+            return
+        case let .starting(session):
+            state = .stopping(session)
+            try? await source.stop()
+            accumulator.reset()
+            state = .idle
+        case let .recording(session):
+            state = .stopping(session)
+            try? await source.stop()
+            accumulator.reset()
+            state = .idle
+        case .stopping:
+            // Another in-flight `stop()`/`cancel()` already owns driving the source to a halt
+            // and will return the actor to `idle` on its own; avoid a second concurrent
+            // `source.stop()` call.
+            return
+        case .failedStarting, .failedRecording:
+            // The source already terminated on its own; just discard the pending error.
+            accumulator.reset()
+            state = .idle
         }
     }
 

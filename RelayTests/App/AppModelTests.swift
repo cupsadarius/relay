@@ -362,6 +362,7 @@ private final class FakeDictationCoordinator: DictationCoordinating {
         if events.last == "start" { await finish() }
         else { await start() }
     }
+    func cancel(sessionID: UUID) async {}
     func resumeStart() { startContinuation?.resume(); startContinuation = nil }
     func resumeFinish() { finishContinuation?.resume(); finishContinuation = nil }
 }

@@ -18,6 +18,45 @@ final class MicrophoneCaptureStateTests: XCTestCase {
         XCTAssertEqual(AudioConversionDisposition.resolve(status: .error, hasConversionError: false, frameLength: 0), .fail)
         XCTAssertEqual(AudioConversionDisposition.resolve(status: .endOfStream, hasConversionError: false, frameLength: 0), .fail)
     }
+    func testLevelMeterNormalizesRMSWithoutExposingSamples() {
+        XCTAssertEqual(MicrophoneLevelMeter.normalized(samples: [0, 0]), 0)
+        XCTAssertEqual(MicrophoneLevelMeter.normalized(samples: [1, -1]), 1)
+    }
+
+    func testStartEmitsNormalizedLevelForEachAcceptedSampleBatch() async throws {
+        let source = FakeAudioSource()
+        let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
+        let recorder = LevelRecorder()
+
+        try await capture.start(onLevel: { recorder.record($0) })
+        await source.emit([1, -1])
+        await source.emit([0, 0])
+
+        XCTAssertEqual(recorder.levels, [1, 0])
+    }
+
+    func testCancelWhileRecordingStopsSourceResetsAccumulatorAndReturnsToIdleWithoutThrowing() async throws {
+        let source = FakeAudioSource()
+        let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
+        try await capture.start(onLevel: { _ in })
+        await source.emit([0.4])
+
+        await capture.cancel()
+
+        await XCTAssertThrowsErrorAsync(try await capture.stop()) { error in
+            XCTAssertEqual(error as? MicrophoneCaptureError, .notRecording)
+        }
+        try await capture.start(onLevel: { _ in })
+    }
+
+    func testCancelWhileIdleIsANoOp() async {
+        let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: FakeAudioSource())
+
+        await capture.cancel()
+
+        try? await capture.start(onLevel: { _ in })
+    }
+
     func testStartThenStopReturnsMono16KAudioAndReturnsToIdle() async throws {
         let source = FakeAudioSource()
         let capture = MicrophoneCapture(
@@ -25,13 +64,13 @@ final class MicrophoneCaptureStateTests: XCTestCase {
             source: source
         )
 
-        try await capture.start()
+        try await capture.start(onLevel: { _ in })
         await source.emit([0.25, -0.5])
         let audio = try await capture.stop()
 
         XCTAssertEqual(audio.samples, [0.25, -0.5])
         XCTAssertEqual(audio.sampleRate, 16_000)
-        try await capture.start()
+        try await capture.start(onLevel: { _ in })
     }
 
     func testStartWhileRecordingThrowsActionableError() async throws {
@@ -40,9 +79,9 @@ final class MicrophoneCaptureStateTests: XCTestCase {
             source: FakeAudioSource()
         )
 
-        try await capture.start()
+        try await capture.start(onLevel: { _ in })
 
-        await XCTAssertThrowsErrorAsync(try await capture.start()) { error in
+        await XCTAssertThrowsErrorAsync(try await capture.start(onLevel: { _ in })) { error in
             XCTAssertEqual(error as? MicrophoneCaptureError, .alreadyRecording)
         }
     }
@@ -64,12 +103,12 @@ final class MicrophoneCaptureStateTests: XCTestCase {
             source: FakeAudioSource()
         )
 
-        try await capture.start()
+        try await capture.start(onLevel: { _ in })
 
         await XCTAssertThrowsErrorAsync(try await capture.stop()) { error in
             XCTAssertEqual(error as? SpeechBackendError, .noUsableAudio)
         }
-        try await capture.start()
+        try await capture.start(onLevel: { _ in })
     }
 
     func testPermissionFailureReturnsToIdle() async {
@@ -78,7 +117,7 @@ final class MicrophoneCaptureStateTests: XCTestCase {
             source: FakeAudioSource()
         )
 
-        await XCTAssertThrowsErrorAsync(try await capture.start()) { error in
+        await XCTAssertThrowsErrorAsync(try await capture.start(onLevel: { _ in })) { error in
             XCTAssertEqual(error as? SpeechBackendError, .permissionDenied)
         }
         await XCTAssertThrowsErrorAsync(try await capture.stop()) { error in
@@ -90,10 +129,10 @@ final class MicrophoneCaptureStateTests: XCTestCase {
         let source = FakeAudioSource(blockStart: true)
         let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
 
-        let firstStart = Task { try await capture.start() }
+        let firstStart = Task { try await capture.start(onLevel: { _ in }) }
         await source.waitForStart()
 
-        await XCTAssertThrowsErrorAsync(try await capture.start()) { error in
+        await XCTAssertThrowsErrorAsync(try await capture.start(onLevel: { _ in })) { error in
             XCTAssertEqual(error as? MicrophoneCaptureError, .alreadyRecording)
         }
 
@@ -106,7 +145,7 @@ final class MicrophoneCaptureStateTests: XCTestCase {
     func testConcurrentStopIsRejectedWhileFirstStopIsAdmitted() async throws {
         let source = FakeAudioSource(blockStop: true)
         let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
-        try await capture.start()
+        try await capture.start(onLevel: { _ in })
         await source.emit([0.1])
 
         let firstStop = Task { try await capture.stop() }
@@ -119,19 +158,19 @@ final class MicrophoneCaptureStateTests: XCTestCase {
         await source.releaseStop()
         let audio = try await firstStop.value
         XCTAssertEqual(audio.samples, [0.1])
-        try await capture.start()
+        try await capture.start(onLevel: { _ in })
     }
 
     func testSourceStartFailureReturnsToIdle() async {
         let source = FakeAudioSource(startError: MicrophoneCaptureError.unavailable("start failed"))
         let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
 
-        await XCTAssertThrowsErrorAsync(try await capture.start()) { error in
+        await XCTAssertThrowsErrorAsync(try await capture.start(onLevel: { _ in })) { error in
             XCTAssertEqual(error as? MicrophoneCaptureError, .unavailable("start failed"))
         }
         await source.clearStartError()
         do {
-            try await capture.start()
+            try await capture.start(onLevel: { _ in })
         } catch {
             XCTFail("Expected capture to return to idle, got \(error)")
         }
@@ -140,25 +179,25 @@ final class MicrophoneCaptureStateTests: XCTestCase {
     func testSourceStopFailureReturnsToIdle() async throws {
         let source = FakeAudioSource(stopError: MicrophoneCaptureError.unavailable("stop failed"))
         let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
-        try await capture.start()
+        try await capture.start(onLevel: { _ in })
 
         await XCTAssertThrowsErrorAsync(try await capture.stop()) { error in
             XCTAssertEqual(error as? MicrophoneCaptureError, .unavailable("stop failed"))
         }
-        try await capture.start()
+        try await capture.start(onLevel: { _ in })
     }
 
     func testTerminalSourceFailureIsReturnedByNextStopThenCaptureReturnsToIdle() async throws {
         let source = FakeAudioSource()
         let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
-        try await capture.start()
+        try await capture.start(onLevel: { _ in })
 
         await source.failTerminally(MicrophoneCaptureError.unavailable("conversion failed"))
 
         await XCTAssertThrowsErrorAsync(try await capture.stop()) { error in
             XCTAssertEqual(error as? MicrophoneCaptureError, .unavailable("conversion failed"))
         }
-        try await capture.start()
+        try await capture.start(onLevel: { _ in })
     }
 
     func testTerminalFailureDuringStartRejectsCompetingStartUntilOriginalStartThrows() async throws {
@@ -168,10 +207,10 @@ final class MicrophoneCaptureStateTests: XCTestCase {
         )
         let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
 
-        let firstStart = Task { try await capture.start() }
+        let firstStart = Task { try await capture.start(onLevel: { _ in }) }
         await source.waitForStart()
 
-        await XCTAssertThrowsErrorAsync(try await capture.start()) { error in
+        await XCTAssertThrowsErrorAsync(try await capture.start(onLevel: { _ in })) { error in
             XCTAssertEqual(error as? MicrophoneCaptureError, .alreadyRecording)
         }
 
@@ -181,13 +220,13 @@ final class MicrophoneCaptureStateTests: XCTestCase {
         }
 
         await source.clearTerminalErrorDuringStart()
-        try await capture.start()
+        try await capture.start(onLevel: { _ in })
     }
 
     func testSamplesAcceptedDuringStopAreIncludedBeforeDrainBoundary() async throws {
         let source = FakeAudioSource(samplesDuringStop: [0.2, -0.3])
         let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
-        try await capture.start()
+        try await capture.start(onLevel: { _ in })
         await source.emit([0.1])
 
         let audio = try await capture.stop()
@@ -197,7 +236,7 @@ final class MicrophoneCaptureStateTests: XCTestCase {
     func testTerminalCallbackWhileStoppingDoesNotReplaceStopResult() async throws {
         let source = FakeAudioSource(blockStop: true)
         let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
-        try await capture.start()
+        try await capture.start(onLevel: { _ in })
         await source.emit([0.1])
 
         let stop = Task { try await capture.stop() }
@@ -207,7 +246,7 @@ final class MicrophoneCaptureStateTests: XCTestCase {
 
         let audio = try await stop.value
         XCTAssertEqual(audio.samples, [0.1])
-        try await capture.start()
+        try await capture.start(onLevel: { _ in })
     }
 }
 
@@ -303,6 +342,19 @@ private actor FakeAudioSource: AudioCaptureSourcing {
         await terminalErrorSink?(error)
         sink = nil
         terminalErrorSink = nil
+    }
+}
+
+private final class LevelRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [Float] = []
+
+    func record(_ level: Float) {
+        lock.withLock { values.append(level) }
+    }
+
+    var levels: [Float] {
+        lock.withLock { values }
     }
 }
 

@@ -23,6 +23,7 @@
 		412A7CAB611AAD65AD1553C1 /* ActivityOverlayModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA71CF6D19AFEA28AC72CE1 /* ActivityOverlayModel.swift */; };
 		42DF91F35139107D11DE4F66 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 919335F17510788FF73D5500 /* SettingsView.swift */; };
 		458711DCB7F0780003DE325F /* ActivityOverlayModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84A0C0F43582E9D7B099E3FB /* ActivityOverlayModelTests.swift */; };
+		4D3CA8D95BFE28098B9A51AB /* ActivityOverlayActionDispatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2ACB3A9F06DA9A4999C2D065 /* ActivityOverlayActionDispatcherTests.swift */; };
 		4F2437BBF321F303DFF307C5 /* TTSRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA1878571E35A1485700DA5C /* TTSRouter.swift */; };
 		5431C9D6D7FA67B99BD9F5BB /* RulesTranscriptProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F9345EEDE9FA0BA054B69BC /* RulesTranscriptProcessor.swift */; };
 		5587EE4800F58032E7EB7806 /* ActivityOverlayPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CE409E03262A10710015F9A /* ActivityOverlayPresentationTests.swift */; };
@@ -39,6 +40,7 @@
 		6EBCA693556C0B8F07AE9656 /* WindowFocusCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F90592F0F4CAEF1DF31EC85 /* WindowFocusCoordinator.swift */; };
 		70155993155C43ABD4EACFE4 /* SpeechBackendContractsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B3B42F4D8ADC705985B0C3 /* SpeechBackendContractsTests.swift */; };
 		740BAC00FB22AFBE28844B6E /* SpeechBackendError.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAB0B39FEA02933CC4354E8D /* SpeechBackendError.swift */; };
+		7983DF95AD3406B5F677E00A /* ActivityOverlayActionDispatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5B3D8C288C8ECB8A4B97ABD /* ActivityOverlayActionDispatcher.swift */; };
 		7D36578865E64A7D1ACDBA52 /* AccessibilityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 483B44390B4757DC9D7B7505 /* AccessibilityService.swift */; };
 		8364B21972FCCAC67036630C /* BackendAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1230C06958285AB1CAE2418A /* BackendAvailability.swift */; };
 		83A8BA29AC759A450A261572 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 359767A5465051721E7F2076 /* Assets.xcassets */; };
@@ -96,6 +98,7 @@
 		2499709E52B7C2AE389E0A68 /* GlobalHotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotkeyManager.swift; sourceTree = "<group>"; };
 		264D3B761DD35FEF92E86BAC /* TTSRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSRouterTests.swift; sourceTree = "<group>"; };
 		272BF7900B279928282E93C7 /* PermissionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionService.swift; sourceTree = "<group>"; };
+		2ACB3A9F06DA9A4999C2D065 /* ActivityOverlayActionDispatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverlayActionDispatcherTests.swift; sourceTree = "<group>"; };
 		311ABBF060EBB992AF95420A /* AppleTTSBackendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleTTSBackendTests.swift; sourceTree = "<group>"; };
 		359767A5465051721E7F2076 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		36BC1C589CC6F88B197B1EF0 /* HotkeyDefinition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyDefinition.swift; sourceTree = "<group>"; };
@@ -140,6 +143,7 @@
 		DAA71CF6D19AFEA28AC72CE1 /* ActivityOverlayModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverlayModel.swift; sourceTree = "<group>"; };
 		E2E464DE9B8D3EF3FBAF0A9E /* SpeechCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechCoordinator.swift; sourceTree = "<group>"; };
 		E575530E2E604E20E5161DF6 /* AppleTTSBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleTTSBackend.swift; sourceTree = "<group>"; };
+		E5B3D8C288C8ECB8A4B97ABD /* ActivityOverlayActionDispatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverlayActionDispatcher.swift; sourceTree = "<group>"; };
 		EAB0B39FEA02933CC4354E8D /* SpeechBackendError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechBackendError.swift; sourceTree = "<group>"; };
 		ED330EE6049AE116AFB2F072 /* AppSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsTests.swift; sourceTree = "<group>"; };
 		F5BF4958844B2771537AF08D /* AppModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModelTests.swift; sourceTree = "<group>"; };
@@ -150,6 +154,7 @@
 		09120AE87014631DA64D6551 /* App */ = {
 			isa = PBXGroup;
 			children = (
+				2ACB3A9F06DA9A4999C2D065 /* ActivityOverlayActionDispatcherTests.swift */,
 				84A0C0F43582E9D7B099E3FB /* ActivityOverlayModelTests.swift */,
 				4CE409E03262A10710015F9A /* ActivityOverlayPresentationTests.swift */,
 				7FCE353359D9AFF090867950 /* ActivityOverlayWindowControllerTests.swift */,
@@ -241,6 +246,7 @@
 		A3B1078494319AB67E3172D5 /* App */ = {
 			isa = PBXGroup;
 			children = (
+				E5B3D8C288C8ECB8A4B97ABD /* ActivityOverlayActionDispatcher.swift */,
 				DAA71CF6D19AFEA28AC72CE1 /* ActivityOverlayModel.swift */,
 				032A9782E9C2C931DFB89322 /* ActivityOverlayPanelHost.swift */,
 				A3A1971CFBDF8C170DD9B32F /* ActivityOverlayPresentation.swift */,
@@ -426,6 +432,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B785675C6885A59D2FD6BB18 /* AccessibilityServiceTests.swift in Sources */,
+				4D3CA8D95BFE28098B9A51AB /* ActivityOverlayActionDispatcherTests.swift in Sources */,
 				458711DCB7F0780003DE325F /* ActivityOverlayModelTests.swift in Sources */,
 				5587EE4800F58032E7EB7806 /* ActivityOverlayPresentationTests.swift in Sources */,
 				1FBD462C1D169A1B2983213F /* ActivityOverlayWindowControllerTests.swift in Sources */,
@@ -457,6 +464,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				7D36578865E64A7D1ACDBA52 /* AccessibilityService.swift in Sources */,
+				7983DF95AD3406B5F677E00A /* ActivityOverlayActionDispatcher.swift in Sources */,
 				412A7CAB611AAD65AD1553C1 /* ActivityOverlayModel.swift in Sources */,
 				5AEB040E011549C43640F5CA /* ActivityOverlayPanelHost.swift in Sources */,
 				BE570F59B904039713B5C19C /* ActivityOverlayPresentation.swift in Sources */,

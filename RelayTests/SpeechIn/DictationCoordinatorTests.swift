@@ -3,21 +3,15 @@ import XCTest
 
 @MainActor
 final class DictationCoordinatorTests: XCTestCase {
-    func testStartStopsSpeechBeforeStartingMicrophone() async {
+    func testStartStopsSpeechBeforeMicrophoneStartsAndBeforeListenAppears() async {
         let events = EventLog()
         let microphone = FakeMicrophone(events: events)
-        let coordinator = DictationCoordinator(
-            microphone: microphone,
-            sttRouter: router(events: events),
-            processor: RulesTranscriptProcessor(),
-            textInserter: FakeTextInserter(events: events),
-            stopSpeech: { events.append("speech.stop") },
-            status: { _ in }
-        )
+        let overlay = RecordingActivityOverlay(trace: events)
+        let coordinator = makeCoordinator(microphone: microphone, stopSpeech: { events.append("speech.stop") }, overlay: overlay)
 
         await coordinator.start()
 
-        XCTAssertEqual(events.values, ["speech.stop", "microphone.start"])
+        XCTAssertEqual(events.values, ["speech.stop", "microphone.start", "overlay.listen"])
     }
 
     func testFinishTranscribesProcessesAndInsertsText() async {
@@ -30,7 +24,8 @@ final class DictationCoordinatorTests: XCTestCase {
             processor: RulesTranscriptProcessor(),
             textInserter: inserter,
             stopSpeech: { events.append("speech.stop") },
-            status: { _ in }
+            status: { _ in },
+            activity: RecordingActivityOverlay()
         )
         await coordinator.start()
         await coordinator.finish()
@@ -50,7 +45,8 @@ final class DictationCoordinatorTests: XCTestCase {
             processor: RulesTranscriptProcessor(),
             textInserter: inserter,
             stopSpeech: { events.append("speech.stop") },
-            status: { statuses.append($0) }
+            status: { statuses.append($0) },
+            activity: RecordingActivityOverlay()
         )
         await coordinator.start()
         await coordinator.finish()
@@ -69,6 +65,7 @@ final class DictationCoordinatorTests: XCTestCase {
             textInserter: FakeTextInserter(events: events),
             stopSpeech: {},
             status: { _ in },
+            activity: RecordingActivityOverlay(),
             diagnostics: diagnostics
         )
 
@@ -88,6 +85,7 @@ final class DictationCoordinatorTests: XCTestCase {
             textInserter: FakeTextInserter(events: events),
             stopSpeech: {},
             status: { _ in },
+            activity: RecordingActivityOverlay(),
             diagnostics: diagnostics
         )
 
@@ -107,6 +105,7 @@ final class DictationCoordinatorTests: XCTestCase {
             textInserter: inserter,
             stopSpeech: {},
             status: { _ in },
+            activity: RecordingActivityOverlay(),
             diagnostics: diagnostics
         )
 
@@ -127,6 +126,7 @@ final class DictationCoordinatorTests: XCTestCase {
             textInserter: FakeTextInserter(events: events),
             stopSpeech: {},
             status: { _ in },
+            activity: RecordingActivityOverlay(),
             diagnostics: diagnostics
         )
 
@@ -146,6 +146,7 @@ final class DictationCoordinatorTests: XCTestCase {
             textInserter: ErrorTextInserter(error: TextInsertionError.clipboardWriteFailed),
             stopSpeech: {},
             status: { _ in },
+            activity: RecordingActivityOverlay(),
             diagnostics: diagnostics
         )
 
@@ -162,7 +163,8 @@ final class DictationCoordinatorTests: XCTestCase {
             microphone: FakeMicrophone(events: events), sttRouter: router(events: events),
             processor: RulesTranscriptProcessor(),
             textInserter: ErrorTextInserter(error: TextInsertionError.accessibilityPermissionDenied),
-            stopSpeech: {}, status: { statuses.append($0) }
+            stopSpeech: {}, status: { statuses.append($0) },
+            activity: RecordingActivityOverlay()
         )
 
         await coordinator.start()
@@ -177,7 +179,8 @@ final class DictationCoordinatorTests: XCTestCase {
         let microphone = DelayedFailingMicrophone(events: events)
         let coordinator = DictationCoordinator(
             microphone: microphone, sttRouter: router(events: events), processor: RulesTranscriptProcessor(),
-            textInserter: FakeTextInserter(events: events), stopSpeech: {}, status: { _ in }
+            textInserter: FakeTextInserter(events: events), stopSpeech: {}, status: { _ in },
+            activity: RecordingActivityOverlay()
         )
         let firstStart = Task { await coordinator.start() }
         while !(await microphone.didStart()) { await Task.yield() }
@@ -211,7 +214,8 @@ final class DictationCoordinatorTests: XCTestCase {
             var statuses: [String] = []
             let coordinator = DictationCoordinator(
                 microphone: FakeMicrophone(events: events), sttRouter: router(events: events, error: error as? SpeechBackendError),
-                processor: RulesTranscriptProcessor(), textInserter: ErrorTextInserter(error: error), stopSpeech: {}, status: { statuses.append($0) }
+                processor: RulesTranscriptProcessor(), textInserter: ErrorTextInserter(error: error), stopSpeech: {}, status: { statuses.append($0) },
+                activity: RecordingActivityOverlay()
             )
             await coordinator.start()
             await coordinator.finish()
@@ -231,11 +235,198 @@ final class DictationCoordinatorTests: XCTestCase {
             let coordinator = DictationCoordinator(
                 microphone: ThrowingMicrophone(error: error), sttRouter: router(events: events),
                 processor: RulesTranscriptProcessor(), textInserter: FakeTextInserter(events: events),
-                stopSpeech: {}, status: { statuses.append($0) }
+                stopSpeech: {}, status: { statuses.append($0) },
+                activity: RecordingActivityOverlay()
             )
             await coordinator.start()
             XCTAssertEqual(statuses.last, "Could not start dictation: \(message)")
         }
+    }
+
+    // MARK: - Activity overlay: lifecycle, level, and cancellation
+
+    func testDictationPublishesListeningProcessingAndCompletionForOneSession() async {
+        let overlay = RecordingActivityOverlay()
+        let coordinator = makeCoordinator(overlay: overlay)
+        await coordinator.start()
+        let session = overlay.sessionID!
+        await coordinator.finish()
+        XCTAssertEqual(overlay.events, [.listening(session), .processing(session), .completed(session)])
+    }
+
+    func testInteractiveCancelStopsOnlyMatchingListeningSession() async {
+        let microphone = CancellableFakeMicrophone()
+        let overlay = RecordingActivityOverlay()
+        let coordinator = makeCoordinator(microphone: microphone, overlay: overlay)
+        await coordinator.start()
+        let session = overlay.sessionID!
+        await coordinator.cancel(sessionID: session)
+        XCTAssertEqual(microphone.cancelCount, 1)
+        XCTAssertEqual(overlay.events.last, .cancelled(session))
+    }
+
+    func testCancelWithMismatchedSessionIDIsIgnored() async {
+        let microphone = CancellableFakeMicrophone()
+        let overlay = RecordingActivityOverlay()
+        let coordinator = makeCoordinator(microphone: microphone, overlay: overlay)
+        await coordinator.start()
+        let session = overlay.sessionID!
+
+        await coordinator.cancel(sessionID: UUID())
+
+        XCTAssertEqual(microphone.cancelCount, 0)
+        XCTAssertEqual(overlay.events, [.listening(session)])
+    }
+
+    func testRecordingLevelUpdatesReachOverlayWhileListening() async {
+        let microphone = LevelCapturingMicrophone()
+        let overlay = RecordingActivityOverlay()
+        let coordinator = makeCoordinator(microphone: microphone, overlay: overlay)
+
+        await coordinator.start()
+        await microphone.emitLevel(0.6)
+        await Task.yield()
+
+        XCTAssertEqual(overlay.levels, [0.6])
+    }
+
+    func testLateLevelUpdateForNoLongerRecordingSessionIsIgnored() async {
+        let microphone = LevelCapturingMicrophone()
+        let overlay = RecordingActivityOverlay()
+        let coordinator = makeCoordinator(microphone: microphone, overlay: overlay)
+
+        await coordinator.start()
+        await coordinator.finish()
+        await microphone.emitLevel(0.9)
+        await Task.yield()
+
+        XCTAssertTrue(overlay.levels.isEmpty)
+    }
+
+    func testCancelDuringFinishingCancelsProcessingTaskWithoutInserting() async {
+        let backend = BlockingBackend()
+        let sttRouter = STTRouter(backends: [backend.id: backend], backendOrder: { [backend.id] })
+        let inserter = FakeTextInserter(events: EventLog())
+        let overlay = RecordingActivityOverlay()
+        let coordinator = makeCoordinator(sttRouter: sttRouter, textInserter: inserter, overlay: overlay)
+
+        await coordinator.start()
+        let session = overlay.sessionID!
+        let finishTask = Task { await coordinator.finish() }
+        while !backend.isTranscribing { await Task.yield() }
+
+        await coordinator.cancel(sessionID: session)
+
+        XCTAssertEqual(overlay.events.last, .cancelled(session))
+        XCTAssertTrue(inserter.inserted.isEmpty)
+
+        // Unblock the pipeline so the Task doesn't leak past the test.
+        await backend.resume(with: .success(Transcript(text: "hello", backendID: backend.id)))
+        await finishTask.value
+        XCTAssertTrue(inserter.inserted.isEmpty)
+    }
+
+    func testLateTranscriptionCompletionAfterCancelDoesNotInsertOrTouchOverlay() async {
+        let backend = BlockingBackend()
+        let sttRouter = STTRouter(backends: [backend.id: backend], backendOrder: { [backend.id] })
+        let inserter = FakeTextInserter(events: EventLog())
+        let overlay = RecordingActivityOverlay()
+        let coordinator = makeCoordinator(sttRouter: sttRouter, textInserter: inserter, overlay: overlay)
+
+        await coordinator.start()
+        let session = overlay.sessionID!
+        let finishTask = Task { await coordinator.finish() }
+        while !backend.isTranscribing { await Task.yield() }
+        await coordinator.cancel(sessionID: session)
+        let eventsAfterCancel = overlay.events
+
+        await backend.resume(with: .success(Transcript(text: "hello", backendID: backend.id)))
+        await finishTask.value
+
+        XCTAssertTrue(inserter.inserted.isEmpty)
+        XCTAssertEqual(overlay.events, eventsAfterCancel)
+    }
+
+    func testEmptyProcessedTranscriptReportsNoUsableAudioCategory() async {
+        let overlay = RecordingActivityOverlay()
+        let coordinator = makeCoordinator(sttRouter: router(events: EventLog(), transcript: "   "), overlay: overlay)
+
+        await coordinator.start()
+        let session = overlay.sessionID!
+        await coordinator.finish()
+
+        XCTAssertEqual(overlay.events.last, .failed(session, .noUsableAudio))
+    }
+
+    func testNoUsableAudioTranscriptionErrorReportsNoUsableAudioCategory() async {
+        let overlay = RecordingActivityOverlay()
+        let coordinator = makeCoordinator(sttRouter: router(events: EventLog(), error: .noUsableAudio), overlay: overlay)
+
+        await coordinator.start()
+        let session = overlay.sessionID!
+        await coordinator.finish()
+
+        XCTAssertEqual(overlay.events.last, .failed(session, .noUsableAudio))
+    }
+
+    func testMicrophoneStartFailureReportsMicrophoneCategory() async {
+        let overlay = RecordingActivityOverlay()
+        let coordinator = DictationCoordinator(
+            microphone: ThrowingMicrophone(error: .unavailable("x")),
+            sttRouter: router(events: EventLog()),
+            processor: RulesTranscriptProcessor(),
+            textInserter: FakeTextInserter(events: EventLog()),
+            stopSpeech: {},
+            status: { _ in },
+            activity: overlay
+        )
+
+        await coordinator.start()
+
+        XCTAssertEqual(overlay.events.last, .failed(overlay.sessionID!, .microphone))
+    }
+
+    func testTranscriptionFailureReportsSpeechRecognitionCategory() async {
+        let overlay = RecordingActivityOverlay()
+        let coordinator = makeCoordinator(sttRouter: router(events: EventLog(), error: .inferenceFailed("x")), overlay: overlay)
+
+        await coordinator.start()
+        let session = overlay.sessionID!
+        await coordinator.finish()
+
+        XCTAssertEqual(overlay.events.last, .failed(session, .speechRecognition))
+    }
+
+    func testInsertionFailureReportsInsertionCategory() async {
+        let overlay = RecordingActivityOverlay()
+        let coordinator = makeCoordinator(textInserter: ErrorTextInserter(error: TextInsertionError.clipboardWriteFailed), overlay: overlay)
+
+        await coordinator.start()
+        let session = overlay.sessionID!
+        await coordinator.finish()
+
+        XCTAssertEqual(overlay.events.last, .failed(session, .insertion))
+    }
+
+    private func makeCoordinator(
+        microphone: (any MicrophoneCapturing)? = nil,
+        sttRouter: STTRouter? = nil,
+        textInserter: (any TextInserting)? = nil,
+        stopSpeech: @escaping () -> Void = {},
+        overlay: RecordingActivityOverlay,
+        diagnostics: DiagnosticsRecorder? = nil
+    ) -> DictationCoordinator {
+        let events = EventLog()
+        return DictationCoordinator(
+            microphone: microphone ?? FakeMicrophone(events: events),
+            sttRouter: sttRouter ?? router(events: events),
+            processor: RulesTranscriptProcessor(),
+            textInserter: textInserter ?? FakeTextInserter(events: events),
+            stopSpeech: stopSpeech,
+            status: { _ in },
+            activity: overlay,
+            diagnostics: diagnostics
+        )
     }
 
     private func router(events: EventLog, transcript: String = "text", error: SpeechBackendError? = nil) -> STTRouter {
@@ -250,7 +441,7 @@ private actor DelayedFailingMicrophone: MicrophoneCapturing {
     private var attempts = 0
     private var started: CheckedContinuation<Void, Never>?
     init(events: EventLog) { self.events = events }
-    func start() async throws {
+    func start(onLevel: @escaping @Sendable (Float) -> Void) async throws {
         await events.append("microphone.start")
         attempts += 1
         didInvokeStart = true
@@ -260,14 +451,39 @@ private actor DelayedFailingMicrophone: MicrophoneCapturing {
         }
     }
     func stop() async throws -> AudioInput { AudioInput(samples: [0.1], sampleRate: 16_000) }
+    func cancel() async {}
     func didStart() -> Bool { didInvokeStart }
     func failStart() { started?.resume(); started = nil }
 }
 
 private struct ThrowingMicrophone: MicrophoneCapturing {
     let error: MicrophoneCaptureError
-    func start() async throws { throw error }
+    func start(onLevel: @escaping @Sendable (Float) -> Void) async throws { throw error }
     func stop() async throws -> AudioInput { throw error }
+    func cancel() async {}
+}
+
+/// A `@MainActor` fake satisfying `MicrophoneCapturing`'s `Sendable` refinement through its
+/// global-actor isolation; every access here is already confined to the `@MainActor` test methods.
+@MainActor
+private final class CancellableFakeMicrophone: MicrophoneCapturing {
+    private(set) var cancelCount = 0
+    func start(onLevel: @escaping @Sendable (Float) -> Void) async throws {}
+    func stop() async throws -> AudioInput { AudioInput(samples: [0.1], sampleRate: 16_000) }
+    func cancel() async { cancelCount += 1 }
+}
+
+/// Captures the `onLevel` callback so a test can trigger level updates on demand.
+private actor LevelCapturingMicrophone: MicrophoneCapturing {
+    private var onLevel: (@Sendable (Float) -> Void)?
+    func start(onLevel: @escaping @Sendable (Float) -> Void) async throws {
+        self.onLevel = onLevel
+    }
+    func stop() async throws -> AudioInput { AudioInput(samples: [0.1], sampleRate: 16_000) }
+    func cancel() async { onLevel = nil }
+    func emitLevel(_ level: Float) {
+        onLevel?(level)
+    }
 }
 
 @MainActor
@@ -286,8 +502,9 @@ private final class EventLog {
 private actor FakeMicrophone: MicrophoneCapturing {
     let events: EventLog
     init(events: EventLog) { self.events = events }
-    func start() async throws { await events.append("microphone.start") }
+    func start(onLevel: @escaping @Sendable (Float) -> Void) async throws { await events.append("microphone.start") }
     func stop() async throws -> AudioInput { await events.append("microphone.stop"); return AudioInput(samples: [0.1], sampleRate: 16_000) }
+    func cancel() async { await events.append("microphone.cancel") }
 }
 
 @MainActor
@@ -304,6 +521,29 @@ private final class FakeBackend: SpeechToTextBackend {
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript { events.append("stt.transcribe"); if let error { throw error }; return Transcript(text: transcript, backendID: id) }
 }
 
+/// A backend whose `transcribe` call suspends until `resume(with:)` is invoked, so tests can
+/// observe coordinator behavior while the transcription stage is still in flight.
+@MainActor
+private final class BlockingBackend: SpeechToTextBackend {
+    let id = "blocking"
+    let displayName = "Blocking"
+    let capabilities = STTCapabilities([])
+    private(set) var isTranscribing = false
+    private var continuation: CheckedContinuation<Transcript, Error>?
+
+    func availability() async -> BackendAvailability { .available }
+    func prepare() async throws {}
+    func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
+        isTranscribing = true
+        defer { isTranscribing = false }
+        return try await withCheckedThrowingContinuation { continuation = $0 }
+    }
+    func resume(with result: Result<Transcript, Error>) {
+        continuation?.resume(with: result)
+        continuation = nil
+    }
+}
+
 @MainActor
 private final class FakeTextInserter: TextInserting {
     let events: EventLog
@@ -317,5 +557,56 @@ private final class FakeTextInserter: TextInserting {
         inserted.append(text)
         events.append("insert")
         return mechanism
+    }
+}
+
+/// Records the events `DictationCoordinator` publishes through the `DictationActivityPublishing`
+/// seam, mirroring `ActivityOverlayModel`'s state transitions without needing the real model.
+@MainActor
+private final class RecordingActivityOverlay: DictationActivityPublishing {
+    enum Event: Equatable {
+        case listening(UUID)
+        case processing(UUID)
+        case completed(UUID)
+        case cancelled(UUID)
+        case failed(UUID, ActivityOverlayErrorCategory)
+    }
+
+    private(set) var sessionID: UUID?
+    private(set) var events: [Event] = []
+    private(set) var levels: [Float] = []
+    private let trace: EventLog?
+
+    init(trace: EventLog? = nil) {
+        self.trace = trace
+    }
+
+    func begin(sessionID: UUID) {
+        self.sessionID = sessionID
+    }
+
+    func listen(sessionID: UUID, startedAt: Date) {
+        events.append(.listening(sessionID))
+        trace?.append("overlay.listen")
+    }
+
+    func updateLevel(_ level: Float, sessionID: UUID) {
+        levels.append(level)
+    }
+
+    func process(sessionID: UUID) {
+        events.append(.processing(sessionID))
+    }
+
+    func complete(sessionID: UUID) {
+        events.append(.completed(sessionID))
+    }
+
+    func cancel(sessionID: UUID) {
+        events.append(.cancelled(sessionID))
+    }
+
+    func fail(sessionID: UUID, category: ActivityOverlayErrorCategory, message: String) {
+        events.append(.failed(sessionID, category))
     }
 }
