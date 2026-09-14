@@ -78,7 +78,7 @@ final class AppModel {
             activity: overlayModel,
             diagnostics: diagnostics
         )
-        let actionDispatcher = ActivityOverlayActionDispatcher(dictation: dictation, speech: coordinator)
+        let actionDispatcher: any ActivityOverlayControlling = ActivityOverlayActionDispatcher(dictation: dictation, speech: coordinator)
         let overlayPresenter = ActivityOverlayWindowController(
             model: overlayModel,
             host: ActivityOverlayPanelHost(),

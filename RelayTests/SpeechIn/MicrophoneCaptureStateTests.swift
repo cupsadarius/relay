@@ -57,6 +57,91 @@ final class MicrophoneCaptureStateTests: XCTestCase {
         try? await capture.start(onLevel: { _ in })
     }
 
+    func testCancelWhileStartingWaitsForSourceStartThenStopsExactlyOnceAndReturnsToIdle() async throws {
+        let source = FakeAudioSource(blockStart: true)
+        let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
+
+        let startTask = Task { try await capture.start(onLevel: { _ in }) }
+        await source.waitForStart()
+
+        let cancelCompleted = FlagBox()
+        let cancelTask = Task {
+            await capture.cancel()
+            cancelCompleted.set()
+        }
+        await Task.yield()
+        XCTAssertFalse(cancelCompleted.value, "cancel() must not resolve while source.start() is still in flight")
+
+        await source.releaseStart()
+        _ = try? await startTask.value
+        await cancelTask.value
+
+        XCTAssertTrue(cancelCompleted.value)
+        let stopCount = await source.stopInvocationCount
+        XCTAssertEqual(stopCount, 1)
+        // The actor must be idle: a fresh start succeeds.
+        try await capture.start(onLevel: { _ in })
+    }
+
+    func testCancelWhileStoppingWaitsForInFlightStopWithoutStoppingTheSourceTwice() async throws {
+        let source = FakeAudioSource(blockStop: true)
+        let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
+        try await capture.start(onLevel: { _ in })
+        await source.emit([0.2])
+
+        let stopTask = Task { try await capture.stop() }
+        await source.waitForStop()
+
+        let cancelCompleted = FlagBox()
+        let cancelTask = Task {
+            await capture.cancel()
+            cancelCompleted.set()
+        }
+        await Task.yield()
+        XCTAssertFalse(cancelCompleted.value, "cancel() must not resolve while the in-flight stop() hasn't reached idle")
+
+        await source.releaseStop()
+        _ = try await stopTask.value
+        await cancelTask.value
+
+        XCTAssertTrue(cancelCompleted.value)
+        let stopCount = await source.stopInvocationCount
+        XCTAssertEqual(stopCount, 1)
+        try await capture.start(onLevel: { _ in })
+    }
+
+    func testCancelFromFailedStartingDiscardsPendingErrorAndReturnsToIdle() async throws {
+        let source = FakeAudioSource(
+            terminalErrorDuringStart: MicrophoneCaptureError.unavailable("boom"),
+            blockStart: true
+        )
+        let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
+
+        let startTask = Task { try await capture.start(onLevel: { _ in }) }
+        await source.waitForStart()
+        // The terminal error already landed (moving the actor to `.failedStarting`) before the
+        // fake's `start()` call parked on its own continuation.
+
+        await capture.cancel()
+
+        await source.releaseStart()
+        _ = try? await startTask.value
+
+        // No stale error should surface: a fresh start immediately after `cancel()` succeeds.
+        try await capture.start(onLevel: { _ in })
+    }
+
+    func testCancelFromFailedRecordingDiscardsPendingErrorAndReturnsToIdle() async throws {
+        let source = FakeAudioSource()
+        let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
+        try await capture.start(onLevel: { _ in })
+        await source.failTerminally(MicrophoneCaptureError.unavailable("late failure"))
+
+        await capture.cancel()
+
+        try await capture.start(onLevel: { _ in })
+    }
+
     func testStartThenStopReturnsMono16KAudioAndReturnsToIdle() async throws {
         let source = FakeAudioSource()
         let capture = MicrophoneCapture(
@@ -266,6 +351,7 @@ private actor FakeAudioSource: AudioCaptureSourcing {
     private var hasEnteredStart = false
     private var hasEnteredStop = false
     private var startInvocationCount = 0
+    private(set) var stopInvocationCount = 0
 
     init(
         startError: Error? = nil,
@@ -305,6 +391,7 @@ private actor FakeAudioSource: AudioCaptureSourcing {
     }
 
     func stop() async throws {
+        stopInvocationCount += 1
         if blockStop {
             hasEnteredStop = true
             stopEnteredWaiter?.resume()
@@ -342,6 +429,19 @@ private actor FakeAudioSource: AudioCaptureSourcing {
         await terminalErrorSink?(error)
         sink = nil
         terminalErrorSink = nil
+    }
+}
+
+private final class FlagBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var flag = false
+
+    func set() {
+        lock.withLock { flag = true }
+    }
+
+    var value: Bool {
+        lock.withLock { flag }
     }
 }
 

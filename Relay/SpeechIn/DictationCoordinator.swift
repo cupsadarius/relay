@@ -43,6 +43,11 @@ final class DictationCoordinator: DictationCoordinating {
     private var state: State = .idle
     private var finishRequested = false
     private var processingTask: Task<Void, Never>?
+    /// The session `processingTask` belongs to. `finish()` only clears `processingTask` on its
+    /// own completion if this still matches the session it started with — otherwise a later
+    /// session's `finish()` has since replaced it, and clobbering it would leave that newer
+    /// session's task unreachable from `cancel(sessionID:)`.
+    private var processingSession: UUID?
 
     init(
         microphone: any MicrophoneCapturing,
@@ -114,8 +119,12 @@ final class DictationCoordinator: DictationCoordinating {
             await self.runProcessingPipeline(session: session)
         }
         processingTask = task
+        processingSession = session
         await task.value
-        processingTask = nil
+        if processingSession == session {
+            processingTask = nil
+            processingSession = nil
+        }
     }
 
     func toggle() async {
@@ -132,6 +141,7 @@ final class DictationCoordinator: DictationCoordinating {
         } else if isFinishing(sessionID) {
             processingTask?.cancel()
             processingTask = nil
+            processingSession = nil
             state = .idle
             await microphone.cancel()
             activity.cancel(sessionID: sessionID)
@@ -206,26 +216,29 @@ final class DictationCoordinator: DictationCoordinating {
         status("Dictation failed: \(actionableMessage(for: error))")
     }
 
+    /// `SpeechBackendError.noUsableAudio` always means "no usable audio", regardless of which
+    /// stage surfaced it (the microphone itself can throw it from `stop()`, not just the STT
+    /// backend from `transcribe()`), so it's checked before the per-stage mapping below.
     private func category(for error: Error, stage: DictationFailureStage) -> ActivityOverlayErrorCategory {
+        if case SpeechBackendError.noUsableAudio = error { return .noUsableAudio }
         switch stage {
         case .microphoneCapture:
             return .microphone
         case .insertion:
             return .insertion
         case .transcription:
-            if case SpeechBackendError.noUsableAudio = error { return .noUsableAudio }
             return error is SpeechBackendError ? .speechRecognition : .unexpected
         }
     }
 
     private func capsuleMessage(for stage: DictationFailureStage, error: Error) -> String {
+        if case SpeechBackendError.noUsableAudio = error { return "No speech was recognized." }
         switch stage {
         case .microphoneCapture:
             return "Microphone error."
         case .insertion:
             return "Could not insert text."
         case .transcription:
-            if case SpeechBackendError.noUsableAudio = error { return "No speech was recognized." }
             return "Speech recognition failed."
         }
     }

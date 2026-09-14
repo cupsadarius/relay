@@ -313,7 +313,7 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.start()
         let session = overlay.sessionID!
         let finishTask = Task { await coordinator.finish() }
-        while !backend.isTranscribing { await Task.yield() }
+        while backend.pendingCount < 1 { await Task.yield() }
 
         await coordinator.cancel(sessionID: session)
 
@@ -321,7 +321,7 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertTrue(inserter.inserted.isEmpty)
 
         // Unblock the pipeline so the Task doesn't leak past the test.
-        await backend.resume(with: .success(Transcript(text: "hello", backendID: backend.id)))
+        backend.resumeOldest(with: .success(Transcript(text: "hello", backendID: backend.id)))
         await finishTask.value
         XCTAssertTrue(inserter.inserted.isEmpty)
     }
@@ -336,15 +336,70 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.start()
         let session = overlay.sessionID!
         let finishTask = Task { await coordinator.finish() }
-        while !backend.isTranscribing { await Task.yield() }
+        while backend.pendingCount < 1 { await Task.yield() }
         await coordinator.cancel(sessionID: session)
         let eventsAfterCancel = overlay.events
 
-        await backend.resume(with: .success(Transcript(text: "hello", backendID: backend.id)))
+        backend.resumeOldest(with: .success(Transcript(text: "hello", backendID: backend.id)))
         await finishTask.value
 
         XCTAssertTrue(inserter.inserted.isEmpty)
         XCTAssertEqual(overlay.events, eventsAfterCancel)
+    }
+
+    /// Regression test: `finish()` used to clear `processingTask` unconditionally once its own
+    /// task finished, even if that task belonged to an already-cancelled, older session. If a
+    /// newer session's `finish()` had since replaced `processingTask`, the older session's
+    /// completion would wipe out the reference the newer session's `cancel(sessionID:)` needs.
+    func testCancelledFinishDoesNotClobberNextSessionsProcessingTask() async {
+        let backend = BlockingBackend()
+        let sttRouter = STTRouter(backends: [backend.id: backend], backendOrder: { [backend.id] })
+        let inserter = FakeTextInserter(events: EventLog())
+        let overlay = RecordingActivityOverlay()
+        let coordinator = makeCoordinator(sttRouter: sttRouter, textInserter: inserter, overlay: overlay)
+
+        await coordinator.start()
+        let sessionA = overlay.sessionID!
+        let finishA = Task { await coordinator.finish() }
+        while backend.pendingCount < 1 { await Task.yield() }
+
+        await coordinator.cancel(sessionID: sessionA)
+
+        await coordinator.start()
+        let sessionB = overlay.sessionID!
+        XCTAssertNotEqual(sessionA, sessionB)
+        let finishB = Task { await coordinator.finish() }
+        while backend.pendingCount < 2 { await Task.yield() }
+
+        // Let session A's (already-cancelled) transcription resolve and run its cleanup. With
+        // the fix, this must not touch `processingTask`, which by now belongs to session B.
+        backend.resumeOldest(with: .success(Transcript(text: "a", backendID: backend.id)))
+        await finishA.value
+
+        await coordinator.cancel(sessionID: sessionB)
+        await Task.yield()
+
+        // Both A's and B's underlying transcription calls must have been genuinely cancelled:
+        // A directly by its own `cancel(sessionID:)`, and B only reachable if `processingTask`
+        // still correctly referenced B's task (i.e. A's cleanup did not clobber it).
+        XCTAssertEqual(backend.cancellationCount, 2)
+        XCTAssertEqual(overlay.events.last, .cancelled(sessionB))
+
+        // Unblock B's transcription so its Task doesn't leak past the test.
+        backend.resumeOldest(with: .success(Transcript(text: "b", backendID: backend.id)))
+        await finishB.value
+        XCTAssertTrue(inserter.inserted.isEmpty)
+    }
+
+    func testMicrophoneStopThrowingNoUsableAudioReportsNoUsableAudioCategoryNotMicrophone() async {
+        let overlay = RecordingActivityOverlay()
+        let coordinator = makeCoordinator(microphone: NoUsableAudioMicrophone(), overlay: overlay)
+
+        await coordinator.start()
+        let session = overlay.sessionID!
+        await coordinator.finish()
+
+        XCTAssertEqual(overlay.events.last, .failed(session, .noUsableAudio))
     }
 
     func testEmptyProcessedTranscriptReportsNoUsableAudioCategory() async {
@@ -463,6 +518,14 @@ private struct ThrowingMicrophone: MicrophoneCapturing {
     func cancel() async {}
 }
 
+/// A microphone whose `stop()` throws `SpeechBackendError.noUsableAudio` directly (as opposed to
+/// a `MicrophoneCaptureError`), exercising the "no usable audio regardless of stage" mapping.
+private struct NoUsableAudioMicrophone: MicrophoneCapturing {
+    func start(onLevel: @escaping @Sendable (Float) -> Void) async throws {}
+    func stop() async throws -> AudioInput { throw SpeechBackendError.noUsableAudio }
+    func cancel() async {}
+}
+
 /// A `@MainActor` fake satisfying `MicrophoneCapturing`'s `Sendable` refinement through its
 /// global-actor isolation; every access here is already confined to the `@MainActor` test methods.
 @MainActor
@@ -521,27 +584,43 @@ private final class FakeBackend: SpeechToTextBackend {
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript { events.append("stt.transcribe"); if let error { throw error }; return Transcript(text: transcript, backendID: id) }
 }
 
-/// A backend whose `transcribe` call suspends until `resume(with:)` is invoked, so tests can
-/// observe coordinator behavior while the transcription stage is still in flight.
-@MainActor
-private final class BlockingBackend: SpeechToTextBackend {
+/// A backend whose `transcribe` calls each suspend (FIFO) until explicitly released, so tests can
+/// observe coordinator behavior while a transcription stage is still in flight — including
+/// multiple overlapping calls across sessions, and whether the calling `Task` was genuinely
+/// cancelled while suspended (via `withTaskCancellationHandler`, which fires promptly even though
+/// the continuation itself never resumes on its own).
+private final class BlockingBackend: SpeechToTextBackend, @unchecked Sendable {
     let id = "blocking"
     let displayName = "Blocking"
     let capabilities = STTCapabilities([])
-    private(set) var isTranscribing = false
-    private var continuation: CheckedContinuation<Transcript, Error>?
+    private let lock = NSLock()
+    private var pending: [CheckedContinuation<Transcript, Error>] = []
+    private var cancellations = 0
 
     func availability() async -> BackendAvailability { .available }
     func prepare() async throws {}
+
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
-        isTranscribing = true
-        defer { isTranscribing = false }
-        return try await withCheckedThrowingContinuation { continuation = $0 }
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                lock.withLock { pending.append(continuation) }
+            }
+        } onCancel: { [self] in
+            lock.withLock { cancellations += 1 }
+        }
     }
-    func resume(with result: Result<Transcript, Error>) {
+
+    /// Resumes the oldest still-pending `transcribe` call (FIFO), simulating multiple sessions'
+    /// calls being in flight against this one backend.
+    func resumeOldest(with result: Result<Transcript, Error>) {
+        let continuation: CheckedContinuation<Transcript, Error>? = lock.withLock {
+            pending.isEmpty ? nil : pending.removeFirst()
+        }
         continuation?.resume(with: result)
-        continuation = nil
     }
+
+    var pendingCount: Int { lock.withLock { pending.count } }
+    var cancellationCount: Int { lock.withLock { cancellations } }
 }
 
 @MainActor

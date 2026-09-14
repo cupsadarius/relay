@@ -59,6 +59,14 @@ actor MicrophoneCapture: MicrophoneCapturing {
     private let source: any AudioCaptureSourcing
     private let accumulator = AudioSampleAccumulator()
     private var state: State = .idle
+    /// Set by `cancel()` while `.starting`; checked by `start()`'s own post-`source.start()`
+    /// switch so the call that actually knows `source.start()` has returned is the one that
+    /// tears the real source down — never `cancel()` itself, which would otherwise race a
+    /// `source.start()` that hasn't finished installing yet.
+    private var startCancelRequested = false
+    /// Resumed once the actor reaches `idle`; lets `cancel()` wait out an in-flight
+    /// `start()`/`stop()` instead of returning while the real source is still winding down.
+    private var idleWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(
         permission: any MicrophonePermissionAuthorizing = SystemMicrophonePermissionAuthorizer(),
@@ -72,8 +80,9 @@ actor MicrophoneCapture: MicrophoneCapturing {
         guard case .idle = state else { throw MicrophoneCaptureError.alreadyRecording }
         let session = UUID()
         state = .starting(session)
+        startCancelRequested = false
         guard await permission.requestPermission() else {
-            state = .idle
+            transitionToIdle()
             throw SpeechBackendError.permissionDenied
         }
 
@@ -89,17 +98,24 @@ actor MicrophoneCapture: MicrophoneCapturing {
                 }
             )
             switch state {
-            case .starting(session):
+            case .starting(session) where !startCancelRequested:
                 state = .recording(session)
             case let .failedStarting(failedSession, error) where failedSession == session:
-                state = .idle
+                transitionToIdle()
                 throw error
             default:
+                // Either a concurrent `cancel()` requested cancellation while this call was
+                // still setting up, or the actor moved on for some other reason. Either way,
+                // `source.start()` has now definitely returned, so this is the one place that
+                // can safely tear the real source down without racing its own setup.
+                try? await source.stop()
+                accumulator.reset()
+                transitionToIdle()
                 return
             }
         } catch {
             accumulator.reset()
-            state = .idle
+            transitionToIdle()
             throw error
         }
     }
@@ -111,7 +127,7 @@ actor MicrophoneCapture: MicrophoneCapturing {
             session = activeSession
         case let .failedRecording(_, error):
             accumulator.reset()
-            state = .idle
+            transitionToIdle()
             throw error
         default:
             throw MicrophoneCaptureError.notRecording
@@ -121,13 +137,13 @@ actor MicrophoneCapture: MicrophoneCapturing {
         do {
             // The source removes its tap before returning, so this drain includes every accepted callback.
             try await source.stop()
-            state = .idle
+            transitionToIdle()
             let samples = accumulator.take()
             guard !samples.isEmpty else { throw SpeechBackendError.noUsableAudio }
             return AudioInput(samples: samples, sampleRate: 16_000)
         } catch {
             accumulator.reset()
-            state = .idle
+            transitionToIdle()
             throw error
         }
     }
@@ -136,26 +152,37 @@ actor MicrophoneCapture: MicrophoneCapturing {
         switch state {
         case .idle:
             return
-        case let .starting(session):
-            state = .stopping(session)
-            try? await source.stop()
-            accumulator.reset()
-            state = .idle
+        case .starting:
+            // `source.start()` is still in flight for this session; flag the cancellation and
+            // wait for `start()`'s own post-completion switch to tear the source down exactly
+            // once it's safe to do so (see the `default:` branch in `start()`).
+            startCancelRequested = true
+            await withCheckedContinuation { idleWaiters.append($0) }
         case let .recording(session):
             state = .stopping(session)
             try? await source.stop()
             accumulator.reset()
-            state = .idle
+            transitionToIdle()
         case .stopping:
-            // Another in-flight `stop()`/`cancel()` already owns driving the source to a halt
-            // and will return the actor to `idle` on its own; avoid a second concurrent
-            // `source.stop()` call.
-            return
+            // Another in-flight `stop()`/`cancel()` already owns driving the source to a halt;
+            // wait for it to actually reach `idle` instead of returning early, so a caller can
+            // rely on "no future sample callbacks" once `cancel()` itself returns.
+            await withCheckedContinuation { idleWaiters.append($0) }
         case .failedStarting, .failedRecording:
             // The source already terminated on its own; just discard the pending error.
             accumulator.reset()
-            state = .idle
+            transitionToIdle()
         }
+    }
+
+    /// The single place `state` is set back to `.idle`. Clears `startCancelRequested` and wakes
+    /// every `cancel()` call currently waiting on `.starting`/`.stopping` to resolve.
+    private func transitionToIdle() {
+        state = .idle
+        startCancelRequested = false
+        let waiters = idleWaiters
+        idleWaiters = []
+        for waiter in waiters { waiter.resume() }
     }
 
     private func sourceTerminated(_ error: Error, session: UUID) {
