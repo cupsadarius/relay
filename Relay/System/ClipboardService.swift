@@ -66,6 +66,14 @@ protocol ClipboardWaiting {
     func wait(milliseconds: Int)
 }
 
+/// Schedules a one-shot operation to run later without blocking the calling actor turn
+/// (unlike `ClipboardWaiting`, which pumps a nested run loop and would let other handlers
+/// reenter while the caller is still on the stack).
+@MainActor
+protocol ClipboardRestoreScheduling {
+    func schedule(afterMilliseconds: Int, _ operation: @escaping @MainActor () -> Void)
+}
+
 @MainActor
 final class ClipboardService: ClipboardReading {
     private let pasteboard: any ClipboardPasteboard
@@ -172,8 +180,11 @@ enum CopyCommandError: Error {
 @MainActor
 struct SystemCopyCommand: CopyCommandSending {
     func sendCopy() throws {
-        guard let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: 8, keyDown: true),
-              let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: 8, keyDown: false)
+        // The combined session source attributes these synthetic events like genuine user
+        // input, so target apps accept them instead of ignoring or mishandling them.
+        guard let source = CGEventSource(stateID: .combinedSessionState),
+              let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 8, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 8, keyDown: false)
         else {
             throw CopyCommandError.eventCreationFailed
         }
@@ -188,8 +199,10 @@ struct SystemCopyCommand: CopyCommandSending {
 @MainActor
 struct SystemPasteCommand: PasteCommandSending {
     func sendPaste() throws {
-        let source = CGEventSource(stateID: .combinedSessionState)
-        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
+        // The combined session source attributes these synthetic events like genuine user
+        // input, so target apps accept them instead of ignoring or mishandling them.
+        guard let source = CGEventSource(stateID: .combinedSessionState),
+              let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
               let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false)
         else {
             throw CopyCommandError.eventCreationFailed
@@ -206,5 +219,16 @@ struct SystemPasteCommand: PasteCommandSending {
 struct RunLoopClipboardWaiter: ClipboardWaiting {
     func wait(milliseconds: Int) {
         RunLoop.current.run(until: Date().addingTimeInterval(Double(milliseconds) / 1_000))
+    }
+}
+
+/// Restores the clipboard after a delay without blocking the calling actor turn.
+@MainActor
+final class TaskClipboardRestoreScheduler: ClipboardRestoreScheduling {
+    func schedule(afterMilliseconds milliseconds: Int, _ operation: @escaping @MainActor () -> Void) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(milliseconds))
+            operation()
+        }
     }
 }

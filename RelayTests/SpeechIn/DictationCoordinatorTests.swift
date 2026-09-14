@@ -116,6 +116,26 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(diagnostics.entries.last?.event, .dictation(.inserted(.paste)))
     }
 
+    func testDiagnosticsNeverIncludeDictatedTextContent() async {
+        let events = EventLog()
+        let diagnostics = DiagnosticsRecorder()
+        let sentinel = "SECRET-PHRASE-42"
+        let coordinator = DictationCoordinator(
+            microphone: FakeMicrophone(events: events),
+            sttRouter: router(events: events, transcript: sentinel),
+            processor: RulesTranscriptProcessor(),
+            textInserter: FakeTextInserter(events: events),
+            stopSpeech: {},
+            status: { _ in },
+            diagnostics: diagnostics
+        )
+
+        await coordinator.start()
+        await coordinator.finish()
+
+        XCTAssertFalse(diagnostics.copyText.contains(sentinel))
+    }
+
     func testRecordsFailureAtInsertionStage() async {
         let events = EventLog()
         let diagnostics = DiagnosticsRecorder()
@@ -183,7 +203,8 @@ final class DictationCoordinatorTests: XCTestCase {
             (SpeechBackendError.noUsableAudio, "Dictation failed: No usable audio was captured. Check your microphone and try again."),
             (SpeechBackendError.invalidInput, "Dictation failed: The recorded audio was invalid. Try again."),
             (TextInsertionError.clipboardWriteFailed, "Dictation failed: Relay could not insert text. Grant Accessibility permission and try again."),
-            (TextInsertionError.accessibilityPermissionDenied, "Dictation failed: Allow Accessibility permission in System Settings before inserting dictation.")
+            (TextInsertionError.accessibilityPermissionDenied, "Dictation failed: Allow Accessibility permission in System Settings before inserting dictation."),
+            (TextInsertionError.emptyText, "Dictation failed: No speech was recognized. Try again.")
         ]
         for (error, expected) in cases {
             let events = EventLog()

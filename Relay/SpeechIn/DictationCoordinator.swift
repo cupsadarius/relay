@@ -143,6 +143,8 @@ final class DictationCoordinator: DictationCoordinating {
             "Relay could not insert text. Grant Accessibility permission and try again."
         case TextInsertionError.accessibilityPermissionDenied:
             "Allow Accessibility permission in System Settings before inserting dictation."
+        case TextInsertionError.emptyText:
+            "No speech was recognized. Try again."
         default:
             "An unexpected error occurred. Try again."
         }

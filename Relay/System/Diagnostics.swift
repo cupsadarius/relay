@@ -55,17 +55,12 @@ enum DictationDiagnostic: Equatable, Sendable {
         switch self {
         case .listening: "Dictation listening"
         case .processing: "Dictation processing"
-        case let .inserted(mechanism): "Dictation inserted via \(mechanism.diagnosticLabel)"
+        case let .inserted(mechanism):
+            switch mechanism {
+            case .accessibility: "Dictation inserted via Accessibility"
+            case .paste: "Dictation inserted via paste"
+            }
         case let .failed(stage): "Dictation failed during \(stage.message)"
-        }
-    }
-}
-
-extension TextInsertionMechanism {
-    var diagnosticLabel: String {
-        switch self {
-        case .accessibility: "Accessibility"
-        case .paste: "paste"
         }
     }
 }
