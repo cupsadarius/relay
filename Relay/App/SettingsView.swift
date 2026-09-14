@@ -79,6 +79,13 @@ struct SettingsView: View {
                         ) { definition in
                             model.setHotkey(definition, for: action)
                         }
+                        Menu("Double Tap") {
+                            ForEach(HotkeyModifier.allCases, id: \.self) { modifier in
+                                Button("\(modifier.symbol) \(modifier.symbol)") {
+                                    model.setHotkey(.doubleTapModifier(modifier), for: action)
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -88,7 +95,7 @@ struct SettingsView: View {
                         .accessibilityIdentifier("hotkey-conflict-message")
                 }
 
-                Text("Click a shortcut, then press a key combination. The Fn key can be recorded by itself. Hotkeys are listen-only, so keys such as Escape still reach the active app.")
+                Text("Click a shortcut to record a key combination, or choose Double Tap. The Fn key can be recorded by itself. Hotkeys are listen-only, so keys such as Escape still reach the active app.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -241,6 +248,8 @@ private extension HotkeyDefinition {
         switch self {
         case let .modifierOnly(modifier):
             return modifier.symbol
+        case let .doubleTapModifier(modifier):
+            return "\(modifier.symbol) \(modifier.symbol)"
         case let .chord(keyCode, modifiers):
             let prefix = HotkeyModifier.displayOrder
                 .filter(modifiers.contains)
@@ -277,6 +286,7 @@ private extension HotkeyDefinition {
 }
 
 private extension HotkeyModifier {
+    static let allCases: [HotkeyModifier] = [.control, .option, .shift, .command, .function]
     static let displayOrder: [HotkeyModifier] = [
         .control, .option, .shift, .command, .function,
     ]

@@ -38,6 +38,15 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(AppSettings.self, from: data), value)
     }
 
+    func testSettingsRoundTripPreservesDoubleControlHotkey() throws {
+        var value = AppSettings.defaults
+        value.hotkeys[.dictate] = .doubleTapModifier(.control)
+
+        let data = try JSONEncoder().encode(value)
+
+        XCTAssertEqual(try JSONDecoder().decode(AppSettings.self, from: data), value)
+    }
+
     func testDefaultsUsePhaseOneBackendsAndExpectedHotkeys() {
         XCTAssertEqual(AppSettings.defaults.dictationMode, .holdToTalk)
         XCTAssertEqual(AppSettings.defaults.hotkeys, [

@@ -162,7 +162,8 @@ final class AppModel {
 
     func setHotkey(_ definition: HotkeyDefinition, for action: HotkeyAction) {
         if let conflictingAction = HotkeyAction.allCases.first(where: {
-            $0 != action && settings.hotkeys[$0] == definition
+            guard $0 != action, let existing = settings.hotkeys[$0] else { return false }
+            return definition.conflicts(with: existing)
         }) {
             let message = "\(action.title) conflicts with \(conflictingAction.title). Choose a different shortcut."
             hotkeyConflictMessage = message

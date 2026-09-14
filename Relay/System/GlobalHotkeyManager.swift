@@ -20,17 +20,34 @@ enum HotkeyInputEvent: Equatable, Sendable {
 
 struct HotkeyMatcher {
     private let definitions: [HotkeyAction: HotkeyDefinition]
+    private let uptime: () -> TimeInterval
     private var activeChordActions = Set<HotkeyAction>()
     private var functionIsDown = false
     private var functionOnlyActions = Set<HotkeyAction>()
+    private var previousModifiers = Set<HotkeyModifier>()
+    private var doubleTapState = DoubleTapState.idle
 
-    init(definitions: [HotkeyAction: HotkeyDefinition]) {
+    private enum DoubleTapState {
+        case idle
+        case firstPress(HotkeyModifier, HotkeyAction, TimeInterval)
+        case awaitingSecondPress(HotkeyModifier, HotkeyAction, TimeInterval)
+        case secondPress(HotkeyModifier, HotkeyAction)
+    }
+
+    private static let doubleTapWindow: TimeInterval = 0.35
+
+    init(
+        definitions: [HotkeyAction: HotkeyDefinition],
+        uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+    ) {
         self.definitions = definitions
+        self.uptime = uptime
     }
 
     mutating func match(_ event: HotkeyInputEvent) -> [HotkeyInvocation] {
         switch event {
         case let .keyDown(keyCode, modifiers, isRepeat):
+            cancelPendingDoubleTap()
             guard !isRepeat else { return [] }
             guard let action = chordAction(keyCode: keyCode, modifiers: modifiers),
                   activeChordActions.insert(action).inserted
@@ -38,6 +55,7 @@ struct HotkeyMatcher {
             return [HotkeyInvocation(action: action, phase: .pressed)]
 
         case let .keyUp(keyCode, _):
+            cancelPendingDoubleTap()
             let actions = HotkeyAction.allCases.filter { action in
                 guard activeChordActions.contains(action),
                       case let .chord(definedKeyCode, _) = definitions[action]
@@ -48,6 +66,10 @@ struct HotkeyMatcher {
             return actions.map { HotkeyInvocation(action: $0, phase: .released) }
 
         case let .flagsChanged(modifiers):
+            let doubleTapInvocations = matchDoubleTapModifier(modifiers: modifiers)
+            previousModifiers = modifiers
+            if !doubleTapInvocations.isEmpty { return doubleTapInvocations }
+
             let isDown = modifiers.contains(.function)
             defer { functionIsDown = isDown }
 
@@ -68,6 +90,57 @@ struct HotkeyMatcher {
         }
     }
 
+    private mutating func matchDoubleTapModifier(
+        modifiers: Set<HotkeyModifier>
+    ) -> [HotkeyInvocation] {
+        let currentTime = uptime()
+        switch doubleTapState {
+        case let .secondPress(modifier, activeAction):
+            if !modifiers.contains(modifier) {
+                doubleTapState = .idle
+                return [.init(action: activeAction, phase: .released)]
+            }
+            return []
+
+        case let .firstPress(modifier, action, pressedAt):
+            guard previousModifiers == [modifier], modifiers.isEmpty,
+                  currentTime - pressedAt <= Self.doubleTapWindow
+            else {
+                cancelPendingDoubleTap()
+                return []
+            }
+            doubleTapState = .awaitingSecondPress(modifier, action, currentTime)
+
+        case let .awaitingSecondPress(modifier, action, releasedAt):
+            guard modifiers == [modifier],
+                  currentTime - releasedAt <= Self.doubleTapWindow
+            else {
+                cancelPendingDoubleTap()
+                return []
+            }
+            doubleTapState = .secondPress(modifier, action)
+            return [.init(action: action, phase: .pressed)]
+
+        case .idle:
+            guard modifiers.count == 1,
+                  let modifier = modifiers.first,
+                  let action = doubleTapAction(for: modifier),
+                  !previousModifiers.contains(modifier)
+            else { return [] }
+            doubleTapState = .firstPress(modifier, action, currentTime)
+        }
+        return []
+    }
+
+    private mutating func cancelPendingDoubleTap() {
+        switch doubleTapState {
+        case .firstPress, .awaitingSecondPress:
+            doubleTapState = .idle
+        case .idle, .secondPress:
+            break
+        }
+    }
+
     private func chordAction(
         keyCode: UInt16,
         modifiers: Set<HotkeyModifier>
@@ -81,6 +154,10 @@ struct HotkeyMatcher {
 
     private func modifierOnlyFunctionAction() -> HotkeyAction? {
         HotkeyAction.allCases.first { definitions[$0] == .modifierOnly(.function) }
+    }
+
+    private func doubleTapAction(for modifier: HotkeyModifier) -> HotkeyAction? {
+        HotkeyAction.allCases.first { definitions[$0] == .doubleTapModifier(modifier) }
     }
 }
 

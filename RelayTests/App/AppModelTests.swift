@@ -187,6 +187,18 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.hotkeyConflictMessage, expected)
     }
 
+    func testModifierOnlyAndDoubleTapModifierConflictIsRejected() {
+        let store = FakeSettingsStore(settings: .defaults)
+        let hotkeys = FakeHotkeyManager()
+        let model = makeModel(store: store, hotkeys: hotkeys)
+
+        model.setHotkey(.doubleTapModifier(.function), for: .readSelection)
+
+        XCTAssertEqual(model.settings, .defaults)
+        XCTAssertTrue(store.saved.isEmpty)
+        XCTAssertEqual(hotkeys.registrations.count, 1)
+    }
+
     func testRegistrationFailureSurfacesActionableStatus() {
         let hotkeys = FakeHotkeyManager(
             status: .unavailable("Enable Accessibility permission, then reopen Relay.")
