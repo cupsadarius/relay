@@ -96,6 +96,26 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(diagnostics.entries.map(\.event), [.dictation(.failed(.microphoneCapture))])
     }
 
+    func testRecordsInsertionMechanismReportedByInserterOnSuccess() async {
+        let events = EventLog()
+        let diagnostics = DiagnosticsRecorder()
+        let inserter = FakeTextInserter(events: events, mechanism: .paste)
+        let coordinator = DictationCoordinator(
+            microphone: FakeMicrophone(events: events),
+            sttRouter: router(events: events),
+            processor: RulesTranscriptProcessor(),
+            textInserter: inserter,
+            stopSpeech: {},
+            status: { _ in },
+            diagnostics: diagnostics
+        )
+
+        await coordinator.start()
+        await coordinator.finish()
+
+        XCTAssertEqual(diagnostics.entries.last?.event, .dictation(.inserted(.paste)))
+    }
+
     func testRecordsFailureAtInsertionStage() async {
         let events = EventLog()
         let diagnostics = DiagnosticsRecorder()
@@ -233,7 +253,7 @@ private struct ThrowingMicrophone: MicrophoneCapturing {
 private final class ErrorTextInserter: TextInserting {
     let error: Error
     init(error: Error) { self.error = error }
-    func insert(_ text: String) throws { throw error }
+    func insert(_ text: String) throws -> TextInsertionMechanism { throw error }
 }
 
 @MainActor
@@ -266,7 +286,15 @@ private final class FakeBackend: SpeechToTextBackend {
 @MainActor
 private final class FakeTextInserter: TextInserting {
     let events: EventLog
+    let mechanism: TextInsertionMechanism
     private(set) var inserted: [String] = []
-    init(events: EventLog) { self.events = events }
-    func insert(_ text: String) throws { inserted.append(text); events.append("insert") }
+    init(events: EventLog, mechanism: TextInsertionMechanism = .accessibility) {
+        self.events = events
+        self.mechanism = mechanism
+    }
+    func insert(_ text: String) throws -> TextInsertionMechanism {
+        inserted.append(text)
+        events.append("insert")
+        return mechanism
+    }
 }

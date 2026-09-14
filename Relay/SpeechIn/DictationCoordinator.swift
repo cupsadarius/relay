@@ -91,9 +91,9 @@ final class DictationCoordinator: DictationCoordinating {
             return
         }
         do {
-            try textInserter.insert(text)
+            let mechanism = try textInserter.insert(text)
             state = .idle
-            diagnostics?.record(.dictation(.inserted))
+            diagnostics?.record(.dictation(.inserted(mechanism)))
             status("Inserted dictation")
         } catch {
             fail(error, at: .insertion)

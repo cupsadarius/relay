@@ -5,7 +5,13 @@ import XCTest
 @MainActor
 final class TextInsertionServiceTests: XCTestCase {
     func testReplacesSelectedTextThroughAccessibilityWhenFocusedElementSupportsIt() throws {
-        let accessibility = FakeTextAccessibility(focusedValue: AXUIElementCreateSystemWide(), canReplace: true)
+        let accessibility = FakeTextAccessibility(
+            focusedValue: AXUIElementCreateSystemWide(),
+            canReplace: true,
+            settable: true,
+            initialValue: "",
+            valueAfterReplace: "dictated text"
+        )
         let clipboard = FakeInsertionClipboard()
         let paste = FakePasteCommand()
         let service = TextInsertionService(
@@ -16,11 +22,89 @@ final class TextInsertionServiceTests: XCTestCase {
             canPostEvents: { true }
         )
 
-        try service.insert("dictated text")
+        let mechanism = try service.insert("dictated text")
 
+        XCTAssertEqual(mechanism, .accessibility)
         XCTAssertEqual(accessibility.insertedText, ["dictated text"])
         XCTAssertTrue(clipboard.writtenStrings.isEmpty)
         XCTAssertEqual(paste.sendCount, 0)
+    }
+
+    func testAccessibilityWriteReportedSuccessButValueUnchangedFallsBackToPaste() throws {
+        let accessibility = FakeTextAccessibility(
+            focusedValue: AXUIElementCreateSystemWide(),
+            canReplace: true,
+            settable: true,
+            initialValue: "existing text",
+            valueAfterReplace: nil
+        )
+        let clipboard = FakeInsertionClipboard()
+        let paste = FakePasteCommand()
+        let service = TextInsertionService(
+            accessibility: accessibility,
+            clipboard: clipboard,
+            pasteCommand: paste,
+            waiter: FakeInsertionWaiter(),
+            canPostEvents: { true }
+        )
+
+        let mechanism = try service.insert("dictated text")
+
+        XCTAssertEqual(mechanism, .paste)
+        XCTAssertEqual(clipboard.writtenStrings, ["dictated text"])
+        XCTAssertEqual(paste.sendCount, 1)
+    }
+
+    func testSkipsAccessibilityWhenSelectedTextIsNotSettable() throws {
+        let accessibility = FakeTextAccessibility(
+            focusedValue: AXUIElementCreateSystemWide(),
+            canReplace: true,
+            settable: false,
+            initialValue: "existing text",
+            valueAfterReplace: "dictated text"
+        )
+        let clipboard = FakeInsertionClipboard()
+        let paste = FakePasteCommand()
+        let service = TextInsertionService(
+            accessibility: accessibility,
+            clipboard: clipboard,
+            pasteCommand: paste,
+            waiter: FakeInsertionWaiter(),
+            canPostEvents: { true }
+        )
+
+        let mechanism = try service.insert("dictated text")
+
+        XCTAssertEqual(mechanism, .paste)
+        XCTAssertTrue(accessibility.insertedText.isEmpty)
+        XCTAssertEqual(clipboard.writtenStrings, ["dictated text"])
+        XCTAssertEqual(paste.sendCount, 1)
+    }
+
+    func testSkipsAccessibilityWhenCurrentValueIsUnreadable() throws {
+        let accessibility = FakeTextAccessibility(
+            focusedValue: AXUIElementCreateSystemWide(),
+            canReplace: true,
+            settable: true,
+            initialValue: nil,
+            valueAfterReplace: "dictated text"
+        )
+        let clipboard = FakeInsertionClipboard()
+        let paste = FakePasteCommand()
+        let service = TextInsertionService(
+            accessibility: accessibility,
+            clipboard: clipboard,
+            pasteCommand: paste,
+            waiter: FakeInsertionWaiter(),
+            canPostEvents: { true }
+        )
+
+        let mechanism = try service.insert("dictated text")
+
+        XCTAssertEqual(mechanism, .paste)
+        XCTAssertTrue(accessibility.insertedText.isEmpty)
+        XCTAssertEqual(clipboard.writtenStrings, ["dictated text"])
+        XCTAssertEqual(paste.sendCount, 1)
     }
 
     func testFallsBackToPasteForUnexpectedFocusedAttributeTypeAndRestoresClipboard() throws {
@@ -38,11 +122,12 @@ final class TextInsertionServiceTests: XCTestCase {
             canPostEvents: { true }
         )
 
-        try service.insert("dictated text")
+        let mechanism = try service.insert("dictated text")
 
+        XCTAssertEqual(mechanism, .paste)
         XCTAssertEqual(clipboard.writtenStrings, ["dictated text"])
         XCTAssertEqual(paste.sendCount, 1)
-        XCTAssertEqual(waiter.waitedMilliseconds, [100])
+        XCTAssertEqual(waiter.waitedMilliseconds, [300])
         XCTAssertEqual(clipboard.restoredSnapshots, [original])
     }
 
@@ -57,8 +142,9 @@ final class TextInsertionServiceTests: XCTestCase {
             canPostEvents: { true }
         )
 
-        try service.insert("dictated text")
+        let mechanism = try service.insert("dictated text")
 
+        XCTAssertEqual(mechanism, .paste)
         XCTAssertEqual(paste.sendCount, 1)
         XCTAssertEqual(clipboard.writtenStrings, ["dictated text"])
     }
@@ -92,9 +178,26 @@ final class TextInsertionServiceTests: XCTestCase {
             canPostEvents: { true }
         )
 
-        try service.insert("dictated text")
+        let mechanism = try service.insert("dictated text")
 
-        XCTAssertEqual(events.values, ["snapshot", "write", "paste", "wait(100)", "restore"])
+        XCTAssertEqual(mechanism, .paste)
+        XCTAssertEqual(events.values, ["snapshot", "write", "paste", "wait(300)", "restore"])
+    }
+
+    func testPasteFallbackWaitsAtLeastThreeHundredMillisecondsBeforeRestoringClipboard() throws {
+        let waiter = FakeInsertionWaiter()
+        let service = TextInsertionService(
+            accessibility: FakeTextAccessibility(focusedValue: nil, canReplace: false),
+            clipboard: FakeInsertionClipboard(),
+            pasteCommand: FakePasteCommand(),
+            waiter: waiter,
+            canPostEvents: { true }
+        )
+
+        _ = try service.insert("dictated text")
+
+        XCTAssertEqual(waiter.waitedMilliseconds.count, 1)
+        XCTAssertGreaterThanOrEqual(waiter.waitedMilliseconds[0], 300)
     }
 
     func testPasteFallbackPreservesClipboardChangedDuringWait() throws {
@@ -109,8 +212,9 @@ final class TextInsertionServiceTests: XCTestCase {
             canPostEvents: { true }
         )
 
-        try service.insert("dictated text")
+        let mechanism = try service.insert("dictated text")
 
+        XCTAssertEqual(mechanism, .paste)
         XCTAssertEqual(clipboard.writtenStrings, ["dictated text"])
         XCTAssertEqual(clipboard.externalChangeCount, 1)
         XCTAssertTrue(clipboard.restoredSnapshots.isEmpty)
@@ -127,7 +231,7 @@ final class TextInsertionServiceTests: XCTestCase {
             canPostEvents: { true }
         )
 
-        try service.insert("dictated text")
+        _ = try service.insert("dictated text")
 
         XCTAssertEqual(clipboard.externalChangeCount, 1)
         XCTAssertTrue(clipboard.restoredSnapshots.isEmpty)
@@ -172,7 +276,7 @@ final class TextInsertionServiceTests: XCTestCase {
             pasteCommand: FakePasteCommand(), waiter: FakeInsertionWaiter(), canPostEvents: { true }
         )
 
-        try service.insert("dictated text")
+        _ = try service.insert("dictated text")
 
         XCTAssertEqual(clipboard.externalChangeCount, 1)
         XCTAssertTrue(clipboard.restoredSnapshots.isEmpty)
@@ -198,17 +302,37 @@ final class TextInsertionServiceTests: XCTestCase {
 private final class FakeTextAccessibility: AccessibilityTextInserting {
     let focusedValue: CFTypeRef?
     let canReplace: Bool
+    let settable: Bool
+    let initialValue: String?
+    let valueAfterReplace: String?
     private(set) var insertedText: [String] = []
+    private var hasReplaced = false
 
-    init(focusedValue: CFTypeRef?, canReplace: Bool) {
+    init(
+        focusedValue: CFTypeRef?,
+        canReplace: Bool,
+        settable: Bool = true,
+        initialValue: String? = "",
+        valueAfterReplace: String? = nil
+    ) {
         self.focusedValue = focusedValue
         self.canReplace = canReplace
+        self.settable = settable
+        self.initialValue = initialValue
+        self.valueAfterReplace = valueAfterReplace
     }
 
     func focusedElementValue() -> CFTypeRef? { focusedValue }
 
+    func isSelectedTextSettable(_ element: AXUIElement) -> Bool { settable }
+
+    func textValue(of element: AXUIElement) -> String? {
+        hasReplaced ? (valueAfterReplace ?? initialValue) : initialValue
+    }
+
     func replaceSelectedText(_ text: String, in element: AXUIElement) -> Bool {
         insertedText.append(text)
+        hasReplaced = true
         return canReplace
     }
 }

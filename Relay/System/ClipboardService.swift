@@ -188,8 +188,9 @@ struct SystemCopyCommand: CopyCommandSending {
 @MainActor
 struct SystemPasteCommand: PasteCommandSending {
     func sendPaste() throws {
-        guard let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: 9, keyDown: true),
-              let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: 9, keyDown: false)
+        let source = CGEventSource(stateID: .combinedSessionState)
+        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false)
         else {
             throw CopyCommandError.eventCreationFailed
         }

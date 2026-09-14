@@ -29,12 +29,23 @@ import XCTest
         var buffer = DiagnosticsBuffer()
         buffer.append(.dictation(.listening))
         buffer.append(.dictation(.processing))
-        buffer.append(.dictation(.inserted))
+        buffer.append(.dictation(.inserted(.accessibility)))
         buffer.append(.dictation(.failed(.microphoneCapture)))
 
         XCTAssertEqual(
             buffer.copyText,
-            "Dictation listening\nDictation processing\nDictation inserted\nDictation failed during microphone capture"
+            "Dictation listening\nDictation processing\nDictation inserted via Accessibility\nDictation failed during microphone capture"
+        )
+    }
+
+    func testInsertedDiagnosticReportsMechanismWithoutRevealingText() {
+        var buffer = DiagnosticsBuffer()
+        buffer.append(.dictation(.inserted(.accessibility)))
+        buffer.append(.dictation(.inserted(.paste)))
+
+        XCTAssertEqual(
+            buffer.copyText,
+            "Dictation inserted via Accessibility\nDictation inserted via paste"
         )
     }
 
