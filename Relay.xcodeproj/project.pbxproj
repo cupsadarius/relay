@@ -7,18 +7,22 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		010EFDE2D6C4A73206572BBE /* SpeechToTextBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E124777F58D54CEDE5CA61 /* SpeechToTextBackend.swift */; };
+		131B33B0A7200D30823A1201 /* SpeechModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA7F679F877AB1E080B262A1 /* SpeechModels.swift */; };
+		18A0B28B851CB76A0406F54E /* AppSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED330EE6049AE116AFB2F072 /* AppSettingsTests.swift */; };
+		23E6C9B2DB1F71CE066D828B /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC1EE06D54321DF43FE4A78E /* SettingsStore.swift */; };
 		42DF91F35139107D11DE4F66 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 919335F17510788FF73D5500 /* SettingsView.swift */; };
+		581FC3101A3FE16E88052CDC /* TextToSpeechBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7357E0F76AF76DF9C69ACD1 /* TextToSpeechBackend.swift */; };
 		629B951FA84E58D245591D7B /* MenuBarContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DCE840658936E7271FAB146 /* MenuBarContentView.swift */; };
+		63950769791664D8A9424529 /* HotkeyDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36BC1C589CC6F88B197B1EF0 /* HotkeyDefinition.swift */; };
+		70155993155C43ABD4EACFE4 /* SpeechBackendContractsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B3B42F4D8ADC705985B0C3 /* SpeechBackendContractsTests.swift */; };
+		740BAC00FB22AFBE28844B6E /* SpeechBackendError.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAB0B39FEA02933CC4354E8D /* SpeechBackendError.swift */; };
+		8364B21972FCCAC67036630C /* BackendAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1230C06958285AB1CAE2418A /* BackendAvailability.swift */; };
 		83A8BA29AC759A450A261572 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 359767A5465051721E7F2076 /* Assets.xcassets */; };
 		91CA532F4429D5B65476BEBC /* ProjectSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D080F5789BE1F241509F1C2 /* ProjectSmokeTests.swift */; };
-		A21C00000000000000000001 /* SpeechBackendContractsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21C00000000000000000002 /* SpeechBackendContractsTests.swift */; };
-		A21C00000000000000000004 /* BackendAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21C00000000000000000005 /* BackendAvailability.swift */; };
-		A21C00000000000000000006 /* SpeechBackendError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21C00000000000000000007 /* SpeechBackendError.swift */; };
-		A21C00000000000000000008 /* SpeechModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21C00000000000000000009 /* SpeechModels.swift */; };
-		A21C0000000000000000000A /* SpeechToTextBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21C0000000000000000000B /* SpeechToTextBackend.swift */; };
-		A21C0000000000000000000C /* TextToSpeechBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21C0000000000000000000D /* TextToSpeechBackend.swift */; };
 		9ED060105B789ED3C5278037 /* RelayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82F98404629EA6F3162215CC /* RelayTests.swift */; };
 		B5059A51D144C468B1843122 /* RelayApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75C54FA6D0E67AA81510F66A /* RelayApp.swift */; };
+		C5F5763A4617CDDD616EB1F3 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85842060D11E3427D905C000 /* AppSettings.swift */; };
 		D0CCD89167ACBB59A2D873B6 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3772B7BC9E1856FB2551A9D4 /* AppModel.swift */; };
 /* End PBXBuildFile section */
 
@@ -33,24 +37,44 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		06E124777F58D54CEDE5CA61 /* SpeechToTextBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechToTextBackend.swift; sourceTree = "<group>"; };
 		0DCE840658936E7271FAB146 /* MenuBarContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarContentView.swift; sourceTree = "<group>"; };
+		1230C06958285AB1CAE2418A /* BackendAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendAvailability.swift; sourceTree = "<group>"; };
 		1D080F5789BE1F241509F1C2 /* ProjectSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectSmokeTests.swift; sourceTree = "<group>"; };
 		359767A5465051721E7F2076 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		36BC1C589CC6F88B197B1EF0 /* HotkeyDefinition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyDefinition.swift; sourceTree = "<group>"; };
 		3772B7BC9E1856FB2551A9D4 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		71B3B42F4D8ADC705985B0C3 /* SpeechBackendContractsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechBackendContractsTests.swift; sourceTree = "<group>"; };
 		75C54FA6D0E67AA81510F66A /* RelayApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayApp.swift; sourceTree = "<group>"; };
 		82F98404629EA6F3162215CC /* RelayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayTests.swift; sourceTree = "<group>"; };
+		85842060D11E3427D905C000 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
 		919335F17510788FF73D5500 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		A21C00000000000000000002 /* SpeechBackendContractsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechBackendContractsTests.swift; sourceTree = "<group>"; };
-		A21C00000000000000000005 /* BackendAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendAvailability.swift; sourceTree = "<group>"; };
-		A21C00000000000000000007 /* SpeechBackendError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechBackendError.swift; sourceTree = "<group>"; };
-		A21C00000000000000000009 /* SpeechModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechModels.swift; sourceTree = "<group>"; };
-		A21C0000000000000000000B /* SpeechToTextBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechToTextBackend.swift; sourceTree = "<group>"; };
-		A21C0000000000000000000D /* TextToSpeechBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextToSpeechBackend.swift; sourceTree = "<group>"; };
+		A7357E0F76AF76DF9C69ACD1 /* TextToSpeechBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextToSpeechBackend.swift; sourceTree = "<group>"; };
+		AC1EE06D54321DF43FE4A78E /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
 		B2640FB004F58617990C7498 /* Relay.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Relay.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BABB516AF90FA95A49A1731E /* RelayTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RelayTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		CA7F679F877AB1E080B262A1 /* SpeechModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechModels.swift; sourceTree = "<group>"; };
+		EAB0B39FEA02933CC4354E8D /* SpeechBackendError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechBackendError.swift; sourceTree = "<group>"; };
+		ED330EE6049AE116AFB2F072 /* AppSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
+		1D5C6A10CD6B121EB1EF0031 /* System */ = {
+			isa = PBXGroup;
+			children = (
+				AC1EE06D54321DF43FE4A78E /* SettingsStore.swift */,
+			);
+			path = System;
+			sourceTree = "<group>";
+		};
+		370CCB652C846F1DC6580429 /* SpeechIn */ = {
+			isa = PBXGroup;
+			children = (
+				06E124777F58D54CEDE5CA61 /* SpeechToTextBackend.swift */,
+			);
+			path = SpeechIn;
+			sourceTree = "<group>";
+		};
 		8108792C7BDAA099F962E116 /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -71,36 +95,19 @@
 			path = App;
 			sourceTree = "<group>";
 		};
-		A21C00000000000000000003 /* Domain */ = {
+		A89903B3BCFD871D73F30B39 /* Domain */ = {
 			isa = PBXGroup;
 			children = (
-				A21C00000000000000000002 /* SpeechBackendContractsTests.swift */,
+				ED330EE6049AE116AFB2F072 /* AppSettingsTests.swift */,
+				71B3B42F4D8ADC705985B0C3 /* SpeechBackendContractsTests.swift */,
 			);
 			path = Domain;
 			sourceTree = "<group>";
 		};
-		A21C0000000000000000000E /* Domain */ = {
+		BB59EBF38C38532FAC2EAB8A /* SpeechOut */ = {
 			isa = PBXGroup;
 			children = (
-				A21C00000000000000000005 /* BackendAvailability.swift */,
-				A21C00000000000000000007 /* SpeechBackendError.swift */,
-				A21C00000000000000000009 /* SpeechModels.swift */,
-			);
-			path = Domain;
-			sourceTree = "<group>";
-		};
-		A21C0000000000000000000F /* SpeechIn */ = {
-			isa = PBXGroup;
-			children = (
-				A21C0000000000000000000B /* SpeechToTextBackend.swift */,
-			);
-			path = SpeechIn;
-			sourceTree = "<group>";
-		};
-		A21C00000000000000000010 /* SpeechOut */ = {
-			isa = PBXGroup;
-			children = (
-				A21C0000000000000000000D /* TextToSpeechBackend.swift */,
+				A7357E0F76AF76DF9C69ACD1 /* TextToSpeechBackend.swift */,
 			);
 			path = SpeechOut;
 			sourceTree = "<group>";
@@ -119,9 +126,10 @@
 			children = (
 				359767A5465051721E7F2076 /* Assets.xcassets */,
 				A3B1078494319AB67E3172D5 /* App */,
-				A21C0000000000000000000E /* Domain */,
-				A21C0000000000000000000F /* SpeechIn */,
-				A21C00000000000000000010 /* SpeechOut */,
+				FDEA6DBE16EC5221B53015C6 /* Domain */,
+				370CCB652C846F1DC6580429 /* SpeechIn */,
+				BB59EBF38C38532FAC2EAB8A /* SpeechOut */,
+				1D5C6A10CD6B121EB1EF0031 /* System */,
 			);
 			path = Relay;
 			sourceTree = "<group>";
@@ -129,11 +137,23 @@
 		E9C14B8A9590FCA3EDCFEAEA /* RelayTests */ = {
 			isa = PBXGroup;
 			children = (
-				A21C00000000000000000003 /* Domain */,
 				1D080F5789BE1F241509F1C2 /* ProjectSmokeTests.swift */,
 				82F98404629EA6F3162215CC /* RelayTests.swift */,
+				A89903B3BCFD871D73F30B39 /* Domain */,
 			);
 			path = RelayTests;
+			sourceTree = "<group>";
+		};
+		FDEA6DBE16EC5221B53015C6 /* Domain */ = {
+			isa = PBXGroup;
+			children = (
+				85842060D11E3427D905C000 /* AppSettings.swift */,
+				1230C06958285AB1CAE2418A /* BackendAvailability.swift */,
+				36BC1C589CC6F88B197B1EF0 /* HotkeyDefinition.swift */,
+				EAB0B39FEA02933CC4354E8D /* SpeechBackendError.swift */,
+				CA7F679F877AB1E080B262A1 /* SpeechModels.swift */,
+			);
+			path = Domain;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -222,9 +242,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A21C00000000000000000001 /* SpeechBackendContractsTests.swift in Sources */,
+				18A0B28B851CB76A0406F54E /* AppSettingsTests.swift in Sources */,
 				91CA532F4429D5B65476BEBC /* ProjectSmokeTests.swift in Sources */,
 				9ED060105B789ED3C5278037 /* RelayTests.swift in Sources */,
+				70155993155C43ABD4EACFE4 /* SpeechBackendContractsTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -232,15 +253,18 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A21C00000000000000000004 /* BackendAvailability.swift in Sources */,
 				D0CCD89167ACBB59A2D873B6 /* AppModel.swift in Sources */,
+				C5F5763A4617CDDD616EB1F3 /* AppSettings.swift in Sources */,
+				8364B21972FCCAC67036630C /* BackendAvailability.swift in Sources */,
+				63950769791664D8A9424529 /* HotkeyDefinition.swift in Sources */,
 				629B951FA84E58D245591D7B /* MenuBarContentView.swift in Sources */,
 				B5059A51D144C468B1843122 /* RelayApp.swift in Sources */,
-				A21C00000000000000000006 /* SpeechBackendError.swift in Sources */,
-				A21C00000000000000000008 /* SpeechModels.swift in Sources */,
-				A21C0000000000000000000A /* SpeechToTextBackend.swift in Sources */,
-				A21C0000000000000000000C /* TextToSpeechBackend.swift in Sources */,
+				23E6C9B2DB1F71CE066D828B /* SettingsStore.swift in Sources */,
 				42DF91F35139107D11DE4F66 /* SettingsView.swift in Sources */,
+				740BAC00FB22AFBE28844B6E /* SpeechBackendError.swift in Sources */,
+				131B33B0A7200D30823A1201 /* SpeechModels.swift in Sources */,
+				010EFDE2D6C4A73206572BBE /* SpeechToTextBackend.swift in Sources */,
+				581FC3101A3FE16E88052CDC /* TextToSpeechBackend.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
