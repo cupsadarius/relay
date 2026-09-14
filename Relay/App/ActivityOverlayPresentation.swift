@@ -16,6 +16,13 @@ struct ActivityOverlayPresentation: Equatable {
         case error
     }
 
+    enum AccentColor: Equatable {
+        case red
+        case amber
+        case violet
+        case cyan
+    }
+
     let kind: Kind
     let accent: Accent
     let size: CGSize
@@ -64,10 +71,10 @@ struct ActivityOverlayPresentation: Equatable {
                 actionAccessibilityLabel: interactive ? "Stop speech" : nil,
                 animatesWaveform: !reduceMotion, usesScaleTransition: scaleTransition
             )
-        case let .error(_, _, message):
+        case let .error(_, category, _):
             return .init(
                 kind: .error, accent: .error, size: size,
-                title: interactive ? sanitizedErrorMessage(message) : nil, startedAt: nil,
+                title: interactive ? errorDisplayCopy(for: category) : nil, startedAt: nil,
                 action: nil, actionAccessibilityLabel: nil,
                 animatesWaveform: false, usesScaleTransition: scaleTransition
             )
@@ -83,8 +90,30 @@ struct ActivityOverlayPresentation: Equatable {
         }
     }
 
-    private static func sanitizedErrorMessage(_ message: String) -> String {
-        let words = message.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
-        return words.isEmpty ? "Something went wrong" : words.joined(separator: " ")
+    func listeningWaveformBars() -> [CGFloat] {
+        guard case let .listening(level) = kind else { return [] }
+        guard animatesWaveform else { return [0.35, 0.6, 1, 0.6, 0.35] }
+
+        let height = CGFloat(min(max(level, 0), 1))
+        return [0.35, 0.6, 1, 0.6, 0.35].map { 0.2 + $0 * (0.25 + height * 0.75) }
+    }
+
+    var accentColors: [AccentColor] {
+        switch accent {
+        case .red, .error: [.red]
+        case .amber: [.amber]
+        case .violetCyan: [.violet, .cyan]
+        }
+    }
+
+    private static func errorDisplayCopy(for category: ActivityOverlayErrorCategory) -> String {
+        switch category {
+        case .microphone: "Microphone unavailable"
+        case .speechRecognition: "Speech recognition unavailable"
+        case .noUsableAudio: "No usable audio detected"
+        case .speechPlayback: "Speech playback failed"
+        case .insertion: "Could not insert text"
+        case .unexpected: "Something went wrong"
+        }
     }
 }

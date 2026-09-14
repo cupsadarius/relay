@@ -75,16 +75,29 @@ final class ActivityOverlayPresentationTests: XCTestCase {
         XCTAssertEqual(value?.accent, .red)
     }
 
-    func testErrorSanitizesWhitespaceAndUsesFallbackMessage() {
-        let value = ActivityOverlayPresentation.make(
-            state: .error(sessionID: UUID(), category: .unexpected, message: "  \n \t  "),
-            style: .interactive,
-            reduceMotion: false
-        )
+    func testErrorRenderingUsesFixedCategoryCopyInsteadOfSensitiveMessage() {
+        let cases: [(ActivityOverlayErrorCategory, String)] = [
+            (.microphone, "Microphone unavailable"),
+            (.speechRecognition, "Speech recognition unavailable"),
+            (.noUsableAudio, "No usable audio detected"),
+            (.speechPlayback, "Speech playback failed"),
+            (.insertion, "Could not insert text"),
+            (.unexpected, "Something went wrong"),
+        ]
 
-        XCTAssertEqual(value?.kind, .error)
-        XCTAssertEqual(value?.accent, .error)
-        XCTAssertEqual(value?.title, "Something went wrong")
+        for (category, expectedTitle) in cases {
+            let sensitiveMessage = "https://internal.example/token=secret transcript: private identifier 123"
+            let value = ActivityOverlayPresentation.make(
+                state: .error(sessionID: UUID(), category: category, message: sensitiveMessage),
+                style: .interactive,
+                reduceMotion: false
+            )
+
+            XCTAssertEqual(value?.kind, .error)
+            XCTAssertEqual(value?.accent, .error)
+            XCTAssertEqual(value?.title, expectedTitle)
+            XCTAssertFalse(value!.title!.contains("secret"))
+        }
     }
 
     func testSpeakingWaveformIsDeterministicForTimestamp() {
@@ -95,5 +108,25 @@ final class ActivityOverlayPresentationTests: XCTestCase {
 
         XCTAssertEqual(presentation.waveformBars(at: timestamp), presentation.waveformBars(at: timestamp))
         XCTAssertEqual(presentation.waveformBars(at: timestamp).count, 5)
+    }
+
+    func testReduceMotionListeningBarsDoNotChangeWithLevel() {
+        let quiet = ActivityOverlayPresentation.make(
+            state: .listening(sessionID: UUID(), startedAt: .now, level: 0), style: .minimal, reduceMotion: true
+        )!
+        let loud = ActivityOverlayPresentation.make(
+            state: .listening(sessionID: UUID(), startedAt: .now, level: 1), style: .minimal, reduceMotion: true
+        )!
+
+        XCTAssertFalse(quiet.animatesWaveform)
+        XCTAssertEqual(quiet.listeningWaveformBars(), loud.listeningWaveformBars())
+    }
+
+    func testSpeakingSelectsBothVioletAndCyanAccentColors() {
+        let presentation = ActivityOverlayPresentation.make(
+            state: .speaking(sessionID: UUID(), startedAt: .now), style: .minimal, reduceMotion: false
+        )!
+
+        XCTAssertEqual(presentation.accentColors, [.violet, .cyan])
     }
 }

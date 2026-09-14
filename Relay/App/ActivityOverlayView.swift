@@ -54,7 +54,7 @@ struct ActivityOverlayView: View {
         .padding(.horizontal, 14)
         .background(.ultraThinMaterial, in: Capsule())
         .overlay(Capsule().fill(.black.opacity(0.48)))
-        .overlay(Capsule().stroke(accentColor(for: presentation.accent).opacity(0.45), lineWidth: 1))
+        .overlay(Capsule().stroke(accentGradient(for: presentation).opacity(0.45), lineWidth: 1))
         .shadow(color: .black.opacity(0.28), radius: 10, y: 4)
         .foregroundStyle(accentColor(for: presentation.accent))
     }
@@ -62,26 +62,21 @@ struct ActivityOverlayView: View {
     @ViewBuilder
     private func waveform(for presentation: ActivityOverlayPresentation) -> some View {
         switch presentation.kind {
-        case let .listening(level):
-            WaveformBars(values: listeningBars(level: level), color: accentColor(for: presentation.accent))
+        case .listening:
+            WaveformBars(values: presentation.listeningWaveformBars(), colors: accentColors(for: presentation))
         case .speaking:
             if presentation.animatesWaveform {
                 TimelineView(.animation) { context in
-                    WaveformBars(values: presentation.waveformBars(at: context.date), color: accentColor(for: presentation.accent))
+                    WaveformBars(values: presentation.waveformBars(at: context.date), colors: accentColors(for: presentation))
                 }
             } else {
-                WaveformBars(values: presentation.waveformBars(at: .distantPast), color: accentColor(for: presentation.accent))
+                WaveformBars(values: presentation.waveformBars(at: .distantPast), colors: accentColors(for: presentation))
             }
         case .processing:
             ProgressView().controlSize(.small)
         case .error:
             Image(systemName: "exclamationmark.triangle.fill")
         }
-    }
-
-    private func listeningBars(level: Float) -> [CGFloat] {
-        let height = CGFloat(min(max(level, 0), 1))
-        return [0.35, 0.6, 1, 0.6, 0.35].map { 0.2 + $0 * (0.25 + height * 0.75) }
     }
 
     private func elapsedTime(since start: Date, now: Date) -> String {
@@ -104,17 +99,34 @@ struct ActivityOverlayView: View {
         case .error: .red
         }
     }
+
+    private func accentColors(for presentation: ActivityOverlayPresentation) -> [Color] {
+        presentation.accentColors.map { color in
+            switch color {
+            case .red: .red
+            case .amber: .orange
+            case .violet: .purple
+            case .cyan: .cyan
+            }
+        }
+    }
+
+    private func accentGradient(for presentation: ActivityOverlayPresentation) -> LinearGradient {
+        LinearGradient(
+            colors: accentColors(for: presentation), startPoint: .leading, endPoint: .trailing
+        )
+    }
 }
 
 private struct WaveformBars: View {
     let values: [CGFloat]
-    let color: Color
+    let colors: [Color]
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(Array(values.enumerated()), id: \.offset) { _, value in
                 Capsule()
-                    .fill(color)
+                    .fill(LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom))
                     .frame(width: 3, height: 18 * value)
             }
         }
