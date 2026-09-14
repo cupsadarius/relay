@@ -72,3 +72,68 @@ Result:
 
 - `AVSpeechSynthesizer.speak` confirms that an utterance was submitted, not that playback completed. This matches the backend contract and the task's “successfully submitted” replay semantics.
 - The test run emits benign macOS intents-service connection messages from the app test host; tests and build still complete successfully.
+
+## Fix Round 1: Cross-backend stream replacement
+
+### Finding addressed
+
+A live backend-order change could route a later automatic request to a different backend while leaving the previous backend speaking and no longer reachable through router transport controls.
+
+### Regression test and RED evidence
+
+Added `testSwitchingBackendsStopsThePreviouslyActiveBackend`. It submits to backend A, changes the live order to prefer backend B, submits again, calls router stop, and verifies both A and B received exactly one stop at the appropriate point.
+
+Command:
+
+```sh
+xcodebuild -project Relay.xcodeproj -scheme Relay -destination 'platform=macOS' -derivedDataPath .derived-data -only-testing:RelayTests/TTSRouterTests/testSwitchingBackendsStopsThePreviouslyActiveBackend test
+```
+
+Expected RED result:
+
+```text
+XCTAssertEqual failed: ("0") is not equal to ("1")
+Executed 1 test, with 1 failure (0 unexpected)
+** TEST FAILED **
+```
+
+Backend A's zero stop count demonstrated that it had been orphaned when B became active.
+
+### Minimal fix
+
+Before submitting to an available candidate, `TTSRouter` now checks backend object identity. If the candidate differs from the active backend, it stops and clears the prior backend before submission. Submissions to the same backend are unchanged, preserving automatic same-backend queuing and the coordinator's explicit user-requested stop behavior.
+
+### Focused GREEN evidence
+
+Command:
+
+```sh
+xcodebuild -project Relay.xcodeproj -scheme Relay -destination 'platform=macOS' -derivedDataPath .derived-data -only-testing:RelayTests/TTSRouterTests -only-testing:RelayTests/SpeechCoordinatorTests test
+```
+
+Result:
+
+```text
+TTSRouterTests: Executed 7 tests, with 0 failures
+SpeechCoordinatorTests: Executed 4 tests, with 0 failures
+Selected tests: Executed 11 tests, with 0 failures
+** TEST SUCCEEDED **
+```
+
+### Full-suite verification
+
+Final fresh command after strengthening the regression test to assert stop-before-speak event ordering:
+
+```sh
+xcodebuild -project Relay.xcodeproj -scheme Relay -destination 'platform=macOS' -derivedDataPath .derived-data test
+```
+
+Result:
+
+```text
+XCTest: Executed 21 tests, with 0 failures
+Swift Testing: 1 test passed
+** TEST SUCCEEDED **
+```
+
+The app test host continues to emit benign intents-service connection messages; they do not affect the successful result.

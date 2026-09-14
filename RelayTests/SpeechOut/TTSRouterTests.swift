@@ -81,6 +81,30 @@ final class TTSRouterTests: XCTestCase {
         XCTAssertEqual(second.stopCount, 0)
     }
 
+    func testSwitchingBackendsStopsThePreviouslyActiveBackend() async throws {
+        let first = FakeTTSBackend(id: "first")
+        let second = FakeTTSBackend(id: "second")
+        var events: [String] = []
+        first.onStop = { events.append("first stopped") }
+        second.onSpeak = { events.append("second spoke") }
+        var order = ["first", "second"]
+        let router = TTSRouter(
+            backends: ["first": first, "second": second],
+            backendOrder: { order }
+        )
+
+        try await router.speak(text: "one", options: .init())
+        order = ["second", "first"]
+        try await router.speak(text: "two", options: .init())
+        router.stop()
+
+        XCTAssertEqual(first.stopCount, 1)
+        XCTAssertEqual(second.stopCount, 1)
+        XCTAssertEqual(first.spoken.map(\.text), ["one"])
+        XCTAssertEqual(second.spoken.map(\.text), ["two"])
+        XCTAssertEqual(events, ["first stopped", "second spoke"])
+    }
+
     func testAppleBackendReportsSupportedCapabilities() {
         let backend = AppleTTSBackend()
 
@@ -108,6 +132,8 @@ final class FakeTTSBackend: TextToSpeechBackend {
     var stopCount = 0
     var pauseCount = 0
     var resumeCount = 0
+    var onSpeak: (() -> Void)?
+    var onStop: (() -> Void)?
 
     init(id: String) {
         self.id = id
@@ -118,10 +144,14 @@ final class FakeTTSBackend: TextToSpeechBackend {
 
     func speak(text: String, options: TTSOptions) async throws {
         if let error { throw error }
+        onSpeak?()
         spoken.append((text, options))
     }
 
-    func stop() { stopCount += 1 }
+    func stop() {
+        stopCount += 1
+        onStop?()
+    }
     func pause() { pauseCount += 1 }
     func resume() { resumeCount += 1 }
 }

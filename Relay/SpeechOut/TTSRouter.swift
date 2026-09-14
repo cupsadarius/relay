@@ -20,6 +20,10 @@ final class TTSRouter {
             guard case .available = await backend.availability() else { continue }
 
             do {
+                if let activeBackend, activeBackend !== backend {
+                    activeBackend.stop()
+                    self.activeBackend = nil
+                }
                 try await backend.speak(text: text, options: options)
                 activeBackend = backend
                 return
