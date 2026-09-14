@@ -45,12 +45,18 @@ protocol ClipboardPasteboard: AnyObject {
     var changeCount: Int { get }
     func snapshot() -> ClipboardSnapshot
     func string() -> String?
+    func write(string: String) -> Bool
     func restore(_ snapshot: ClipboardSnapshot)
 }
 
 @MainActor
 protocol CopyCommandSending {
     func sendCopy() throws
+}
+
+@MainActor
+protocol PasteCommandSending {
+    func sendPaste() throws
 }
 
 @MainActor
@@ -110,6 +116,11 @@ final class GeneralClipboardPasteboard: ClipboardPasteboard {
         pasteboard.string(forType: .string)
     }
 
+    func write(string: String) -> Bool {
+        pasteboard.clearContents()
+        return pasteboard.setString(string, forType: .string)
+    }
+
     func restore(_ snapshot: ClipboardSnapshot) {
         let items = snapshot.items.map { snapshotItem in
             let item = NSPasteboardItem()
@@ -144,6 +155,22 @@ struct SystemCopyCommand: CopyCommandSending {
     func sendCopy() throws {
         guard let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: 8, keyDown: true),
               let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: 8, keyDown: false)
+        else {
+            throw CopyCommandError.eventCreationFailed
+        }
+
+        keyDown.flags = .maskCommand
+        keyUp.flags = .maskCommand
+        keyDown.post(tap: .cghidEventTap)
+        keyUp.post(tap: .cghidEventTap)
+    }
+}
+
+@MainActor
+struct SystemPasteCommand: PasteCommandSending {
+    func sendPaste() throws {
+        guard let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: 9, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: 9, keyDown: false)
         else {
             throw CopyCommandError.eventCreationFailed
         }
