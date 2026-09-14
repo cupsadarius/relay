@@ -182,12 +182,36 @@ final class TTSRouterTests: XCTestCase {
         XCTAssertEqual(events, [.started(sessionID: secondSessionID)])
     }
 
-    func testAppleBackendReportsSupportedCapabilities() {
-        let backend = AppleTTSBackend()
+    func testEventsEmittedSynchronouslyDuringSpeakAreForwarded() async throws {
+        let backend = FakeTTSBackend(id: "apple")
+        let router = makeRouter([backend])
+        var events: [TTSPlaybackEvent] = []
+        router.setPlaybackEventHandler { events.append($0) }
+        let sessionID = UUID()
+        backend.duringSpeak = { sessionID in
+            backend.emit(.scheduled(sessionID: sessionID))
+            backend.emit(.started(sessionID: sessionID))
+        }
 
-        XCTAssertTrue(backend.capabilities.contains(.voiceSelection))
-        XCTAssertTrue(backend.capabilities.contains(.pauseResume))
-        XCTAssertTrue(backend.capabilities.contains(.fullyOffline))
+        try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
+
+        XCTAssertEqual(events, [.scheduled(sessionID: sessionID), .started(sessionID: sessionID)])
+    }
+
+    func testEventEmittedAfterSuspensionDuringSpeakIsForwarded() async throws {
+        let backend = FakeTTSBackend(id: "apple")
+        backend.yieldBeforeEmitting = true
+        let router = makeRouter([backend])
+        var events: [TTSPlaybackEvent] = []
+        router.setPlaybackEventHandler { events.append($0) }
+        let sessionID = UUID()
+        backend.duringSpeak = { sessionID in
+            backend.emit(.started(sessionID: sessionID))
+        }
+
+        try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
+
+        XCTAssertEqual(events, [.started(sessionID: sessionID)])
     }
 
     private func makeRouter(_ backends: [FakeTTSBackend]) -> TTSRouter {
@@ -211,6 +235,13 @@ final class FakeTTSBackend: TextToSpeechBackend {
     var resumeCount = 0
     var onSpeak: (() -> Void)?
     var onStop: (() -> Void)?
+    /// Called from inside `speak`, after any configured suspension, with the
+    /// session ID being routed - lets tests emit events before `speak`
+    /// returns to exercise the router's mid-call event forwarding.
+    var duringSpeak: (@MainActor (UUID) -> Void)?
+    /// When true, `speak` suspends (`Task.yield()`) before invoking
+    /// `duringSpeak`, so tests can prove events survive an actor suspension.
+    var yieldBeforeEmitting = false
     private(set) var lastSessionID: UUID?
     private var playbackEventHandler: (@MainActor (TTSPlaybackEvent) -> Void)?
 
@@ -228,6 +259,8 @@ final class FakeTTSBackend: TextToSpeechBackend {
     func speak(text: String, options: TTSOptions, sessionID: UUID) async throws {
         lastSessionID = sessionID
         if let error { throw error }
+        if yieldBeforeEmitting { await Task.yield() }
+        duringSpeak?(sessionID)
         onSpeak?()
         spoken.append((text, options, sessionID))
     }

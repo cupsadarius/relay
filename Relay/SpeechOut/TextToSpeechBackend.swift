@@ -1,4 +1,3 @@
-import AVFoundation
 import Foundation
 
 enum TTSPlaybackEvent: Equatable, Sendable {
@@ -33,16 +32,3 @@ protocol TextToSpeechBackend: AnyObject {
     func pause()
     func resume()
 }
-
-/// Seam over `AVSpeechSynthesizer` so tests can drive playback lifecycle
-/// without speaking through the real system voice.
-@MainActor
-protocol AppleSpeechSynthesizing: AnyObject {
-    var delegate: AVSpeechSynthesizerDelegate? { get set }
-    func speak(_ utterance: AVSpeechUtterance)
-    func stopSpeaking(at boundary: AVSpeechBoundary) -> Bool
-    func pauseSpeaking(at boundary: AVSpeechBoundary) -> Bool
-    func continueSpeaking() -> Bool
-}
-
-extension AVSpeechSynthesizer: AppleSpeechSynthesizing {}

@@ -1,6 +1,22 @@
 import AVFoundation
 import Foundation
 
+/// Seam over `AVSpeechSynthesizer` so tests can drive playback lifecycle
+/// without speaking through the real system voice.
+@MainActor
+protocol AppleSpeechSynthesizing: AnyObject {
+    /// Must be held weakly by conforming types, matching
+    /// `AVSpeechSynthesizer`'s own delegate property, so a delegate that
+    /// owns its synthesizer (like `AppleTTSBackend`) does not retain-cycle.
+    var delegate: AVSpeechSynthesizerDelegate? { get set }
+    func speak(_ utterance: AVSpeechUtterance)
+    func stopSpeaking(at boundary: AVSpeechBoundary) -> Bool
+    func pauseSpeaking(at boundary: AVSpeechBoundary) -> Bool
+    func continueSpeaking() -> Bool
+}
+
+extension AVSpeechSynthesizer: AppleSpeechSynthesizing {}
+
 @MainActor
 final class AppleTTSBackend: NSObject, TextToSpeechBackend {
     let id = "apple-tts"
@@ -13,7 +29,10 @@ final class AppleTTSBackend: NSObject, TextToSpeechBackend {
 
     private let synthesizer: any AppleSpeechSynthesizing
     private var playbackEventHandler: (@MainActor (TTSPlaybackEvent) -> Void)?
-    private var sessionsByUtterance: [ObjectIdentifier: UUID] = [:]
+    /// Retains the utterance alongside its session so the `ObjectIdentifier`
+    /// key cannot be recycled by a deallocated-then-reallocated utterance
+    /// while it is still tracked.
+    private var sessionsByUtterance: [ObjectIdentifier: (utterance: AVSpeechUtterance, session: UUID)] = [:]
 
     init(synthesizer: any AppleSpeechSynthesizing = AVSpeechSynthesizer()) {
         self.synthesizer = synthesizer
@@ -40,12 +59,18 @@ final class AppleTTSBackend: NSObject, TextToSpeechBackend {
             utterance.voice = voice
         }
 
-        sessionsByUtterance[ObjectIdentifier(utterance)] = sessionID
-        synthesizer.speak(utterance)
+        sessionsByUtterance[ObjectIdentifier(utterance)] = (utterance, sessionID)
+        // Emitted before handing off to the synthesizer so ordering holds
+        // even if a delegate callback were ever delivered synchronously.
         playbackEventHandler?(.scheduled(sessionID: sessionID))
+        synthesizer.speak(utterance)
     }
 
     func stop() {
+        // Clear tracked utterances before stopping so a didCancel delivered
+        // for the utterance being stopped cannot look up (and re-emit for)
+        // a session we've already abandoned.
+        sessionsByUtterance.removeAll()
         _ = synthesizer.stopSpeaking(at: .immediate)
     }
 
@@ -58,44 +83,58 @@ final class AppleTTSBackend: NSObject, TextToSpeechBackend {
     }
 
     private func session(for utteranceID: ObjectIdentifier) -> UUID? {
-        sessionsByUtterance[utteranceID]
+        sessionsByUtterance[utteranceID]?.session
     }
 
     /// Removes and returns the session tracked for `utteranceID`. Called on
     /// a terminal delegate event (finish/cancel) so the map does not grow
     /// unbounded across a long-running session.
     private func endSession(for utteranceID: ObjectIdentifier) -> UUID? {
-        sessionsByUtterance.removeValue(forKey: utteranceID)
+        sessionsByUtterance.removeValue(forKey: utteranceID)?.session
+    }
+
+    /// AVSpeechSynthesizer delivers delegate callbacks on the main thread
+    /// today, but `AVSpeechSynthesizerDelegate` is `NS_SWIFT_SENDABLE` and
+    /// the framework documents no guarantee about which thread delivers
+    /// them. Assume main-actor isolation when we're already there (the
+    /// common case); otherwise hop instead of trapping.
+    nonisolated private func onMainActor(_ body: @escaping @MainActor (AppleTTSBackend) -> Void) {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                body(self)
+            }
+        } else {
+            Task { @MainActor in
+                body(self)
+            }
+        }
     }
 }
 
 extension AppleTTSBackend: AVSpeechSynthesizerDelegate {
-    // AVSpeechSynthesizer delivers delegate callbacks on the main thread, so
-    // it is safe to assume MainActor isolation here rather than hopping with
-    // a Task (which would let late callbacks reorder relative to new speak
-    // calls made on the actor). `AVSpeechUtterance` is not Sendable, so only
-    // its (Sendable) identity crosses into the isolated closure.
+    // `AVSpeechUtterance` is not Sendable, so only its (Sendable) identity
+    // crosses into the isolated closure.
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
         let utteranceID = ObjectIdentifier(utterance)
-        MainActor.assumeIsolated {
-            guard let sessionID = self.session(for: utteranceID) else { return }
-            self.playbackEventHandler?(.started(sessionID: sessionID))
+        onMainActor { backend in
+            guard let sessionID = backend.session(for: utteranceID) else { return }
+            backend.playbackEventHandler?(.started(sessionID: sessionID))
         }
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         let utteranceID = ObjectIdentifier(utterance)
-        MainActor.assumeIsolated {
-            guard let sessionID = self.endSession(for: utteranceID) else { return }
-            self.playbackEventHandler?(.finished(sessionID: sessionID))
+        onMainActor { backend in
+            guard let sessionID = backend.endSession(for: utteranceID) else { return }
+            backend.playbackEventHandler?(.finished(sessionID: sessionID))
         }
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         let utteranceID = ObjectIdentifier(utterance)
-        MainActor.assumeIsolated {
-            guard let sessionID = self.endSession(for: utteranceID) else { return }
-            self.playbackEventHandler?(.cancelled(sessionID: sessionID))
+        onMainActor { backend in
+            guard let sessionID = backend.endSession(for: utteranceID) else { return }
+            backend.playbackEventHandler?(.cancelled(sessionID: sessionID))
         }
     }
 }

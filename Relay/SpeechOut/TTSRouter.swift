@@ -6,6 +6,12 @@ final class TTSRouter {
     private let backendOrder: () -> [String]
     private var activeBackend: (any TextToSpeechBackend)?
     private var activeSessionID: UUID?
+    /// The backend/session currently inside a `speak(...)` call, so events
+    /// emitted synchronously (or after a suspension) before that call
+    /// returns are still forwarded even though `activeBackend`/
+    /// `activeSessionID` are only assigned once it succeeds.
+    private var routingBackend: (any TextToSpeechBackend)?
+    private var routingSessionID: UUID?
     private var eventHandler: (@MainActor (TTSPlaybackEvent) -> Void)?
 
     init(
@@ -23,8 +29,8 @@ final class TTSRouter {
     }
 
     /// Installs the single downstream listener for playback lifecycle
-    /// events. Only events raised by the currently active backend for the
-    /// currently active session are forwarded.
+    /// events. Only events raised by the currently routed or active
+    /// backend, for the matching session, are forwarded.
     func setPlaybackEventHandler(_ handler: @escaping @MainActor (TTSPlaybackEvent) -> Void) {
         eventHandler = handler
     }
@@ -41,6 +47,12 @@ final class TTSRouter {
                     activeBackend.stop()
                     self.activeBackend = nil
                     activeSessionID = nil
+                }
+                routingBackend = backend
+                routingSessionID = sessionID
+                defer {
+                    routingBackend = nil
+                    routingSessionID = nil
                 }
                 try await backend.speak(text: text, options: options, sessionID: sessionID)
                 activeBackend = backend
@@ -80,6 +92,11 @@ final class TTSRouter {
     }
 
     private func forward(_ event: TTSPlaybackEvent, from backend: any TextToSpeechBackend) {
+        if let routingBackend, routingBackend === backend,
+           let routingSessionID, event.sessionID == routingSessionID {
+            eventHandler?(event)
+            return
+        }
         guard let activeBackend, activeBackend === backend,
               let activeSessionID, event.sessionID == activeSessionID else { return }
         eventHandler?(event)

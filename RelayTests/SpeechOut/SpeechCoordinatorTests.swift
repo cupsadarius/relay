@@ -16,12 +16,30 @@ final class SpeechCoordinatorTests: XCTestCase {
 
     func testAutomaticSpeechDoesNotReplaceActiveSpeech() async throws {
         let backend = FakeTTSBackend(id: "apple")
-        let coordinator = makeCoordinator(backend: backend)
+        let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
         try await coordinator.speak(request(text: "first", mode: .automatic))
+        let first = backend.lastSessionID!
+        backend.emit(.started(sessionID: first))
+        guard case let .speaking(startedSession, _) = overlay.state, startedSession == first else {
+            return XCTFail("Expected first session speaking, got \(overlay.state)")
+        }
+
         try await coordinator.speak(request(text: "second", mode: .automatic))
+        let second = backend.lastSessionID!
 
         XCTAssertEqual(backend.stopCount, 0)
+        // The overlay must keep showing the first session - queuing a second
+        // automatic utterance behind it must not hide the capsule.
+        guard case let .speaking(stillFirst, _) = overlay.state, stillFirst == first else {
+            return XCTFail("Expected overlay to still show first session, got \(overlay.state)")
+        }
+
+        backend.emit(.started(sessionID: second))
+        guard case let .speaking(nowSecond, _) = overlay.state, nowSecond == second else {
+            return XCTFail("Expected overlay to show second session, got \(overlay.state)")
+        }
     }
 
     func testReplayUsesLastSuccessfulRequestAndCurrentOptions() async throws {
@@ -108,6 +126,19 @@ final class SpeechCoordinatorTests: XCTestCase {
         }
         XCTAssertEqual(category, .speechPlayback)
         XCTAssertEqual(message, "Speech playback failed.")
+    }
+
+    func testMatchingCancellationHidesOverlay() async throws {
+        let backend = FakeTTSBackend(id: "apple")
+        let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let coordinator = makeCoordinator(backend: backend, overlay: overlay)
+
+        try await coordinator.speak(request(text: "hello", mode: .userRequested))
+        let sessionID = backend.lastSessionID!
+        backend.emit(.started(sessionID: sessionID))
+        backend.emit(.cancelled(sessionID: sessionID))
+
+        XCTAssertTrue(overlay.state.isHidden)
     }
 
     func testStaleInteractiveStopCannotStopReplacementSpeech() async throws {
