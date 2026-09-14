@@ -73,7 +73,7 @@ RelayTests/
 - Produces: `ActivityOverlayStyle`, `AppSettings.activityOverlayStyle`, and `AppModel.setActivityOverlayStyle(_:)`.
 - Preserves: every pre-overlay saved setting when `activityOverlayStyle` is absent.
 
-- [ ] **Step 1: Write failing migration, default, round-trip, and AppModel persistence tests**
+- [x] **Step 1: Write failing migration, default, round-trip, and AppModel persistence tests**
 
 ```swift
 func testDefaultsUseInteractiveActivityOverlay() {
@@ -107,7 +107,7 @@ func testChangingActivityOverlayStylePersistsImmediately() {
 }
 ```
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -119,7 +119,7 @@ xcodebuild -project Relay.xcodeproj -scheme Relay -destination 'platform=macOS' 
 
 Expected: compile failures because `ActivityOverlayStyle`, `activityOverlayStyle`, and the setter do not exist.
 
-- [ ] **Step 3: Add the persisted type and lossless legacy decode**
+- [x] **Step 3: Add the persisted type and lossless legacy decode**
 
 ```swift
 enum ActivityOverlayStyle: String, Codable, CaseIterable, Sendable {
@@ -179,7 +179,7 @@ struct AppSettings: Codable, Equatable, Sendable {
 
 Keep the existing memberwise initializer available by adding it explicitly, and pass `activityOverlayStyle: .interactive` from `AppSettings.defaults`.
 
-- [ ] **Step 4: Add the model setter and segmented Settings picker**
+- [x] **Step 4: Add the model setter and segmented Settings picker**
 
 ```swift
 func setActivityOverlayStyle(_ style: ActivityOverlayStyle) {
@@ -196,11 +196,11 @@ private var activityOverlayStyleBinding: Binding<ActivityOverlayStyle> {
 
 Add a `Section("Activity Overlay")` with a `.segmented` picker whose labels are `Off`, `Minimal`, and `Interactive`. Increase the fixed Settings height only enough to avoid clipping.
 
-- [ ] **Step 5: Run focused tests and verify GREEN**
+- [x] **Step 5: Run focused tests and verify GREEN**
 
 Run the Step 2 command. Expected: all selected tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add Relay/Domain/AppSettings.swift Relay/App/AppModel.swift Relay/App/SettingsView.swift \
@@ -218,7 +218,7 @@ git commit -m "feat(overlay): persist activity overlay style"
 - Produces: `ActivityOverlayState`, `ActivityOverlayErrorCategory`, `ActivityOverlayAction`, `ActivityOverlayScheduling`, and `ActivityOverlayModel`.
 - Consumers call trusted `begin`, then `listen`, `updateLevel`, `process`, `speak`, `complete`, `cancel`, and `fail` with the same UUID.
 
-- [ ] **Step 1: Write failing reducer and timer race tests**
+- [x] **Step 1: Write failing reducer and timer race tests**
 
 ```swift
 @MainActor
@@ -277,7 +277,7 @@ func testLateFailureCannotResurrectCompletedSession() {
 
 Also cover level clamping to `0...1`, listening→processing with the same start time, matching cancellation, and state-derived actions (`Cancel` for listening/processing, `Stop` for speaking).
 
-- [ ] **Step 2: Run the focused model tests and verify RED**
+- [x] **Step 2: Run the focused model tests and verify RED**
 
 ```bash
 xcodegen generate
@@ -287,7 +287,7 @@ xcodebuild -project Relay.xcodeproj -scheme Relay -destination 'platform=macOS' 
 
 Expected: compile failure because the activity model types do not exist.
 
-- [ ] **Step 3: Implement the typed model and injectable timer**
+- [x] **Step 3: Implement the typed model and injectable timer**
 
 ```swift
 enum ActivityOverlayErrorCategory: Equatable, Sendable {
@@ -398,11 +398,11 @@ final class ActivityOverlayModel {
 
 The production scheduler uses `Task { try? await Task.sleep(for: delay); await operation() }`; the operation itself rechecks the session ID before hiding.
 
-- [ ] **Step 4: Run focused tests and verify GREEN**
+- [x] **Step 4: Run focused tests and verify GREEN**
 
 Run the Step 2 `xcodebuild` command. Expected: all selected tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Relay/App/ActivityOverlayModel.swift RelayTests/App/ActivityOverlayModelTests.swift
@@ -420,7 +420,7 @@ git commit -m "feat(overlay): add session-safe activity model"
 - Consumes: `ActivityOverlayState`, `ActivityOverlayStyle`, and `ActivityOverlayAction`.
 - Produces: pure `ActivityOverlayPresentation.make(state:style:reduceMotion:)` and `ActivityOverlayView`.
 
-- [ ] **Step 1: Write failing presentation mapping tests**
+- [x] **Step 1: Write failing presentation mapping tests**
 
 ```swift
 func testOffAlwaysMapsToHidden() {
@@ -465,7 +465,7 @@ func testReduceMotionDisablesAnimatedWaveformsAndScale() {
 
 Also cover Processing→Cancel, Speaking→Stop, sanitized error rendering, Listening red/Processing amber/Speaking violet-cyan accents, and deterministic synthetic speaking bars.
 
-- [ ] **Step 2: Run presentation tests and verify RED**
+- [x] **Step 2: Run presentation tests and verify RED**
 
 ```bash
 xcodegen generate
@@ -475,7 +475,7 @@ xcodebuild -project Relay.xcodeproj -scheme Relay -destination 'platform=macOS' 
 
 Expected: compile failure because presentation types do not exist.
 
-- [ ] **Step 3: Implement the pure presentation value and mapper**
+- [x] **Step 3: Implement the pure presentation value and mapper**
 
 ```swift
 struct ActivityOverlayPresentation: Equatable {
@@ -538,15 +538,15 @@ struct ActivityOverlayPresentation: Equatable {
 }
 ```
 
-- [ ] **Step 4: Implement the capsule view**
+- [x] **Step 4: Implement the capsule view**
 
 `ActivityOverlayView` receives the observable model, style, and an async-safe `onAction` closure. Use `TimelineView(.animation)` for elapsed time and the deterministic speaking waveform; use microphone level only for listening. Apply a dark material capsule, subtle stroke/shadow, state accent color, and `@Environment(\.accessibilityReduceMotion)` to disable scale/wave motion. The button uses the presentation's exact accessibility label and no pause/resume affordance.
 
-- [ ] **Step 5: Run focused tests and verify GREEN**
+- [x] **Step 5: Run focused tests and verify GREEN**
 
 Run the Step 2 command. Expected: all selected tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add Relay/App/ActivityOverlayPresentation.swift Relay/App/ActivityOverlayView.swift \
@@ -567,7 +567,7 @@ git commit -m "feat(overlay): add activity capsule presentation"
 - Produces: `ActivityOverlayPresenting.update(state:style:)`, pure `ActivityOverlayPlacement`, and production `ActivityOverlayWindowController`.
 - Consumes: the state model, current style, and an `ActivityOverlayAction` handler.
 
-- [ ] **Step 1: Write failing placement, screen pinning, show/hide, and failure-isolation tests**
+- [x] **Step 1: Write failing placement, screen pinning, show/hide, and failure-isolation tests**
 
 ```swift
 func testPlacementCentersAboveVisibleFrameBottom() {
@@ -601,7 +601,7 @@ func testOffAndHiddenOrderPanelOutWithoutCreatingIt() {
 
 Add a failure test proving a host creation/show error records only `.overlayFailed` and does not throw into speech/dictation.
 
-- [ ] **Step 2: Run focused controller/diagnostics tests and verify RED**
+- [x] **Step 2: Run focused controller/diagnostics tests and verify RED**
 
 ```bash
 xcodegen generate
@@ -612,7 +612,7 @@ xcodebuild -project Relay.xcodeproj -scheme Relay -destination 'platform=macOS' 
 
 Expected: compile failure because the controller and diagnostics event do not exist.
 
-- [ ] **Step 3: Implement pure placement and panel policies**
+- [x] **Step 3: Implement pure placement and panel policies**
 
 ```swift
 enum ActivityOverlayPlacement {
@@ -627,19 +627,19 @@ enum ActivityOverlayPlacement {
 
 The lazily-created `NSPanel` uses `.borderless` and `.nonactivatingPanel`, `isFloatingPanel = true`, `hidesOnDeactivate = false`, `collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]`, `level = .floating`, `isMovable = false`, `isReleasedWhenClosed = false`, clear background, and no shadow outside the capsule. Override `canBecomeKey` and `canBecomeMain` to return false. Minimal sets `ignoresMouseEvents = true`; Interactive permits pointer events for the button without activation.
 
-- [ ] **Step 4: Implement session-pinned display selection and relayout**
+- [x] **Step 4: Implement session-pinned display selection and relayout**
 
 Choose the display once when a new non-hidden session ID arrives; use the screen containing the mouse with `NSScreen.main`/first-screen fallback. Retain that screen ID through listening→processing and relayout against its current `visibleFrame` on `NSApplication.didChangeScreenParametersNotification`. Clear the pinned display only after hidden.
 
-- [ ] **Step 5: Wire the host without coupling backends to AppKit**
+- [x] **Step 5: Wire the host without coupling backends to AppKit**
 
 `AppModel` owns the overlay model and an injected class-bound `ActivityOverlayPresenting`. The production composition creates `ActivityOverlayWindowController`; tests default to a no-op presenter. Bind `ActivityOverlayModel.setStateHandler` to `presenter.update(state:style:)`, reading the current style from the existing shared `SettingsState`. `setActivityOverlayStyle` explicitly calls the same update after persistence so a style change redraws or hides the active panel. Add an AppModel test proving `overlayModel.begin` + `listen` reaches a fake presenter, and a style-change test proving an active presentation updates immediately. Add `.overlayFailed` to `DiagnosticEvent` with the fixed copy text `"Activity overlay failed"`; never attach raw errors.
 
-- [ ] **Step 6: Run focused tests and verify GREEN**
+- [x] **Step 6: Run focused tests and verify GREEN**
 
 Run the Step 2 command. Expected: all selected tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add Relay/App/ActivityOverlayWindowController.swift Relay/App/AppModel.swift \
@@ -664,7 +664,7 @@ git commit -m "feat(overlay): host activity capsule above apps"
 - Produces: `TTSPlaybackEvent` and session-aware backend/router calls.
 - Consumes: `ActivityOverlayModel.begin/speak/complete/cancel/fail`.
 
-- [ ] **Step 1: Write failing lifecycle and stale-session tests**
+- [x] **Step 1: Write failing lifecycle and stale-session tests**
 
 ```swift
 @MainActor
@@ -696,7 +696,7 @@ func testLateFinishFromStoppedSessionCannotHideReplacement() async throws {
 
 Apple adapter tests use the `AppleSpeechSynthesizing` seam defined in Step 3 to cover scheduled, didStart, didFinish, and didCancel mappings without speaking through the real system voice. A separate invalid-voice/router test covers `.failed`, because `AVSpeechSynthesizerDelegate` has no failure callback.
 
-- [ ] **Step 2: Run focused speech tests and verify RED**
+- [x] **Step 2: Run focused speech tests and verify RED**
 
 ```bash
 xcodegen generate
@@ -708,7 +708,7 @@ xcodebuild -project Relay.xcodeproj -scheme Relay -destination 'platform=macOS' 
 
 Expected: compile failure because typed playback lifecycle does not exist.
 
-- [ ] **Step 3: Add the provider-neutral lifecycle contract**
+- [x] **Step 3: Add the provider-neutral lifecycle contract**
 
 ```swift
 enum TTSPlaybackEvent: Equatable, Sendable {
@@ -744,19 +744,19 @@ protocol AppleSpeechSynthesizing: AnyObject {
 
 Extend `AVSpeechSynthesizer` to conform to `AppleSpeechSynthesizing`. Update `TTSRouter.speak` to accept a session ID, track the active backend/session, and forward only that selected backend's events. When every candidate fails or a non-fallback error terminates routing, the router emits `.failed(sessionID:)` without exposing error text. `TTSRouter.stop()` clears its active backend/session after issuing stop; `stop(sessionID:)` no-ops unless the ID matches. Preserve fallback behavior for synchronous scheduling errors.
 
-- [ ] **Step 4: Adapt `AVSpeechSynthesizerDelegate`**
+- [x] **Step 4: Adapt `AVSpeechSynthesizerDelegate`**
 
 Make `AppleTTSBackend` inherit `NSObject`, inject `any AppleSpeechSynthesizing`, install itself as delegate, store `[ObjectIdentifier: UUID]` for live utterances, emit `.scheduled` after calling `speak`, and map the available delegate callbacks to `.started`, `.finished`, and `.cancelled`. Remove a mapping on either terminal event. Synchronous validation errors throw to the router, which emits `.failed`; there is no invented delegate failure callback. Never include utterance text in an event.
 
-- [ ] **Step 5: Map lifecycle in `SpeechCoordinator`**
+- [x] **Step 5: Map lifecycle in `SpeechCoordinator`**
 
 Generate one UUID per speak/replay attempt and call `overlay.begin(sessionID:)` before routing. Enter overlay speaking only on matching `.started`; call `complete`, `cancel`, or `fail(category: .speechPlayback, message: "Speech playback failed.")` on matching terminal events. Add `SpeechCoordinating.stop(sessionID:)` and `SpeechCoordinator.stop(sessionID:)`; they no-op for a stale ID and otherwise stop the router and cancel only the matching overlay session. Unconditional `stop()` remains for the global hotkey and dictation priority rule. Add tests proving an old Interactive Stop cannot stop replacement speech.
 
-- [ ] **Step 6: Run focused tests and verify GREEN**
+- [x] **Step 6: Run focused tests and verify GREEN**
 
 Run the Step 2 command. Expected: all selected tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add Relay/SpeechOut Relay/App/AppModel.swift RelayTests/SpeechOut
@@ -778,7 +778,7 @@ git commit -m "feat(overlay): report Apple speech playback lifecycle"
 - `DictationCoordinating.cancel(sessionID:)` cancels only the represented session.
 - Dictation consumes `ActivityOverlayModel.begin/listen/updateLevel/process/complete/cancel/fail`.
 
-- [ ] **Step 1: Write failing level, lifecycle, cancellation, and stale-callback tests**
+- [x] **Step 1: Write failing level, lifecycle, cancellation, and stale-callback tests**
 
 ```swift
 func testLevelMeterNormalizesRMSWithoutExposingSamples() {
@@ -811,7 +811,7 @@ func testInteractiveCancelStopsOnlyMatchingListeningSession() async {
 
 Also cover processing cancellation, late level updates, late transcription completion, no-speech error category, microphone/start failure categories, insertion failure category, and starting dictation stopping/hiding active TTS before listening appears.
 
-- [ ] **Step 2: Run focused dictation tests and verify RED**
+- [x] **Step 2: Run focused dictation tests and verify RED**
 
 ```bash
 xcodebuild -project Relay.xcodeproj -scheme Relay -destination 'platform=macOS' -derivedDataPath .derived-data \
@@ -822,7 +822,7 @@ xcodebuild -project Relay.xcodeproj -scheme Relay -destination 'platform=macOS' 
 
 Expected: compile failure because the level and cancellation interfaces do not exist.
 
-- [ ] **Step 3: Compute and emit normalized microphone levels in capture**
+- [x] **Step 3: Compute and emit normalized microphone levels in capture**
 
 ```swift
 enum MicrophoneLevelMeter {
@@ -837,11 +837,11 @@ enum MicrophoneLevelMeter {
 
 Change `MicrophoneCapturing.start` to accept `@escaping @Sendable (Float) -> Void`. In `MicrophoneCapture`'s existing source callback, append samples for STT and emit only `MicrophoneLevelMeter.normalized(samples:)`. Add `cancel()` that stops the source when starting/recording/stopping, resets the accumulator, and returns the actor to idle.
 
-- [ ] **Step 4: Make `DictationCoordinator` session-aware and cancellable**
+- [x] **Step 4: Make `DictationCoordinator` session-aware and cancellable**
 
 Associate a UUID with `.starting`, `.recording`, and `.finishing`; retain a cancellable processing `Task`. Publish listening after microphone start, processing before stop/transcription, completion after insertion, and stable sanitized error messages/categories on failure. Every level/result/error callback checks the active session. Cancellation stops capture or cancels processing, clears state, and hides only that session.
 
-- [ ] **Step 5: Wire the Interactive action dispatcher**
+- [x] **Step 5: Wire the Interactive action dispatcher**
 
 ```swift
 @MainActor
@@ -852,11 +852,11 @@ protocol ActivityOverlayControlling: AnyObject {
 
 The production dispatcher routes `.cancelDictation(sessionID:)` to a `Task` calling `DictationCoordinator.cancel(sessionID:)` and `.stopSpeech(sessionID:)` to the session-aware `SpeechCoordinator.stop(sessionID:)` added in Task 5. It has no backend- or AppKit-specific logic.
 
-- [ ] **Step 6: Run focused tests and verify GREEN**
+- [x] **Step 6: Run focused tests and verify GREEN**
 
 Run the Step 2 command. Expected: all selected tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add Relay/SpeechIn Relay/App/AppModel.swift RelayTests/SpeechIn RelayTests/App/AppModelTests.swift
@@ -872,7 +872,7 @@ git commit -m "feat(overlay): report and control dictation activity"
 **Interfaces:**
 - Verifies the complete Phase 1.5 deliverable without expanding scope.
 
-- [ ] **Step 1: Regenerate the Xcode project and run the entire suite**
+- [x] **Step 1: Regenerate the Xcode project and run the entire suite**
 
 ```bash
 xcodegen generate
@@ -882,7 +882,7 @@ xcodebuild -project Relay.xcodeproj -scheme Relay -destination 'platform=macOS' 
 
 Expected: `** TEST SUCCEEDED **`; all XCTest and Swift Testing cases pass.
 
-- [ ] **Step 2: Run a fresh review against the Phase 1.5 base commit**
+- [x] **Step 2: Run a fresh review against the Phase 1.5 base commit**
 
 Review both spec conformance and code quality. Resolve every Critical or Important finding, add a regression test for each behavior fix, and rerun Step 1.
 
