@@ -22,6 +22,7 @@
 		8364B21972FCCAC67036630C /* BackendAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1230C06958285AB1CAE2418A /* BackendAvailability.swift */; };
 		83A8BA29AC759A450A261572 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 359767A5465051721E7F2076 /* Assets.xcassets */; };
 		91CA532F4429D5B65476BEBC /* ProjectSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D080F5789BE1F241509F1C2 /* ProjectSmokeTests.swift */; };
+		9756AF051A9C26FDF8B4BA30 /* RulesSpeechPreprocessorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75A5D0DD6ECBB171B17FC747 /* RulesSpeechPreprocessorTests.swift */; };
 		9ED060105B789ED3C5278037 /* RelayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82F98404629EA6F3162215CC /* RelayTests.swift */; };
 		B5059A51D144C468B1843122 /* RelayApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75C54FA6D0E67AA81510F66A /* RelayApp.swift */; };
 		B6A7E723B9BA8FE5CCF0BFD6 /* TTSRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 264D3B761DD35FEF92E86BAC /* TTSRouterTests.swift */; };
@@ -29,6 +30,7 @@
 		C5FAB2BF576BBC52717C7E8E /* SpeechCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B541411E315249B0E88DAE3 /* SpeechCoordinatorTests.swift */; };
 		D0CCD89167ACBB59A2D873B6 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3772B7BC9E1856FB2551A9D4 /* AppModel.swift */; };
 		D3DF712D1B92B3D921467185 /* SpeechCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2E464DE9B8D3EF3FBAF0A9E /* SpeechCoordinator.swift */; };
+		F9565864D90DAB867000F0A0 /* RulesSpeechPreprocessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01700458AA3E57B79695FD7 /* RulesSpeechPreprocessor.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -52,6 +54,7 @@
 		3772B7BC9E1856FB2551A9D4 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		6B541411E315249B0E88DAE3 /* SpeechCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechCoordinatorTests.swift; sourceTree = "<group>"; };
 		71B3B42F4D8ADC705985B0C3 /* SpeechBackendContractsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechBackendContractsTests.swift; sourceTree = "<group>"; };
+		75A5D0DD6ECBB171B17FC747 /* RulesSpeechPreprocessorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RulesSpeechPreprocessorTests.swift; sourceTree = "<group>"; };
 		75C54FA6D0E67AA81510F66A /* RelayApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayApp.swift; sourceTree = "<group>"; };
 		82F98404629EA6F3162215CC /* RelayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayTests.swift; sourceTree = "<group>"; };
 		85842060D11E3427D905C000 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
@@ -61,6 +64,7 @@
 		B2640FB004F58617990C7498 /* Relay.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Relay.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BABB516AF90FA95A49A1731E /* RelayTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RelayTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CA7F679F877AB1E080B262A1 /* SpeechModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechModels.swift; sourceTree = "<group>"; };
+		D01700458AA3E57B79695FD7 /* RulesSpeechPreprocessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RulesSpeechPreprocessor.swift; sourceTree = "<group>"; };
 		DA1878571E35A1485700DA5C /* TTSRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSRouter.swift; sourceTree = "<group>"; };
 		E2E464DE9B8D3EF3FBAF0A9E /* SpeechCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechCoordinator.swift; sourceTree = "<group>"; };
 		E575530E2E604E20E5161DF6 /* AppleTTSBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleTTSBackend.swift; sourceTree = "<group>"; };
@@ -88,6 +92,7 @@
 		6C1A6BC3ACEA9AC2F35DFD6B /* SpeechOut */ = {
 			isa = PBXGroup;
 			children = (
+				75A5D0DD6ECBB171B17FC747 /* RulesSpeechPreprocessorTests.swift */,
 				6B541411E315249B0E88DAE3 /* SpeechCoordinatorTests.swift */,
 				264D3B761DD35FEF92E86BAC /* TTSRouterTests.swift */,
 			);
@@ -127,6 +132,7 @@
 			isa = PBXGroup;
 			children = (
 				E575530E2E604E20E5161DF6 /* AppleTTSBackend.swift */,
+				D01700458AA3E57B79695FD7 /* RulesSpeechPreprocessor.swift */,
 				E2E464DE9B8D3EF3FBAF0A9E /* SpeechCoordinator.swift */,
 				A7357E0F76AF76DF9C69ACD1 /* TextToSpeechBackend.swift */,
 				DA1878571E35A1485700DA5C /* TTSRouter.swift */,
@@ -268,6 +274,7 @@
 				18A0B28B851CB76A0406F54E /* AppSettingsTests.swift in Sources */,
 				91CA532F4429D5B65476BEBC /* ProjectSmokeTests.swift in Sources */,
 				9ED060105B789ED3C5278037 /* RelayTests.swift in Sources */,
+				9756AF051A9C26FDF8B4BA30 /* RulesSpeechPreprocessorTests.swift in Sources */,
 				70155993155C43ABD4EACFE4 /* SpeechBackendContractsTests.swift in Sources */,
 				C5FAB2BF576BBC52717C7E8E /* SpeechCoordinatorTests.swift in Sources */,
 				B6A7E723B9BA8FE5CCF0BFD6 /* TTSRouterTests.swift in Sources */,
@@ -285,6 +292,7 @@
 				63950769791664D8A9424529 /* HotkeyDefinition.swift in Sources */,
 				629B951FA84E58D245591D7B /* MenuBarContentView.swift in Sources */,
 				B5059A51D144C468B1843122 /* RelayApp.swift in Sources */,
+				F9565864D90DAB867000F0A0 /* RulesSpeechPreprocessor.swift in Sources */,
 				23E6C9B2DB1F71CE066D828B /* SettingsStore.swift in Sources */,
 				42DF91F35139107D11DE4F66 /* SettingsView.swift in Sources */,
 				740BAC00FB22AFBE28844B6E /* SpeechBackendError.swift in Sources */,
