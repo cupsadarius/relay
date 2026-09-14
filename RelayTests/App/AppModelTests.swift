@@ -21,6 +21,7 @@ final class AppModelTests: XCTestCase {
             ),
         ])
         XCTAssertEqual(model.statusText, "Speaking selected text")
+        XCTAssertEqual(model.diagnosticsEntries.first?.event, .ttsSubmitted)
     }
 
     func testReadSelectionReleasedDoesNothing() async {
@@ -34,6 +35,8 @@ final class AppModelTests: XCTestCase {
 
         XCTAssertTrue(speech.requests.isEmpty)
         XCTAssertEqual(selection.readCount, 0)
+        XCTAssertEqual(model.diagnosticsCounters.dispatched, 0)
+        XCTAssertFalse(model.diagnosticsEntries.contains { if case .actionDispatched = $0.event { true } else { false } })
         withExtendedLifetime(model) {}
     }
 
@@ -51,6 +54,15 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(speech.stopCount, 1)
         XCTAssertEqual(speech.replayCount, 1)
         withExtendedLifetime(model) {}
+    }
+
+    func testReplayFailureIsLoggedAsTTSFailure() async {
+        let speech = FakeSpeechCoordinator(replayError: TestError.saveFailed)
+        let hotkeys = FakeHotkeyManager()
+        let model = makeModel(speech: speech, hotkeys: hotkeys)
+        hotkeys.send(.replayLast, .pressed)
+        await Task.yield()
+        XCTAssertEqual(model.diagnosticsEntries.first?.event, .ttsFailed)
     }
 
     func testDictationPreservesBothPhasesForFutureWiring() {
@@ -125,6 +137,18 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.statusText, "Enable Accessibility permission, then reopen Relay.")
     }
 
+    func testRecheckRetriesHotkeyRegistrationAndRefreshesPermissionSnapshot() {
+        let hotkeys = FakeHotkeyManager()
+        let permissions = FakePermissionService(snapshot: .init(inputMonitoringGranted: false, accessibilityGranted: false))
+        let model = makeModel(hotkeys: hotkeys, permissions: permissions)
+
+        model.recheckDiagnostics()
+
+        XCTAssertEqual(permissions.snapshotCount, 2)
+        XCTAssertEqual(hotkeys.registrations.count, 2)
+        XCTAssertEqual(model.permissionSnapshot.inputMonitoringGranted, false)
+    }
+
     func testSaveFailureStillAppliesHotkeyImmediatelyAndSurfacesError() {
         let store = FakeSettingsStore(settings: .defaults, saveError: TestError.saveFailed)
         let hotkeys = FakeHotkeyManager()
@@ -142,16 +166,28 @@ final class AppModelTests: XCTestCase {
         store: FakeSettingsStore? = nil,
         selection: FakeSelectionReader? = nil,
         speech: FakeSpeechCoordinator? = nil,
-        hotkeys: FakeHotkeyManager? = nil
+        hotkeys: FakeHotkeyManager? = nil,
+        permissions: FakePermissionService? = nil
     ) -> AppModel {
         AppModel(
             settingsStore: store ?? FakeSettingsStore(settings: .defaults),
             selectionReader: selection ?? FakeSelectionReader(text: "selected"),
             preprocessor: RulesSpeechPreprocessor(),
             speechCoordinator: speech ?? FakeSpeechCoordinator(),
-            hotkeyManager: hotkeys ?? FakeHotkeyManager()
+            hotkeyManager: hotkeys ?? FakeHotkeyManager(),
+            permissionService: permissions ?? FakePermissionService(snapshot: .init(inputMonitoringGranted: true, accessibilityGranted: true)),
+            diagnostics: DiagnosticsRecorder(capacity: 10)
         )
     }
+}
+
+@MainActor
+private final class FakePermissionService: GlobalPermissionAuthorizing {
+    let value: PermissionSnapshot
+    private(set) var snapshotCount = 0
+    init(snapshot: PermissionSnapshot) { value = snapshot }
+    func snapshot() -> PermissionSnapshot { snapshotCount += 1; return value }
+    func requestPermissions() {}
 }
 
 @MainActor
@@ -185,9 +221,9 @@ private final class FakeSelectionReader: SelectionReading {
         self.text = text
     }
 
-    func readSelection() throws -> String {
+    func readSelection() throws -> SelectionResult {
         readCount += 1
-        return text
+        return .init(text: text, source: .accessibility)
     }
 }
 
@@ -196,10 +232,12 @@ private final class FakeSpeechCoordinator: SpeechCoordinating {
     private(set) var requests: [SpeechRequest] = []
     private(set) var stopCount = 0
     private(set) var replayCount = 0
+    let replayError: Error?
+    init(replayError: Error? = nil) { self.replayError = replayError }
 
     func speak(_ request: SpeechRequest) async throws { requests.append(request) }
     func stop() { stopCount += 1 }
-    func replayLast() async throws { replayCount += 1 }
+    func replayLast() async throws { replayCount += 1; if let replayError { throw replayError } }
 }
 
 @MainActor

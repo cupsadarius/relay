@@ -8,7 +8,7 @@ final class SelectionReaderTests: XCTestCase {
         let clipboard = FakeClipboardSelection(value: "from clipboard")
         let reader = SelectionReader(accessibility: accessibility, clipboard: clipboard)
 
-        XCTAssertEqual(try reader.readSelection(), "from ax")
+        XCTAssertEqual(try reader.readSelection(), .init(text: "from ax", source: .accessibility))
         XCTAssertEqual(clipboard.copySelectionCallCount, 0)
     }
 
@@ -18,7 +18,7 @@ final class SelectionReaderTests: XCTestCase {
 
         XCTAssertEqual(
             try SelectionReader(accessibility: accessibility, clipboard: clipboard).readSelection(),
-            "fallback"
+            .init(text: "fallback", source: .clipboard)
         )
         XCTAssertEqual(clipboard.copySelectionCallCount, 1)
     }
@@ -29,7 +29,7 @@ final class SelectionReaderTests: XCTestCase {
 
         XCTAssertEqual(
             try SelectionReader(accessibility: accessibility, clipboard: clipboard).readSelection(),
-            "fallback"
+            .init(text: "fallback", source: .clipboard)
         )
     }
 

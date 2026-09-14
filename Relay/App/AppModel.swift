@@ -1,4 +1,5 @@
 import Observation
+@preconcurrency import AppKit
 
 @MainActor
 @Observable
@@ -15,6 +16,10 @@ final class AppModel {
     private(set) var settings: AppSettings
     private(set) var dictationPhase: HotkeyPhase?
     private(set) var hotkeyConflictMessage: String?
+    private(set) var permissionSnapshot: PermissionSnapshot
+    private(set) var eventTapStatus: HotkeyRegistrationStatus = .unavailable("Not checked")
+    var diagnosticsEntries: [DiagnosticEntry] { diagnostics.entries.reversed() }
+    var diagnosticsCounters: DiagnosticsCounters { diagnostics.counters }
 
     @ObservationIgnored private let settingsStore: any SettingsStoring
     @ObservationIgnored private let selectionReader: any SelectionReading
@@ -22,11 +27,15 @@ final class AppModel {
     @ObservationIgnored private let speechCoordinator: any SpeechCoordinating
     @ObservationIgnored private let hotkeyManager: any HotkeyManaging
     @ObservationIgnored private let settingsState: SettingsState
+    @ObservationIgnored private let permissionService: any GlobalPermissionAuthorizing
+    @ObservationIgnored private let diagnostics: DiagnosticsRecorder
+    @ObservationIgnored private var activationObserver: NSObjectProtocol?
 
     convenience init() {
         let settingsStore = SettingsStore()
         let settings = settingsStore.load()
         let state = SettingsState(settings)
+        let diagnostics = DiagnosticsRecorder()
         let appleTTS = AppleTTSBackend()
         let router = TTSRouter(
             backends: [appleTTS.id: appleTTS],
@@ -49,9 +58,11 @@ final class AppModel {
             ),
             preprocessor: RulesSpeechPreprocessor(),
             speechCoordinator: coordinator,
-            hotkeyManager: GlobalHotkeyManager(),
+            hotkeyManager: GlobalHotkeyManager(diagnostics: diagnostics),
             loadedSettings: settings,
-            settingsState: state
+            settingsState: state,
+            permissionService: PermissionService(),
+            diagnostics: diagnostics
         )
     }
 
@@ -60,7 +71,9 @@ final class AppModel {
         selectionReader: any SelectionReading,
         preprocessor: RulesSpeechPreprocessor,
         speechCoordinator: any SpeechCoordinating,
-        hotkeyManager: any HotkeyManaging
+        hotkeyManager: any HotkeyManaging,
+        permissionService: any GlobalPermissionAuthorizing = PermissionService(),
+        diagnostics: DiagnosticsRecorder = DiagnosticsRecorder()
     ) {
         let settings = settingsStore.load()
         self.settingsStore = settingsStore
@@ -68,10 +81,15 @@ final class AppModel {
         self.preprocessor = preprocessor
         self.speechCoordinator = speechCoordinator
         self.hotkeyManager = hotkeyManager
+        self.permissionService = permissionService
+        self.diagnostics = diagnostics
+        activationObserver = nil
+        permissionSnapshot = permissionService.snapshot()
         self.settings = settings
         let state = SettingsState(settings)
         settingsState = state
         registerHotkeys()
+        observeAppActivation()
     }
 
     private init(
@@ -81,16 +99,23 @@ final class AppModel {
         speechCoordinator: any SpeechCoordinating,
         hotkeyManager: any HotkeyManaging,
         loadedSettings: AppSettings,
-        settingsState: SettingsState
+        settingsState: SettingsState,
+        permissionService: any GlobalPermissionAuthorizing,
+        diagnostics: DiagnosticsRecorder
     ) {
         self.settingsStore = settingsStore
         self.selectionReader = selectionReader
         self.preprocessor = preprocessor
         self.speechCoordinator = speechCoordinator
         self.hotkeyManager = hotkeyManager
+        self.permissionService = permissionService
+        self.diagnostics = diagnostics
+        activationObserver = nil
+        permissionSnapshot = permissionService.snapshot()
         settings = loadedSettings
         self.settingsState = settingsState
         registerHotkeys()
+        observeAppActivation()
     }
 
     func setHotkey(_ definition: HotkeyDefinition, for action: HotkeyAction) {
@@ -133,17 +158,47 @@ final class AppModel {
         let status = hotkeyManager.register(settings: settings) { [weak self] action, phase in
             self?.handleHotkey(action, phase: phase)
         }
+        eventTapStatus = status
         if case let .unavailable(message) = status {
             statusText = message
         }
     }
 
+    func requestPermissions() {
+        permissionService.requestPermissions()
+        diagnostics.record(.permissionRequested)
+    }
+
+    func recheckDiagnostics() {
+        permissionSnapshot = permissionService.snapshot()
+        diagnostics.record(.permissionRechecked)
+        registerHotkeys()
+    }
+
+    func clearDiagnostics() { diagnostics.clear() }
+    var diagnosticsCopyText: String { diagnostics.copyText }
+
+    private func observeAppActivation() {
+        activationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.recheckDiagnostics() }
+        }
+    }
+
+    deinit { if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) } }
+
     private func handleHotkey(_ action: HotkeyAction, phase: HotkeyPhase) {
         if action == .dictate {
+            diagnostics.record(.actionDispatched(action: action, phase: phase))
             dictationPhase = phase
             return
         }
         guard phase == .pressed else { return }
+
+        diagnostics.record(.actionDispatched(action: action, phase: phase))
 
         switch action {
         case .dictate:
@@ -152,6 +207,7 @@ final class AppModel {
             Task { await readSelection() }
         case .stopSpeech:
             speechCoordinator.stop()
+            diagnostics.record(.ttsStopped)
             statusText = "Speech stopped"
         case .replayLast:
             Task { await replayLast() }
@@ -163,8 +219,9 @@ final class AppModel {
 
     private func readSelection() async {
         do {
-            let text = try selectionReader.readSelection()
-            let prepared = preprocessor.prepare(text: text, mode: .userRequested)
+            let selection = try selectionReader.readSelection()
+            diagnostics.record(selection.source == .accessibility ? .selectionAccessibility : .selectionClipboard)
+            let prepared = preprocessor.prepare(text: selection.text, mode: .userRequested)
             let request = SpeechRequest(
                 text: prepared,
                 source: .selection,
@@ -172,8 +229,10 @@ final class AppModel {
                 sessionID: nil
             )
             try await speechCoordinator.speak(request)
+            diagnostics.record(.ttsSubmitted)
             statusText = "Speaking selected text"
         } catch {
+            diagnostics.record(error is SelectionReadingError ? .selectionUnavailable : .ttsFailed)
             statusText = error.localizedDescription
         }
     }
@@ -181,8 +240,10 @@ final class AppModel {
     private func replayLast() async {
         do {
             try await speechCoordinator.replayLast()
+            diagnostics.record(.ttsReplayed)
             statusText = "Replaying last speech"
         } catch {
+            diagnostics.record(.ttsFailed)
             statusText = error.localizedDescription
         }
     }

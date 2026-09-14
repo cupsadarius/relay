@@ -2,8 +2,11 @@ import Foundation
 
 @MainActor
 protocol SelectionReading {
-    func readSelection() throws -> String
+    func readSelection() throws -> SelectionResult
 }
+
+enum SelectionSource: Equatable, Sendable { case accessibility, clipboard }
+struct SelectionResult: Equatable, Sendable { let text: String; let source: SelectionSource }
 
 @MainActor
 protocol AccessibilityReading {
@@ -33,14 +36,14 @@ final class SelectionReader: SelectionReading {
         self.clipboard = clipboard
     }
 
-    func readSelection() throws -> String {
+    func readSelection() throws -> SelectionResult {
         if let selection = usable(accessibility.selectedText()) {
-            return selection
+            return .init(text: selection, source: .accessibility)
         }
 
         do {
             if let selection = usable(try clipboard.copyCurrentSelection()) {
-                return selection
+                return .init(text: selection, source: .clipboard)
             }
         } catch {
             throw SelectionReadingError.noUsableSelection

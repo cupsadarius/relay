@@ -100,10 +100,13 @@ protocol HotkeyManaging: AnyObject {
 
 @MainActor
 final class GlobalHotkeyManager: HotkeyManaging {
+    private let diagnostics: DiagnosticsRecorder?
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var matcher = HotkeyMatcher(definitions: [:])
     private var handler: (@MainActor (HotkeyAction, HotkeyPhase) -> Void)?
+
+    init(diagnostics: DiagnosticsRecorder? = nil) { self.diagnostics = diagnostics }
 
     deinit {
         if let runLoopSource {
@@ -123,6 +126,7 @@ final class GlobalHotkeyManager: HotkeyManaging {
         self.handler = handler
 
         if eventTap != nil {
+            diagnostics?.record(.eventTapRegistered)
             return .registered
         }
 
@@ -139,8 +143,9 @@ final class GlobalHotkeyManager: HotkeyManaging {
             callback: Self.eventTapCallback,
             userInfo: pointer
         ) else {
+            diagnostics?.record(.eventTapUnavailable)
             return .unavailable(
-                "Global hotkeys need Accessibility permission. Enable Relay in System Settings > Privacy & Security > Accessibility, then reopen Relay."
+                "Global hotkeys need Input Monitoring permission. Enable Relay in System Settings > Privacy & Security > Input Monitoring, then retry in Diagnostics."
             )
         }
 
@@ -149,6 +154,7 @@ final class GlobalHotkeyManager: HotkeyManaging {
         runLoopSource = source
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
+        diagnostics?.record(.eventTapRegistered)
         return .registered
     }
 
@@ -157,6 +163,7 @@ final class GlobalHotkeyManager: HotkeyManaging {
         let manager = Unmanaged<GlobalHotkeyManager>.fromOpaque(userInfo).takeUnretainedValue()
 
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            MainActor.assumeIsolated { manager.diagnostics?.record(.eventTapDisabled) }
             MainActor.assumeIsolated { manager.reenableTap() }
             return Unmanaged.passUnretained(event)
         }
@@ -200,7 +207,9 @@ final class GlobalHotkeyManager: HotkeyManaging {
     }
 
     private func receive(_ input: HotkeyInputEvent) {
+        diagnostics?.record(.keyboardEventReceived)
         for invocation in matcher.match(input) {
+            diagnostics?.record(.hotkeyMatched(action: invocation.action, phase: invocation.phase))
             handler?(invocation.action, invocation.phase)
         }
     }
@@ -208,6 +217,7 @@ final class GlobalHotkeyManager: HotkeyManaging {
     private func reenableTap() {
         if let eventTap {
             CGEvent.tapEnable(tap: eventTap, enable: true)
+            diagnostics?.record(.eventTapReenabled)
         }
     }
 }

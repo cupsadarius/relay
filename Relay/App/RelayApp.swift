@@ -11,5 +11,8 @@ struct RelayApp: App {
         Settings {
             SettingsView(model: model)
         }
+        Window("Diagnostics", id: "diagnostics") {
+            DiagnosticsView(model: model)
+        }
     }
 }
