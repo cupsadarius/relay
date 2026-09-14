@@ -71,6 +71,8 @@ final class ActivityOverlayModel {
     private(set) var state: ActivityOverlayState = .hidden
     @ObservationIgnored private let scheduler: any ActivityOverlayScheduling
     @ObservationIgnored private var activeSessionID: UUID?
+    @ObservationIgnored private var terminalGeneration = 0
+    @ObservationIgnored private var isCompleting = false
     @ObservationIgnored private var stateDidChange: (@MainActor (ActivityOverlayState) -> Void)?
 
     init(scheduler: any ActivityOverlayScheduling = MainActorOverlayScheduler()) {
@@ -83,7 +85,9 @@ final class ActivityOverlayModel {
     }
 
     func begin(sessionID: UUID) {
+        terminalGeneration += 1
         activeSessionID = sessionID
+        isCompleting = false
         setState(.hidden)
     }
 
@@ -110,26 +114,38 @@ final class ActivityOverlayModel {
     }
 
     func complete(sessionID: UUID) {
-        guard activeSessionID == sessionID else { return }
+        guard activeSessionID == sessionID, !isCompleting else { return }
+        isCompleting = true
+        terminalGeneration += 1
+        let generation = terminalGeneration
         scheduler.schedule(after: .milliseconds(180)) { [weak self] in
-            guard self?.activeSessionID == sessionID else { return }
+            guard self?.activeSessionID == sessionID,
+                  self?.isCompleting == true,
+                  self?.terminalGeneration == generation else { return }
             self?.activeSessionID = nil
+            self?.isCompleting = false
             self?.setState(.hidden)
         }
     }
 
     func cancel(sessionID: UUID) {
         guard activeSessionID == sessionID else { return }
+        terminalGeneration += 1
         activeSessionID = nil
+        isCompleting = false
         setState(.hidden)
     }
 
     func fail(sessionID: UUID, category: ActivityOverlayErrorCategory, message: String) {
-        guard activeSessionID == sessionID else { return }
+        guard activeSessionID == sessionID, !isCompleting else { return }
+        terminalGeneration += 1
+        let generation = terminalGeneration
         setState(.error(sessionID: sessionID, category: category, message: message))
         scheduler.schedule(after: .milliseconds(2_500)) { [weak self] in
-            guard self?.activeSessionID == sessionID else { return }
+            guard self?.activeSessionID == sessionID,
+                  self?.terminalGeneration == generation else { return }
             self?.activeSessionID = nil
+            self?.isCompleting = false
             self?.setState(.hidden)
         }
     }

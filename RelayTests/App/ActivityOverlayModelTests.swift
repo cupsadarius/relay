@@ -60,6 +60,37 @@ final class ActivityOverlayModelTests: XCTestCase {
         XCTAssertTrue(model.state.isHidden)
     }
 
+    func testFailureDuringCompletionGraceIsIgnoredUntilCompletionHides() {
+        let scheduler = FakeOverlayScheduler()
+        let model = ActivityOverlayModel(scheduler: scheduler)
+        let session = UUID()
+        let startedAt = Date(timeIntervalSinceReferenceDate: 42)
+        model.begin(sessionID: session)
+        model.speak(sessionID: session, startedAt: startedAt)
+        model.complete(sessionID: session)
+
+        model.fail(sessionID: session, category: .speechPlayback, message: "Speech playback failed.")
+
+        XCTAssertEqual(model.state, .speaking(sessionID: session, startedAt: startedAt))
+        scheduler.run(at: 0)
+        XCTAssertTrue(model.state.isHidden)
+    }
+
+    func testSupersededErrorDismissalCannotHideLaterErrorEarly() {
+        let scheduler = FakeOverlayScheduler()
+        let model = ActivityOverlayModel(scheduler: scheduler)
+        let session = UUID()
+        model.begin(sessionID: session)
+
+        model.fail(sessionID: session, category: .speechPlayback, message: "First failure")
+        model.fail(sessionID: session, category: .insertion, message: "Second failure")
+
+        scheduler.run(at: 0)
+        XCTAssertEqual(model.state, .error(sessionID: session, category: .insertion, message: "Second failure"))
+        scheduler.run(at: 0)
+        XCTAssertTrue(model.state.isHidden)
+    }
+
     func testListeningLevelIsClampedToUnitInterval() {
         let model = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let session = UUID()
@@ -116,6 +147,10 @@ private final class FakeOverlayScheduler: ActivityOverlayScheduling {
 
     func run(after delay: Duration) {
         let index = operations.firstIndex { $0.delay == delay }!
+        run(at: index)
+    }
+
+    func run(at index: Int) {
         operations.remove(at: index).operation()
     }
 }
