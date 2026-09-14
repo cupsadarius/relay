@@ -19,7 +19,8 @@ targets:
         SWIFT_VERSION: 6.0
         ARCHS: arm64
         ONLY_ACTIVE_ARCH: YES
-        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Relay Local Development"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_LSUIElement: YES
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Relay uses the microphone only while you dictate."
