@@ -22,7 +22,7 @@ final class AppModel {
     private(set) var eventTapStatus: HotkeyRegistrationStatus = .unavailable("Not checked")
     var diagnosticsEntries: [DiagnosticEntry] { diagnostics.entries.reversed() }
     var diagnosticsCounters: DiagnosticsCounters { diagnostics.counters }
-    let overlayModel: ActivityOverlayModel
+    @ObservationIgnored let overlayModel: ActivityOverlayModel
 
     @ObservationIgnored private let settingsStore: any SettingsStoring
     @ObservationIgnored private let selectionReader: any SelectionReading
@@ -79,6 +79,7 @@ final class AppModel {
         let overlayPresenter = ActivityOverlayWindowController(
             model: overlayModel,
             host: ActivityOverlayPanelHost(),
+            screens: SystemActivityOverlayScreens(),
             diagnostics: diagnostics,
             onAction: { _ in } // Wired in Task 6
         )

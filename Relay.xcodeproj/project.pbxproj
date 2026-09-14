@@ -30,6 +30,7 @@
 		581FC3101A3FE16E88052CDC /* TextToSpeechBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7357E0F76AF76DF9C69ACD1 /* TextToSpeechBackend.swift */; };
 		59CEB26722FB7B5250A99741 /* WindowFocusCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 035CD1C6FBA0F8F91F652E6F /* WindowFocusCoordinatorTests.swift */; };
 		5A940B7CDFFD5E197ACA7422 /* ActivityOverlayWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2945AA36C2854FD4A7C9469 /* ActivityOverlayWindowController.swift */; };
+		5AEB040E011549C43640F5CA /* ActivityOverlayPanelHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032A9782E9C2C931DFB89322 /* ActivityOverlayPanelHost.swift */; };
 		5BB20F6CC812C4783D7205B6 /* GlobalHotkeyManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CE61334B063F0337C2E6BB7 /* GlobalHotkeyManagerTests.swift */; };
 		5DFE942299A26F7BEA31560A /* MicrophoneCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90563D92C2FAAA30698339C5 /* MicrophoneCapture.swift */; };
 		629B951FA84E58D245591D7B /* MenuBarContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DCE840658936E7271FAB146 /* MenuBarContentView.swift */; };
@@ -79,6 +80,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		032A9782E9C2C931DFB89322 /* ActivityOverlayPanelHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverlayPanelHost.swift; sourceTree = "<group>"; };
 		035CD1C6FBA0F8F91F652E6F /* WindowFocusCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowFocusCoordinatorTests.swift; sourceTree = "<group>"; };
 		06E124777F58D54CEDE5CA61 /* SpeechToTextBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechToTextBackend.swift; sourceTree = "<group>"; };
 		0C2D9AB71BE0958979C201CB /* RulesTranscriptProcessorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RulesTranscriptProcessorTests.swift; sourceTree = "<group>"; };
@@ -237,6 +239,7 @@
 			isa = PBXGroup;
 			children = (
 				DAA71CF6D19AFEA28AC72CE1 /* ActivityOverlayModel.swift */,
+				032A9782E9C2C931DFB89322 /* ActivityOverlayPanelHost.swift */,
 				A3A1971CFBDF8C170DD9B32F /* ActivityOverlayPresentation.swift */,
 				110BEA16859A4BC3BC171427 /* ActivityOverlayView.swift */,
 				D2945AA36C2854FD4A7C9469 /* ActivityOverlayWindowController.swift */,
@@ -451,6 +454,7 @@
 			files = (
 				7D36578865E64A7D1ACDBA52 /* AccessibilityService.swift in Sources */,
 				412A7CAB611AAD65AD1553C1 /* ActivityOverlayModel.swift in Sources */,
+				5AEB040E011549C43640F5CA /* ActivityOverlayPanelHost.swift in Sources */,
 				BE570F59B904039713B5C19C /* ActivityOverlayPresentation.swift in Sources */,
 				077DCF588705F7C9A0D435DE /* ActivityOverlayView.swift in Sources */,
 				5A940B7CDFFD5E197ACA7422 /* ActivityOverlayWindowController.swift in Sources */,

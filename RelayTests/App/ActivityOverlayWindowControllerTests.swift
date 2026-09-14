@@ -6,39 +6,68 @@ final class ActivityOverlayWindowControllerTests: XCTestCase {
     func testPlacementCentersAboveVisibleFrameBottom() {
         let frame = CGRect(x: 100, y: 50, width: 1_200, height: 800)
         XCTAssertEqual(
-            ActivityOverlayPlacement.origin(panelSize: .init(width: 282, height: 62), visibleFrame: frame),
+            ActivityOverlayPlacement.origin(capsuleSize: .init(width: 282, height: 62), visibleFrame: frame),
             CGPoint(x: 559, y: 78)
         )
+    }
+
+    func testPanelFrameInsetsCapsuleRectByChromeInset() {
+        let frame = CGRect(x: 100, y: 50, width: 1_200, height: 800)
+        let capsuleSize = CGSize(width: 282, height: 62)
+        let capsuleOrigin = ActivityOverlayPlacement.origin(capsuleSize: capsuleSize, visibleFrame: frame)
+        let expected = CGRect(origin: capsuleOrigin, size: capsuleSize)
+            .insetBy(dx: -ActivityOverlayPlacement.chromeInset, dy: -ActivityOverlayPlacement.chromeInset)
+
+        XCTAssertEqual(ActivityOverlayPlacement.panelFrame(capsuleSize: capsuleSize, visibleFrame: frame), expected)
     }
 
     func testSessionPinsChosenDisplayUntilHidden() {
         let screens = FakeOverlayScreens(first: .left, then: .right)
         let host = FakeOverlayPanelHost()
-        let presenter = ActivityOverlayWindowController(host: host, screens: screens)
+        let presenter = makeController(model: ActivityOverlayModel(), host: host, screens: screens)
         let id = UUID()
+
         presenter.update(state: .listening(sessionID: id, startedAt: .now, level: 0), style: .interactive)
         presenter.update(state: .processing(sessionID: id, startedAt: .now), style: .interactive)
-        XCTAssertEqual(host.positionedScreens, [.left, .left])
+
+        // Geometry is unchanged between the two updates, so an idempotent controller only calls
+        // `setFrame` once; if the session had been re-pinned to `.right`, a second, different
+        // frame would appear here.
+        let expectedFrame = ActivityOverlayPlacement.panelFrame(
+            capsuleSize: CGSize(width: 282, height: 62),
+            visibleFrame: ActivityOverlayScreen.left.visibleFrame
+        )
+        XCTAssertEqual(host.frames.map(\.origin), [expectedFrame.origin])
     }
 
-    func testOffAndHiddenOrderPanelOutWithoutCreatingIt() {
+    func testOffAndHiddenNeverCreatePanel() {
         let host = FakeOverlayPanelHost()
-        let presenter = ActivityOverlayWindowController(host: host, screens: FakeOverlayScreens())
+        let presenter = makeController(model: ActivityOverlayModel(), host: host, screens: FakeOverlayScreens())
+
         presenter.update(state: .hidden, style: .interactive)
         presenter.update(state: .speaking(sessionID: UUID(), startedAt: .now), style: .off)
+
         XCTAssertEqual(host.createCount, 0)
     }
 
     func testDifferentSessionsPickANewDisplay() {
         let screens = FakeOverlayScreens(first: .left, then: .right)
         let host = FakeOverlayPanelHost()
-        let presenter = ActivityOverlayWindowController(host: host, screens: screens)
+        let presenter = makeController(model: ActivityOverlayModel(), host: host, screens: screens)
 
         presenter.update(state: .listening(sessionID: UUID(), startedAt: .now, level: 0), style: .interactive)
         presenter.update(state: .hidden, style: .interactive)
         presenter.update(state: .listening(sessionID: UUID(), startedAt: .now, level: 0), style: .interactive)
 
-        XCTAssertEqual(host.positionedScreens, [.left, .right])
+        let leftFrame = ActivityOverlayPlacement.panelFrame(
+            capsuleSize: CGSize(width: 282, height: 62),
+            visibleFrame: ActivityOverlayScreen.left.visibleFrame
+        )
+        let rightFrame = ActivityOverlayPlacement.panelFrame(
+            capsuleSize: CGSize(width: 282, height: 62),
+            visibleFrame: ActivityOverlayScreen.right.visibleFrame
+        )
+        XCTAssertEqual(host.frames.map(\.origin), [leftFrame.origin, rightFrame.origin])
         XCTAssertEqual(host.orderOutCount, 1)
     }
 
@@ -46,27 +75,19 @@ final class ActivityOverlayWindowControllerTests: XCTestCase {
         let host = FakeOverlayPanelHost()
         host.createError = FakeOverlayHostError.boom
         let diagnostics = DiagnosticsRecorder()
-        let presenter = ActivityOverlayWindowController(
-            host: host,
-            screens: FakeOverlayScreens(),
-            diagnostics: diagnostics
-        )
+        let presenter = makeController(model: ActivityOverlayModel(), host: host, screens: FakeOverlayScreens(), diagnostics: diagnostics)
 
         presenter.update(state: .listening(sessionID: UUID(), startedAt: .now, level: 0), style: .interactive)
 
         XCTAssertEqual(diagnostics.entries.map(\.event), [.overlayFailed])
-        XCTAssertEqual(host.positionedScreens, [])
+        XCTAssertTrue(host.frames.isEmpty)
     }
 
     func testHostShowFailureRecordsOverlayFailedOnceAndDoesNotThrow() {
         let host = FakeOverlayPanelHost()
         host.orderFrontError = FakeOverlayHostError.boom
         let diagnostics = DiagnosticsRecorder()
-        let presenter = ActivityOverlayWindowController(
-            host: host,
-            screens: FakeOverlayScreens(),
-            diagnostics: diagnostics
-        )
+        let presenter = makeController(model: ActivityOverlayModel(), host: host, screens: FakeOverlayScreens(), diagnostics: diagnostics)
 
         presenter.update(state: .speaking(sessionID: UUID(), startedAt: .now), style: .interactive)
 
@@ -75,7 +96,7 @@ final class ActivityOverlayWindowControllerTests: XCTestCase {
 
     func testMinimalStyleIgnoresMouseEventsWhileInteractiveAllowsThem() {
         let host = FakeOverlayPanelHost()
-        let presenter = ActivityOverlayWindowController(host: host, screens: FakeOverlayScreens())
+        let presenter = makeController(model: ActivityOverlayModel(), host: host, screens: FakeOverlayScreens())
 
         presenter.update(state: .listening(sessionID: UUID(), startedAt: .now, level: 0), style: .minimal)
         presenter.update(state: .processing(sessionID: UUID(), startedAt: .now), style: .interactive)
@@ -85,7 +106,7 @@ final class ActivityOverlayWindowControllerTests: XCTestCase {
 
     func testContentIsAppliedOnceUntilStyleChanges() {
         let host = FakeOverlayPanelHost()
-        let presenter = ActivityOverlayWindowController(host: host, screens: FakeOverlayScreens())
+        let presenter = makeController(model: ActivityOverlayModel(), host: host, screens: FakeOverlayScreens())
         let session = UUID()
 
         presenter.update(state: .listening(sessionID: session, startedAt: .now, level: 0), style: .interactive)
@@ -100,34 +121,94 @@ final class ActivityOverlayWindowControllerTests: XCTestCase {
     func testOffStyleHidesPanelButKeepsPinUntilTrulyHidden() {
         let screens = FakeOverlayScreens(first: .left, then: .right)
         let host = FakeOverlayPanelHost()
-        let presenter = ActivityOverlayWindowController(host: host, screens: screens)
+        let presenter = makeController(model: ActivityOverlayModel(), host: host, screens: screens)
         let session = UUID()
 
         presenter.update(state: .listening(sessionID: session, startedAt: .now, level: 0), style: .interactive)
         presenter.update(state: .processing(sessionID: session, startedAt: .now), style: .off)
         presenter.update(state: .processing(sessionID: session, startedAt: .now), style: .interactive)
 
-        XCTAssertEqual(host.positionedScreens, [.left, .left])
+        // Only ever positioned on `.left`; if the pin had been dropped on the `.off` update, the
+        // final show would have re-picked `.right` from the fake's scripted sequence.
+        let expectedFrame = ActivityOverlayPlacement.panelFrame(
+            capsuleSize: CGSize(width: 282, height: 62),
+            visibleFrame: ActivityOverlayScreen.left.visibleFrame
+        )
+        XCTAssertEqual(host.frames.map(\.origin), [expectedFrame.origin])
+        XCTAssertEqual(host.orderOutCount, 1)
+        XCTAssertEqual(host.orderFrontCount, 2)
     }
 
     func testConsecutiveFailuresRecordOverlayFailedOnceUntilAShowSucceeds() {
         let host = FakeOverlayPanelHost()
         host.orderFrontError = FakeOverlayHostError.boom
         let diagnostics = DiagnosticsRecorder()
-        let presenter = ActivityOverlayWindowController(host: host, screens: FakeOverlayScreens(), diagnostics: diagnostics)
+        let presenter = makeController(model: ActivityOverlayModel(), host: host, screens: FakeOverlayScreens(), diagnostics: diagnostics)
         let session = UUID()
 
         presenter.update(state: .listening(sessionID: session, startedAt: .now, level: 0), style: .interactive)
         presenter.update(state: .listening(sessionID: session, startedAt: .now, level: 0.5), style: .interactive)
         XCTAssertEqual(diagnostics.entries.map(\.event), [.overlayFailed])
 
+        // Clearing the error lets the panel actually show, which resets the dedupe flag.
         host.orderFrontError = nil
         presenter.update(state: .processing(sessionID: session, startedAt: .now), style: .interactive)
         XCTAssertEqual(diagnostics.entries.map(\.event), [.overlayFailed])
 
+        // Order the panel out (without fully hiding the session) so the next show attempts
+        // `orderFront` again instead of skipping it as already-visible, then fail it again.
+        presenter.update(state: .processing(sessionID: session, startedAt: .now), style: .off)
         host.orderFrontError = FakeOverlayHostError.boom
         presenter.update(state: .speaking(sessionID: session, startedAt: .now), style: .interactive)
         XCTAssertEqual(diagnostics.entries.map(\.event), [.overlayFailed, .overlayFailed])
+    }
+
+    func testShowIsIdempotentAcrossRepeatedUpdatesWithUnchangedGeometry() {
+        let host = FakeOverlayPanelHost()
+        let presenter = makeController(model: ActivityOverlayModel(), host: host, screens: FakeOverlayScreens())
+        let session = UUID()
+
+        for level: Float in [0, 0.2, 0.4, 0.6, 0.8] {
+            presenter.update(state: .listening(sessionID: session, startedAt: .now, level: level), style: .interactive)
+        }
+
+        XCTAssertEqual(host.frames.count, 1)
+        XCTAssertEqual(host.orderFrontCount, 1)
+        XCTAssertEqual(host.setContentCount, 1)
+        XCTAssertEqual(host.ignoresMouseEventsValues.count, 1)
+    }
+
+    func testNilScreenForNewSessionRecordsOverlayFailedAndDoesNotShow() {
+        let host = FakeOverlayPanelHost()
+        let diagnostics = DiagnosticsRecorder()
+        let presenter = makeController(model: ActivityOverlayModel(), host: host, screens: NilScreenProvider(), diagnostics: diagnostics)
+
+        presenter.update(state: .listening(sessionID: UUID(), startedAt: .now, level: 0), style: .interactive)
+        presenter.update(state: .listening(sessionID: UUID(), startedAt: .now, level: 0.5), style: .interactive)
+
+        XCTAssertEqual(diagnostics.entries.map(\.event), [.overlayFailed])
+        XCTAssertEqual(host.createCount, 0)
+        XCTAssertTrue(host.frames.isEmpty)
+    }
+
+    func testPanelSizeMatchesStyle() {
+        let host = FakeOverlayPanelHost()
+        let presenter = makeController(model: ActivityOverlayModel(), host: host, screens: FakeOverlayScreens())
+        let session = UUID()
+
+        presenter.update(state: .listening(sessionID: session, startedAt: .now, level: 0), style: .minimal)
+        let minimalExpected = ActivityOverlayPlacement.panelFrame(
+            capsuleSize: CGSize(width: 154, height: 40),
+            visibleFrame: ActivityOverlayScreen.left.visibleFrame
+        )
+        XCTAssertEqual(host.frames.last.map { CGRect(origin: $0.origin, size: $0.size) }, minimalExpected)
+
+        presenter.update(state: .processing(sessionID: session, startedAt: .now), style: .interactive)
+        let interactiveExpected = ActivityOverlayPlacement.panelFrame(
+            capsuleSize: CGSize(width: 282, height: 62),
+            visibleFrame: ActivityOverlayScreen.left.visibleFrame
+        )
+        XCTAssertEqual(host.frames.last.map { CGRect(origin: $0.origin, size: $0.size) }, interactiveExpected)
     }
 
     func testRelayoutRepositionsUsingRefreshedFrameForSameScreen() {
@@ -137,39 +218,72 @@ final class ActivityOverlayWindowControllerTests: XCTestCase {
             visibleFrame: CGRect(x: 0, y: 0, width: 2_000, height: 1_200)
         )
         let screens = FakeRelayoutScreens(newSessionScreens: [.left], refreshedScreen: updatedLeft)
-        let presenter = ActivityOverlayWindowController(host: host, screens: screens)
+        let presenter = makeController(model: ActivityOverlayModel(), host: host, screens: screens)
         presenter.update(state: .listening(sessionID: UUID(), startedAt: .now, level: 0), style: .interactive)
 
         presenter.relayoutForScreenChange()
 
-        let expectedOrigin = ActivityOverlayPlacement.origin(
-            panelSize: CGSize(width: 282, height: 62),
+        let expected = ActivityOverlayPlacement.panelFrame(
+            capsuleSize: CGSize(width: 282, height: 62),
             visibleFrame: updatedLeft.visibleFrame
         )
-        XCTAssertEqual(host.frames.last?.origin, expectedOrigin)
-        XCTAssertEqual(host.positionedScreens.last, updatedLeft)
+        XCTAssertEqual(host.frames.last.map { CGRect(origin: $0.origin, size: $0.size) }, expected)
     }
 
     func testRelayoutFallsBackToNewSessionScreenWhenPinnedScreenDisappears() {
         let host = FakeOverlayPanelHost()
         let screens = FakeRelayoutScreens(newSessionScreens: [.left, .right], refreshedScreen: nil)
-        let presenter = ActivityOverlayWindowController(host: host, screens: screens)
+        let presenter = makeController(model: ActivityOverlayModel(), host: host, screens: screens)
         presenter.update(state: .listening(sessionID: UUID(), startedAt: .now, level: 0), style: .interactive)
 
         presenter.relayoutForScreenChange()
 
-        XCTAssertEqual(host.positionedScreens.last, .right)
+        let expected = ActivityOverlayPlacement.panelFrame(
+            capsuleSize: CGSize(width: 282, height: 62),
+            visibleFrame: ActivityOverlayScreen.right.visibleFrame
+        )
+        XCTAssertEqual(host.frames.last.map { CGRect(origin: $0.origin, size: $0.size) }, expected)
     }
 
     func testRelayoutDoesNothingWhenHidden() {
         let host = FakeOverlayPanelHost()
         let screens = FakeRelayoutScreens(newSessionScreens: [], refreshedScreen: .right)
-        let presenter = ActivityOverlayWindowController(host: host, screens: screens)
+        let presenter = makeController(model: ActivityOverlayModel(), host: host, screens: screens)
 
         presenter.relayoutForScreenChange()
 
         XCTAssertTrue(host.frames.isEmpty)
-        XCTAssertTrue(host.positionedScreens.isEmpty)
+        XCTAssertEqual(host.orderFrontCount, 0)
+    }
+
+    func testScreenParameterChangeNotificationTriggersRelayoutOnRefreshedFrame() async {
+        let host = FakeOverlayPanelHost()
+        let refreshedLeft = ActivityOverlayScreen(
+            id: ActivityOverlayScreen.left.id,
+            visibleFrame: CGRect(x: 0, y: 0, width: 2_000, height: 1_200)
+        )
+        let screens = FakeRelayoutScreens(newSessionScreens: [.left], refreshedScreen: refreshedLeft)
+        let presenter = makeController(model: ActivityOverlayModel(), host: host, screens: screens)
+        presenter.update(state: .listening(sessionID: UUID(), startedAt: .now, level: 0), style: .interactive)
+
+        NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        for _ in 0..<10 { await Task.yield() }
+
+        let expected = ActivityOverlayPlacement.panelFrame(
+            capsuleSize: CGSize(width: 282, height: 62),
+            visibleFrame: refreshedLeft.visibleFrame
+        )
+        XCTAssertEqual(host.frames.last.map { CGRect(origin: $0.origin, size: $0.size) }, expected)
+        withExtendedLifetime(presenter) {}
+    }
+
+    private func makeController(
+        model: ActivityOverlayModel,
+        host: any ActivityOverlayPanelHosting,
+        screens: any ActivityOverlayScreenProviding,
+        diagnostics: DiagnosticsRecorder? = nil
+    ) -> ActivityOverlayWindowController {
+        ActivityOverlayWindowController(model: model, host: host, screens: screens, diagnostics: diagnostics)
     }
 }
 
@@ -187,13 +301,20 @@ private final class FakeOverlayScreens: ActivityOverlayScreenProviding {
         fallback = then
     }
 
-    func screenForNewSession() -> ActivityOverlayScreen {
+    func screenForNewSession() -> ActivityOverlayScreen? {
         next.isEmpty ? fallback : next.removeFirst()
     }
 
     func screen(withID id: ActivityOverlayScreen.ID) -> ActivityOverlayScreen? {
         [ActivityOverlayScreen.left, .right].first { $0.id == id }
     }
+}
+
+/// Always reports that no screen exists, to exercise the "screen pick failed" path.
+@MainActor
+private final class NilScreenProvider: ActivityOverlayScreenProviding {
+    func screenForNewSession() -> ActivityOverlayScreen? { nil }
+    func screen(withID id: ActivityOverlayScreen.ID) -> ActivityOverlayScreen? { nil }
 }
 
 /// A screen provider tailored to the relayout tests: `screenForNewSession()` hands out a
@@ -209,8 +330,8 @@ private final class FakeRelayoutScreens: ActivityOverlayScreenProviding {
         self.refreshedScreen = refreshedScreen
     }
 
-    func screenForNewSession() -> ActivityOverlayScreen {
-        newSessionScreens.removeFirst()
+    func screenForNewSession() -> ActivityOverlayScreen? {
+        newSessionScreens.isEmpty ? nil : newSessionScreens.removeFirst()
     }
 
     func screen(withID id: ActivityOverlayScreen.ID) -> ActivityOverlayScreen? {
@@ -227,9 +348,9 @@ extension ActivityOverlayScreen {
 private final class FakeOverlayPanelHost: ActivityOverlayPanelHosting {
     private(set) var createCount = 0
     private(set) var setContentCount = 0
-    private(set) var positionedScreens: [ActivityOverlayScreen] = []
     private(set) var frames: [(origin: CGPoint, size: CGSize)] = []
     private(set) var ignoresMouseEventsValues: [Bool] = []
+    private(set) var orderFrontCount = 0
     private(set) var orderOutCount = 0
     var createError: Error?
     var orderFrontError: Error?
@@ -255,9 +376,9 @@ private final class FakeOverlayPanelHost: ActivityOverlayPanelHosting {
         ignoresMouseEventsValues.append(ignores)
     }
 
-    func orderFront(on screen: ActivityOverlayScreen) throws {
+    func orderFront() throws {
         if let orderFrontError { throw orderFrontError }
-        positionedScreens.append(screen)
+        orderFrontCount += 1
     }
 
     func orderOut() {

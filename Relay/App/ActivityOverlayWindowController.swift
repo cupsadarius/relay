@@ -1,7 +1,6 @@
 import CoreGraphics
 import Foundation
-@preconcurrency import AppKit
-import SwiftUI
+import AppKit
 
 /// The AppKit-independent seam AppModel binds `ActivityOverlayModel.setStateHandler` to.
 @MainActor
@@ -23,7 +22,8 @@ struct ActivityOverlayScreen: Equatable, Sendable {
 protocol ActivityOverlayScreenProviding {
     /// The screen a brand-new session should be pinned to: the screen under the mouse,
     /// falling back to the main screen, falling back to the first available screen.
-    func screenForNewSession() -> ActivityOverlayScreen
+    /// Returns `nil` only if no screen exists at all.
+    func screenForNewSession() -> ActivityOverlayScreen?
 
     /// Looks up a previously chosen screen by its stable identifier, for relayout after the
     /// active display's parameters change. Returns `nil` if that screen has disappeared.
@@ -42,22 +42,34 @@ protocol ActivityOverlayPanelHosting: AnyObject {
     )
     func setFrame(origin: CGPoint, size: CGSize)
     func setIgnoresMouseEvents(_ ignores: Bool)
-    func orderFront(on screen: ActivityOverlayScreen) throws
+    func orderFront() throws
     func orderOut()
 }
 
 /// Pure placement math: the panel sits centered above the bottom of the active display.
+/// A `chromeInset` margin is added around the capsule so its own shadow/stroke aren't clipped
+/// by the panel's bounds (the panel itself stays invisible/borderless).
 enum ActivityOverlayPlacement {
-    static func origin(panelSize: CGSize, visibleFrame: CGRect) -> CGPoint {
+    static let chromeInset: CGFloat = 16
+
+    static func origin(capsuleSize: CGSize, visibleFrame: CGRect) -> CGPoint {
         CGPoint(
-            x: visibleFrame.midX - panelSize.width / 2,
+            x: visibleFrame.midX - capsuleSize.width / 2,
             y: visibleFrame.minY + 28
         )
+    }
+
+    static func panelFrame(capsuleSize: CGSize, visibleFrame: CGRect) -> CGRect {
+        let capsuleOrigin = origin(capsuleSize: capsuleSize, visibleFrame: visibleFrame)
+        return CGRect(origin: capsuleOrigin, size: capsuleSize).insetBy(dx: -chromeInset, dy: -chromeInset)
     }
 }
 
 /// Pure policy for hosting the activity capsule: which display to pin to, where to place it,
 /// and when to show or hide it. Failures are isolated here and never propagate to callers.
+/// Host calls (`setFrame`/`setIgnoresMouseEvents`/`orderFront`/`setContent`) are only made when
+/// the value they'd apply has actually changed, so rapid same-session updates (e.g. mic level
+/// ticks) don't repeatedly disturb the hosted SwiftUI content or the window server.
 @MainActor
 final class ActivityOverlayWindowController: ActivityOverlayPresenting {
     private let model: ActivityOverlayModel
@@ -68,16 +80,19 @@ final class ActivityOverlayWindowController: ActivityOverlayPresenting {
 
     private var pinnedSessionID: UUID?
     private var pinnedScreen: ActivityOverlayScreen?
-    private var lastSize: CGSize?
+    private var lastCapsuleSize: CGSize?
     private var lastAppliedStyle: ActivityOverlayStyle?
+    private var lastPanelOrigin: CGPoint?
+    private var lastPanelSize: CGSize?
+    private var lastIgnoresMouse: Bool?
     private var isPanelVisible = false
     private var hasReportedFailure = false
     private nonisolated(unsafe) var screenParametersObserver: NSObjectProtocol?
 
     init(
-        model: ActivityOverlayModel = ActivityOverlayModel(),
+        model: ActivityOverlayModel,
         host: any ActivityOverlayPanelHosting,
-        screens: any ActivityOverlayScreenProviding = SystemActivityOverlayScreens(),
+        screens: any ActivityOverlayScreenProviding,
         diagnostics: DiagnosticsRecorder? = nil,
         onAction: @escaping @MainActor (ActivityOverlayAction) async -> Void = { _ in }
     ) {
@@ -102,8 +117,12 @@ final class ActivityOverlayWindowController: ActivityOverlayPresenting {
         }
 
         if pinnedSessionID != sessionID {
+            guard let screen = screens.screenForNewSession() else {
+                recordFailure()
+                return
+            }
             pinnedSessionID = sessionID
-            pinnedScreen = screens.screenForNewSession()
+            pinnedScreen = screen
         }
         guard let screen = pinnedScreen else { return }
 
@@ -114,41 +133,57 @@ final class ActivityOverlayWindowController: ActivityOverlayPresenting {
             return
         }
 
-        show(size: presentation.size, style: style, on: screen)
+        show(capsuleSize: presentation.size, style: style, on: screen)
     }
 
     /// Re-applies the pinned screen's current geometry. Called after the active display's
     /// parameters change (resolution, arrangement, etc.); falls back to a fresh screen pick
     /// if the pinned screen has disappeared. Does nothing while the panel isn't shown.
     func relayoutForScreenChange() {
-        guard isPanelVisible, let previousScreen = pinnedScreen, let size = lastSize else { return }
-        let refreshed = screens.screen(withID: previousScreen.id) ?? screens.screenForNewSession()
-        pinnedScreen = refreshed
-        do {
-            host.setFrame(origin: ActivityOverlayPlacement.origin(panelSize: size, visibleFrame: refreshed.visibleFrame), size: size)
-            try host.orderFront(on: refreshed)
-            recordShowSucceeded()
-        } catch {
+        guard isPanelVisible, let previousScreen = pinnedScreen, let capsuleSize = lastCapsuleSize else { return }
+        guard let refreshed = screens.screen(withID: previousScreen.id) ?? screens.screenForNewSession() else {
             recordFailure()
+            return
         }
+        pinnedScreen = refreshed
+        applyFrame(capsuleSize: capsuleSize, visibleFrame: refreshed.visibleFrame)
+        recordShowSucceeded()
     }
 
-    private func show(size: CGSize, style: ActivityOverlayStyle, on screen: ActivityOverlayScreen) {
+    private func show(capsuleSize: CGSize, style: ActivityOverlayStyle, on screen: ActivityOverlayScreen) {
         do {
             try host.createIfNeeded()
             if lastAppliedStyle != style {
                 host.setContent(model: model, style: style, onAction: onAction)
                 lastAppliedStyle = style
             }
-            host.setFrame(origin: ActivityOverlayPlacement.origin(panelSize: size, visibleFrame: screen.visibleFrame), size: size)
-            host.setIgnoresMouseEvents(style != .interactive)
-            try host.orderFront(on: screen)
-            isPanelVisible = true
-            lastSize = size
+            lastCapsuleSize = capsuleSize
+            applyFrame(capsuleSize: capsuleSize, visibleFrame: screen.visibleFrame)
+
+            let ignoresMouse = style != .interactive
+            if lastIgnoresMouse != ignoresMouse {
+                host.setIgnoresMouseEvents(ignoresMouse)
+                lastIgnoresMouse = ignoresMouse
+            }
+
+            if !isPanelVisible {
+                try host.orderFront()
+                isPanelVisible = true
+            }
             recordShowSucceeded()
         } catch {
+            // `isPanelVisible` is only set to `true` once `orderFront` succeeds above, so a
+            // throw here leaves it `false` and the next update retries showing the panel.
             recordFailure()
         }
+    }
+
+    private func applyFrame(capsuleSize: CGSize, visibleFrame: CGRect) {
+        let frame = ActivityOverlayPlacement.panelFrame(capsuleSize: capsuleSize, visibleFrame: visibleFrame)
+        guard lastPanelOrigin != frame.origin || lastPanelSize != frame.size else { return }
+        host.setFrame(origin: frame.origin, size: frame.size)
+        lastPanelOrigin = frame.origin
+        lastPanelSize = frame.size
     }
 
     private func orderOut() {
@@ -161,7 +196,7 @@ final class ActivityOverlayWindowController: ActivityOverlayPresenting {
         orderOut()
         pinnedSessionID = nil
         pinnedScreen = nil
-        lastSize = nil
+        lastCapsuleSize = nil
         hasReportedFailure = false
     }
 
@@ -181,103 +216,11 @@ final class ActivityOverlayWindowController: ActivityOverlayPresenting {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.relayoutForScreenChange() }
+            // The observer is registered with `queue: .main`, so this block always runs on the
+            // main thread; asserting isolation avoids an extra Task hop and its scheduling delay.
+            MainActor.assumeIsolated {
+                self?.relayoutForScreenChange()
+            }
         }
-    }
-}
-
-/// Production screen lookup, backed by real `NSScreen`s.
-@MainActor
-final class SystemActivityOverlayScreens: ActivityOverlayScreenProviding {
-    func screenForNewSession() -> ActivityOverlayScreen {
-        let mouseLocation = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first { $0.frame.contains(mouseLocation) }
-            ?? NSScreen.main
-            ?? NSScreen.screens.first
-        return Self.overlayScreen(for: screen)
-    }
-
-    func screen(withID id: ActivityOverlayScreen.ID) -> ActivityOverlayScreen? {
-        NSScreen.screens.first { Self.identifier(for: $0) == id }.map(Self.overlayScreen(for:))
-    }
-
-    private static func overlayScreen(for screen: NSScreen?) -> ActivityOverlayScreen {
-        guard let screen else { return ActivityOverlayScreen(id: "unknown", visibleFrame: .zero) }
-        return ActivityOverlayScreen(id: identifier(for: screen), visibleFrame: screen.visibleFrame)
-    }
-
-    private static func identifier(for screen: NSScreen) -> String {
-        if let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
-            return number.stringValue
-        }
-        return String(describing: ObjectIdentifier(screen))
-    }
-}
-
-/// A non-activating panel: it never becomes key or main, so showing it cannot steal focus
-/// from whatever app the user is dictating or reading into.
-@MainActor
-private final class NonActivatingOverlayPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
-}
-
-private enum ActivityOverlayHostError: Error {
-    case panelNotCreated
-}
-
-/// Production `NSPanel` host for the activity capsule.
-@MainActor
-final class ActivityOverlayPanelHost: ActivityOverlayPanelHosting {
-    private var panel: NonActivatingOverlayPanel?
-
-    func createIfNeeded() throws {
-        guard panel == nil else { return }
-        let panel = NonActivatingOverlayPanel(
-            contentRect: .zero,
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        panel.isFloatingPanel = true
-        panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-        panel.level = .floating
-        panel.isMovable = false
-        panel.isReleasedWhenClosed = false
-        panel.backgroundColor = .clear
-        panel.isOpaque = false
-        panel.hasShadow = false
-        self.panel = panel
-    }
-
-    func setContent(
-        model: ActivityOverlayModel,
-        style: ActivityOverlayStyle,
-        onAction: @escaping @MainActor (ActivityOverlayAction) async -> Void
-    ) {
-        guard let panel else { return }
-        let hostingView = NSHostingView(rootView: ActivityOverlayView(model: model, style: style, onAction: onAction))
-        hostingView.wantsLayer = true
-        hostingView.layer?.backgroundColor = .clear
-        panel.contentView = hostingView
-    }
-
-    func setFrame(origin: CGPoint, size: CGSize) {
-        panel?.setFrame(CGRect(origin: origin, size: size), display: true)
-    }
-
-    func setIgnoresMouseEvents(_ ignores: Bool) {
-        panel?.ignoresMouseEvents = ignores
-    }
-
-    func orderFront(on screen: ActivityOverlayScreen) throws {
-        guard let panel else { throw ActivityOverlayHostError.panelNotCreated }
-        _ = screen
-        panel.orderFrontRegardless()
-    }
-
-    func orderOut() {
-        panel?.orderOut(nil)
     }
 }
