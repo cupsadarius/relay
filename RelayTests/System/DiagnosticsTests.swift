@@ -2,6 +2,10 @@ import XCTest
 @testable import Relay
 
 @MainActor final class DiagnosticsTests: XCTestCase {
+    func testAccessibilityPermissionLabelDoesNotLimitAccessibilityToPostingEvents() {
+        XCTAssertEqual(DiagnosticsView.accessibilityPermissionLabel, "Accessibility")
+    }
+
     func testBufferEvictsOldestEventAndFormatsCopyWithoutSensitivePayloads() {
         var buffer = DiagnosticsBuffer(capacity: 2)
         buffer.append(.permissionRechecked)

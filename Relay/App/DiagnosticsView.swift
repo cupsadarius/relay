@@ -2,12 +2,14 @@ import SwiftUI
 import AppKit
 
 struct DiagnosticsView: View {
+    static let accessibilityPermissionLabel = "Accessibility"
+
     @Bindable var model: AppModel
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Permissions")
             Text("Input Monitoring (optional, listen events): \(model.permissionSnapshot.inputMonitoringGranted ? "Granted" : "Not granted")")
-            Text("Accessibility (post events): \(model.permissionSnapshot.accessibilityGranted ? "Granted" : "Not granted")")
+            Text("\(Self.accessibilityPermissionLabel): \(model.permissionSnapshot.accessibilityGranted ? "Granted" : "Not granted")")
             Text("Global Hotkeys (effective): \(model.permissionSnapshot.globalHotkeysGranted ? "Granted" : "Not granted")")
             Text("Global event tap: \(eventTapText)")
             HStack { Button("Request Accessibility") { model.requestPermissions() }; Button("Recheck / Retry") { model.recheckDiagnostics() } }
