@@ -66,12 +66,23 @@ protocol ClipboardWaiting {
     func wait(milliseconds: Int)
 }
 
+/// A cancellation handle for an operation scheduled via `ClipboardRestoreScheduling`.
+@MainActor
+protocol ClipboardRestoreHandle {
+    /// Prevents the scheduled operation from running if it hasn't already. Cancelling an
+    /// operation that has already run (or is already cancelled) is a harmless no-op.
+    func cancel()
+}
+
 /// Schedules a one-shot operation to run later without blocking the calling actor turn
 /// (unlike `ClipboardWaiting`, which pumps a nested run loop and would let other handlers
 /// reenter while the caller is still on the stack).
 @MainActor
 protocol ClipboardRestoreScheduling {
-    func schedule(afterMilliseconds: Int, _ operation: @escaping @MainActor () -> Void)
+    func schedule(
+        afterMilliseconds: Int,
+        _ operation: @escaping @MainActor () -> Void
+    ) -> any ClipboardRestoreHandle
 }
 
 @MainActor
@@ -225,10 +236,20 @@ struct RunLoopClipboardWaiter: ClipboardWaiting {
 /// Restores the clipboard after a delay without blocking the calling actor turn.
 @MainActor
 final class TaskClipboardRestoreScheduler: ClipboardRestoreScheduling {
-    func schedule(afterMilliseconds milliseconds: Int, _ operation: @escaping @MainActor () -> Void) {
-        Task { @MainActor in
+    private struct TaskHandle: ClipboardRestoreHandle {
+        let task: Task<Void, Never>
+        func cancel() { task.cancel() }
+    }
+
+    func schedule(
+        afterMilliseconds milliseconds: Int,
+        _ operation: @escaping @MainActor () -> Void
+    ) -> any ClipboardRestoreHandle {
+        let task = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(milliseconds))
+            guard !Task.isCancelled else { return }
             operation()
         }
+        return TaskHandle(task: task)
     }
 }

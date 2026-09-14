@@ -105,6 +105,9 @@ final class TextInsertionService: TextInserting {
     private let pasteCommand: any PasteCommandSending
     private let scheduler: any ClipboardRestoreScheduling
     private let canPostEvents: () -> Bool
+    /// The restore for the most recent paste-fallback insertion, if it hasn't run yet.
+    private var pendingRestore: (@MainActor () -> Void)?
+    private var pendingRestoreHandle: (any ClipboardRestoreHandle)?
 
     init(
         accessibility: any AccessibilityTextInserting = SystemAccessibilityTextInserter(),
@@ -134,6 +137,12 @@ final class TextInsertionService: TextInserting {
             throw TextInsertionError.accessibilityPermissionDenied
         }
 
+        // If an earlier paste's clipboard restore is still pending, run it now instead of
+        // letting it fire later: otherwise this insertion would snapshot Relay's own
+        // temporary pasteboard content as its "original", and once its own restore fires it
+        // would permanently overwrite the user's real clipboard with that leftover text.
+        flushPendingRestore()
+
         let originalClipboard = clipboard.snapshot()
         let ownershipToken = Data(UUID().uuidString.utf8)
         let didWrite = clipboard.write(string: text, ownershipToken: ownershipToken)
@@ -152,21 +161,54 @@ final class TextInsertionService: TextInserting {
 
         // Restoring synchronously here (via a nested run loop) would let other event
         // handlers reenter while `insert` is still on the stack. Instead we return
-        // immediately and let the target app read the pasteboard before restoring it.
-        let restoreClipboard = clipboard
-        scheduler.schedule(afterMilliseconds: Self.pasteClipboardRestoreDelayMilliseconds) {
-            restoreClipboard.restore(originalClipboard, ifOwnedBy: ownershipToken)
+        // immediately and let the target app read the pasteboard before restoring it;
+        // `flushPendingRestore` above keeps a later overlapping insertion safe.
+        let restore: @MainActor () -> Void = { [weak self] in
+            guard let self else { return }
+            self.clipboard.restore(originalClipboard, ifOwnedBy: ownershipToken)
+            self.pendingRestore = nil
+            self.pendingRestoreHandle = nil
         }
+        pendingRestore = restore
+        pendingRestoreHandle = scheduler.schedule(
+            afterMilliseconds: Self.pasteClipboardRestoreDelayMilliseconds,
+            restore
+        )
         return .paste
     }
 
-    /// Attempts the Accessibility write and verifies it actually moved the selection past the
+    /// Cancels and immediately runs any not-yet-fired clipboard restore from a previous paste
+    /// insertion. Safe to call when nothing is pending.
+    private func flushPendingRestore() {
+        pendingRestoreHandle?.cancel()
+        pendingRestoreHandle = nil
+        let restore = pendingRestore
+        pendingRestore = nil
+        restore?()
+    }
+
+    /// Attempts the Accessibility write and verifies it actually replaced the selection with the
     /// inserted text, by comparing `kAXSelectedTextRangeAttribute` before and after rather than
     /// the full text value: `AXUIElementSetAttributeValue` returning `.success` is not
     /// sufficient evidence on its own, since some apps report success without moving the
-    /// selection. When the element does not report the range as settable and readable, we
-    /// deliberately skip AX and use the paste fallback instead, rather than risk a silent
-    /// no-op or a duplicate paste.
+    /// selection.
+    ///
+    /// We accept exactly two post-write shapes, both consistent with "the text was inserted":
+    ///  - the caret advanced past the inserted text (`location == original + text.count`, `length == 0`)
+    ///  - the inserted text was left selected in place (`location == original`, `length == text.count`)
+    /// Any other shape is treated as a failed write and falls back to paste.
+    ///
+    /// This verification is a heuristic, not a proof, and its two failure directions are not
+    /// symmetric: rejecting a write that actually succeeded (a false negative) causes a second,
+    /// redundant insertion via the paste fallback — visible, and easy for the user to notice and
+    /// undo. Accepting a write that silently did nothing (a false positive that happens to match
+    /// one of the shapes above) causes a dropped insertion — silent, and easy to miss. We accept
+    /// only these two specific shapes, and nothing looser, to keep that false-positive risk as
+    /// small as possible while still covering both mechanisms apps commonly use to reflect an
+    /// inserted selection.
+    ///
+    /// When the element does not report the range as settable and readable, we deliberately skip
+    /// AX and use the paste fallback instead, rather than risk a silent no-op or a duplicate paste.
     private func insertViaAccessibility(_ text: String) -> Bool {
         guard let focusedValue = accessibility.focusedElementValue(),
               CFGetTypeID(focusedValue) == AXUIElementGetTypeID() else {
@@ -187,7 +229,9 @@ final class TextInsertionService: TextInserting {
             return false
         }
 
-        let expectedLocation = originalRange.location + text.utf16.count
-        return newRange.location == expectedLocation && newRange.length == 0
+        let insertedLength = text.utf16.count
+        let caretAdvancedPastInsertion = newRange.location == originalRange.location + insertedLength && newRange.length == 0
+        let insertionLeftSelected = newRange.location == originalRange.location && newRange.length == insertedLength
+        return caretAdvancedPastInsertion || insertionLeftSelected
     }
 }

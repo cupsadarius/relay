@@ -57,7 +57,7 @@ enum DictationDiagnostic: Equatable, Sendable {
         case .processing: "Dictation processing"
         case let .inserted(mechanism):
             switch mechanism {
-            case .accessibility: "Dictation inserted via Accessibility"
+            case .accessibility: "Dictation inserted via accessibility"
             case .paste: "Dictation inserted via paste"
             }
         case let .failed(stage): "Dictation failed during \(stage.message)"
