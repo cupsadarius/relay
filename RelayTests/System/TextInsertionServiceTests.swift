@@ -97,6 +97,42 @@ final class TextInsertionServiceTests: XCTestCase {
         XCTAssertEqual(events.values, ["snapshot", "write", "paste", "wait(100)", "restore"])
     }
 
+    func testPasteFallbackPreservesClipboardChangedDuringWait() throws {
+        let original = ClipboardSnapshot(items: [])
+        let clipboard = FakeInsertionClipboard(snapshot: original)
+        let waiter = FakeInsertionWaiter(onWait: { clipboard.simulateExternalChange() })
+        let service = TextInsertionService(
+            accessibility: FakeTextAccessibility(focusedValue: nil, canReplace: false),
+            clipboard: clipboard,
+            pasteCommand: FakePasteCommand(),
+            waiter: waiter,
+            canPostEvents: { true }
+        )
+
+        try service.insert("dictated text")
+
+        XCTAssertEqual(clipboard.writtenStrings, ["dictated text"])
+        XCTAssertEqual(clipboard.externalChangeCount, 1)
+        XCTAssertTrue(clipboard.restoredSnapshots.isEmpty)
+    }
+
+    func testPasteFallbackPreservesClipboardChangedImmediatelyAfterTemporaryWrite() throws {
+        let clipboard = FakeInsertionClipboard()
+        clipboard.onWrite = { clipboard.simulateExternalChange() }
+        let service = TextInsertionService(
+            accessibility: FakeTextAccessibility(focusedValue: nil, canReplace: false),
+            clipboard: clipboard,
+            pasteCommand: FakePasteCommand(),
+            waiter: FakeInsertionWaiter(),
+            canPostEvents: { true }
+        )
+
+        try service.insert("dictated text")
+
+        XCTAssertEqual(clipboard.externalChangeCount, 1)
+        XCTAssertTrue(clipboard.restoredSnapshots.isEmpty)
+    }
+
     func testClipboardWriteFailureRestoresClipboardAndDoesNotPaste() {
         let original = ClipboardSnapshot(items: [])
         let clipboard = FakeInsertionClipboard(snapshot: original, writeSucceeds: false)
@@ -112,6 +148,34 @@ final class TextInsertionServiceTests: XCTestCase {
         XCTAssertThrowsError(try service.insert("dictated text"))
         XCTAssertEqual(paste.sendCount, 0)
         XCTAssertEqual(clipboard.restoredSnapshots, [original])
+    }
+
+    func testFailedUnownedWritePreservesExternalClipboardUpdate() {
+        let clipboard = FakeInsertionClipboard(writeSucceeds: false, retainsOwnershipAfterWrite: false)
+        clipboard.onWrite = { clipboard.simulateExternalChange() }
+        let service = TextInsertionService(
+            accessibility: FakeTextAccessibility(focusedValue: nil, canReplace: false), clipboard: clipboard,
+            pasteCommand: FakePasteCommand(), waiter: FakeInsertionWaiter(), canPostEvents: { true }
+        )
+
+        XCTAssertThrowsError(try service.insert("dictated text"))
+
+        XCTAssertEqual(clipboard.externalChangeCount, 1)
+        XCTAssertTrue(clipboard.restoredSnapshots.isEmpty)
+    }
+
+    func testConditionalRestoreRefusesWhenOwnershipChangesDuringRestore() throws {
+        let clipboard = FakeInsertionClipboard()
+        clipboard.onConditionalRestore = { clipboard.simulateExternalChange() }
+        let service = TextInsertionService(
+            accessibility: FakeTextAccessibility(focusedValue: nil, canReplace: false), clipboard: clipboard,
+            pasteCommand: FakePasteCommand(), waiter: FakeInsertionWaiter(), canPostEvents: { true }
+        )
+
+        try service.insert("dictated text")
+
+        XCTAssertEqual(clipboard.externalChangeCount, 1)
+        XCTAssertTrue(clipboard.restoredSnapshots.isEmpty)
     }
 
     func testRestoresClipboardWhenPasteCommandThrows() {
@@ -153,35 +217,54 @@ private final class FakeTextAccessibility: AccessibilityTextInserting {
 private final class FakeInsertionClipboard: ClipboardPasteboard {
     let snapshotValue: ClipboardSnapshot
     let writeSucceeds: Bool
+    let retainsOwnershipAfterWrite: Bool
     let events: InsertionEvents?
     private(set) var writtenStrings: [String] = []
     private(set) var restoredSnapshots: [ClipboardSnapshot] = []
+    private(set) var externalChangeCount = 0
+    private var generation = 0
+    private var ownershipToken: Data?
+    var onWrite: (() -> Void)?
+    var onConditionalRestore: (() -> Void)?
 
     init(
         snapshot: ClipboardSnapshot = .init(items: []),
         writeSucceeds: Bool = true,
+        retainsOwnershipAfterWrite: Bool = true,
         events: InsertionEvents? = nil
     ) {
         self.snapshotValue = snapshot
         self.writeSucceeds = writeSucceeds
+        self.retainsOwnershipAfterWrite = retainsOwnershipAfterWrite
         self.events = events
     }
 
-    var changeCount: Int { 0 }
+    var changeCount: Int { generation }
     func snapshot() -> ClipboardSnapshot {
         events?.values.append("snapshot")
         return snapshotValue
     }
     func string() -> String? { nil }
-    func write(string: String) -> Bool {
+    func write(string: String, ownershipToken: Data) -> Bool {
         events?.values.append("write")
         writtenStrings.append(string)
+        generation += 1
+        self.ownershipToken = retainsOwnershipAfterWrite ? ownershipToken : nil
+        onWrite?()
         return writeSucceeds
+    }
+    func contains(ownershipToken: Data) -> Bool { self.ownershipToken == ownershipToken }
+    func restore(_ snapshot: ClipboardSnapshot, ifOwnedBy token: Data) {
+        onConditionalRestore?()
+        guard contains(ownershipToken: token) else { return }
+        restore(snapshot)
     }
     func restore(_ snapshot: ClipboardSnapshot) {
         events?.values.append("restore")
         restoredSnapshots.append(snapshot)
+        generation += 1
     }
+    func simulateExternalChange() { externalChangeCount += 1; generation += 1; ownershipToken = nil }
 }
 
 @MainActor
@@ -205,11 +288,16 @@ private final class FakePasteCommand: PasteCommandSending {
 @MainActor
 private final class FakeInsertionWaiter: ClipboardWaiting {
     let events: InsertionEvents?
+    let onWait: (() -> Void)?
     private(set) var waitedMilliseconds: [Int] = []
-    init(events: InsertionEvents? = nil) { self.events = events }
+    init(events: InsertionEvents? = nil, onWait: (() -> Void)? = nil) {
+        self.events = events
+        self.onWait = onWait
+    }
     func wait(milliseconds: Int) {
         events?.values.append("wait(\(milliseconds))")
         waitedMilliseconds.append(milliseconds)
+        onWait?()
     }
 }
 

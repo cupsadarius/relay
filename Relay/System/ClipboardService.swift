@@ -45,7 +45,9 @@ protocol ClipboardPasteboard: AnyObject {
     var changeCount: Int { get }
     func snapshot() -> ClipboardSnapshot
     func string() -> String?
-    func write(string: String) -> Bool
+    func write(string: String, ownershipToken: Data) -> Bool
+    /// Best-effort conditional restore. NSPasteboard does not offer an atomic compare-and-swap.
+    func restore(_ snapshot: ClipboardSnapshot, ifOwnedBy ownershipToken: Data)
     func restore(_ snapshot: ClipboardSnapshot)
 }
 
@@ -100,6 +102,7 @@ final class ClipboardService: ClipboardReading {
 
 @MainActor
 final class GeneralClipboardPasteboard: ClipboardPasteboard {
+    private static let ownershipTokenType = NSPasteboard.PasteboardType("dev.relaymac.Relay.temporary-insertion-token")
     private let pasteboard: NSPasteboard
 
     init(pasteboard: NSPasteboard = .general) {
@@ -116,9 +119,25 @@ final class GeneralClipboardPasteboard: ClipboardPasteboard {
         pasteboard.string(forType: .string)
     }
 
-    func write(string: String) -> Bool {
+    func write(string: String, ownershipToken: Data) -> Bool {
+        let item = NSPasteboardItem()
+        guard item.setString(string, forType: .string),
+              item.setData(ownershipToken, forType: Self.ownershipTokenType)
+        else { return false }
         pasteboard.clearContents()
-        return pasteboard.setString(string, forType: .string)
+        return pasteboard.writeObjects([item])
+    }
+
+    /// NSPasteboard has no atomic conditional write; this minimizes the check-to-restore window.
+    func restore(_ snapshot: ClipboardSnapshot, ifOwnedBy ownershipToken: Data) {
+        guard contains(ownershipToken: ownershipToken) else { return }
+        restore(snapshot)
+    }
+
+    private func contains(ownershipToken: Data) -> Bool {
+        pasteboard.pasteboardItems?.contains {
+            $0.data(forType: Self.ownershipTokenType) == ownershipToken
+        } ?? false
     }
 
     func restore(_ snapshot: ClipboardSnapshot) {

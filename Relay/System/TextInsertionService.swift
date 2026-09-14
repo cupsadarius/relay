@@ -76,9 +76,13 @@ final class TextInsertionService: TextInserting {
         }
 
         let originalClipboard = clipboard.snapshot()
-        defer { clipboard.restore(originalClipboard) }
+        let ownershipToken = Data(UUID().uuidString.utf8)
+        let didWrite = clipboard.write(string: text, ownershipToken: ownershipToken)
+        defer {
+            clipboard.restore(originalClipboard, ifOwnedBy: ownershipToken)
+        }
 
-        guard clipboard.write(string: text) else {
+        guard didWrite else {
             throw TextInsertionError.clipboardWriteFailed
         }
         try pasteCommand.sendPaste()

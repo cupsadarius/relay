@@ -87,8 +87,9 @@ private final class FakeClipboardPasteboard: ClipboardPasteboard {
 
     func snapshot() -> ClipboardSnapshot { snapshotValue }
     func string() -> String? { copiedString }
-    func write(string: String) -> Bool { true }
+    func write(string: String, ownershipToken: Data) -> Bool { true }
     func restore(_ snapshot: ClipboardSnapshot) { restoredSnapshots.append(snapshot) }
+    func restore(_ snapshot: ClipboardSnapshot, ifOwnedBy ownershipToken: Data) {}
 }
 
 @MainActor
