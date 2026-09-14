@@ -41,6 +41,7 @@ actor MicrophoneCapture: MicrophoneCapturing {
     private let source: any AudioCaptureSourcing
     private let accumulator = AudioSampleAccumulator()
     private var state: State = .idle
+    private var pendingStartTerminalError: (session: UUID, error: Error)?
 
     init(
         permission: any MicrophonePermissionAuthorizing = SystemMicrophonePermissionAuthorizer(),
@@ -53,8 +54,10 @@ actor MicrophoneCapture: MicrophoneCapturing {
     func start() async throws {
         guard case .idle = state else { throw MicrophoneCaptureError.alreadyRecording }
         let session = UUID()
+        pendingStartTerminalError = nil
         state = .starting(session)
         guard await permission.requestPermission() else {
+            pendingStartTerminalError = nil
             state = .idle
             throw SpeechBackendError.permissionDenied
         }
@@ -69,10 +72,17 @@ actor MicrophoneCapture: MicrophoneCapturing {
                     await self?.sourceTerminated(error, session: session)
                 }
             )
-            guard case .starting(session) = state else { return }
+            guard case .starting(session) = state else {
+                if let pendingStartTerminalError, pendingStartTerminalError.session == session {
+                    self.pendingStartTerminalError = nil
+                    throw pendingStartTerminalError.error
+                }
+                return
+            }
             state = .recording(session)
         } catch {
             accumulator.reset()
+            pendingStartTerminalError = nil
             state = .idle
             throw error
         }
@@ -100,6 +110,7 @@ actor MicrophoneCapture: MicrophoneCapturing {
         switch state {
         case let .starting(activeSession):
             guard activeSession == session else { return }
+            pendingStartTerminalError = (session, error)
             accumulator.reset()
             state = .idle
         case let .recording(activeSession):

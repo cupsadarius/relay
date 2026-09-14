@@ -142,6 +142,18 @@ final class MicrophoneCaptureStateTests: XCTestCase {
         try await capture.start()
     }
 
+    func testTerminalSourceFailureDuringStartThrowsAndReturnsCaptureToIdle() async throws {
+        let source = FakeAudioSource(terminalErrorDuringStart: MicrophoneCaptureError.unavailable("conversion failed"))
+        let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
+
+        await XCTAssertThrowsErrorAsync(try await capture.start()) { error in
+            XCTAssertEqual(error as? MicrophoneCaptureError, .unavailable("conversion failed"))
+        }
+
+        await source.clearTerminalErrorDuringStart()
+        try await capture.start()
+    }
+
     func testSamplesAcceptedDuringStopAreIncludedBeforeDrainBoundary() async throws {
         let source = FakeAudioSource(samplesDuringStop: [0.2, -0.3])
         let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
@@ -157,6 +169,7 @@ private actor FakeAudioSource: AudioCaptureSourcing {
     private var sink: (@Sendable ([Float]) -> Void)?
     private var terminalErrorSink: (@Sendable (Error) async -> Void)?
     private var startError: Error?
+    private var terminalErrorDuringStart: Error?
     private var stopError: Error?
     private let blockStart: Bool
     private let blockStop: Bool
@@ -170,12 +183,14 @@ private actor FakeAudioSource: AudioCaptureSourcing {
 
     init(
         startError: Error? = nil,
+        terminalErrorDuringStart: Error? = nil,
         stopError: Error? = nil,
         blockStart: Bool = false,
         blockStop: Bool = false,
         samplesDuringStop: [Float] = []
     ) {
         self.startError = startError
+        self.terminalErrorDuringStart = terminalErrorDuringStart
         self.stopError = stopError
         self.blockStart = blockStart
         self.blockStop = blockStop
@@ -189,6 +204,11 @@ private actor FakeAudioSource: AudioCaptureSourcing {
         if let startError { throw startError }
         sink = onSamples
         terminalErrorSink = onTerminalError
+        if let terminalErrorDuringStart {
+            await onTerminalError(terminalErrorDuringStart)
+            sink = nil
+            terminalErrorSink = nil
+        }
         if blockStart {
             hasEnteredStart = true
             startEnteredWaiter?.resume()
@@ -228,6 +248,8 @@ private actor FakeAudioSource: AudioCaptureSourcing {
     func releaseStop() { stopWaiter?.resume(); stopWaiter = nil }
 
     func clearStartError() { startError = nil }
+
+    func clearTerminalErrorDuringStart() { terminalErrorDuringStart = nil }
 
     func failTerminally(_ error: Error) async {
         await terminalErrorSink?(error)
