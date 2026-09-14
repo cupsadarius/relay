@@ -16,6 +16,8 @@
 		3025C432DE8ACDA88701092F /* ClipboardService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE24F398C26E7C916733EF1 /* ClipboardService.swift */; };
 		30F97D8C0898E2D97E683F3F /* MicrophoneCaptureStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AAA555F92CDA973E5FD1ACA /* MicrophoneCaptureStateTests.swift */; };
 		312A67F8371459CA07993365 /* AppleTTSBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = E575530E2E604E20E5161DF6 /* AppleTTSBackend.swift */; };
+		AA1100010000000000000001 /* AppleSpeechBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1100020000000000000001 /* AppleSpeechBackend.swift */; };
+		AA1100030000000000000001 /* AppleSpeechBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1100040000000000000001 /* AppleSpeechBackendTests.swift */; };
 		42DF91F35139107D11DE4F66 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 919335F17510788FF73D5500 /* SettingsView.swift */; };
 		4F2437BBF321F303DFF307C5 /* TTSRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA1878571E35A1485700DA5C /* TTSRouter.swift */; };
 		C918FEDE9A1B2C3D4E5F6073 /* STTRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C918FEDE9A1B2C3D4E5F6074 /* STTRouter.swift */; };
@@ -107,6 +109,8 @@
 		DA1878571E35A1485700DA5C /* TTSRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSRouter.swift; sourceTree = "<group>"; };
 		E2E464DE9B8D3EF3FBAF0A9E /* SpeechCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechCoordinator.swift; sourceTree = "<group>"; };
 		E575530E2E604E20E5161DF6 /* AppleTTSBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleTTSBackend.swift; sourceTree = "<group>"; };
+		AA1100020000000000000001 /* AppleSpeechBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleSpeechBackend.swift; sourceTree = "<group>"; };
+		AA1100040000000000000001 /* AppleSpeechBackendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleSpeechBackendTests.swift; sourceTree = "<group>"; };
 		EAB0B39FEA02933CC4354E8D /* SpeechBackendError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechBackendError.swift; sourceTree = "<group>"; };
 		ED330EE6049AE116AFB2F072 /* AppSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsTests.swift; sourceTree = "<group>"; };
 		F5BF4958844B2771537AF08D /* AppModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModelTests.swift; sourceTree = "<group>"; };
@@ -177,6 +181,22 @@
 			path = SpeechIn;
 			sourceTree = "<group>";
 		};
+		AA1100050000000000000001 /* Backends */ = {
+			isa = PBXGroup;
+			children = (
+				AA1100040000000000000001 /* AppleSpeechBackendTests.swift */,
+			);
+			path = Backends;
+			sourceTree = "<group>";
+		};
+		AA1100060000000000000001 /* Backends */ = {
+			isa = PBXGroup;
+			children = (
+				AA1100020000000000000001 /* AppleSpeechBackend.swift */,
+			);
+			path = Backends;
+			sourceTree = "<group>";
+		};
 		8108792C7BDAA099F962E116 /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -235,6 +255,7 @@
 			children = (
 				359767A5465051721E7F2076 /* Assets.xcassets */,
 				A3B1078494319AB67E3172D5 /* App */,
+				AA1100060000000000000001 /* Backends */,
 				FDEA6DBE16EC5221B53015C6 /* Domain */,
 				370CCB652C846F1DC6580429 /* SpeechIn */,
 				BB59EBF38C38532FAC2EAB8A /* SpeechOut */,
@@ -250,6 +271,7 @@
 				82F98404629EA6F3162215CC /* RelayTests.swift */,
 				09120AE87014631DA64D6551 /* App */,
 				A89903B3BCFD871D73F30B39 /* Domain */,
+				AA1100050000000000000001 /* Backends */,
 				6F7D79CCDDFB38CEDDD6D7C4 /* SpeechIn */,
 				6C1A6BC3ACEA9AC2F35DFD6B /* SpeechOut */,
 				55F9F67CCCD674A771BA3A40 /* System */,
@@ -356,6 +378,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B785675C6885A59D2FD6BB18 /* AccessibilityServiceTests.swift in Sources */,
+				AA1100030000000000000001 /* AppleSpeechBackendTests.swift in Sources */,
 				B2E2ACBD73D895AA81FBD1B4 /* AppModelTests.swift in Sources */,
 				18A0B28B851CB76A0406F54E /* AppSettingsTests.swift in Sources */,
 				912B483ECC93452865AC4A29 /* ClipboardServiceTests.swift in Sources */,
@@ -382,6 +405,7 @@
 				D0CCD89167ACBB59A2D873B6 /* AppModel.swift in Sources */,
 				C5F5763A4617CDDD616EB1F3 /* AppSettings.swift in Sources */,
 				312A67F8371459CA07993365 /* AppleTTSBackend.swift in Sources */,
+				AA1100010000000000000001 /* AppleSpeechBackend.swift in Sources */,
 				8364B21972FCCAC67036630C /* BackendAvailability.swift in Sources */,
 				3025C432DE8ACDA88701092F /* ClipboardService.swift in Sources */,
 				BDB3AFBC914BC5F55A9E04B9 /* Diagnostics.swift in Sources */,
