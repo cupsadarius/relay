@@ -4,6 +4,7 @@
 
 
 DerivedData/
+.derived-data/
 build/
 *.xcuserstate
 *.xcscmblueprint
