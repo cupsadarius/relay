@@ -2,6 +2,7 @@ import SwiftUI
 
 struct IntegrationsSettingsView: View {
     @Bindable var model: AppModel
+    @State private var agentSessions: [AppModel.AgentSessionSummary] = []
 
     var body: some View {
         Form {
@@ -24,11 +25,58 @@ struct IntegrationsSettingsView: View {
             Section("Codex") {
                 integrationRow(for: .codex)
             }
+
+            Section("Agent responses") {
+                Toggle(isOn: Binding(
+                    get: { model.settings.autoReadEnabled },
+                    set: { model.setAutoReadEnabled($0) }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Automatically speak confidently focused Claude/Codex sessions")
+                        Text("Background or ambiguous sessions stay silent.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            Section("Agent Sessions") {
+                if agentSessions.isEmpty {
+                    Text("No agent sessions yet.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(agentSessions) { session in
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text(Self.providerLabel(session.provider))
+                                Spacer()
+                                Text(session.lastActivityAt, style: .relative)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text(session.cwd)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
+                Button("Refresh") { Task { agentSessions = await model.agentSessionSummaries() } }
+            }
         }
         .formStyle(.grouped)
         .task {
             model.checkIntegration(.claudeCode)
             model.checkIntegration(.codex)
+            agentSessions = await model.agentSessionSummaries()
+        }
+    }
+
+    private static func providerLabel(_ provider: AgentProvider) -> String {
+        switch provider {
+        case .claudeCode: "Claude Code"
+        case .codex: "Codex"
         }
     }
 

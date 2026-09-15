@@ -353,6 +353,155 @@ final class AppModelIntegrationsTests: XCTestCase {
             try? await Task.sleep(nanoseconds: 5_000_000)
         }
     }
+
+    // MARK: - Phase 3 Task 9: `onResponse` wiring reaches `AgentAutoReadCoordinator`
+    //
+    // These build the SAME shape of graph `AppModel`'s production `convenience init()` wires
+    // (an `IntegrationManager` whose `onResponse` forwards to an `AgentAutoReadCoordinator`), but
+    // with fakes for focus/speech/process-context standing in for the real resolvers — exactly as
+    // `AgentAutoReadCoordinatorTests` does for the coordinator alone. This verifies the wiring
+    // itself: a decoded event reaches the coordinator, upserts a session into the registry, and
+    // speaks exactly once when focus is stubbed `.focused`/`.high` and auto-read is enabled; a
+    // disabled flag or a non-`.focused`/`.high` decision stays silent while still upserting.
+
+    func testOnResponseWiringSpeaksOnceWhenFocusedHighAndAutoReadEnabled() async {
+        let harness = makeAutoReadWiringHarness(
+            focus: .focused(resolverID: "stub", reason: "test"),
+            autoRead: true
+        )
+        let model = makeModel(integrationManager: harness.manager)
+        harness.manager.start()
+        defer { harness.manager.stop() }
+
+        harness.continuation.yield(HookEnvelope(
+            schemaVersion: 1,
+            provider: .claudeCode,
+            rawPayload: "{}",
+            parentPID: harness.event.parentPID,
+            environment: [:],
+            capturedAt: harness.event.capturedAt
+        ))
+
+        await waitUntil { !harness.speech.requests.isEmpty }
+
+        XCTAssertEqual(harness.speech.requests.count, 1)
+        XCTAssertEqual(harness.speech.requests.first?.mode, .automatic)
+        let sessions = await harness.registry.sessions()
+        XCTAssertEqual(sessions.first?.latestResponse.text, harness.event.text)
+        withExtendedLifetime(model) {}
+    }
+
+    func testOnResponseWiringStaysSilentWhenAutoReadDisabled() async {
+        let harness = makeAutoReadWiringHarness(
+            focus: .focused(resolverID: "stub", reason: "test"),
+            autoRead: false
+        )
+        let model = makeModel(integrationManager: harness.manager)
+        harness.manager.start()
+        defer { harness.manager.stop() }
+
+        harness.continuation.yield(HookEnvelope(
+            schemaVersion: 1,
+            provider: .claudeCode,
+            rawPayload: "{}",
+            parentPID: harness.event.parentPID,
+            environment: [:],
+            capturedAt: harness.event.capturedAt
+        ))
+
+        await waitUntil { model.latestAgentResponseAvailable }
+
+        XCTAssertTrue(harness.speech.requests.isEmpty)
+        let sessions = await harness.registry.sessions()
+        XCTAssertEqual(sessions.first?.latestResponse.text, harness.event.text)
+    }
+
+    func testOnResponseWiringStaysSilentWhenFocusUnknown() async {
+        let harness = makeAutoReadWiringHarness(
+            focus: .unknown(resolverID: "stub", reason: "ambiguous"),
+            autoRead: true
+        )
+        let model = makeModel(integrationManager: harness.manager)
+        harness.manager.start()
+        defer { harness.manager.stop() }
+
+        harness.continuation.yield(HookEnvelope(
+            schemaVersion: 1,
+            provider: .claudeCode,
+            rawPayload: "{}",
+            parentPID: harness.event.parentPID,
+            environment: [:],
+            capturedAt: harness.event.capturedAt
+        ))
+
+        await waitUntil { model.latestAgentResponseAvailable }
+
+        XCTAssertTrue(harness.speech.requests.isEmpty)
+    }
+}
+
+private struct AutoReadWiringHarness {
+    let manager: IntegrationManager
+    let registry: AgentSessionRegistry
+    let speech: RecordingWiringSpeechSink
+    let continuation: AsyncStream<HookEnvelope>.Continuation
+    let event: AgentResponseEvent
+}
+
+@MainActor
+private func makeAutoReadWiringHarness(focus: FocusDecision, autoRead: Bool) -> AutoReadWiringHarness {
+    let event = AgentResponseEvent(
+        id: UUID(),
+        provider: .claudeCode,
+        providerSessionID: "wiring-session",
+        turnID: nil,
+        text: "All wired up.",
+        cwd: "/Users/me/project",
+        transcriptPath: nil,
+        parentPID: 100,
+        environment: [:],
+        capturedAt: Date(timeIntervalSince1970: 1_700_001_000)
+    )
+    let integration = AlwaysSucceedIntegration(provider: .claudeCode, event: event)
+    let registry = AgentSessionRegistry()
+    let speech = RecordingWiringSpeechSink()
+    let coordinator = AgentAutoReadCoordinator(
+        registry: registry,
+        processContext: StubWiringProcessContextCapture(),
+        focus: StubWiringSessionFocusResolver(decision: focus),
+        preprocess: { $0 },
+        speech: speech,
+        autoReadEnabled: { autoRead }
+    )
+    var continuation: AsyncStream<HookEnvelope>.Continuation!
+    let events = AsyncStream<HookEnvelope> { continuation = $0 }
+    let manager = IntegrationManager(
+        events: events,
+        integrations: [integration],
+        speechCoordinator: FakeSpeechCoordinator(),
+        onResponse: { decoded in await coordinator.handle(decoded) }
+    )
+    return .init(manager: manager, registry: registry, speech: speech, continuation: continuation, event: event)
+}
+
+private struct StubWiringSessionFocusResolver: SessionFocusResolving {
+    let decision: FocusDecision
+    func resolve(session: AgentSession) async -> FocusDecision { decision }
+}
+
+private struct StubWiringProcessContextCapture: AgentProcessContextCapturing {
+    func capture(parentPID: Int32) async -> AgentProcessContext {
+        .init(ancestry: [parentPID], tty: nil)
+    }
+}
+
+/// `@unchecked Sendable`: `AgentAutoReadCoordinator` requires `any SpeechSubmitting & Sendable`
+/// since it calls `speak(_:)` — `@MainActor`-isolated — from its own actor isolation. All mutable
+/// state here (`requests`) is touched only from `@MainActor`.
+@MainActor
+private final class RecordingWiringSpeechSink: SpeechSubmitting, @unchecked Sendable {
+    var requests: [SpeechRequest] = []
+    func speak(_ request: SpeechRequest) async throws { requests.append(request) }
 }
 
 // MARK: - Test doubles

@@ -5,7 +5,12 @@ import AVFoundation
 @MainActor
 @Observable
 final class AppModel {
-    private final class SettingsState {
+    /// `@unchecked Sendable`: `value` is only ever mutated from `AppModel`'s `@MainActor`
+    /// isolation (via `updateSettings`). Marking this Sendable lets a `@Sendable` closure (e.g.
+    /// `AgentAutoReadCoordinator`'s `autoReadEnabled` reader, called from that actor's own
+    /// isolation) capture and read `state.value` without the compiler requiring a full
+    /// actor-hop — mirroring `SpeechCoordinator`'s `@unchecked Sendable` conformance above.
+    private final class SettingsState: @unchecked Sendable {
         var value: AppSettings
 
         init(_ value: AppSettings) {
@@ -67,6 +72,11 @@ final class AppModel {
     @ObservationIgnored private let integrationManager: IntegrationManager
     @ObservationIgnored private let claudeCodeInstaller: ClaudeCodeInstaller
     @ObservationIgnored private let codexInstaller: CodexInstaller
+    /// Ephemeral, memory-only registry of agent sessions observed from hook events. Shared with
+    /// the production `AgentAutoReadCoordinator`/`FocusResolutionService` graph built in the
+    /// production `convenience init()`. Exposed read-only for compact diagnostics
+    /// (`agentSessionSummaries()`) — never for response text or live focus resolution.
+    @ObservationIgnored private let sessionRegistry: AgentSessionRegistry
 
     convenience init() {
         let settingsStore = SettingsStore()
@@ -104,6 +114,47 @@ final class AppModel {
             sttBackend.id: sttBackend,
             parakeetBackend.id: parakeetBackend,
         ]
+
+        // Phase 3 session-intelligence dependency graph. Built here, as LOCALS, before
+        // `self.init` below — `self` does not exist yet, so nothing here may reference it (no
+        // `[weak self]`). Every subsystem that needs frontmost-app or recent-interaction evidence
+        // shares these SAME instances (passed into `dictation` below) rather than constructing
+        // its own, so they all observe one consistent view of focus state. Resolver order is
+        // fixed: Herdr (exact pane evidence) -> tmux (exact pane evidence) -> generic terminal
+        // (conservative process-ancestry fallback). tmux support is entirely optional: when no
+        // tmux executable is found, `TmuxFocusResolver` is simply never added to the list.
+        let sessionRegistry = AgentSessionRegistry()
+        let processInspector = ProcessInspector()
+        let frontmostApps = FrontmostAppMonitor()
+        let recentInteractionTracker = RecentInteractionTracker()
+        let tmuxRunner = TmuxExecutableLocator().locate().map { TmuxClient(executable: $0) }
+        let herdrClient = HerdrSocketClient()
+        let agentProcessContext = AgentProcessContextCapture(processInspector: processInspector)
+
+        var resolvers: [any FocusResolver] = []
+        resolvers.append(HerdrFocusResolver(
+            herdr: herdrClient,
+            hostOwnership: HerdrHostOwnershipChecker(processInspector: processInspector)
+        ))
+        if let tmuxRunner {
+            resolvers.append(TmuxFocusResolver(runner: tmuxRunner, processTrees: processInspector))
+        }
+        resolvers.append(GenericTerminalFocusResolver())
+
+        let focusResolution = FocusResolutionService(
+            registry: sessionRegistry,
+            frontmostApps: frontmostApps,
+            resolvers: resolvers
+        )
+        let autoReadCoordinator = AgentAutoReadCoordinator(
+            registry: sessionRegistry,
+            processContext: agentProcessContext,
+            focus: focusResolution,
+            preprocess: { RulesSpeechPreprocessor().prepare(text: $0, mode: .automatic) },
+            speech: coordinator,
+            autoReadEnabled: { state.value.autoReadEnabled }
+        )
+
         let dictation = DictationCoordinator(
             microphone: MicrophoneCapture(),
             sttRouter: STTRouter(
@@ -118,14 +169,16 @@ final class AppModel {
             stopSpeech: { coordinator.stop() },
             status: { _ in },
             activity: overlayModel,
-            diagnostics: diagnostics
+            diagnostics: diagnostics,
+            frontmostApps: frontmostApps,
+            recentInteractions: recentInteractionTracker
         )
         let hookEnvelopeReceiver = HookEnvelopeReceiver()
         let integrationManager = IntegrationManager(
             events: hookEnvelopeReceiver.events,
             integrations: [ClaudeCodeIntegration(), CodexIntegration()],
             speechCoordinator: coordinator,
-            onResponse: { _ in }
+            onResponse: { event in await autoReadCoordinator.handle(event) }
         )
         let actionDispatcher: any ActivityOverlayControlling = ActivityOverlayActionDispatcher(dictation: dictation, speech: coordinator)
         let overlayPresenter = ActivityOverlayWindowController(
@@ -168,7 +221,8 @@ final class AppModel {
             hookEnvelopeReceiver: hookEnvelopeReceiver,
             integrationManager: integrationManager,
             claudeCodeInstaller: ClaudeCodeInstaller(),
-            codexInstaller: CodexInstaller()
+            codexInstaller: CodexInstaller(),
+            sessionRegistry: sessionRegistry
         )
         dictation.setStatusHandler { [weak self] in self?.statusText = $0 }
     }
@@ -193,7 +247,8 @@ final class AppModel {
         hookEnvelopeReceiver: HookEnvelopeReceiver = HookEnvelopeReceiver(),
         integrationManager: IntegrationManager? = nil,
         claudeCodeInstaller: ClaudeCodeInstaller = ClaudeCodeInstaller(),
-        codexInstaller: CodexInstaller = CodexInstaller()
+        codexInstaller: CodexInstaller = CodexInstaller(),
+        sessionRegistry: AgentSessionRegistry = AgentSessionRegistry()
     ) {
         let settings = settingsStore.load()
         self.settingsStore = settingsStore
@@ -220,6 +275,7 @@ final class AppModel {
         )
         self.claudeCodeInstaller = claudeCodeInstaller
         self.codexInstaller = codexInstaller
+        self.sessionRegistry = sessionRegistry
         activationObserver = nil
         dictationTask = nil
         permissionSnapshot = permissionService.snapshot()
@@ -256,7 +312,8 @@ final class AppModel {
         hookEnvelopeReceiver: HookEnvelopeReceiver,
         integrationManager: IntegrationManager,
         claudeCodeInstaller: ClaudeCodeInstaller,
-        codexInstaller: CodexInstaller
+        codexInstaller: CodexInstaller,
+        sessionRegistry: AgentSessionRegistry
     ) {
         self.settingsStore = settingsStore
         self.selectionReader = selectionReader
@@ -278,6 +335,7 @@ final class AppModel {
         self.integrationManager = integrationManager
         self.claudeCodeInstaller = claudeCodeInstaller
         self.codexInstaller = codexInstaller
+        self.sessionRegistry = sessionRegistry
         activationObserver = nil
         dictationTask = nil
         permissionSnapshot = permissionService.snapshot()
@@ -464,7 +522,17 @@ final class AppModel {
     /// Shared by the `toggleAutoRead` hotkey and the menu bar's auto-read control so neither
     /// path duplicates the toggle logic.
     func toggleAutoRead() {
-        updateSettings { $0.autoReadEnabled.toggle() }
+        setAutoReadEnabled(!settings.autoReadEnabled)
+    }
+
+    /// Sets `settings.autoReadEnabled` explicitly and updates `statusText` to reflect the new
+    /// value. Used by the Integrations settings tab's toggle; `toggleAutoRead()` (the
+    /// `.toggleAutoRead` hotkey and menu bar control) is expressed in terms of this so neither
+    /// path duplicates the persist-and-announce logic. A no-op when the value is unchanged, so
+    /// flipping the same settings-tab toggle repeatedly doesn't spam `statusText`.
+    func setAutoReadEnabled(_ enabled: Bool) {
+        guard enabled != settings.autoReadEnabled else { return }
+        updateSettings { $0.autoReadEnabled = enabled }
         statusText = settings.autoReadEnabled ? "Auto-read enabled" : "Auto-read disabled"
     }
 
@@ -654,6 +722,27 @@ final class AppModel {
         } catch {
             diagnostics.record(.ttsFailed)
             statusText = "Could not speak the latest agent response."
+        }
+    }
+
+    /// Compact, privacy-safe metadata for one ephemeral agent session: provider, working
+    /// directory, and last-activity time only. Never the response text, and never a resolved
+    /// focus verdict — focus is only ever resolved at speak time by
+    /// `AgentAutoReadCoordinator`/`FocusResolutionService`, not for display.
+    struct AgentSessionSummary: Identifiable, Equatable, Sendable {
+        let id: AgentSessionID
+        let cwd: String
+        let lastActivityAt: Date
+
+        var provider: AgentProvider { id.provider }
+    }
+
+    /// Snapshot of the in-memory agent sessions currently tracked by Phase 3's session registry,
+    /// most-recently-active first. Purely for diagnostics display; contents are never persisted
+    /// and never include response text.
+    func agentSessionSummaries() async -> [AgentSessionSummary] {
+        await sessionRegistry.sessions().map {
+            AgentSessionSummary(id: $0.id, cwd: $0.cwd, lastActivityAt: $0.lastActivityAt)
         }
     }
 }
