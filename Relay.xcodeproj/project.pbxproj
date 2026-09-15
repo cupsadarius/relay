@@ -89,6 +89,7 @@
 		91CA532F4429D5B65476BEBC /* ProjectSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D080F5789BE1F241509F1C2 /* ProjectSmokeTests.swift */; };
 		94AE744F4CA8CE70CBB9687B /* RelayHook in Resources */ = {isa = PBXBuildFile; fileRef = CD7B5DDABCD6925ACF15C1B3 /* RelayHook */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		95C9BCDDDA4FE8DE23CED11C /* GenericTerminalFocusResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23D267BE7B2C822655C9AE70 /* GenericTerminalFocusResolverTests.swift */; };
+		96CA4958B0285694F49DC95C /* AgentAutoReadCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4238C69567BF32B43ABBF612 /* AgentAutoReadCoordinatorTests.swift */; };
 		975663B0D629B8FDB447502D /* STTRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 751588B739A8C2497A075C0A /* STTRouter.swift */; };
 		9756AF051A9C26FDF8B4BA30 /* RulesSpeechPreprocessorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75A5D0DD6ECBB171B17FC747 /* RulesSpeechPreprocessorTests.swift */; };
 		97BBF047A631155332E9FB06 /* HookEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0007CFDD668AB6C9B6207607 /* HookEnvelope.swift */; };
@@ -117,6 +118,7 @@
 		BDB3AFBC914BC5F55A9E04B9 /* Diagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2388EB91FEE36FAF3715B0FE /* Diagnostics.swift */; };
 		BE570F59B904039713B5C19C /* ActivityOverlayPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A1971CFBDF8C170DD9B32F /* ActivityOverlayPresentation.swift */; };
 		BF60241DEB26DD12C9DEB812 /* DiagnosticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D52815C78FFC96732B4BC0DE /* DiagnosticsTests.swift */; };
+		C168BA398F4AD5B2F8919CD7 /* AgentAutoReadCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80F71A01E4392464DA0DC302 /* AgentAutoReadCoordinator.swift */; };
 		C49E0E417AF998014B597166 /* RulesTranscriptProcessorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C2D9AB71BE0958979C201CB /* RulesTranscriptProcessorTests.swift */; };
 		C5F5763A4617CDDD616EB1F3 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85842060D11E3427D905C000 /* AppSettings.swift */; };
 		C5FAB2BF576BBC52717C7E8E /* SpeechCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B541411E315249B0E88DAE3 /* SpeechCoordinatorTests.swift */; };
@@ -211,6 +213,7 @@
 		3E5FC6AD7B609779FB7B0A48 /* SynthesizedAudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SynthesizedAudioPlayer.swift; sourceTree = "<group>"; };
 		3E764C660DC8753D838587C8 /* HerdrFocusResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HerdrFocusResolver.swift; sourceTree = "<group>"; };
 		3FEA7F12EBADD824A6D473D8 /* TextInsertionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextInsertionService.swift; sourceTree = "<group>"; };
+		4238C69567BF32B43ABBF612 /* AgentAutoReadCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAutoReadCoordinatorTests.swift; sourceTree = "<group>"; };
 		4356D69F7A9BF90E006C2575 /* RecentInteractionTrackerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentInteractionTrackerTests.swift; sourceTree = "<group>"; };
 		483B44390B4757DC9D7B7505 /* AccessibilityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityService.swift; sourceTree = "<group>"; };
 		49DEB5422690339D2759CC63 /* AppleSpeechBackendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleSpeechBackendTests.swift; sourceTree = "<group>"; };
@@ -239,6 +242,7 @@
 		7A283E013EB4D5C368889260 /* STTRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = STTRouterTests.swift; sourceTree = "<group>"; };
 		7F32A0AB1ECF4429A4A7F818 /* AgentResponseEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentResponseEvent.swift; sourceTree = "<group>"; };
 		7FCE353359D9AFF090867950 /* ActivityOverlayWindowControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverlayWindowControllerTests.swift; sourceTree = "<group>"; };
+		80F71A01E4392464DA0DC302 /* AgentAutoReadCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAutoReadCoordinator.swift; sourceTree = "<group>"; };
 		82F98404629EA6F3162215CC /* RelayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayTests.swift; sourceTree = "<group>"; };
 		8319285D2256A603BD08A571 /* DictationCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationCoordinatorTests.swift; sourceTree = "<group>"; };
 		83997371307F0FA88DB5A57E /* HookEnvelopeReceiverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookEnvelopeReceiverTests.swift; sourceTree = "<group>"; };
@@ -548,6 +552,7 @@
 		A9C98CE98619F32B501C1C85 /* Sessions */ = {
 			isa = PBXGroup;
 			children = (
+				4238C69567BF32B43ABBF612 /* AgentAutoReadCoordinatorTests.swift */,
 				D3040811122AB7731EB71724 /* AgentSessionRegistryTests.swift */,
 				5BE27F0D0A2BEF34BD00F5A4 /* FocusResolutionServiceTests.swift */,
 				23D267BE7B2C822655C9AE70 /* GenericTerminalFocusResolverTests.swift */,
@@ -646,6 +651,7 @@
 		E9B42ACE6C57C793ECC7230F /* Sessions */ = {
 			isa = PBXGroup;
 			children = (
+				80F71A01E4392464DA0DC302 /* AgentAutoReadCoordinator.swift */,
 				66FC6B9D3FF3241E9F3B71E1 /* AgentSessionRegistry.swift */,
 				B1FC20A718A0939B4DDA9CB0 /* FocusResolutionService.swift */,
 				FBBA71BFC002BDCF446FAF0D /* FrontmostAppMonitor.swift */,
@@ -843,6 +849,7 @@
 				458711DCB7F0780003DE325F /* ActivityOverlayModelTests.swift in Sources */,
 				5587EE4800F58032E7EB7806 /* ActivityOverlayPresentationTests.swift in Sources */,
 				1FBD462C1D169A1B2983213F /* ActivityOverlayWindowControllerTests.swift in Sources */,
+				96CA4958B0285694F49DC95C /* AgentAutoReadCoordinatorTests.swift in Sources */,
 				2827FC2730471A70B1A60D7F /* AgentSessionRegistryTests.swift in Sources */,
 				3DB3D551D7447EC9F85D06C2 /* AppModelIntegrationsTests.swift in Sources */,
 				B2E2ACBD73D895AA81FBD1B4 /* AppModelTests.swift in Sources */,
@@ -913,6 +920,7 @@
 				BE570F59B904039713B5C19C /* ActivityOverlayPresentation.swift in Sources */,
 				077DCF588705F7C9A0D435DE /* ActivityOverlayView.swift in Sources */,
 				5A940B7CDFFD5E197ACA7422 /* ActivityOverlayWindowController.swift in Sources */,
+				C168BA398F4AD5B2F8919CD7 /* AgentAutoReadCoordinator.swift in Sources */,
 				4A7BF6773CB46992FA06B09A /* AgentProvider.swift in Sources */,
 				EAB39791025AC7188F9DD9C9 /* AgentResponseEvent.swift in Sources */,
 				FC7E8DB4267BEA6CA620A14E /* AgentSession.swift in Sources */,

@@ -11,9 +11,9 @@ import os
 /// burst of hook traffic from ever blocking the UI.
 ///
 /// `speakLatest()` remains an explicit, user-initiated action (submitted as `.userRequested`)
-/// wired up by the UI. Separately, when `shouldAutoRead` returns `true`, every successfully
-/// decoded event also drives an `.automatic` speech request on its own, per the interim, global
-/// `AppSettings.autoReadEnabled` flag (Phase 3 will scope this to the focused session).
+/// wired up by the UI. This manager never submits speech automatically on its own: every
+/// successfully decoded event is instead published through `onResponse`, so a caller (Phase 3's
+/// `AgentAutoReadCoordinator`) can apply focus-gated auto-read semantics.
 ///
 /// Runtime status tracked here is independent of the installers' install-time status (set by
 /// `ClaudeCodeInstaller`/`CodexInstaller`); this type never calls into either installer.
@@ -28,11 +28,10 @@ final class IntegrationManager {
     @ObservationIgnored nonisolated private let store: LatestAgentResponseStore
     @ObservationIgnored nonisolated private let preprocessor: RulesSpeechPreprocessor
     @ObservationIgnored private let speechCoordinator: any SpeechCoordinating
-    /// Read only from `recordActive` (MainActor), so — like `speechCoordinator` above and
-    /// `TTSRouter`'s `backendOrder` closure — this deliberately is NOT `nonisolated`/`@Sendable`:
-    /// that lets it safely capture MainActor-confined, non-`Sendable` state (e.g. `AppModel`'s
-    /// settings box) the same way `AppModel`'s existing closures already do.
-    @ObservationIgnored private let shouldAutoRead: () -> Bool
+    /// Invoked once per successfully-decoded event, after `latestResponse`/`status` have been
+    /// updated. Lets a caller (Phase 3's `AgentAutoReadCoordinator`) apply focus-gated auto-read
+    /// semantics without this manager knowing anything about focus or sessions itself.
+    @ObservationIgnored private let onResponse: @Sendable (AgentResponseEvent) async -> Void
     @ObservationIgnored nonisolated private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "integrations")
     @ObservationIgnored private var consumeTask: Task<Void, Never>?
 
@@ -43,7 +42,7 @@ final class IntegrationManager {
         preprocessor: RulesSpeechPreprocessor = RulesSpeechPreprocessor(),
         speechCoordinator: any SpeechCoordinating,
         initialStatus: [AgentProvider: IntegrationStatus] = [:],
-        shouldAutoRead: @escaping () -> Bool = { false }
+        onResponse: @escaping @Sendable (AgentResponseEvent) async -> Void = { _ in }
     ) {
         self.events = events
         self.integrations = Dictionary(uniqueKeysWithValues: integrations.map { ($0.provider, $0) })
@@ -51,7 +50,7 @@ final class IntegrationManager {
         self.preprocessor = preprocessor
         self.speechCoordinator = speechCoordinator
         self.status = initialStatus
-        self.shouldAutoRead = shouldAutoRead
+        self.onResponse = onResponse
     }
 
     /// Starts consuming `events` on a background task. Calling this more than once while
@@ -93,32 +92,13 @@ final class IntegrationManager {
         }
     }
 
-    /// Updates `latestResponse`/`status` for a successfully decoded `event`, then, when
-    /// `shouldAutoRead` says so, submits it for speech automatically. Auto-read errors are
-    /// swallowed like every other step in this pipeline: a speech failure must never crash the
-    /// app or interrupt event bookkeeping.
+    /// Updates `latestResponse`/`status` for a successfully decoded `event`, then publishes it
+    /// through `onResponse`. This manager never submits speech on this path itself.
     private func recordActive(_ event: AgentResponseEvent) async {
         latestResponse = event
         status[event.provider] = .active(lastEventAt: event.capturedAt)
 
-        guard shouldAutoRead() else { return }
-
-        let prepared = preprocessor.prepare(text: event.text, mode: .automatic)
-        let source: SpeechSource
-        switch event.provider {
-        case .claudeCode:
-            source = .claudeCode
-        case .codex:
-            source = .codex
-        }
-
-        let request = SpeechRequest(
-            text: prepared,
-            source: source,
-            mode: .automatic,
-            sessionID: "\(event.provider.rawValue):\(event.providerSessionID)"
-        )
-        try? await speechCoordinator.speak(request)
+        await onResponse(event)
     }
 
     /// Clears any runtime status recorded for `provider`, removing its entry from `status`

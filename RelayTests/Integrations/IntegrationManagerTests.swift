@@ -232,75 +232,95 @@ final class IntegrationManagerTests: XCTestCase {
         XCTAssertEqual(stored, secondEvent)
     }
 
-    // MARK: - Auto-read
+    // MARK: - onResponse callback
 
-    func testAutoReadEnabledSubmitsOneAutomaticSpeechRequestForAValidClaudeEvent() async {
-        let claudeEvent = event(provider: .claudeCode, providerSessionID: "claude-auto-1", text: "**Done.** All set.")
+    /// Phase 3 moves the auto-read decision out of this manager entirely: it now only publishes
+    /// every successfully-decoded event through `onResponse`, and never submits speech on this
+    /// path itself. Focus-gated auto-read semantics are covered separately by
+    /// `AgentAutoReadCoordinatorTests`.
+    func testOnResponseInvokedOnceForAValidClaudeEvent() async {
+        let claudeEvent = event(provider: .claudeCode, providerSessionID: "claude-onresponse-1", text: "**Done.** All set.")
         let claude = SpyIntegration(provider: .claudeCode, result: .success(claudeEvent))
-        let speech = FakeSpeechCoordinator()
+        let recorder = ResponseRecorder()
         var continuation: AsyncStream<HookEnvelope>.Continuation!
         let events = AsyncStream<HookEnvelope> { continuation = $0 }
         let manager = IntegrationManager(
             events: events,
             integrations: [claude],
-            speechCoordinator: speech,
-            shouldAutoRead: { true }
+            speechCoordinator: FakeSpeechCoordinator(),
+            onResponse: { event in recorder.record(event) }
         )
         manager.start()
         defer { manager.stop() }
 
         continuation.yield(envelope(provider: .claudeCode))
 
-        await waitUntil { !speech.requests.isEmpty }
+        await waitUntil { recorder.events.count == 1 }
 
-        XCTAssertEqual(speech.requests.count, 1)
-        let request = try? XCTUnwrap(speech.requests.first)
-        let expectedText = RulesSpeechPreprocessor().prepare(text: claudeEvent.text, mode: .automatic)
-        XCTAssertEqual(request?.text, expectedText)
-        XCTAssertEqual(request?.source, .claudeCode)
-        XCTAssertEqual(request?.mode, .automatic)
-        XCTAssertEqual(request?.sessionID, "claude-code:claude-auto-1")
+        XCTAssertEqual(recorder.events, [claudeEvent])
     }
 
-    func testAutoReadEnabledSubmitsOneAutomaticSpeechRequestForAValidCodexEvent() async {
-        let codexEvent = event(provider: .codex, providerSessionID: "codex-auto-1", text: "Finished the task.")
+    func testOnResponseInvokedOnceForAValidCodexEvent() async {
+        let codexEvent = event(provider: .codex, providerSessionID: "codex-onresponse-1", text: "Finished the task.")
         let codex = SpyIntegration(provider: .codex, result: .success(codexEvent))
-        let speech = FakeSpeechCoordinator()
+        let recorder = ResponseRecorder()
         var continuation: AsyncStream<HookEnvelope>.Continuation!
         let events = AsyncStream<HookEnvelope> { continuation = $0 }
         let manager = IntegrationManager(
             events: events,
             integrations: [codex],
-            speechCoordinator: speech,
-            shouldAutoRead: { true }
+            speechCoordinator: FakeSpeechCoordinator(),
+            onResponse: { event in recorder.record(event) }
         )
         manager.start()
         defer { manager.stop() }
 
         continuation.yield(envelope(provider: .codex))
 
-        await waitUntil { !speech.requests.isEmpty }
+        await waitUntil { recorder.events.count == 1 }
 
-        XCTAssertEqual(speech.requests.count, 1)
-        let request = try? XCTUnwrap(speech.requests.first)
-        let expectedText = RulesSpeechPreprocessor().prepare(text: codexEvent.text, mode: .automatic)
-        XCTAssertEqual(request?.text, expectedText)
-        XCTAssertEqual(request?.source, .codex)
-        XCTAssertEqual(request?.mode, .automatic)
-        XCTAssertEqual(request?.sessionID, "codex:codex-auto-1")
+        XCTAssertEqual(recorder.events, [codexEvent])
     }
 
-    func testAutoReadDisabledStoresLatestButSubmitsNoSpeechRequest() async {
-        let claudeEvent = event(provider: .claudeCode, providerSessionID: "claude-auto-2")
+    func testOnResponseNotInvokedForMalformedEvent() async {
+        let claude = SpyIntegration(provider: .claudeCode, result: .failure(TestError.malformed))
+        let recorder = ResponseRecorder()
+        var continuation: AsyncStream<HookEnvelope>.Continuation!
+        let events = AsyncStream<HookEnvelope> { continuation = $0 }
+        let manager = IntegrationManager(
+            events: events,
+            integrations: [claude],
+            speechCoordinator: FakeSpeechCoordinator(),
+            onResponse: { event in recorder.record(event) }
+        )
+        manager.start()
+        defer { manager.stop() }
+
+        continuation.yield(envelope(provider: .claudeCode, rawPayload: "not json"))
+
+        // Bounded settle: give the (rejected) event a chance to be processed before asserting
+        // onResponse was never invoked.
+        await waitUntil(timeout: 0.3) { claude.decodeCount >= 1 }
+
+        XCTAssertEqual(claude.decodeCount, 1)
+        XCTAssertTrue(recorder.events.isEmpty)
+    }
+
+    /// The manager itself must never submit speech on the auto (decoded-event) path, regardless
+    /// of whether a caller supplies `onResponse` — that decision now lives entirely outside this
+    /// type.
+    func testManagerSubmitsNoSpeechOnTheAutoPath() async {
+        let claudeEvent = event(provider: .claudeCode, providerSessionID: "claude-onresponse-2")
         let claude = SpyIntegration(provider: .claudeCode, result: .success(claudeEvent))
         let speech = FakeSpeechCoordinator()
+        let recorder = ResponseRecorder()
         var continuation: AsyncStream<HookEnvelope>.Continuation!
         let events = AsyncStream<HookEnvelope> { continuation = $0 }
         let manager = IntegrationManager(
             events: events,
             integrations: [claude],
             speechCoordinator: speech,
-            shouldAutoRead: { false }
+            onResponse: { event in recorder.record(event) }
         )
         manager.start()
         defer { manager.stop() }
@@ -310,11 +330,12 @@ final class IntegrationManagerTests: XCTestCase {
         await waitUntil { manager.latestResponse != nil }
 
         XCTAssertEqual(manager.latestResponse, claudeEvent)
+        XCTAssertEqual(recorder.events, [claudeEvent])
         XCTAssertTrue(speech.requests.isEmpty)
     }
 
-    func testAutoReadDefaultIsFalseWhenNotConfigured() async {
-        let claudeEvent = event(provider: .claudeCode, providerSessionID: "claude-auto-3")
+    func testOnResponseDefaultsToNoOpWhenNotConfigured() async {
+        let claudeEvent = event(provider: .claudeCode, providerSessionID: "claude-onresponse-3")
         let claude = SpyIntegration(provider: .claudeCode, result: .success(claudeEvent))
         let speech = FakeSpeechCoordinator()
         var continuation: AsyncStream<HookEnvelope>.Continuation!
@@ -332,68 +353,6 @@ final class IntegrationManagerTests: XCTestCase {
         await waitUntil { manager.latestResponse != nil }
 
         XCTAssertTrue(speech.requests.isEmpty)
-    }
-
-    func testMalformedEnvelopeSubmitsNoSpeechRequestRegardlessOfAutoReadFlag() async {
-        let claude = SpyIntegration(provider: .claudeCode, result: .failure(TestError.malformed))
-        let speech = FakeSpeechCoordinator()
-        var continuation: AsyncStream<HookEnvelope>.Continuation!
-        let events = AsyncStream<HookEnvelope> { continuation = $0 }
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [claude],
-            speechCoordinator: speech,
-            shouldAutoRead: { true }
-        )
-        manager.start()
-        defer { manager.stop() }
-
-        continuation.yield(envelope(provider: .claudeCode, rawPayload: "not json"))
-
-        // Bounded settle: give the (rejected) event a chance to be processed before asserting
-        // nothing was submitted for speech.
-        await waitUntil(timeout: 0.3) { claude.decodeCount >= 1 }
-
-        XCTAssertEqual(claude.decodeCount, 1)
-        XCTAssertNil(manager.latestResponse)
-        XCTAssertTrue(speech.requests.isEmpty)
-    }
-
-    /// `AppModel` wires `shouldAutoRead` to `{ state.value.autoReadEnabled }`, where `state` is a
-    /// reference-typed box holding the live `AppSettings` (the same box `updateSettings` writes
-    /// through when `HotkeyAction.toggleAutoRead` flips the flag). `AppModel`'s own `SettingsState`
-    /// box is `private`, so this test stands in an equivalent reference-typed box to prove the
-    /// gate re-reads it on every event rather than capturing a one-time snapshot — the same
-    /// property `AppModel`'s real wiring depends on for "toggling takes effect immediately".
-    func testAutoReadGateReflectsLiveMutationsOfAReferenceTypedSettingsBoxAcrossEvents() async {
-        final class SettingsBox {
-            var autoReadEnabled: Bool
-            init(_ value: Bool) { autoReadEnabled = value }
-        }
-        let box = SettingsBox(false)
-        let claude = SpyIntegration(provider: .claudeCode, result: .success(event(provider: .claudeCode)))
-        let speech = FakeSpeechCoordinator()
-        var continuation: AsyncStream<HookEnvelope>.Continuation!
-        let events = AsyncStream<HookEnvelope> { continuation = $0 }
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [claude],
-            speechCoordinator: speech,
-            shouldAutoRead: { box.autoReadEnabled }
-        )
-        manager.start()
-        defer { manager.stop() }
-
-        continuation.yield(envelope(provider: .claudeCode))
-        await waitUntil { manager.latestResponse != nil }
-        XCTAssertTrue(speech.requests.isEmpty, "flag was false at event time; no speech expected")
-
-        box.autoReadEnabled = true
-        continuation.yield(envelope(provider: .claudeCode))
-        await waitUntil { !speech.requests.isEmpty }
-
-        XCTAssertEqual(speech.requests.count, 1)
-        XCTAssertEqual(speech.requests.first?.mode, .automatic)
     }
 
     // MARK: - speakLatest
@@ -493,6 +452,26 @@ private final class SpyIntegration: RelayIntegration, @unchecked Sendable {
         _decodeCount += 1
         lock.unlock()
         return try result.get()
+    }
+}
+
+/// Records `onResponse` invocations. Thread-safe because the manager calls `onResponse` after
+/// hopping back onto the MainActor from `recordActive`, but the closure type itself is
+/// `@Sendable`, so this stays consistent with `SpyIntegration`'s own lock-based approach above.
+private final class ResponseRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _events: [AgentResponseEvent] = []
+
+    func record(_ event: AgentResponseEvent) {
+        lock.lock()
+        _events.append(event)
+        lock.unlock()
+    }
+
+    var events: [AgentResponseEvent] {
+        lock.lock()
+        defer { lock.unlock() }
+        return _events
     }
 }
 

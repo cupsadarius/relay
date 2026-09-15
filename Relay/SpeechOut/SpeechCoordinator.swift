@@ -8,6 +8,20 @@ protocol SpeechCoordinating: AnyObject {
     func replayLast() async throws
 }
 
+/// A narrow submission-only view of `SpeechCoordinating`, used by callers (like
+/// `AgentAutoReadCoordinator`) that only ever need to submit a `SpeechRequest` and have no
+/// business stopping or replaying speech.
+@MainActor
+protocol SpeechSubmitting: AnyObject {
+    func speak(_ request: SpeechRequest) async throws
+}
+
+/// `@unchecked Sendable`: every stored property is mutated only from `@MainActor`-isolated
+/// methods, so cross-isolation callers (e.g. `AgentAutoReadCoordinator`, an `actor`) can safely
+/// hold this behind `any SpeechSubmitting & Sendable` and `await` into it — the actor isolation
+/// itself, not the compiler's Sendable check, is what actually serializes access here.
+extension SpeechCoordinator: SpeechSubmitting, @unchecked Sendable {}
+
 @MainActor
 final class SpeechCoordinator: SpeechCoordinating {
     private let router: TTSRouter

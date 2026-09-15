@@ -125,7 +125,7 @@ final class AppModel {
             events: hookEnvelopeReceiver.events,
             integrations: [ClaudeCodeIntegration(), CodexIntegration()],
             speechCoordinator: coordinator,
-            shouldAutoRead: { state.value.autoReadEnabled }
+            onResponse: { _ in }
         )
         let actionDispatcher: any ActivityOverlayControlling = ActivityOverlayActionDispatcher(dictation: dictation, speech: coordinator)
         let overlayPresenter = ActivityOverlayWindowController(
