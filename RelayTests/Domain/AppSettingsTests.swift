@@ -57,6 +57,35 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(decoded.dictationMode, .toggle)
     }
 
+    func testDefaultsHaveNoPocketVoiceConfigured() {
+        XCTAssertNil(AppSettings.defaults.pocketVoice)
+    }
+
+    func testPocketVoiceRoundTrips() throws {
+        var value = AppSettings.defaults
+        value.pocketVoice = "alba"
+
+        let data = try JSONEncoder().encode(value)
+
+        XCTAssertEqual(try JSONDecoder().decode(AppSettings.self, from: data).pocketVoice, "alba")
+    }
+
+    func testDecodingPrePocketVoiceSettingsDefaultsPocketVoiceToNilWithoutResettingOtherFields() throws {
+        var saved = AppSettings.defaults
+        saved.dictationMode = .toggle
+        let encoded = try JSONEncoder().encode(saved)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "pocketVoice")
+
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+
+        XCTAssertNil(decoded.pocketVoice)
+        XCTAssertEqual(decoded.dictationMode, .toggle)
+    }
+
     func testSettingsRoundTrip() throws {
         var value = AppSettings.defaults
         value.dictationMode = .toggle
@@ -86,7 +115,7 @@ final class AppSettingsTests: XCTestCase {
             .toggleAutoRead: .chord(keyCode: 0, modifiers: [.option, .shift]),
         ])
         XCTAssertEqual(AppSettings.defaults.sttBackendOrder, ["apple-speech"])
-        XCTAssertEqual(AppSettings.defaults.ttsBackendOrder, ["apple-tts"])
+        XCTAssertEqual(AppSettings.defaults.ttsBackendOrder, ["pocket-tts", "apple-tts", "kokoro"])
         XCTAssertNil(AppSettings.defaults.ttsVoiceIdentifier)
         XCTAssertEqual(AppSettings.defaults.ttsRate, 0.5)
         XCTAssertTrue(AppSettings.defaults.autoReadEnabled)

@@ -65,9 +65,11 @@ final class AppModel {
         let overlayModel = ActivityOverlayModel()
         let appleTTS = AppleTTSBackend()
         let kokoroTTS = KokoroTTSBackend()
+        let pocketTTS = PocketTTSBackend()
         let ttsRegistry: [String: any TextToSpeechBackend] = [
             appleTTS.id: appleTTS,
             kokoroTTS.id: kokoroTTS,
+            pocketTTS.id: pocketTTS,
         ]
         let router = TTSRouter(
             backends: ttsRegistry,
@@ -79,7 +81,8 @@ final class AppModel {
                 TTSOptions(
                     voiceIdentifier: state.value.ttsVoiceIdentifier,
                     rate: state.value.ttsRate,
-                    kokoroVoice: state.value.kokoroVoice
+                    kokoroVoice: state.value.kokoroVoice,
+                    pocketVoice: state.value.pocketVoice
                 )
             },
             overlay: overlayModel
@@ -120,6 +123,7 @@ final class AppModel {
         // Apple never registers a downloader, since it has no model to download.
         let ttsModelDownloaders: [String: any SpeechModelDownloading] = [
             kokoroTTS.id: kokoroTTS,
+            pocketTTS.id: pocketTTS,
         ]
         self.init(
             settingsStore: settingsStore,
@@ -269,6 +273,10 @@ final class AppModel {
 
     func setKokoroVoice(_ voice: String?) {
         updateSettings { $0.kokoroVoice = voice }
+    }
+
+    func setPocketVoice(_ voice: String?) {
+        updateSettings { $0.pocketVoice = voice }
     }
 
     func setSpeechRate(_ rate: Float) {

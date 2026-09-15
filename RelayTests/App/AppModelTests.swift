@@ -120,6 +120,7 @@ final class AppModelTests: XCTestCase {
         let model = AppModel()
 
         XCTAssertTrue(model.canDownloadTTSModel("kokoro"))
+        XCTAssertTrue(model.canDownloadTTSModel("pocket-tts"))
         XCTAssertFalse(model.canDownloadTTSModel("apple-tts"))
     }
 
@@ -679,47 +680,91 @@ final class AppModelTests: XCTestCase {
     }
 
     func testReadSelectionRoutesThroughKokoroWithConfiguredVoiceWhenAvailable() async {
-        let (model, hotkeys, kokoro, apple) = makeTTSRoutingModel(kokoroAvailability: .available)
+        let (model, hotkeys, pocket, kokoro, apple) = makeTTSRoutingModel(
+            pocketAvailability: .modelNotDownloaded,
+            kokoroAvailability: .available
+        )
 
         hotkeys.send(.readSelection, .pressed)
         await waitUntil { !kokoro.spoken.isEmpty || !apple.spoken.isEmpty }
 
         XCTAssertEqual(kokoro.spoken.map(\.options.kokoroVoice), ["af_bella"])
         XCTAssertTrue(apple.spoken.isEmpty)
+        XCTAssertTrue(pocket.spoken.isEmpty)
         withExtendedLifetime(model) {}
     }
 
     func testReadSelectionFallsBackToAppleWithTheSameOptionsWhenKokoroReportsModelNotDownloaded() async {
-        let (model, hotkeys, kokoro, apple) = makeTTSRoutingModel(kokoroAvailability: .modelNotDownloaded)
+        let (model, hotkeys, pocket, kokoro, apple) = makeTTSRoutingModel(
+            pocketAvailability: .modelNotDownloaded,
+            kokoroAvailability: .modelNotDownloaded
+        )
 
         hotkeys.send(.readSelection, .pressed)
         await waitUntil { !kokoro.spoken.isEmpty || !apple.spoken.isEmpty }
 
         XCTAssertTrue(kokoro.spoken.isEmpty)
         XCTAssertEqual(apple.spoken.map(\.options.kokoroVoice), ["af_bella"])
+        XCTAssertTrue(pocket.spoken.isEmpty)
+        withExtendedLifetime(model) {}
+    }
+
+    func testReadSelectionRoutesThroughPocketTTSWithConfiguredVoiceWhenAvailable() async {
+        let (model, hotkeys, pocket, kokoro, apple) = makeTTSRoutingModel(
+            pocketAvailability: .available,
+            kokoroAvailability: .available
+        )
+
+        hotkeys.send(.readSelection, .pressed)
+        await waitUntil { !pocket.spoken.isEmpty || !kokoro.spoken.isEmpty || !apple.spoken.isEmpty }
+
+        XCTAssertEqual(pocket.spoken.map(\.options.pocketVoice), ["alba"])
+        XCTAssertTrue(kokoro.spoken.isEmpty)
+        XCTAssertTrue(apple.spoken.isEmpty)
+        withExtendedLifetime(model) {}
+    }
+
+    func testReadSelectionFallsBackToAppleWithTheSameOptionsWhenPocketTTSReportsModelNotDownloaded() async {
+        let (model, hotkeys, pocket, kokoro, apple) = makeTTSRoutingModel(
+            pocketAvailability: .modelNotDownloaded,
+            kokoroAvailability: .modelNotDownloaded
+        )
+
+        hotkeys.send(.readSelection, .pressed)
+        await waitUntil { !apple.spoken.isEmpty || !kokoro.spoken.isEmpty }
+
+        XCTAssertTrue(pocket.spoken.isEmpty)
+        XCTAssertTrue(kokoro.spoken.isEmpty)
+        XCTAssertEqual(apple.spoken.map(\.options.pocketVoice), ["alba"])
         withExtendedLifetime(model) {}
     }
 
     /// Builds a real `AppModel` around a real `TTSRouter`/`SpeechCoordinator` pair (not the
     /// `FakeSpeechCoordinator` the other tests in this file use) wired exactly like the
-    /// production convenience `init()` wires Apple and Kokoro: `backendOrder` and the
-    /// `TTSOptions.kokoroVoice` field both read from the same settings snapshot. This exercises
-    /// the one-line options-closure edit the plan calls out as the easiest step to miss - if
-    /// `kokoroVoice` stopped reaching `TTSOptions`, `testReadSelectionRoutesThroughKokoroWith...`
-    /// would fail.
+    /// production convenience `init()` wires PocketTTS, Apple, and Kokoro: `backendOrder` and the
+    /// `TTSOptions.kokoroVoice`/`pocketVoice` fields all read from the same settings snapshot.
+    /// This exercises the one-line options-closure edit the plan calls out as the easiest step to
+    /// miss - if `kokoroVoice`/`pocketVoice` stopped reaching `TTSOptions`, the routing tests
+    /// above would fail.
     private func makeTTSRoutingModel(
+        pocketAvailability: BackendAvailability,
         kokoroAvailability: BackendAvailability
-    ) -> (model: AppModel, hotkeys: FakeHotkeyManager, kokoro: FakeTTSBackend, apple: FakeTTSBackend) {
+    ) -> (
+        model: AppModel, hotkeys: FakeHotkeyManager, pocket: FakeTTSBackend, kokoro: FakeTTSBackend, apple: FakeTTSBackend
+    ) {
+        let pocket = FakeTTSBackend(id: "pocket-tts")
+        pocket.availabilityValue = pocketAvailability
         let kokoro = FakeTTSBackend(id: "kokoro")
         kokoro.availabilityValue = kokoroAvailability
         let apple = FakeTTSBackend(id: "apple-tts")
         var settings = AppSettings.defaults
-        settings.ttsBackendOrder = ["kokoro", "apple-tts"]
+        settings.ttsBackendOrder = ["pocket-tts", "kokoro", "apple-tts"]
         settings.kokoroVoice = "af_bella"
+        settings.pocketVoice = "alba"
         let store = FakeSettingsStore(settings: settings)
         let overlay = ActivityOverlayModel()
         let router = TTSRouter(
-            backends: ["kokoro": kokoro, "apple-tts": apple],
+            backends: ["pocket-tts": pocket, "kokoro": kokoro, "apple-tts": apple],
             backendOrder: { settings.ttsBackendOrder }
         )
         let coordinator = SpeechCoordinator(
@@ -728,7 +773,8 @@ final class AppModelTests: XCTestCase {
                 TTSOptions(
                     voiceIdentifier: settings.ttsVoiceIdentifier,
                     rate: settings.ttsRate,
-                    kokoroVoice: settings.kokoroVoice
+                    kokoroVoice: settings.kokoroVoice,
+                    pocketVoice: settings.pocketVoice
                 )
             },
             overlay: overlay
@@ -749,9 +795,9 @@ final class AppModelTests: XCTestCase {
             overlayPresenter: NoOpActivityOverlayPresenter(),
             sttRegistry: [:],
             speechModelDownloaders: [:],
-            ttsRegistry: ["kokoro": kokoro, "apple-tts": apple]
+            ttsRegistry: ["pocket-tts": pocket, "kokoro": kokoro, "apple-tts": apple]
         )
-        return (model, hotkeys, kokoro, apple)
+        return (model, hotkeys, pocket, kokoro, apple)
     }
 
     func testRefreshMapsBackendAvailabilityCasesToFixedStates() async {
