@@ -4,8 +4,11 @@ import Foundation
 /// `SpeechBackendError` so the router can classify them the same way it classifies every other
 /// backend's failures.
 enum ParakeetEngineError: Error, Equatable, Sendable {
-    /// The model was not present on disk and the caller did not allow a download.
+    /// The model was not present (or not verifiably intact) on disk and the caller did not allow
+    /// a download.
     case modelsNotDownloaded
+    /// `transcribe` was called before the engine ever finished a successful `load`.
+    case notLoaded
     /// Loading (or downloading) the model failed for a reason other than the model being absent.
     case loadFailed(String)
     /// Inference itself failed once the model was loaded.
@@ -19,9 +22,11 @@ protocol ParakeetEngine: Sendable {
     /// Whether the model files are already present on disk. Never triggers a download.
     func modelsArePresent() async -> Bool
     /// Loads the model, downloading it first when `allowDownload` is true. When `allowDownload`
-    /// is false and the model is absent, throws `ParakeetEngineError.modelsNotDownloaded` without
-    /// touching the network. Idempotent once loaded. `progress` is called with a fraction in
-    /// [0, 1] while a download is in flight; it may be called from any queue.
+    /// is false and the model is absent (or fails local validation), throws
+    /// `ParakeetEngineError.modelsNotDownloaded` without touching the network. Idempotent once
+    /// loaded: concurrent and repeated calls after a successful load are no-ops. `progress` is
+    /// called with a fraction in [0, 1] while a download is in flight; it may be called from any
+    /// queue.
     func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws
     /// Transcribes mono 16 kHz samples. The engine must already be loaded.
     func transcribe(samples: [Float]) async throws -> String
@@ -60,9 +65,16 @@ final class ParakeetBackend: SpeechToTextBackend {
 
     /// Downloads the model if needed, then loads it. Used by the Settings "Download" action.
     /// `progress` is called with a fraction in [0, 1] while the download is in flight.
+    ///
+    /// Not gated on Apple Silicon here: Relay builds `ARCHS: arm64` only (see `project.yml`), so
+    /// every runtime this code executes on already is Apple Silicon. FluidAudio's own
+    /// `AsrModels.isModelValid`/`download` path still throws `ASRError.unsupportedPlatform` as a
+    /// defense-in-depth check underneath us.
     func downloadModels(progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws {
         do {
             try await engine.load(allowDownload: true, progress: progress)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw Self.mapLoadError(error)
         }
@@ -72,16 +84,23 @@ final class ParakeetBackend: SpeechToTextBackend {
         guard !audio.samples.isEmpty else {
             throw SpeechBackendError.noUsableAudio
         }
+        guard audio.sampleRate == 16_000 else {
+            throw SpeechBackendError.invalidInput
+        }
 
         try await ensureLoaded()
 
         do {
             let text = try await engine.transcribe(samples: audio.samples)
             return Transcript(text: text, backendID: id)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch let error as SpeechBackendError {
             throw error
         } catch ParakeetEngineError.transcriptionFailed(let reason) {
             throw SpeechBackendError.inferenceFailed(reason)
+        } catch ParakeetEngineError.notLoaded {
+            throw SpeechBackendError.initializationFailed("Parakeet model is not loaded")
         } catch {
             throw SpeechBackendError.inferenceFailed("Parakeet transcription failed")
         }
@@ -90,6 +109,8 @@ final class ParakeetBackend: SpeechToTextBackend {
     private func ensureLoaded() async throws {
         do {
             try await engine.load(allowDownload: false)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw Self.mapLoadError(error)
         }
@@ -101,6 +122,8 @@ final class ParakeetBackend: SpeechToTextBackend {
             error
         case ParakeetEngineError.modelsNotDownloaded:
             .modelNotDownloaded
+        case ParakeetEngineError.notLoaded:
+            .initializationFailed("Parakeet model is not loaded")
         case ParakeetEngineError.loadFailed(let reason):
             .initializationFailed(reason)
         default:
