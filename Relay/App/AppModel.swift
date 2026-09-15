@@ -124,7 +124,8 @@ final class AppModel {
         let integrationManager = IntegrationManager(
             events: hookEnvelopeReceiver.events,
             integrations: [ClaudeCodeIntegration(), CodexIntegration()],
-            speechCoordinator: coordinator
+            speechCoordinator: coordinator,
+            shouldAutoRead: { state.value.autoReadEnabled }
         )
         let actionDispatcher: any ActivityOverlayControlling = ActivityOverlayActionDispatcher(dictation: dictation, speech: coordinator)
         let overlayPresenter = ActivityOverlayWindowController(
@@ -455,9 +456,16 @@ final class AppModel {
         case .replayLast:
             Task { await replayLast() }
         case .toggleAutoRead:
-            updateSettings { $0.autoReadEnabled.toggle() }
-            statusText = settings.autoReadEnabled ? "Auto-read enabled" : "Auto-read disabled"
+            toggleAutoRead()
         }
+    }
+
+    /// Flips `settings.autoReadEnabled` and updates `statusText` to reflect the new value.
+    /// Shared by the `toggleAutoRead` hotkey and the menu bar's auto-read control so neither
+    /// path duplicates the toggle logic.
+    func toggleAutoRead() {
+        updateSettings { $0.autoReadEnabled.toggle() }
+        statusText = settings.autoReadEnabled ? "Auto-read enabled" : "Auto-read disabled"
     }
 
     private func enqueueDictation(

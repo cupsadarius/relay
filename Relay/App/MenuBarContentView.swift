@@ -13,6 +13,9 @@ struct MenuBarContentView: View {
                 Task { await model.speakLatestAgentResponse() }
             }
             .disabled(!model.latestAgentResponseAvailable)
+            Button(model.settings.autoReadEnabled ? "Auto-read: On" : "Auto-read: Off") {
+                model.toggleAutoRead()
+            }
             Divider()
             Button("Settings...") { windowFocus.openSettings() }
             Button("Diagnostics…") { windowFocus.openDiagnostics() }

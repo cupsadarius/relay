@@ -221,6 +221,25 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(hotkeys.registrations.last?.autoReadEnabled, false)
     }
 
+    /// `toggleAutoRead()` is the shared method behind both the `toggleAutoRead` hotkey (tested
+    /// above) and the menu bar's auto-read control — calling it directly exercises the same path
+    /// the menu item invokes.
+    func testToggleAutoReadMethodTogglesSettingAndStatusText() {
+        let store = FakeSettingsStore(settings: .defaults)
+        let model = makeModel(store: store)
+        XCTAssertTrue(model.settings.autoReadEnabled)
+
+        model.toggleAutoRead()
+        XCTAssertFalse(model.settings.autoReadEnabled)
+        XCTAssertEqual(model.statusText, "Auto-read disabled")
+        XCTAssertEqual(store.saved.map(\.autoReadEnabled), [false])
+
+        model.toggleAutoRead()
+        XCTAssertTrue(model.settings.autoReadEnabled)
+        XCTAssertEqual(model.statusText, "Auto-read enabled")
+        XCTAssertEqual(store.saved.map(\.autoReadEnabled), [false, true])
+    }
+
     func testChangingASettingPersistsAndReregistersImmediately() {
         let store = FakeSettingsStore(settings: .defaults)
         let hotkeys = FakeHotkeyManager()
