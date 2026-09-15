@@ -34,11 +34,13 @@ struct SettingsView: View {
                         Text(mode.title).tag(mode)
                     }
                 }
+            }
 
-                LabeledContent("Speech recognition") {
-                    Text("Apple Speech — On-device")
+            Section("Speech Recognition") {
+                ForEach(orderedSpeechBackends) { backend in
+                    speechBackendRow(backend)
                 }
-                Text("Apple Speech is the only available dictation backend in this release. Your saved backend preference is retained for future backends.")
+                Text("Relay tries enabled backends in order and falls back to the next one. Parakeet runs fully on-device after a one-time model download (about 1 GB).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -102,6 +104,82 @@ struct SettingsView: View {
         }
         .padding()
         .frame(width: 620, height: 610)
+        .task { await model.refreshSpeechBackendStatuses() }
+    }
+
+    private var orderedSpeechBackends: [STTBackendStatus] {
+        model.sttBackends.sorted { lhs, rhs in
+            if lhs.isEnabled != rhs.isEnabled { return lhs.isEnabled && !rhs.isEnabled }
+            if lhs.isEnabled { return lhs.position < rhs.position }
+            return lhs.id < rhs.id
+        }
+    }
+
+    private func speechBackendRow(_ backend: STTBackendStatus) -> some View {
+        let enabledCount = model.sttBackends.filter(\.isEnabled).count
+        return HStack {
+            Toggle(isOn: Binding(
+                get: { backend.isEnabled },
+                set: { model.setSTTBackendEnabled(backend.id, $0) }
+            )) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(backend.displayName)
+                    Text(speechBackendStatusLabel(backend.state))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer()
+
+            speechBackendActionView(backend)
+
+            if backend.isEnabled {
+                VStack(spacing: 2) {
+                    Button {
+                        model.moveSTTBackend(backend.id, up: true)
+                    } label: {
+                        Image(systemName: "chevron.up")
+                    }
+                    .disabled(backend.position == 0)
+
+                    Button {
+                        model.moveSTTBackend(backend.id, up: false)
+                    } label: {
+                        Image(systemName: "chevron.down")
+                    }
+                    .disabled(backend.position == enabledCount - 1)
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func speechBackendActionView(_ backend: STTBackendStatus) -> some View {
+        switch backend.state {
+        case let .downloading(progress):
+            ProgressView(value: progress)
+                .frame(width: 80)
+        case .modelNotDownloaded, .failed:
+            Button("Download") {
+                Task { await model.downloadSpeechModel(backend.id) }
+            }
+            .controlSize(.small)
+        case .ready, .unsupported, .unavailable:
+            EmptyView()
+        }
+    }
+
+    private func speechBackendStatusLabel(_ state: STTBackendStatus.State) -> String {
+        switch state {
+        case .ready: "Ready"
+        case .modelNotDownloaded: "Model not downloaded"
+        case let .downloading(progress): "Downloading \(Int((progress * 100).rounded()))%"
+        case let .unsupported(reason): reason
+        case let .unavailable(reason): reason
+        case .failed: "Download failed"
+        }
     }
 
     private func permissionRow(

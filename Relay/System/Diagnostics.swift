@@ -11,6 +11,17 @@ enum DiagnosticsEvent: Equatable, Sendable {
     case ttsSubmitted, ttsStopped, ttsReplayed, ttsFailed
     case dictation(DictationDiagnostic)
     case overlayFailed
+    case speechModelDownloadStarted(backendID: String)
+    case speechModelDownloadFinished(backendID: String)
+    case speechModelDownloadFailed(backendID: String)
+
+    private static func speechBackendDisplayName(_ backendID: String) -> String {
+        switch backendID {
+        case "parakeet": "Parakeet"
+        case "apple-speech": "Apple Speech"
+        default: "Speech recognition"
+        }
+    }
 
     var message: String {
         switch self {
@@ -32,6 +43,12 @@ enum DiagnosticsEvent: Equatable, Sendable {
         case .ttsFailed: "Speech failed"
         case let .dictation(diagnostic): diagnostic.message
         case .overlayFailed: "Activity overlay failed"
+        case let .speechModelDownloadStarted(backendID):
+            "\(Self.speechBackendDisplayName(backendID)) model download started"
+        case let .speechModelDownloadFinished(backendID):
+            "\(Self.speechBackendDisplayName(backendID)) model download finished"
+        case let .speechModelDownloadFailed(backendID):
+            "\(Self.speechBackendDisplayName(backendID)) model download failed"
         }
     }
 }

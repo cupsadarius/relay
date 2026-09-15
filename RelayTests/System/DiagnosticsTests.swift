@@ -49,6 +49,18 @@ import XCTest
         )
     }
 
+    func testSpeechModelDownloadEventsUseFixedDisplayNameMessages() {
+        var buffer = DiagnosticsBuffer()
+        buffer.append(.speechModelDownloadStarted(backendID: "parakeet"))
+        buffer.append(.speechModelDownloadFinished(backendID: "parakeet"))
+        buffer.append(.speechModelDownloadFailed(backendID: "parakeet"))
+
+        XCTAssertEqual(
+            buffer.copyText,
+            "Parakeet model download started\nParakeet model download finished\nParakeet model download failed"
+        )
+    }
+
     func testOverlayFailedNeverAttachesRawErrorDetail() {
         var buffer = DiagnosticsBuffer()
         buffer.append(.overlayFailed)

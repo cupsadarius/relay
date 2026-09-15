@@ -167,6 +167,17 @@ final class ParakeetBackendTests: XCTestCase {
         XCTAssertEqual(engine.loadCalls, [true])
     }
 
+    func testDownloadModelsForwardsProgressToCaller() async throws {
+        let engine = FakeParakeetEngine()
+        engine.progressToReport = [0.25, 0.75, 1.0]
+        let backend = ParakeetBackend(engine: engine)
+        let box = ProgressReportBox()
+
+        try await backend.downloadModels(progress: { box.values.append($0) })
+
+        XCTAssertEqual(box.values, [0.25, 0.75, 1.0])
+    }
+
     func testDownloadModelsMapsFailureToInitializationFailed() async {
         let engine = FakeParakeetEngine()
         engine.loadError = ParakeetEngineError.loadFailed("network down")
@@ -181,12 +192,20 @@ final class ParakeetBackendTests: XCTestCase {
     }
 }
 
+/// Accumulates progress fractions reported from a `@Sendable` download-progress closure. The
+/// engine under test only ever calls the closure synchronously from a single caller, so the
+/// lack of internal locking is safe here even though the type opts out of Sendable checking.
+private final class ProgressReportBox: @unchecked Sendable {
+    var values: [Double] = []
+}
+
 @MainActor
 private final class FakeParakeetEngine: ParakeetEngine {
     var modelsPresent = false
     var transcriptionResult = ""
     var loadError: Error?
     var transcribeError: Error?
+    var progressToReport: [Double] = []
     private(set) var loadCalls: [Bool] = []
     private(set) var receivedSamples: [Float] = []
 
@@ -194,8 +213,11 @@ private final class FakeParakeetEngine: ParakeetEngine {
         modelsPresent
     }
 
-    func load(allowDownload: Bool) async throws {
+    func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws {
         loadCalls.append(allowDownload)
+        for fraction in progressToReport {
+            progress(fraction)
+        }
         if let loadError {
             throw loadError
         }

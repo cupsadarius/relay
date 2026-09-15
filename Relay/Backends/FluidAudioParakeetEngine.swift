@@ -20,7 +20,7 @@ actor FluidAudioParakeetEngine: ParakeetEngine {
         AsrModels.modelsExist(at: modelDirectory, version: Self.version)
     }
 
-    func load(allowDownload: Bool) async throws {
+    func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws {
         guard manager == nil else {
             return
         }
@@ -33,7 +33,13 @@ actor FluidAudioParakeetEngine: ParakeetEngine {
         do {
             models =
                 if allowDownload {
-                    try await AsrModels.downloadAndLoad(to: modelDirectory, version: Self.version)
+                    try await AsrModels.downloadAndLoad(
+                        to: modelDirectory,
+                        version: Self.version,
+                        progressHandler: { downloadProgress in
+                            progress(downloadProgress.fractionCompleted)
+                        }
+                    )
                 } else {
                     try await AsrModels.load(from: modelDirectory, version: Self.version)
                 }

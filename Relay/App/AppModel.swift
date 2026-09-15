@@ -22,8 +22,12 @@ final class AppModel {
     private(set) var eventTapStatus: HotkeyRegistrationStatus = .unavailable("Not checked")
     var diagnosticsEntries: [DiagnosticEntry] { diagnostics.entries.reversed() }
     var diagnosticsCounters: DiagnosticsCounters { diagnostics.counters }
+    var sttBackends: [STTBackendStatus] = []
     @ObservationIgnored let overlayModel: ActivityOverlayModel
 
+    @ObservationIgnored let sttRegistry: [String: any SpeechToTextBackend]
+    @ObservationIgnored let speechModelDownloaders: [String: any SpeechModelDownloading]
+    @ObservationIgnored var downloadingBackendIDs: Set<String> = []
     @ObservationIgnored private let settingsStore: any SettingsStoring
     @ObservationIgnored private let selectionReader: any SelectionReading
     @ObservationIgnored private let preprocessor: RulesSpeechPreprocessor
@@ -34,7 +38,7 @@ final class AppModel {
     @ObservationIgnored private let permissionService: any GlobalPermissionAuthorizing
     @ObservationIgnored private let microphonePermissions: any MicrophonePermissionStatusProviding
     @ObservationIgnored private let privacySettingsOpener: any PrivacySettingsOpening
-    @ObservationIgnored private let diagnostics: DiagnosticsRecorder
+    @ObservationIgnored let diagnostics: DiagnosticsRecorder
     @ObservationIgnored private let overlayPresenter: any ActivityOverlayPresenting
     @ObservationIgnored private var activationObserver: NSObjectProtocol?
     @ObservationIgnored private var dictationTask: Task<Void, Never>?
@@ -90,6 +94,9 @@ final class AppModel {
             diagnostics: diagnostics,
             onAction: { [actionDispatcher] action in actionDispatcher.perform(action) }
         )
+        let speechModelDownloaders: [String: any SpeechModelDownloading] = [
+            parakeetBackend.id: parakeetBackend,
+        ]
         self.init(
             settingsStore: settingsStore,
             selectionReader: SelectionReader(
@@ -107,7 +114,9 @@ final class AppModel {
             microphonePermissions: SystemMicrophonePermissionStatusProvider(),
             privacySettingsOpener: SystemPrivacySettingsOpener(),
             overlayModel: overlayModel,
-            overlayPresenter: overlayPresenter
+            overlayPresenter: overlayPresenter,
+            sttRegistry: sttRegistry,
+            speechModelDownloaders: speechModelDownloaders
         )
         dictation.setStatusHandler { [weak self] in self?.statusText = $0 }
     }
@@ -124,7 +133,9 @@ final class AppModel {
         microphonePermissions: any MicrophonePermissionStatusProviding = SystemMicrophonePermissionStatusProvider(),
         privacySettingsOpener: any PrivacySettingsOpening = SystemPrivacySettingsOpener(),
         overlayModel: ActivityOverlayModel = ActivityOverlayModel(),
-        overlayPresenter: any ActivityOverlayPresenting = NoOpActivityOverlayPresenter()
+        overlayPresenter: any ActivityOverlayPresenting = NoOpActivityOverlayPresenter(),
+        sttRegistry: [String: any SpeechToTextBackend] = [:],
+        speechModelDownloaders: [String: any SpeechModelDownloading] = [:]
     ) {
         let settings = settingsStore.load()
         self.settingsStore = settingsStore
@@ -139,6 +150,8 @@ final class AppModel {
         self.diagnostics = diagnostics
         self.overlayModel = overlayModel
         self.overlayPresenter = overlayPresenter
+        self.sttRegistry = sttRegistry
+        self.speechModelDownloaders = speechModelDownloaders
         activationObserver = nil
         dictationTask = nil
         permissionSnapshot = permissionService.snapshot()
@@ -149,6 +162,7 @@ final class AppModel {
         registerHotkeys()
         observeAppActivation()
         bindOverlayPresenter()
+        Task { [weak self] in await self?.refreshSpeechBackendStatuses() }
     }
 
     private init(
@@ -165,7 +179,9 @@ final class AppModel {
         microphonePermissions: any MicrophonePermissionStatusProviding,
         privacySettingsOpener: any PrivacySettingsOpening,
         overlayModel: ActivityOverlayModel,
-        overlayPresenter: any ActivityOverlayPresenting
+        overlayPresenter: any ActivityOverlayPresenting,
+        sttRegistry: [String: any SpeechToTextBackend],
+        speechModelDownloaders: [String: any SpeechModelDownloading]
     ) {
         self.settingsStore = settingsStore
         self.selectionReader = selectionReader
@@ -179,6 +195,8 @@ final class AppModel {
         self.diagnostics = diagnostics
         self.overlayModel = overlayModel
         self.overlayPresenter = overlayPresenter
+        self.sttRegistry = sttRegistry
+        self.speechModelDownloaders = speechModelDownloaders
         activationObserver = nil
         dictationTask = nil
         permissionSnapshot = permissionService.snapshot()
@@ -188,6 +206,7 @@ final class AppModel {
         registerHotkeys()
         observeAppActivation()
         bindOverlayPresenter()
+        Task { [weak self] in await self?.refreshSpeechBackendStatuses() }
     }
 
     func setHotkey(_ definition: HotkeyDefinition, for action: HotkeyAction) {
@@ -228,7 +247,7 @@ final class AppModel {
         }
     }
 
-    private func updateSettings(_ update: (inout AppSettings) -> Void) {
+    func updateSettings(_ update: (inout AppSettings) -> Void) {
         update(&settings)
         settingsState.value = settings
         registerHotkeys()
@@ -272,6 +291,7 @@ final class AppModel {
         microphonePermissionGranted = microphonePermissions.isGranted()
         diagnostics.record(.permissionRechecked)
         registerHotkeys()
+        Task { [weak self] in await self?.refreshSpeechBackendStatuses() }
     }
 
     func clearDiagnostics() { diagnostics.clear() }

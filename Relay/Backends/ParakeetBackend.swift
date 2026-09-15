@@ -20,10 +20,18 @@ protocol ParakeetEngine: Sendable {
     func modelsArePresent() async -> Bool
     /// Loads the model, downloading it first when `allowDownload` is true. When `allowDownload`
     /// is false and the model is absent, throws `ParakeetEngineError.modelsNotDownloaded` without
-    /// touching the network. Idempotent once loaded.
-    func load(allowDownload: Bool) async throws
+    /// touching the network. Idempotent once loaded. `progress` is called with a fraction in
+    /// [0, 1] while a download is in flight; it may be called from any queue.
+    func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws
     /// Transcribes mono 16 kHz samples. The engine must already be loaded.
     func transcribe(samples: [Float]) async throws -> String
+}
+
+extension ParakeetEngine {
+    /// Convenience overload for callers that don't need download progress.
+    func load(allowDownload: Bool) async throws {
+        try await load(allowDownload: allowDownload, progress: { _ in })
+    }
 }
 
 /// On-device speech-to-text backend built on FluidAudio's Parakeet TDT v3 model. Fully offline
@@ -50,11 +58,11 @@ final class ParakeetBackend: SpeechToTextBackend {
         try await ensureLoaded()
     }
 
-    /// Downloads the model if needed, then loads it. Not part of `SpeechToTextBackend`; intended
-    /// for a future Settings "Download" action.
-    func downloadModels() async throws {
+    /// Downloads the model if needed, then loads it. Used by the Settings "Download" action.
+    /// `progress` is called with a fraction in [0, 1] while the download is in flight.
+    func downloadModels(progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws {
         do {
-            try await engine.load(allowDownload: true)
+            try await engine.load(allowDownload: true, progress: progress)
         } catch {
             throw Self.mapLoadError(error)
         }
