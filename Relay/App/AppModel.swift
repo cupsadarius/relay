@@ -263,6 +263,11 @@ final class AppModel {
         updateSettings { $0.hotkeys[action] = definition }
     }
 
+    func removeHotkey(for action: HotkeyAction) {
+        hotkeyConflictMessage = nil
+        updateSettings { $0.hotkeys[action] = nil }
+    }
+
     func setDictationMode(_ mode: DictationMode) {
         updateSettings { $0.dictationMode = mode }
     }

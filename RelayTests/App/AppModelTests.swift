@@ -259,6 +259,30 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.hotkeyConflictMessage, expected)
     }
 
+    func testRemoveHotkeyClearsTheBindingAndPersists() {
+        let store = FakeSettingsStore(settings: .defaults)
+        let hotkeys = FakeHotkeyManager()
+        let model = makeModel(store: store, hotkeys: hotkeys)
+
+        model.removeHotkey(for: .readSelection)
+
+        XCTAssertNil(model.settings.hotkeys[.readSelection])
+        XCTAssertNil(store.saved.last?.hotkeys[.readSelection])
+        XCTAssertNil(hotkeys.registrations.last?.hotkeys[.readSelection])
+    }
+
+    func testRemoveHotkeyClearsAnExistingConflictMessage() {
+        let hotkeys = FakeHotkeyManager()
+        let model = makeModel(hotkeys: hotkeys)
+        let existing = try! XCTUnwrap(model.settings.hotkeys[.replayLast])
+        model.setHotkey(existing, for: .readSelection)
+        XCTAssertNotNil(model.hotkeyConflictMessage)
+
+        model.removeHotkey(for: .readSelection)
+
+        XCTAssertNil(model.hotkeyConflictMessage)
+    }
+
     func testModifierOnlyAndDoubleTapModifierConflictIsRejected() {
         let store = FakeSettingsStore(settings: .defaults)
         let hotkeys = FakeHotkeyManager()
