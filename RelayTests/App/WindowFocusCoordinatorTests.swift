@@ -24,14 +24,65 @@ final class WindowFocusCoordinatorTests: XCTestCase {
 
         coordinator.openDiagnostics()
 
-        XCTAssertEqual(events.values, [.diagnosticsPresented, .focusScheduled])
+        XCTAssertEqual(events.values, [.activated, .diagnosticsPresented, .focusScheduled])
         XCTAssertEqual(presenter.diagnosticsPresentationCount, 1)
 
         finder.windows[.diagnostics] = FakeWindow(target: .diagnostics, isMiniaturized: true, events: events)
         scheduler.runNext()
 
-        XCTAssertEqual(events.values, [.diagnosticsPresented, .focusScheduled, .activated, .diagnosticsRestored, .diagnosticsFocused])
+        XCTAssertEqual(events.values, [.activated, .diagnosticsPresented, .focusScheduled, .activated, .diagnosticsRestored, .diagnosticsFocused])
         XCTAssertEqual(presenter.diagnosticsPresentationCount, 1)
+    }
+
+    /// First open activates the app around presenting (so the freshly created, untagged window
+    /// comes forward immediately) and retries the focus lookup across bounded scheduler turns,
+    /// since `RelayWindowTagger` may not have tagged the window by the first turn.
+    func testAbsentSettingsWindowActivatesBeforePresentingAndRetriesFocusAcrossTurnsUntilTagged() {
+        let events = EventLog()
+        let finder = FakeWindowFinder(windows: [:])
+        let presenter = FakeRelayWindowPresenter(events: events)
+        let scheduler = FakeMainLoopScheduler(events: events)
+        let coordinator = makeCoordinator(events: events, finder: finder, presenter: presenter, scheduler: scheduler)
+
+        coordinator.openSettings()
+
+        XCTAssertEqual(events.values, [.activated, .settingsPresented, .focusScheduled])
+        XCTAssertEqual(presenter.settingsPresentationCount, 1)
+
+        // First retry turn: the window still hasn't been tagged yet.
+        scheduler.runNext()
+        XCTAssertEqual(events.values, [.activated, .settingsPresented, .focusScheduled, .focusScheduled])
+
+        // The window is tagged before the second retry turn runs.
+        finder.windows[.settings] = FakeWindow(target: .settings, isMiniaturized: false, events: events)
+        scheduler.runNext()
+
+        XCTAssertEqual(
+            events.values,
+            [.activated, .settingsPresented, .focusScheduled, .focusScheduled, .activated, .settingsFocused]
+        )
+        XCTAssertEqual(presenter.settingsPresentationCount, 1)
+    }
+
+    /// The retry must be bounded: if the window never gets tagged, the coordinator gives up
+    /// after a small, fixed number of attempts rather than scheduling forever.
+    func testFocusRetryGivesUpAfterBoundedAttemptsWhenWindowNeverAppears() {
+        let events = EventLog()
+        let finder = FakeWindowFinder(windows: [:])
+        let presenter = FakeRelayWindowPresenter(events: events)
+        let scheduler = FakeMainLoopScheduler(events: events)
+        let coordinator = makeCoordinator(events: events, finder: finder, presenter: presenter, scheduler: scheduler)
+
+        coordinator.openSettings()
+        scheduler.runNext()
+        scheduler.runNext()
+        scheduler.runNext()
+
+        XCTAssertEqual(
+            events.values,
+            [.activated, .settingsPresented, .focusScheduled, .focusScheduled, .focusScheduled]
+        )
+        XCTAssertFalse(scheduler.hasPendingAction)
     }
 
     func testDeferredFocusSurvivesCoordinatorRelease() {
@@ -47,7 +98,7 @@ final class WindowFocusCoordinatorTests: XCTestCase {
 
         scheduler.runNext()
 
-        XCTAssertEqual(events.values, [.diagnosticsPresented, .focusScheduled, .activated, .diagnosticsRestored, .diagnosticsFocused])
+        XCTAssertEqual(events.values, [.activated, .diagnosticsPresented, .focusScheduled, .activated, .diagnosticsRestored, .diagnosticsFocused])
     }
 
     func testExistingDiagnosticsWindowIsNotPresentedAgain() {
@@ -110,6 +161,7 @@ private enum WindowFocusEvent: Equatable {
 @MainActor private final class FakeMainLoopScheduler: RelayMainLoopScheduling {
     private let events: EventLog
     private var actions: [@MainActor @Sendable () -> Void] = []
+    var hasPendingAction: Bool { !actions.isEmpty }
     init(events: EventLog) { self.events = events }
     func schedule(_ action: @escaping @MainActor @Sendable () -> Void) { events.values.append(.focusScheduled); actions.append(action) }
     func runNext() { actions.removeFirst()() }

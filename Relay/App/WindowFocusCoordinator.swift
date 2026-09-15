@@ -39,20 +39,54 @@ final class WindowFocusCoordinator {
     func openSettings() { open(.settings) }
     func openDiagnostics() { open(.diagnostics) }
 
+    /// Bounds the follow-up focus retry below: the freshly presented window is tagged by
+    /// `RelayWindowTagger` asynchronously, so it may not be findable on the very next runloop
+    /// turn. A few short, bounded retries give the tagger time to catch up without ever looping
+    /// unboundedly.
+    private static let maxFocusRetryAttempts = 3
+
     private func open(_ target: RelayWindowTarget) {
         if let window = finder.window(for: target) {
             Self.focus(window, application: application)
             return
         }
+        // Activate up front so the freshly created window (not yet tagged, so `focus` below
+        // can't find and order it front yet) still comes forward instead of opening behind other
+        // apps for this `LSUIElement` app when it isn't already active.
+        application.activate()
         switch target {
         case .settings: windows.presentSettings()
         case .diagnostics: windows.presentDiagnostics()
         }
-        let application = application
-        let finder = finder
+        Self.scheduleFocusRetry(
+            target: target,
+            application: application,
+            finder: finder,
+            scheduler: scheduler,
+            attemptsRemaining: Self.maxFocusRetryAttempts
+        )
+    }
+
+    private static func scheduleFocusRetry(
+        target: RelayWindowTarget,
+        application: any RelayApplicationActivating,
+        finder: any RelayWindowFinding,
+        scheduler: any RelayMainLoopScheduling,
+        attemptsRemaining: Int
+    ) {
         scheduler.schedule {
-            guard let window = finder.window(for: target) else { return }
-            Self.focus(window, application: application)
+            if let window = finder.window(for: target) {
+                focus(window, application: application)
+                return
+            }
+            guard attemptsRemaining > 1 else { return }
+            scheduleFocusRetry(
+                target: target,
+                application: application,
+                finder: finder,
+                scheduler: scheduler,
+                attemptsRemaining: attemptsRemaining - 1
+            )
         }
     }
 
