@@ -38,15 +38,44 @@ final class UnixSocketServer: @unchecked Sendable {
     /// the Relay hook transport's global 2 MiB envelope limit.
     static let maxLineBytes = 2 * 1024 * 1024
 
+    /// Maximum number of simultaneously open client connections. Beyond this,
+    /// newly accepted file descriptors are closed immediately instead of
+    /// tracked, so a same-user process cannot exhaust file descriptors or
+    /// pin N x 2 MiB of per-connection receive buffers.
+    static let maxConcurrentConnections = 32
+
+    /// Backoff applied before re-arming the accept source after `accept`
+    /// fails with `EMFILE`/`ENFILE`. Without this, a readable listen socket
+    /// with fds exhausted would cause the dispatch source to re-fire and
+    /// re-fail in a tight CPU spin.
+    private static let acceptBackoff: DispatchTimeInterval = .milliseconds(100)
+
     private let queue = DispatchQueue(label: "dev.relaymac.Relay.UnixSocketServer")
 
     private var listenDescriptor: Int32 = -1
     private var acceptSource: DispatchSourceRead?
+    private var acceptSourceSuspended = false
     private var socketPath: String?
     private var onLine: (@Sendable (String) -> Void)?
     private var connections: [Int32: ClientConnection] = [:]
 
     init() {}
+
+    /// Safety net for instances dropped without an explicit `stop()` call
+    /// (e.g. a crash path, or a caller that simply forgets). Tears down
+    /// dispatch sources and closes file descriptors so nothing leaks.
+    ///
+    /// - Important: `stop()` synchronizes onto `queue` via `queue.sync`.
+    ///   `deinit` can, in principle, run synchronously *on* `queue` itself —
+    ///   for example if a queue-scheduled closure holding the last strong
+    ///   reference to this instance releases it as that closure returns.
+    ///   Calling `stop()` (and its `queue.sync`) from such a `deinit` would
+    ///   deadlock. Since no other reference to `self` can exist once `deinit`
+    ///   runs, there is no concurrent access to guard against here, so
+    ///   `deinit` calls the shared teardown directly, off `queue`, instead.
+    deinit {
+        performTeardown()
+    }
 
     /// Starts listening on the Unix-domain socket at `path`.
     ///
@@ -113,22 +142,43 @@ final class UnixSocketServer: @unchecked Sendable {
     /// socket path this instance created — never any other path.
     func stop() {
         queue.sync {
-            for (_, connection) in connections {
-                connection.source?.cancel()
-            }
-            connections.removeAll()
-
-            acceptSource?.cancel()
-            acceptSource = nil
-
-            if let path = socketPath {
-                unlink(path)
-            }
-
-            listenDescriptor = -1
-            socketPath = nil
-            onLine = nil
+            performTeardown()
         }
+    }
+
+    /// Cancels every dispatch source, closes the listen/client file
+    /// descriptors, and unlinks the socket path. Idempotent: safe to call
+    /// when already stopped (or never started).
+    ///
+    /// - Important: must only be called while already confined to `queue`
+    ///   (via `stop()`'s `queue.sync`) or from a context — such as `deinit`
+    ///   — where no concurrent access to this instance's state is possible.
+    ///   Never call this directly from arbitrary code still holding a
+    ///   reference to the instance.
+    private func performTeardown() {
+        if acceptSourceSuspended {
+            // Balance the suspend from the EMFILE/ENFILE backoff before
+            // cancelling — cancelling a still-suspended dispatch source is
+            // not guaranteed safe.
+            acceptSource?.resume()
+            acceptSourceSuspended = false
+        }
+
+        for (_, connection) in connections {
+            connection.source?.cancel()
+        }
+        connections.removeAll()
+
+        acceptSource?.cancel()
+        acceptSource = nil
+
+        if let path = socketPath {
+            unlink(path)
+        }
+
+        listenDescriptor = -1
+        socketPath = nil
+        onLine = nil
     }
 
     // MARK: - Accept loop
@@ -137,8 +187,43 @@ final class UnixSocketServer: @unchecked Sendable {
         while true {
             let clientFD = accept(listenFD, nil, nil)
             guard clientFD >= 0 else {
-                break // EAGAIN/EWOULDBLOCK (no more pending) or a transient error.
+                let capturedErrno = errno
+                if capturedErrno == EMFILE || capturedErrno == ENFILE {
+                    // Transient fd exhaustion. The listen socket is still
+                    // readable, so if we just returned, the dispatch source
+                    // would re-fire immediately and re-fail `accept` in a
+                    // tight CPU spin. Suspend the source and re-arm it after
+                    // a brief backoff instead, giving fds elsewhere a chance
+                    // to free up. (Hard to exercise deterministically in a
+                    // unit test — this path is exercised manually/by review
+                    // rather than by an automated fd-exhaustion test.)
+                    if !acceptSourceSuspended, let source = acceptSource {
+                        acceptSourceSuspended = true
+                        source.suspend()
+                        queue.asyncAfter(deadline: .now() + Self.acceptBackoff) { [weak self] in
+                            guard let self else { return }
+                            // `stop()` may have torn everything down while we
+                            // were waiting; only resume if this is still the
+                            // live, suspended accept source.
+                            guard self.acceptSourceSuspended, let source = self.acceptSource else { return }
+                            self.acceptSourceSuspended = false
+                            source.resume()
+                        }
+                    }
+                }
+                break // EAGAIN/EWOULDBLOCK (no more pending) or another transient error.
             }
+
+            guard connections.count < Self.maxConcurrentConnections else {
+                // At the concurrent-connection cap: drop the new connection
+                // immediately rather than tracking it, so a same-user
+                // process cannot exhaust file descriptors or pin N x 2 MiB
+                // of per-connection receive buffers. Keep draining the
+                // accept backlog so it doesn't build up.
+                close(clientFD)
+                continue
+            }
+
             Self.setNonBlocking(clientFD)
             Self.growReceiveBuffer(clientFD)
             beginReading(clientFD: clientFD)

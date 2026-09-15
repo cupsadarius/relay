@@ -37,8 +37,7 @@ enum UnixSocketTestClient {
     }
 
     private static func sendBlocking(_ text: String, to path: String) throws {
-        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard fd >= 0 else { throw ClientError(operation: "socket", errno: errno) }
+        let fd = try connectBlocking(to: path)
         defer { close(fd) }
 
         // Widen the send buffer so a large test payload (e.g. an
@@ -46,6 +45,66 @@ enum UnixSocketTestClient {
         // of writes rather than trickling in at the OS default buffer size.
         var sendBufferSize = Int32(4 * 1024 * 1024)
         _ = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sendBufferSize, socklen_t(MemoryLayout<Int32>.size))
+
+        let bytes = Array(text.utf8)
+        var totalWritten = 0
+        while totalWritten < bytes.count {
+            let written = bytes.withUnsafeBytes { raw -> Int in
+                write(fd, raw.baseAddress!.advanced(by: totalWritten), raw.count - totalWritten)
+            }
+            guard written > 0 else { throw ClientError(operation: "write", errno: errno) }
+            totalWritten += written
+        }
+    }
+
+    /// Opens a connection to the Unix-domain socket at `path` and returns
+    /// its raw file descriptor without writing anything, so a test can hold
+    /// it open (e.g. to fill the server's connection table) or immediately
+    /// probe whether the server closed it.
+    ///
+    /// The connect itself runs on a dedicated `Thread`, matching `send`'s
+    /// rationale: keep the Swift Concurrency cooperative pool free.
+    static func connectAndHold(to path: String) async throws -> Int32 {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int32, Error>) in
+            let thread = Thread {
+                do {
+                    let fd = try connectBlocking(to: path)
+                    continuation.resume(returning: fd)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+            thread.stackSize = 1 << 20
+            thread.start()
+        }
+    }
+
+    /// Waits up to `timeout` seconds for the peer to close `fd` (EOF).
+    /// Returns `true` if EOF arrived within the window, `false` if the
+    /// window elapsed with the connection still open (or data arrived
+    /// instead). Uses `SO_RCVTIMEO` for a single bounded blocking `read` —
+    /// no polling loop — and runs on a dedicated `Thread` so it never blocks
+    /// the Swift Concurrency cooperative pool.
+    static func waitForEOF(fd: Int32, timeout: TimeInterval) async throws -> Bool {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Bool, Error>) in
+            let thread = Thread {
+                var tv = timeval(
+                    tv_sec: Int(timeout),
+                    tv_usec: Int32((timeout - Double(Int(timeout))) * 1_000_000)
+                )
+                _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+                var byte: UInt8 = 0
+                let bytesRead = read(fd, &byte, 1)
+                continuation.resume(returning: bytesRead == 0)
+            }
+            thread.stackSize = 1 << 20
+            thread.start()
+        }
+    }
+
+    private static func connectBlocking(to path: String) throws -> Int32 {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw ClientError(operation: "socket", errno: errno) }
 
         var address = sockaddr_un()
         address.sun_family = sa_family_t(AF_UNIX)
@@ -64,17 +123,12 @@ enum UnixSocketTestClient {
                 connect(fd, sockaddrPointer, socklen_t(MemoryLayout<sockaddr_un>.size))
             }
         }
-        guard connectResult == 0 else { throw ClientError(operation: "connect", errno: errno) }
-
-        let bytes = Array(text.utf8)
-        var totalWritten = 0
-        while totalWritten < bytes.count {
-            let written = bytes.withUnsafeBytes { raw -> Int in
-                write(fd, raw.baseAddress!.advanced(by: totalWritten), raw.count - totalWritten)
-            }
-            guard written > 0 else { throw ClientError(operation: "write", errno: errno) }
-            totalWritten += written
+        guard connectResult == 0 else {
+            let capturedErrno = errno
+            close(fd)
+            throw ClientError(operation: "connect", errno: capturedErrno)
         }
+        return fd
     }
 }
 
@@ -192,6 +246,77 @@ final class UnixSocketServerTests: XCTestCase {
         // The listener must still be healthy for subsequent connections.
         try await UnixSocketTestClient.send(#"{"schemaVersion":1}"# + "\n", to: path)
         await fulfillment(of: [receivedShortLine], timeout: 1)
+    }
+
+    func testConnectionsBeyondTheCapAreDroppedWhileWithinCapClientsAreStillServed() async throws {
+        let path = temporarySocketPath()
+        let server = UnixSocketServer()
+        let cap = UnixSocketServer.maxConcurrentConnections
+        let overflowCount = 3
+        let totalConnections = cap + overflowCount
+
+        let received = expectation(description: "line received once a slot freed under the cap")
+        try server.start(path: path) { line in
+            XCTAssertTrue(line.contains("schemaVersion"))
+            received.fulfill()
+        }
+        defer { server.stop() }
+
+        // Open more silent, long-lived connections than the cap allows.
+        // Sequentially: AF_UNIX `connect()` (unlike TCP) can fail outright
+        // with ECONNREFUSED if the listen backlog is full, so a concurrent
+        // burst risks spurious connect failures unrelated to what this test
+        // checks. One at a time keeps at most one pending connection ahead
+        // of the server's accept loop.
+        var fds: [Int32] = []
+        for _ in 0..<totalConnections {
+            fds.append(try await UnixSocketTestClient.connectAndHold(to: path))
+        }
+        defer { for fd in fds { close(fd) } }
+
+        // Give the server's serial queue a brief, bounded moment to finish
+        // draining its accept backlog before probing outcomes — not a spin
+        // loop, just a settle window ahead of the real (also bounded)
+        // per-connection EOF probes below.
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        // Probe every connection concurrently for whether the server closed
+        // it (dropped, over the cap) or left it open (tracked, within the
+        // cap). This checks aggregate counts rather than assuming which
+        // specific connections landed within vs. beyond the cap — accept
+        // ordering under concurrency is not under this test's control.
+        let openStates: [(fd: Int32, isOpen: Bool)] = try await withThrowingTaskGroup(
+            of: (Int32, Bool).self
+        ) { group in
+            for fd in fds {
+                group.addTask {
+                    let hitEOF = try await UnixSocketTestClient.waitForEOF(fd: fd, timeout: 0.5)
+                    return (fd, !hitEOF)
+                }
+            }
+            var results: [(Int32, Bool)] = []
+            for try await result in group { results.append(result) }
+            return results
+        }
+
+        let openCount = openStates.filter(\.isOpen).count
+        let droppedCount = openStates.count - openCount
+        XCTAssertEqual(openCount, cap, "server should keep exactly the capped number of connections open")
+        XCTAssertEqual(droppedCount, overflowCount, "connections beyond the cap should be dropped")
+
+        // Freeing a slot must let the server accept and serve a new client
+        // again — the cap is a live limit, not a one-shot lockout. Close a
+        // connection the server actually still has open, to free a real
+        // slot (closing an already-dropped one wouldn't free anything).
+        guard let openFD = openStates.first(where: \.isOpen)?.fd else {
+            XCTFail("expected at least one open connection to free")
+            return
+        }
+        close(openFD)
+        fds.removeAll { $0 == openFD }
+
+        try await UnixSocketTestClient.send(#"{"schemaVersion":1}"# + "\n", to: path)
+        await fulfillment(of: [received], timeout: 1)
     }
 
     func testMalformedNonJSONLineIsForwardedVerbatimByTheTransportLayer() async throws {
