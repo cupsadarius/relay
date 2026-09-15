@@ -648,6 +648,82 @@ final class AppModelTests: XCTestCase {
         XCTAssertNil(model.speechBackendMessage)
     }
 
+    func testReadSelectionRoutesThroughKokoroWithConfiguredVoiceWhenAvailable() async {
+        let (model, hotkeys, kokoro, apple) = makeTTSRoutingModel(kokoroAvailability: .available)
+
+        hotkeys.send(.readSelection, .pressed)
+        await waitUntil { !kokoro.spoken.isEmpty || !apple.spoken.isEmpty }
+
+        XCTAssertEqual(kokoro.spoken.map(\.options.kokoroVoice), ["af_bella"])
+        XCTAssertTrue(apple.spoken.isEmpty)
+        withExtendedLifetime(model) {}
+    }
+
+    func testReadSelectionFallsBackToAppleWithTheSameOptionsWhenKokoroReportsModelNotDownloaded() async {
+        let (model, hotkeys, kokoro, apple) = makeTTSRoutingModel(kokoroAvailability: .modelNotDownloaded)
+
+        hotkeys.send(.readSelection, .pressed)
+        await waitUntil { !kokoro.spoken.isEmpty || !apple.spoken.isEmpty }
+
+        XCTAssertTrue(kokoro.spoken.isEmpty)
+        XCTAssertEqual(apple.spoken.map(\.options.kokoroVoice), ["af_bella"])
+        withExtendedLifetime(model) {}
+    }
+
+    /// Builds a real `AppModel` around a real `TTSRouter`/`SpeechCoordinator` pair (not the
+    /// `FakeSpeechCoordinator` the other tests in this file use) wired exactly like the
+    /// production convenience `init()` wires Apple and Kokoro: `backendOrder` and the
+    /// `TTSOptions.kokoroVoice` field both read from the same settings snapshot. This exercises
+    /// the one-line options-closure edit the plan calls out as the easiest step to miss - if
+    /// `kokoroVoice` stopped reaching `TTSOptions`, `testReadSelectionRoutesThroughKokoroWith...`
+    /// would fail.
+    private func makeTTSRoutingModel(
+        kokoroAvailability: BackendAvailability
+    ) -> (model: AppModel, hotkeys: FakeHotkeyManager, kokoro: FakeTTSBackend, apple: FakeTTSBackend) {
+        let kokoro = FakeTTSBackend(id: "kokoro")
+        kokoro.availabilityValue = kokoroAvailability
+        let apple = FakeTTSBackend(id: "apple-tts")
+        var settings = AppSettings.defaults
+        settings.ttsBackendOrder = ["kokoro", "apple-tts"]
+        settings.kokoroVoice = "af_bella"
+        let store = FakeSettingsStore(settings: settings)
+        let overlay = ActivityOverlayModel()
+        let router = TTSRouter(
+            backends: ["kokoro": kokoro, "apple-tts": apple],
+            backendOrder: { settings.ttsBackendOrder }
+        )
+        let coordinator = SpeechCoordinator(
+            router: router,
+            options: {
+                TTSOptions(
+                    voiceIdentifier: settings.ttsVoiceIdentifier,
+                    rate: settings.ttsRate,
+                    kokoroVoice: settings.kokoroVoice
+                )
+            },
+            overlay: overlay
+        )
+        let hotkeys = FakeHotkeyManager()
+        let model = AppModel(
+            settingsStore: store,
+            selectionReader: FakeSelectionReader(text: "hello"),
+            preprocessor: RulesSpeechPreprocessor(),
+            speechCoordinator: coordinator,
+            hotkeyManager: hotkeys,
+            permissionService: FakePermissionService(snapshot: .init(inputMonitoringGranted: true, accessibilityGranted: true)),
+            diagnostics: DiagnosticsRecorder(capacity: 10),
+            dictationCoordinator: nil,
+            microphonePermissions: FakeMicrophonePermissionStatus(granted: true),
+            privacySettingsOpener: FakePrivacySettingsOpener(),
+            overlayModel: overlay,
+            overlayPresenter: NoOpActivityOverlayPresenter(),
+            sttRegistry: [:],
+            speechModelDownloaders: [:],
+            ttsRegistry: ["kokoro": kokoro, "apple-tts": apple]
+        )
+        return (model, hotkeys, kokoro, apple)
+    }
+
     func testRefreshMapsBackendAvailabilityCasesToFixedStates() async {
         let cases: [(BackendAvailability, STTBackendStatus.State)] = [
             (.available, .ready),

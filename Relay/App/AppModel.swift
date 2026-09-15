@@ -28,6 +28,7 @@ final class AppModel {
 
     @ObservationIgnored let sttRegistry: [String: any SpeechToTextBackend]
     @ObservationIgnored let speechModelDownloaders: [String: any SpeechModelDownloading]
+    @ObservationIgnored let ttsRegistry: [String: any TextToSpeechBackend]
     @ObservationIgnored var downloadingBackendIDs: Set<String> = []
     @ObservationIgnored var refreshGeneration = 0
     /// The fire-and-forget initial status refresh kicked off from `init`. Exposed so tests can
@@ -55,8 +56,13 @@ final class AppModel {
         let diagnostics = DiagnosticsRecorder()
         let overlayModel = ActivityOverlayModel()
         let appleTTS = AppleTTSBackend()
+        let kokoroTTS = KokoroTTSBackend()
+        let ttsRegistry: [String: any TextToSpeechBackend] = [
+            appleTTS.id: appleTTS,
+            kokoroTTS.id: kokoroTTS,
+        ]
         let router = TTSRouter(
-            backends: [appleTTS.id: appleTTS],
+            backends: ttsRegistry,
             backendOrder: { state.value.ttsBackendOrder }
         )
         let coordinator = SpeechCoordinator(
@@ -64,7 +70,8 @@ final class AppModel {
             options: {
                 TTSOptions(
                     voiceIdentifier: state.value.ttsVoiceIdentifier,
-                    rate: state.value.ttsRate
+                    rate: state.value.ttsRate,
+                    kokoroVoice: state.value.kokoroVoice
                 )
             },
             overlay: overlayModel
@@ -121,7 +128,8 @@ final class AppModel {
             overlayModel: overlayModel,
             overlayPresenter: overlayPresenter,
             sttRegistry: sttRegistry,
-            speechModelDownloaders: speechModelDownloaders
+            speechModelDownloaders: speechModelDownloaders,
+            ttsRegistry: ttsRegistry
         )
         dictation.setStatusHandler { [weak self] in self?.statusText = $0 }
     }
@@ -140,7 +148,8 @@ final class AppModel {
         overlayModel: ActivityOverlayModel = ActivityOverlayModel(),
         overlayPresenter: any ActivityOverlayPresenting = NoOpActivityOverlayPresenter(),
         sttRegistry: [String: any SpeechToTextBackend] = [:],
-        speechModelDownloaders: [String: any SpeechModelDownloading] = [:]
+        speechModelDownloaders: [String: any SpeechModelDownloading] = [:],
+        ttsRegistry: [String: any TextToSpeechBackend] = [:]
     ) {
         let settings = settingsStore.load()
         self.settingsStore = settingsStore
@@ -157,6 +166,7 @@ final class AppModel {
         self.overlayPresenter = overlayPresenter
         self.sttRegistry = sttRegistry
         self.speechModelDownloaders = speechModelDownloaders
+        self.ttsRegistry = ttsRegistry
         activationObserver = nil
         dictationTask = nil
         permissionSnapshot = permissionService.snapshot()
@@ -186,7 +196,8 @@ final class AppModel {
         overlayModel: ActivityOverlayModel,
         overlayPresenter: any ActivityOverlayPresenting,
         sttRegistry: [String: any SpeechToTextBackend],
-        speechModelDownloaders: [String: any SpeechModelDownloading]
+        speechModelDownloaders: [String: any SpeechModelDownloading],
+        ttsRegistry: [String: any TextToSpeechBackend]
     ) {
         self.settingsStore = settingsStore
         self.selectionReader = selectionReader
@@ -202,6 +213,7 @@ final class AppModel {
         self.overlayPresenter = overlayPresenter
         self.sttRegistry = sttRegistry
         self.speechModelDownloaders = speechModelDownloaders
+        self.ttsRegistry = ttsRegistry
         activationObserver = nil
         dictationTask = nil
         permissionSnapshot = permissionService.snapshot()
@@ -234,6 +246,10 @@ final class AppModel {
 
     func setVoiceIdentifier(_ identifier: String?) {
         updateSettings { $0.ttsVoiceIdentifier = identifier }
+    }
+
+    func setKokoroVoice(_ voice: String?) {
+        updateSettings { $0.kokoroVoice = voice }
     }
 
     func setSpeechRate(_ rate: Float) {

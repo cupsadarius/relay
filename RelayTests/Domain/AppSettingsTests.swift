@@ -28,6 +28,35 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertFalse(decoded.autoReadEnabled)
     }
 
+    func testDefaultsHaveNoKokoroVoiceConfigured() {
+        XCTAssertNil(AppSettings.defaults.kokoroVoice)
+    }
+
+    func testKokoroVoiceRoundTrips() throws {
+        var value = AppSettings.defaults
+        value.kokoroVoice = "af_heart"
+
+        let data = try JSONEncoder().encode(value)
+
+        XCTAssertEqual(try JSONDecoder().decode(AppSettings.self, from: data).kokoroVoice, "af_heart")
+    }
+
+    func testDecodingPreKokoroSettingsDefaultsKokoroVoiceToNilWithoutResettingOtherFields() throws {
+        var saved = AppSettings.defaults
+        saved.dictationMode = .toggle
+        let encoded = try JSONEncoder().encode(saved)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "kokoroVoice")
+
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+
+        XCTAssertNil(decoded.kokoroVoice)
+        XCTAssertEqual(decoded.dictationMode, .toggle)
+    }
+
     func testSettingsRoundTrip() throws {
         var value = AppSettings.defaults
         value.dictationMode = .toggle
