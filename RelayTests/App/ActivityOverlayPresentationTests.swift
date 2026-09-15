@@ -18,6 +18,7 @@ final class ActivityOverlayPresentationTests: XCTestCase {
         )
 
         XCTAssertEqual(value?.title, "Listening")
+        XCTAssertEqual(value?.subtitle, "Microphone")
         XCTAssertEqual(value?.action, .cancelDictation(sessionID: id))
         XCTAssertEqual(value?.actionAccessibilityLabel, "Cancel dictation")
         XCTAssertEqual(value?.size, CGSize(width: 282, height: 62))
@@ -31,6 +32,7 @@ final class ActivityOverlayPresentationTests: XCTestCase {
         )
 
         XCTAssertNil(value?.title)
+        XCTAssertNil(value?.subtitle)
         XCTAssertNil(value?.action)
         XCTAssertEqual(value?.size, CGSize(width: 154, height: 40))
     }
@@ -53,6 +55,7 @@ final class ActivityOverlayPresentationTests: XCTestCase {
         )
 
         XCTAssertEqual(value?.accent, .amber)
+        XCTAssertEqual(value?.subtitle, "Transcribing")
         XCTAssertEqual(value?.action, .cancelDictation(sessionID: id))
     }
 
@@ -63,6 +66,7 @@ final class ActivityOverlayPresentationTests: XCTestCase {
         )
 
         XCTAssertEqual(value?.accent, .violetCyan)
+        XCTAssertEqual(value?.subtitle, "Apple voice")
         XCTAssertEqual(value?.action, .stopSpeech(sessionID: id))
         XCTAssertEqual(value?.actionAccessibilityLabel, "Stop speech")
     }
@@ -96,21 +100,81 @@ final class ActivityOverlayPresentationTests: XCTestCase {
             XCTAssertEqual(value?.kind, .error)
             XCTAssertEqual(value?.accent, .error)
             XCTAssertEqual(value?.title, expectedTitle)
+            XCTAssertEqual(value?.subtitle, "Try again")
+            XCTAssertNil(value?.action)
+            XCTAssertNil(value?.startedAt)
             XCTAssertFalse(value!.title!.contains("secret"))
         }
     }
 
-    func testSpeakingWaveformIsDeterministicForTimestamp() {
+    func testCornerRadiusMatchesStyle() {
+        let minimal = ActivityOverlayPresentation.make(
+            state: .processing(sessionID: UUID(), startedAt: .now), style: .minimal, reduceMotion: false
+        )
+        let interactive = ActivityOverlayPresentation.make(
+            state: .processing(sessionID: UUID(), startedAt: .now), style: .interactive, reduceMotion: false
+        )
+
+        XCTAssertEqual(minimal?.cornerRadius, 22)
+        XCTAssertEqual(interactive?.cornerRadius, 20)
+    }
+
+    func testWaveformRestHeightsHasSevenBars() {
+        XCTAssertEqual(ActivityOverlayPresentation.waveformRestHeights, [8, 15, 23, 11, 23, 15, 8])
+    }
+
+    func testSpeakingWaveformIsDeterministicForTimestampAndHasSevenBars() {
         let presentation = ActivityOverlayPresentation.make(
             state: .speaking(sessionID: UUID(), startedAt: .now), style: .minimal, reduceMotion: false
         )!
         let timestamp = Date(timeIntervalSinceReferenceDate: 42)
 
         XCTAssertEqual(presentation.waveformBars(at: timestamp), presentation.waveformBars(at: timestamp))
-        XCTAssertEqual(presentation.waveformBars(at: timestamp).count, 5)
+        XCTAssertEqual(presentation.waveformBars(at: timestamp).count, 7)
+        for value in presentation.waveformBars(at: timestamp) {
+            XCTAssertGreaterThanOrEqual(value, 0.34)
+            XCTAssertLessThanOrEqual(value, 1.0)
+        }
     }
 
-    func testReduceMotionListeningBarsDoNotChangeWithLevel() {
+    func testListeningWaveformBarsHasSevenSymmetricMultipliers() {
+        let value = ActivityOverlayPresentation.make(
+            state: .listening(sessionID: UUID(), startedAt: .now, level: 0.5), style: .minimal, reduceMotion: false
+        )!
+        let bars = value.listeningWaveformBars()
+
+        XCTAssertEqual(bars.count, 7)
+        XCTAssertEqual(bars[0], bars[6])
+        XCTAssertEqual(bars[1], bars[5])
+        XCTAssertEqual(bars[2], bars[4])
+        for value in bars {
+            XCTAssertGreaterThanOrEqual(value, 0.34)
+            XCTAssertLessThanOrEqual(value, 1.0)
+        }
+    }
+
+    func testListeningWaveformBarsAtZeroLevelAreAllAtFloor() {
+        let value = ActivityOverlayPresentation.make(
+            state: .listening(sessionID: UUID(), startedAt: .now, level: 0), style: .minimal, reduceMotion: false
+        )!
+
+        for bar in value.listeningWaveformBars() {
+            XCTAssertEqual(bar, 0.34, accuracy: 0.0001)
+        }
+    }
+
+    func testListeningWaveformBarsAtFullLevelPeakAtOne() {
+        let value = ActivityOverlayPresentation.make(
+            state: .listening(sessionID: UUID(), startedAt: .now, level: 1), style: .minimal, reduceMotion: false
+        )!
+        let bars = value.listeningWaveformBars()
+
+        XCTAssertEqual(bars[2], 1.0, accuracy: 0.0001)
+        XCTAssertEqual(bars[4], 1.0, accuracy: 0.0001)
+        XCTAssertEqual(bars[0], 8.0 / 23.0, accuracy: 0.0001)
+    }
+
+    func testListeningWaveformBarsReflectLevelEvenUnderReduceMotion() {
         let quiet = ActivityOverlayPresentation.make(
             state: .listening(sessionID: UUID(), startedAt: .now, level: 0), style: .minimal, reduceMotion: true
         )!
@@ -119,14 +183,23 @@ final class ActivityOverlayPresentationTests: XCTestCase {
         )!
 
         XCTAssertFalse(quiet.animatesWaveform)
-        XCTAssertEqual(quiet.listeningWaveformBars(), loud.listeningWaveformBars())
+        XCTAssertNotEqual(quiet.listeningWaveformBars(), loud.listeningWaveformBars())
     }
 
-    func testSpeakingSelectsBothVioletAndCyanAccentColors() {
-        let presentation = ActivityOverlayPresentation.make(
-            state: .speaking(sessionID: UUID(), startedAt: .now), style: .minimal, reduceMotion: false
-        )!
+    func testElapsedTimeFormatsAsMinutesColonSeconds() {
+        let start = Date(timeIntervalSinceReferenceDate: 0)
 
-        XCTAssertEqual(presentation.accentColors, [.violet, .cyan])
+        XCTAssertEqual(
+            ActivityOverlayPresentation.elapsedTime(since: start, now: start.addingTimeInterval(18)),
+            "00:18"
+        )
+        XCTAssertEqual(
+            ActivityOverlayPresentation.elapsedTime(since: start, now: start.addingTimeInterval(65)),
+            "01:05"
+        )
+        XCTAssertEqual(
+            ActivityOverlayPresentation.elapsedTime(since: start, now: start),
+            "00:00"
+        )
     }
 }

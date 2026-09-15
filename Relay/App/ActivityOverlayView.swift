@@ -17,23 +17,65 @@ struct ActivityOverlayView: View {
 
     @ViewBuilder
     private func capsule(for presentation: ActivityOverlayPresentation) -> some View {
-        HStack(spacing: 10) {
-            waveform(for: presentation)
+        Group {
+            if presentation.title != nil {
+                interactiveLayout(for: presentation)
+            } else {
+                minimalLayout(for: presentation)
+            }
+        }
+        .frame(width: presentation.size.width, height: presentation.size.height)
+        .background {
+            RoundedRectangle(cornerRadius: presentation.cornerRadius, style: .continuous)
+                .fill(.ultraThinMaterial)
+            RoundedRectangle(cornerRadius: presentation.cornerRadius, style: .continuous)
+                .fill(OverlayPalette.chromeFill)
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: presentation.cornerRadius, style: .continuous)
+                .stroke(OverlayPalette.border, lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.6), radius: 12, y: 6)
+        .foregroundStyle(.white)
+    }
 
-            if let title = presentation.title {
-                VStack(alignment: .leading, spacing: 1) {
+    @ViewBuilder
+    private func minimalLayout(for presentation: ActivityOverlayPresentation) -> some View {
+        HStack(spacing: 11) {
+            StateDot(color: OverlayPalette.dotColor(for: presentation.accent), reduceMotion: reduceMotion)
+            WaveformView(presentation: presentation)
+        }
+    }
+
+    @ViewBuilder
+    private func interactiveLayout(for presentation: ActivityOverlayPresentation) -> some View {
+        HStack(spacing: 13) {
+            WaveformView(presentation: presentation)
+
+            VStack(alignment: .leading, spacing: 2) {
+                if let title = presentation.title {
                     Text(title)
-                        .font(.subheadline.weight(.semibold))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
                         .lineLimit(1)
-                    if let startedAt = presentation.startedAt {
-                        TimelineView(.periodic(from: .now, by: 1)) { context in
-                            Text(elapsedTime(since: startedAt, now: context.date))
-                                .font(.caption2.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                        }
-                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                if let subtitle = presentation.subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 10))
+                        .foregroundStyle(OverlayPalette.subtitleText)
+                        .lineLimit(1)
+                }
+            }
+            .frame(minWidth: 91, alignment: .leading)
+
+            Spacer(minLength: 0)
+
+            if let startedAt = presentation.startedAt {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text(ActivityOverlayPresentation.elapsedTime(since: startedAt, now: context.date))
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(OverlayPalette.timeText)
+                }
             }
 
             if let action = presentation.action, let label = presentation.actionAccessibilityLabel {
@@ -42,96 +84,153 @@ struct ActivityOverlayView: View {
                         await onAction(action)
                     }
                 } label: {
-                    Image(systemName: actionSymbol(for: action))
-                        .font(.subheadline.weight(.bold))
-                        .frame(width: 28, height: 28)
+                    ZStack {
+                        Circle().fill(OverlayPalette.buttonFill)
+                        actionGlyph(for: action)
+                    }
+                    .frame(width: 30, height: 30)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
+                .contentShape(Circle())
                 .accessibilityLabel(label)
             }
         }
-        .padding(.horizontal, 14)
-        .frame(width: presentation.size.width, height: presentation.size.height)
-        .background {
-            Capsule().fill(.ultraThinMaterial)
-            Capsule().fill(.black.opacity(0.48))
-        }
-        .overlay(Capsule().stroke(accentGradient(for: presentation).opacity(0.45), lineWidth: 1))
-        .shadow(color: .black.opacity(0.28), radius: 10, y: 4)
-        .foregroundStyle(accentColor(for: presentation.accent))
+        .padding(.horizontal, 15)
     }
 
     @ViewBuilder
-    private func waveform(for presentation: ActivityOverlayPresentation) -> some View {
-        switch presentation.kind {
-        case .listening:
-            WaveformBars(values: presentation.listeningWaveformBars(), colors: accentColors(for: presentation))
-        case .speaking:
-            if presentation.animatesWaveform {
-                TimelineView(.animation) { context in
-                    WaveformBars(values: presentation.waveformBars(at: context.date), colors: accentColors(for: presentation))
-                }
-            } else {
-                WaveformBars(values: presentation.waveformBars(at: .distantPast), colors: accentColors(for: presentation))
-            }
-        case .processing:
-            ProgressView().controlSize(.small)
-        case .error:
-            Image(systemName: "exclamationmark.triangle.fill")
-        }
-    }
-
-    private func elapsedTime(since start: Date, now: Date) -> String {
-        let seconds = max(0, Int(now.timeIntervalSince(start)))
-        return String(format: "%d:%02d", seconds / 60, seconds % 60)
-    }
-
-    private func actionSymbol(for action: ActivityOverlayAction) -> String {
+    private func actionGlyph(for action: ActivityOverlayAction) -> some View {
         switch action {
-        case .cancelDictation: "xmark"
-        case .stopSpeech: "stop.fill"
+        case .stopSpeech:
+            RoundedRectangle(cornerRadius: 2)
+                .fill(.white)
+                .frame(width: 8, height: 8)
+        case .cancelDictation:
+            Image(systemName: "xmark")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.white)
         }
     }
+}
 
-    private func accentColor(for accent: ActivityOverlayPresentation.Accent) -> Color {
+/// Small hex-friendly color constants matching the design mockup exactly.
+private enum OverlayPalette {
+    static let chromeFill = Color(hex: 0x17171B, opacity: 0.94)
+    static let border = Color(hex: 0xFFFFFF, opacity: 0.17)
+    static let buttonFill = Color(hex: 0x393940)
+    static let subtitleText = Color(hex: 0xA9AAB2)
+    static let timeText = Color(hex: 0xC8C9D0)
+
+    static let waveformGradient = LinearGradient(
+        colors: [Color(hex: 0x7DEAFF), Color(hex: 0x9781FF)],
+        startPoint: .top, endPoint: .bottom
+    )
+
+    static let dotListening = Color(hex: 0xFF5261)
+    static let dotProcessing = Color(hex: 0xFFB340)
+    static let dotSpeaking = Color(hex: 0x9781FF)
+    static let dotError = Color(hex: 0xFF5261)
+
+    static func dotColor(for accent: ActivityOverlayPresentation.Accent) -> Color {
         switch accent {
-        case .red: .red
-        case .amber: .orange
-        case .violetCyan: .cyan
-        case .error: .red
+        case .red: dotListening
+        case .amber: dotProcessing
+        case .violetCyan: dotSpeaking
+        case .error: dotError
         }
     }
+}
 
-    private func accentColors(for presentation: ActivityOverlayPresentation) -> [Color] {
-        presentation.accentColors.map { color in
-            switch color {
-            case .red: .red
-            case .amber: .orange
-            case .violet: .purple
-            case .cyan: .cyan
-            }
-        }
-    }
-
-    private func accentGradient(for presentation: ActivityOverlayPresentation) -> LinearGradient {
-        LinearGradient(
-            colors: accentColors(for: presentation), startPoint: .leading, endPoint: .trailing
+private extension Color {
+    init(hex: UInt32, opacity: Double = 1) {
+        self.init(
+            red: Double((hex >> 16) & 0xFF) / 255,
+            green: Double((hex >> 8) & 0xFF) / 255,
+            blue: Double(hex & 0xFF) / 255,
+            opacity: opacity
         )
     }
 }
 
-private struct WaveformBars: View {
-    let values: [CGFloat]
-    let colors: [Color]
+/// The 9pt state dot shown in the Minimal capsule: a colored, glowing circle that gently pulses
+/// unless Reduce Motion is on.
+private struct StateDot: View {
+    let color: Color
+    let reduceMotion: Bool
+    @State private var isPulsing = false
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(Array(values.enumerated()), id: \.offset) { _, value in
-                Capsule()
-                    .fill(LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom))
-                    .frame(width: 3, height: 18 * value)
+        Circle()
+            .fill(color)
+            .frame(width: 9, height: 9)
+            .shadow(color: color.opacity(0.9), radius: 7)
+            .opacity(isPulsing ? 0.5 : 1)
+            .scaleEffect(isPulsing ? 0.8 : 1)
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    isPulsing = true
+                }
+            }
+    }
+}
+
+/// The shared 7-bar waveform, rendered differently per `ActivityOverlayPresentation.Kind`:
+/// Listening scales with live mic level, Speaking replays a synthetic per-bar phase animation,
+/// Processing breathes uniformly in place of the old spinner, and Error sits static and dimmed.
+private struct WaveformView: View {
+    let presentation: ActivityOverlayPresentation
+    @State private var isBreathing = false
+
+    var body: some View {
+        switch presentation.kind {
+        case .listening:
+            WaveformBars(scales: presentation.listeningWaveformBars())
+        case .speaking:
+            if presentation.animatesWaveform {
+                TimelineView(.animation) { context in
+                    WaveformBars(scales: presentation.waveformBars(at: context.date))
+                }
+            } else {
+                WaveformBars(scales: Self.restScales)
+            }
+        case .processing:
+            if presentation.animatesWaveform {
+                WaveformBars(
+                    scales: Array(repeating: isBreathing ? 0.34 : 1, count: 7),
+                    opacity: isBreathing ? 0.65 : 1
+                )
+                .animation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true), value: isBreathing)
+                .onAppear { isBreathing = true }
+            } else {
+                WaveformBars(scales: Self.restScales)
+            }
+        case .error:
+            WaveformBars(scales: Self.restScales, opacity: 0.5)
+        }
+    }
+
+    private static let restScales = Array(repeating: CGFloat(1), count: 7)
+}
+
+/// Renders the 7 bars themselves from a rest-height baseline and a per-bar scale multiplier.
+private struct WaveformBars: View {
+    let scales: [CGFloat]
+    var opacity: Double = 1
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(Array(ActivityOverlayPresentation.waveformRestHeights.enumerated()), id: \.offset) { index, restHeight in
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(OverlayPalette.waveformGradient)
+                    .frame(width: 3, height: restHeight * scale(at: index))
             }
         }
-        .frame(width: 25, height: 22)
+        .frame(height: 25)
+        .opacity(opacity)
+    }
+
+    private func scale(at index: Int) -> CGFloat {
+        index < scales.count ? scales[index] : 1
     }
 }
