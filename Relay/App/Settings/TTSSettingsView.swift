@@ -12,6 +12,9 @@ struct TTSSettingsView: View {
     private static let kokoroVoices = TtsConstants.availableVoices.filter {
         $0.hasPrefix("af_") || $0.hasPrefix("am_")
     }
+    /// FluidAudio's `PocketTtsConstants` exposes no voice list - only `defaultVoice` ("alba") is
+    /// a documented built-in voice; cloning support is out of scope here.
+    private static let pocketVoices = [PocketTtsConstants.defaultVoice]
 
     var body: some View {
         Form {
@@ -45,6 +48,15 @@ struct TTSSettingsView: View {
                 Picker("Voice", selection: kokoroVoiceBinding) {
                     Text("Recommended — \(TtsConstants.recommendedVoice)").tag(nil as String?)
                     ForEach(Self.kokoroVoices, id: \.self) { voice in
+                        Text(voice).tag(voice as String?)
+                    }
+                }
+            }
+
+            Section("PocketTTS Voice") {
+                Picker("Voice", selection: pocketVoiceBinding) {
+                    Text("Recommended — \(PocketTtsConstants.defaultVoice)").tag(nil as String?)
+                    ForEach(Self.pocketVoices, id: \.self) { voice in
                         Text(voice).tag(voice as String?)
                     }
                 }
@@ -150,6 +162,13 @@ struct TTSSettingsView: View {
         Binding(
             get: { model.settings.kokoroVoice },
             set: { model.setKokoroVoice($0) }
+        )
+    }
+
+    private var pocketVoiceBinding: Binding<String?> {
+        Binding(
+            get: { model.settings.pocketVoice },
+            set: { model.setPocketVoice($0) }
         )
     }
 
