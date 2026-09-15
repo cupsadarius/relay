@@ -83,6 +83,7 @@
 		912B483ECC93452865AC4A29 /* ClipboardServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 929A7ED797B49CEE115E1DA6 /* ClipboardServiceTests.swift */; };
 		91CA532F4429D5B65476BEBC /* ProjectSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D080F5789BE1F241509F1C2 /* ProjectSmokeTests.swift */; };
 		94AE744F4CA8CE70CBB9687B /* RelayHook in Resources */ = {isa = PBXBuildFile; fileRef = CD7B5DDABCD6925ACF15C1B3 /* RelayHook */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		95C9BCDDDA4FE8DE23CED11C /* GenericTerminalFocusResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23D267BE7B2C822655C9AE70 /* GenericTerminalFocusResolverTests.swift */; };
 		975663B0D629B8FDB447502D /* STTRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 751588B739A8C2497A075C0A /* STTRouter.swift */; };
 		9756AF051A9C26FDF8B4BA30 /* RulesSpeechPreprocessorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75A5D0DD6ECBB171B17FC747 /* RulesSpeechPreprocessorTests.swift */; };
 		97BBF047A631155332E9FB06 /* HookEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0007CFDD668AB6C9B6207607 /* HookEnvelope.swift */; };
@@ -103,6 +104,7 @@
 		B785675C6885A59D2FD6BB18 /* AccessibilityServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6354F61BA4CE6CE9E6F5206D /* AccessibilityServiceTests.swift */; };
 		B8D654E9189C297049AFAB10 /* AppleSpeechBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE7691D4AED60790AE873F6C /* AppleSpeechBackend.swift */; };
 		BB3C78E83707FBC0309FF4D5 /* SelectionReaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763A6DE20D54E1A785D7D61F /* SelectionReaderTests.swift */; };
+		BBDCAD3AC18C3C6FADA69D93 /* GenericTerminalFocusResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FA28566E15B9DBEAB818E6B /* GenericTerminalFocusResolver.swift */; };
 		BD809807A2FCB7B2ECD2A9DA /* ClaudeCodeInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC232F60ABB4C877E9AFBAC8 /* ClaudeCodeInstaller.swift */; };
 		BDB3AFBC914BC5F55A9E04B9 /* Diagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2388EB91FEE36FAF3715B0FE /* Diagnostics.swift */; };
 		BE570F59B904039713B5C19C /* ActivityOverlayPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A1971CFBDF8C170DD9B32F /* ActivityOverlayPresentation.swift */; };
@@ -174,8 +176,10 @@
 		1D080F5789BE1F241509F1C2 /* ProjectSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectSmokeTests.swift; sourceTree = "<group>"; };
 		1DAE4C32552E64FABE228CD8 /* ClaudeCodeHookPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCodeHookPayload.swift; sourceTree = "<group>"; };
 		1F90592F0F4CAEF1DF31EC85 /* WindowFocusCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowFocusCoordinator.swift; sourceTree = "<group>"; };
+		1FA28566E15B9DBEAB818E6B /* GenericTerminalFocusResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenericTerminalFocusResolver.swift; sourceTree = "<group>"; };
 		203E8DFFD8E671A374DB34E3 /* KokoroTTSBackendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KokoroTTSBackendTests.swift; sourceTree = "<group>"; };
 		2388EB91FEE36FAF3715B0FE /* Diagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Diagnostics.swift; sourceTree = "<group>"; };
+		23D267BE7B2C822655C9AE70 /* GenericTerminalFocusResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenericTerminalFocusResolverTests.swift; sourceTree = "<group>"; };
 		2499709E52B7C2AE389E0A68 /* GlobalHotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotkeyManager.swift; sourceTree = "<group>"; };
 		264D3B761DD35FEF92E86BAC /* TTSRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSRouterTests.swift; sourceTree = "<group>"; };
 		26B7DBB23381692173168C9B /* FluidAudioPocketTTSEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FluidAudioPocketTTSEngine.swift; sourceTree = "<group>"; };
@@ -513,6 +517,7 @@
 			children = (
 				D3040811122AB7731EB71724 /* AgentSessionRegistryTests.swift */,
 				5BE27F0D0A2BEF34BD00F5A4 /* FocusResolutionServiceTests.swift */,
+				23D267BE7B2C822655C9AE70 /* GenericTerminalFocusResolverTests.swift */,
 				05610B86735D45923309417C /* ProcessInspectorTests.swift */,
 			);
 			path = Sessions;
@@ -556,6 +561,14 @@
 			);
 			sourceTree = "<group>";
 		};
+		E112BF359252C872C5E92404 /* Resolvers */ = {
+			isa = PBXGroup;
+			children = (
+				1FA28566E15B9DBEAB818E6B /* GenericTerminalFocusResolver.swift */,
+			);
+			path = Resolvers;
+			sourceTree = "<group>";
+		};
 		E52B7E61F1AB7AD1581C1B4C /* RelayHook */ = {
 			isa = PBXGroup;
 			children = (
@@ -589,6 +602,7 @@
 				FBBA71BFC002BDCF446FAF0D /* FrontmostAppMonitor.swift */,
 				DDE382A48C3099EB2F2FC565 /* ProcessInspector.swift */,
 				7B82E629980A64EABA478532 /* Domain */,
+				E112BF359252C872C5E92404 /* Resolvers */,
 			);
 			path = Sessions;
 			sourceTree = "<group>";
@@ -794,6 +808,7 @@
 				6F8E0185EBFBB32801034947 /* FluidAudioParakeetEngineTests.swift in Sources */,
 				D24C6988EFA159A3FC1042F8 /* FluidAudioPocketTTSEngineTests.swift in Sources */,
 				CD416A4E79E4B88A5659B964 /* FocusResolutionServiceTests.swift in Sources */,
+				95C9BCDDDA4FE8DE23CED11C /* GenericTerminalFocusResolverTests.swift in Sources */,
 				5BB20F6CC812C4783D7205B6 /* GlobalHotkeyManagerTests.swift in Sources */,
 				E2C6E7141B67B8F4DBA3DE7B /* HookEnvelopeReceiverTests.swift in Sources */,
 				DE60F514AF7DB717FE878E05 /* HookEnvelopeTests.swift in Sources */,
@@ -868,6 +883,7 @@
 				9FE03DC36147EFCCF7FD4D45 /* FocusModels.swift in Sources */,
 				8DFFB706EDF3C5BF8EE57406 /* FocusResolutionService.swift in Sources */,
 				EB5A44B3DB43C66A7A1B5D8E /* FrontmostAppMonitor.swift in Sources */,
+				BBDCAD3AC18C3C6FADA69D93 /* GenericTerminalFocusResolver.swift in Sources */,
 				8C7FB013D71A83B74950862F /* GlobalHotkeyManager.swift in Sources */,
 				97BBF047A631155332E9FB06 /* HookEnvelope.swift in Sources */,
 				574E4EC4BB3E0961391FF516 /* HookEnvelopeReceiver.swift in Sources */,
