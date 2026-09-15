@@ -233,8 +233,8 @@ struct CodexInstaller {
     /// inspected, so a commented-out header or assignment is never matched.
     static func tomlExplicitlyDisablesHooks(_ text: String) -> Bool {
         var inFeaturesTable = false
-        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
-            let line = stripTomlComment(String(rawLine)).trimmingCharacters(in: .whitespaces)
+        for rawLine in text.components(separatedBy: .newlines) {
+            let line = stripTomlComment(rawLine).trimmingCharacters(in: .whitespaces)
             guard !line.isEmpty else { continue }
 
             if line.hasPrefix("[") && line.hasSuffix("]") {

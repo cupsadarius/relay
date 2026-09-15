@@ -404,6 +404,21 @@ final class CodexInstallerTests: XCTestCase {
         XCTAssertEqual(bytesBefore, bytesAfter)
     }
 
+    func testInstallThrowsAndLeavesHooksFileUntouchedWhenConfigTomlDisablesHooksWithCRLFLineEndings() throws {
+        try writeRawHooks(#"""
+        { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] } ] } }
+        """#)
+        try writeConfigToml("[features]\r\nhooks = false\r\n")
+        let bytesBefore = try Data(contentsOf: hooksURL)
+
+        XCTAssertThrowsError(try makeInstaller().install()) { error in
+            XCTAssertEqual(error as? CodexInstallerError, .hooksDisabledInConfig)
+        }
+
+        let bytesAfter = try Data(contentsOf: hooksURL)
+        XCTAssertEqual(bytesBefore, bytesAfter)
+    }
+
     func testInstallSucceedsWhenNoConfigTomlExists() throws {
         XCTAssertNoThrow(try makeInstaller().install())
     }
