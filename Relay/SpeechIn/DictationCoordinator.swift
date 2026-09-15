@@ -169,6 +169,7 @@ final class DictationCoordinator: DictationCoordinating {
         activity.cancel(sessionID: sessionID)
         await microphone.cancel()
         state = .idle
+        status("Ready")
     }
 
     private func isStarting(_ session: UUID) -> Bool {

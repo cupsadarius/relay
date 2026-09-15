@@ -306,6 +306,22 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(overlay.events.last, .cancelled(session))
     }
 
+    /// `cancel(sessionID:)` is a terminal path just like success, empty-transcript, and failure —
+    /// each of those resets the status text, so cancelling must too. Without this, the menu-bar
+    /// status is stuck on "Listening…" forever after cancelling from the pill's X button.
+    func testInteractiveCancelResetsStatusToIdle() async {
+        let microphone = CancellableFakeMicrophone()
+        let overlay = RecordingActivityOverlay()
+        var statuses: [String] = []
+        let coordinator = makeCoordinator(microphone: microphone, status: { statuses.append($0) }, overlay: overlay)
+        await coordinator.start()
+        let session = overlay.sessionID!
+
+        await coordinator.cancel(sessionID: session)
+
+        XCTAssertEqual(statuses.last, "Ready")
+    }
+
     func testCancelWithMismatchedSessionIDIsIgnored() async {
         let microphone = CancellableFakeMicrophone()
         let overlay = RecordingActivityOverlay()
