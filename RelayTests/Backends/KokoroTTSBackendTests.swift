@@ -18,6 +18,7 @@ final class KokoroTTSBackendTests: XCTestCase {
         XCTAssertTrue(backend.capabilities.contains(.voiceSelection))
         XCTAssertTrue(backend.capabilities.contains(.pauseResume))
         XCTAssertTrue(backend.capabilities.contains(.outputLevel))
+        XCTAssertFalse(backend.capabilities.contains(.streaming))
     }
 
     func testAvailabilityIsAvailableWhenModelsArePresent() async {

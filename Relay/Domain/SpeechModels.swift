@@ -71,6 +71,7 @@ enum TTSCapability: Sendable {
     case voiceSelection
     case fullyOffline
     case outputLevel
+    case streaming
 }
 
 struct TTSCapabilities: Equatable, Sendable {

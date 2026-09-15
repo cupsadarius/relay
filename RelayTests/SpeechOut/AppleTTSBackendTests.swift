@@ -10,6 +10,7 @@ final class AppleTTSBackendTests: XCTestCase {
         XCTAssertTrue(backend.capabilities.contains(.voiceSelection))
         XCTAssertTrue(backend.capabilities.contains(.pauseResume))
         XCTAssertTrue(backend.capabilities.contains(.fullyOffline))
+        XCTAssertFalse(backend.capabilities.contains(.streaming))
     }
 
     func testScheduledEventEmittedBeforeCallingSynthesizerSpeak() async throws {
