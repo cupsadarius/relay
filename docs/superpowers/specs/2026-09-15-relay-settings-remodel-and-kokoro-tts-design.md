@@ -92,9 +92,13 @@ FluidAudio Kokoro API (version 0.12.6, confirmed in the checkout):
    - `.finished` on natural end, `.cancelled` on stop, `.failed` on error.
    Supports `stop`, `pause`, `resume` to satisfy `TextToSpeechBackend`.
 
+   Audio format: Kokoro's WAV is 24 kHz mono, which need not match the engine's output format. Decode the WAV `Data` at its source format (via `AVAudioFile` / `AVAudioPCMBuffer`) and let the engine or an `AVAudioConverter` handle sample-rate conversion; do not assume the buffer is directly schedulable at the output format.
+
+   Concurrency: `TextToSpeechBackend` is `@MainActor`, but `installTap` callbacks fire off the main thread. `.level` emission must hop to the MainActor (Swift 6 strict concurrency). Match the RMS-to-level cadence `AppleTTSBackend` already feeds the pill, so the speaking waveform behaves identically across backends.
+
 3. **Backend.** `KokoroTTSBackend: TextToSpeechBackend` in `Relay/Backends/`: id `kokoro`, displayName `Kokoro`, capabilities `[.fullyOffline, .neural]`. `availability()` reports ready / model-not-downloaded / unavailable. `speak` synthesizes through the engine, then plays through `SynthesizedAudioPlayer`, forwarding events. No network at speak time.
 
-4. **Router and Auto.** Extend `TTSRouter` to try enabled TTS backends in configured order, falling back to the next when a backend is unavailable, its model is missing, or synthesis/init fails — mirroring `STTRouter`. Auto mode is simply the ordered list Kokoro-then-Apple.
+4. **Router and Auto.** `TTSRouter` already tries enabled backends in configured order and already falls back on a non-available backend and on a fallback-worthy error. So the 1.7 work here is not new routing: it is registering the Kokoro backend, and making "model missing" surface as a non-available `availability()` (or a fallback-worthy error), so the existing router skips Kokoro and uses Apple. Auto mode is the ordered list `["kokoro", "apple-tts"]`. Note `TTSRouter.speak` resolves a backend by id and silently skips an id it cannot find, so order lists must use real ids.
 
 5. **TTS backend catalog.** A TTS analogue of `SpeechBackendCatalog`: a `TTSBackendStatus` list (Kokoro, Apple) with enable, order, download, and status, reusing the race-safe patterns landed in `449337a` (merge-at-assign refresh, generation counter, guarded progress, split `.downloadFailed`, download gated on a registered downloader).
 
@@ -104,7 +108,7 @@ FluidAudio Kokoro API (version 0.12.6, confirmed in the checkout):
    - Speech-rate slider (existing).
    - **Test Voice** button: speaks a fixed sample sentence through the selected backend and voice.
 
-7. **Settings model.** Add `ttsBackendOrder` (default `["apple-system"]`, so behavior is unchanged until the user enables Kokoro) and a per-backend voice: keep Apple's `voiceIdentifier`, add `kokoroVoice`. Persist through the existing `AppSettings` path.
+7. **Settings model.** `AppSettings` already has `ttsBackendOrder` (Codable-persisted, default `["apple-tts"]`) and `ttsVoiceIdentifier` (Apple's voice, maps to `TTSOptions.voiceIdentifier`). The 1.7 work does not re-declare these. It adds the Kokoro id into the existing order (default stays `["apple-tts"]`, so behavior is unchanged until the user enables Kokoro) and adds a per-backend Kokoro voice field, `kokoroVoice`. The registered Apple backend id is `apple-tts` (displayName "Apple System Voice"); use that exact id everywhere, never `apple-system`.
 
 ### Error handling and privacy
 
@@ -114,7 +118,7 @@ FluidAudio Kokoro API (version 0.12.6, confirmed in the checkout):
 
 ### Callouts
 
-- Kokoro generates each chunk before playback, not true streaming, so first audio lags (about 250 ms per 5 s of audio). Acceptable for Read Selection; note it in Diagnostics only as a phase/category, never with content.
+- `synthesize` returns the full WAV in one call, so there is a total synthesis latency before any playback begins (about 250 ms per 5 s of audio), not incremental chunk streaming. A planner should not expect to start playback on partial output. Acceptable for Read Selection; note it in Diagnostics only as a phase/category, never with content.
 - Kokoro downloads its own model, separate from Parakeet. The TTS download row must state this and its size.
 
 ### Testing
