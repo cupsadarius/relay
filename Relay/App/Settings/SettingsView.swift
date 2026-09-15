@@ -1,0 +1,20 @@
+import SwiftUI
+
+struct SettingsView: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        TabView {
+            KeybindsSettingsView(model: model)
+                .tabItem { Label("Keybinds", systemImage: "keyboard") }
+            DictationSettingsView(model: model)
+                .tabItem { Label("Dictation", systemImage: "mic") }
+            TTSSettingsView(model: model)
+                .tabItem { Label("TTS", systemImage: "speaker.wave.2") }
+            PermissionsSettingsView(model: model)
+                .tabItem { Label("Security", systemImage: "lock.shield") }
+        }
+        .frame(width: 620, height: 610)
+        .task { await model.refreshSpeechBackendStatuses() }
+    }
+}
