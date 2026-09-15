@@ -1,0 +1,196 @@
+import AVFoundation
+import XCTest
+@testable import Relay
+
+/// `SynthesizedAudioPlayer` decode and error-mapping tests run unconditionally: they never start
+/// an `AVAudioEngine` and so never depend on the test host having a usable audio output device.
+/// Tests that exercise real playback (which requires `AVAudioEngine.start()` to succeed) are
+/// gated behind `requireAudioOutput()` and skip themselves with `XCTSkip` on a host that can't
+/// start one, per the plan's "keep audio-producing assertions capability-gated" guidance.
+@MainActor
+final class SynthesizedAudioPlayerTests: XCTestCase {
+    // MARK: - Unconditional: decode
+
+    func testDecodeValidWavDoesNotThrow() throws {
+        let wav = Self.makeWavData()
+
+        let buffer = try SynthesizedAudioPlayer.decode(wav)
+
+        XCTAssertGreaterThan(buffer.frameLength, 0)
+    }
+
+    func testDecodeMalformedDataThrows() {
+        let malformed = Data([0x00, 0x01, 0x02, 0x03])
+
+        XCTAssertThrowsError(try SynthesizedAudioPlayer.decode(malformed))
+    }
+
+    func testPlayWithMalformedDataThrowsWithoutStartingPlayback() async {
+        let player = SynthesizedAudioPlayer()
+        var events: [TTSPlaybackEvent] = []
+        player.onEvent = { events.append($0) }
+        let sessionID = UUID()
+
+        do {
+            try await player.play(Data([0x00, 0x01, 0x02, 0x03]), sessionID: sessionID)
+            XCTFail("Expected a decode error")
+        } catch {
+            // Expected: any decode error. Mapped to a fallback-worthy SpeechBackendError and a
+            // .failed playback event by KokoroTTSBackend, not by the player itself.
+        }
+
+        XCTAssertTrue(events.isEmpty, "A decode failure must not emit any playback lifecycle event")
+    }
+
+    // MARK: - Audio-producing: requires a working AVAudioEngine output device
+
+    func testPlayEmitsScheduledThenStartedThenFinishedForTheGivenSession() async throws {
+        try requireAudioOutput()
+        let player = SynthesizedAudioPlayer()
+        let events = EventBox()
+        player.onEvent = { events.append($0) }
+        let sessionID = UUID()
+
+        try await player.play(Self.makeWavData(), sessionID: sessionID)
+
+        let recorded = events.values
+        XCTAssertEqual(recorded.filter { !$0.isLevel }, [
+            .scheduled(sessionID: sessionID),
+            .started(sessionID: sessionID),
+            .finished(sessionID: sessionID),
+        ])
+        XCTAssertTrue(recorded.allSatisfy { $0.sessionID == sessionID })
+    }
+
+    func testStopMidPlayEmitsCancelledInsteadOfFinished() async throws {
+        try requireAudioOutput()
+        let player = SynthesizedAudioPlayer()
+        let events = EventBox()
+        player.onEvent = { events.append($0) }
+        let sessionID = UUID()
+
+        // A few seconds of audio so there's time to call stop() before natural completion.
+        let playTask = Task { try await player.play(Self.makeWavData(durationSeconds: 3), sessionID: sessionID) }
+        try await waitUntil { events.values.contains(.started(sessionID: sessionID)) }
+
+        player.stop()
+        try await playTask.value
+
+        let recorded = events.values.filter { !$0.isLevel }
+        XCTAssertEqual(recorded, [
+            .scheduled(sessionID: sessionID),
+            .started(sessionID: sessionID),
+            .cancelled(sessionID: sessionID),
+        ])
+        XCTAssertFalse(recorded.contains(.finished(sessionID: sessionID)))
+    }
+
+    func testStopWithNoActivePlaybackIsANoOp() {
+        let player = SynthesizedAudioPlayer()
+        let events = EventBox()
+        player.onEvent = { events.append($0) }
+
+        player.stop()
+
+        XCTAssertTrue(events.values.isEmpty)
+    }
+
+    /// Skips the calling test unless explicitly opted in via an environment variable.
+    ///
+    /// `AVAudioEngine.start()` does not merely throw when this sandboxed automated test host has
+    /// no usable audio output device - confirmed experimentally, it hard-crashes the whole test
+    /// process with a fatal Objective-C assertion inside CoreAudio
+    /// (`AVAudioEngineGraph.mm:1322:Initialize: (inputNode != nullptr || outputNode != nullptr)`),
+    /// even for a bare `AVAudioEngine()` with nothing attached. That crash is not catchable from
+    /// Swift, so there is no safe runtime probe that can gate this without risking the same
+    /// crash. These tests are therefore skipped unless `RELAY_TEST_REAL_AUDIO_ENGINE=1` is set,
+    /// which a developer can do on a normal interactive Mac with a real audio output device.
+    /// Real playback is otherwise exercised manually, per the implementation plan's acceptance
+    /// pass ("Test Voice speaks in the Kokoro voice... the overlay pill shows a live speaking
+    /// waveform").
+    private func requireAudioOutput() throws {
+        guard ProcessInfo.processInfo.environment["RELAY_TEST_REAL_AUDIO_ENGINE"] == "1" else {
+            throw XCTSkip(
+                "Skipping: starting a real AVAudioEngine crashes (not throws) in this sandboxed "
+                    + "test host. Set RELAY_TEST_REAL_AUDIO_ENGINE=1 on a machine with a real "
+                    + "audio output device to run this assertion; otherwise it is covered by the "
+                    + "plan's manual acceptance pass."
+            )
+        }
+    }
+
+    private func waitUntil(
+        timeout: TimeInterval = 5,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        _ condition: @escaping () -> Bool
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            if Date() > deadline {
+                XCTFail("Timed out waiting for condition", file: file, line: line)
+                return
+            }
+            await Task.yield()
+        }
+    }
+
+    /// Generates a minimal, valid 16-bit PCM mono WAV file in memory (a short sine wave) so
+    /// tests never touch a real audio asset or the network.
+    private static func makeWavData(durationSeconds: Double = 0.1, sampleRate: Double = 24_000) -> Data {
+        let sampleCount = max(1, Int(durationSeconds * sampleRate))
+        var samples: [Int16] = []
+        samples.reserveCapacity(sampleCount)
+        for index in 0..<sampleCount {
+            let radians = 2.0 * Double.pi * 440.0 * Double(index) / sampleRate
+            let value = sin(radians) * 0.2 * Double(Int16.max)
+            samples.append(Int16(value))
+        }
+
+        let dataSize = samples.count * MemoryLayout<Int16>.size
+        var data = Data()
+
+        func appendASCII(_ string: String) {
+            data.append(contentsOf: Array(string.utf8))
+        }
+        func appendUInt32(_ value: UInt32) {
+            withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
+        }
+        func appendUInt16(_ value: UInt16) {
+            withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
+        }
+
+        appendASCII("RIFF")
+        appendUInt32(UInt32(36 + dataSize))
+        appendASCII("WAVE")
+        appendASCII("fmt ")
+        appendUInt32(16)
+        appendUInt16(1) // PCM
+        appendUInt16(1) // mono
+        appendUInt32(UInt32(sampleRate))
+        appendUInt32(UInt32(sampleRate) * 2)
+        appendUInt16(2)
+        appendUInt16(16)
+        appendASCII("data")
+        appendUInt32(UInt32(dataSize))
+        for sample in samples {
+            appendUInt16(UInt16(bitPattern: sample))
+        }
+        return data
+    }
+}
+
+private extension TTSPlaybackEvent {
+    var isLevel: Bool {
+        if case .level = self { return true }
+        return false
+    }
+}
+
+/// Accumulates playback events from a `@MainActor`-isolated `onEvent` callback so a test can poll
+/// them from an `async` context.
+@MainActor
+private final class EventBox {
+    private(set) var values: [TTSPlaybackEvent] = []
+    func append(_ event: TTSPlaybackEvent) { values.append(event) }
+}
