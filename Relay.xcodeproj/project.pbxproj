@@ -15,6 +15,7 @@
 		1BAF0FCF7F0F72251EE22A7D /* SpeechBackendCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 939E4B16B30B18A7F7A66345 /* SpeechBackendCatalog.swift */; };
 		1FBD462C1D169A1B2983213F /* ActivityOverlayWindowControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FCE353359D9AFF090867950 /* ActivityOverlayWindowControllerTests.swift */; };
 		23E6C9B2DB1F71CE066D828B /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC1EE06D54321DF43FE4A78E /* SettingsStore.swift */; };
+		26610864A9E3551C29288FA7 /* KeybindsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E72993D876294B84028D5D5 /* KeybindsSettingsView.swift */; };
 		26689C3A31F905B40F2AF9BF /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BCF70B97ADB9DCB148D1934 /* DiagnosticsView.swift */; };
 		3025C432DE8ACDA88701092F /* ClipboardService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE24F398C26E7C916733EF1 /* ClipboardService.swift */; };
 		308DF8C3E698E57C77853A62 /* STTRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A283E013EB4D5C368889260 /* STTRouterTests.swift */; };
@@ -138,6 +139,7 @@
 		84A0C0F43582E9D7B099E3FB /* ActivityOverlayModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverlayModelTests.swift; sourceTree = "<group>"; };
 		85842060D11E3427D905C000 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
 		8CE61334B063F0337C2E6BB7 /* GlobalHotkeyManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotkeyManagerTests.swift; sourceTree = "<group>"; };
+		8E72993D876294B84028D5D5 /* KeybindsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeybindsSettingsView.swift; sourceTree = "<group>"; };
 		90563D92C2FAAA30698339C5 /* MicrophoneCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicrophoneCapture.swift; sourceTree = "<group>"; };
 		919335F17510788FF73D5500 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		929A7ED797B49CEE115E1DA6 /* ClipboardServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardServiceTests.swift; sourceTree = "<group>"; };
@@ -368,6 +370,7 @@
 			isa = PBXGroup;
 			children = (
 				1A727A1F8CEB8AC9F2E1FEB9 /* DictationSettingsView.swift */,
+				8E72993D876294B84028D5D5 /* KeybindsSettingsView.swift */,
 				0F476045417F42F97BC90298 /* PermissionsSettingsView.swift */,
 				F810D496F4EB25DFF87CD3E9 /* TTSSettingsView.swift */,
 			);
@@ -534,6 +537,7 @@
 				37FBA412106C897F84C4B36A /* FluidAudioParakeetEngine.swift in Sources */,
 				8C7FB013D71A83B74950862F /* GlobalHotkeyManager.swift in Sources */,
 				63950769791664D8A9424529 /* HotkeyDefinition.swift in Sources */,
+				26610864A9E3551C29288FA7 /* KeybindsSettingsView.swift in Sources */,
 				629B951FA84E58D245591D7B /* MenuBarContentView.swift in Sources */,
 				5DFE942299A26F7BEA31560A /* MicrophoneCapture.swift in Sources */,
 				ED473F93C25865ED39A16D6B /* ParakeetBackend.swift in Sources */,
