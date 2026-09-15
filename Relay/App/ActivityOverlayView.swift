@@ -87,27 +87,46 @@ struct ActivityOverlayView: View {
             }
 
             if let action = presentation.action, let label = presentation.actionAccessibilityLabel {
-                Button {
-                    Task { @MainActor in
-                        await onAction(action)
-                    }
-                } label: {
-                    ZStack {
-                        Circle().fill(OverlayPalette.buttonFill)
-                        actionGlyph(for: action)
-                    }
-                    .frame(width: 30, height: 30)
-                }
-                .buttonStyle(.plain)
-                .contentShape(Circle())
-                .accessibilityLabel(label)
+                OverlayActionButton(action: action, label: label, onAction: onAction)
             }
         }
         .padding(.horizontal, 15)
     }
+}
+
+/// The 30pt round capsule action button (Stop / Cancel). Owns its own hover state so SwiftUI
+/// resets it whenever the button leaves the screen (the surrounding `if let` in
+/// `interactiveLayout` removes and later reinserts this view rather than mutating it in place).
+private struct OverlayActionButton: View {
+    let action: ActivityOverlayAction
+    let label: String
+    let onAction: @MainActor (ActivityOverlayAction) async -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovered = false
+
+    var body: some View {
+        Button {
+            Task { @MainActor in
+                await onAction(action)
+            }
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(isHovered ? OverlayPalette.buttonHover : OverlayPalette.buttonFill)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isHovered)
+                glyph
+            }
+            .frame(width: 30, height: 30)
+        }
+        .buttonStyle(OverlayActionButtonStyle(reduceMotion: reduceMotion))
+        .contentShape(Circle())
+        .accessibilityLabel(label)
+        .help(label)
+        .onHover { isHovered = $0 }
+    }
 
     @ViewBuilder
-    private func actionGlyph(for action: ActivityOverlayAction) -> some View {
+    private var glyph: some View {
         switch action {
         case .stopSpeech:
             RoundedRectangle(cornerRadius: 2)
@@ -121,11 +140,24 @@ struct ActivityOverlayView: View {
     }
 }
 
+/// Scales the button down while pressed; suppressed under Reduce Motion per the same convention
+/// used for the hover fill animation above.
+private struct OverlayActionButtonStyle: ButtonStyle {
+    let reduceMotion: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.92 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
 /// Small hex-friendly color constants matching the design mockup exactly.
 private enum OverlayPalette {
     static let chromeFill = Color(hex: 0x17171B, opacity: 0.94)
     static let border = Color(hex: 0xFFFFFF, opacity: 0.17)
     static let buttonFill = Color(hex: 0x393940)
+    static let buttonHover = Color(hex: 0xFF5261)
     static let subtitleText = Color(hex: 0xA9AAB2)
     static let timeText = Color(hex: 0xC8C9D0)
 
