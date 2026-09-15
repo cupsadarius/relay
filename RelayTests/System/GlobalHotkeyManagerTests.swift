@@ -151,12 +151,19 @@ final class GlobalHotkeyManagerTests: XCTestCase {
         XCTAssertTrue(matcher.match(.flagsChanged(modifiers: [])).isEmpty)
     }
 
-    func testModifierHeldLongerThanWindowDoesNotArmGesture() {
+    /// A slightly long first press must not be charged against the double-tap window: only the
+    /// release→second-press gap matters, so a hold well past the old (0.35s) window still arms
+    /// the gesture as long as the following gap is within the window.
+    func testModifierHeldLongerThanWindowStillArmsGestureIfGapIsWithinWindow() {
         var uptime: TimeInterval = 0
         var matcher = HotkeyMatcher(definitions: [.dictate: .doubleTapModifier(.control)], uptime: { uptime })
         XCTAssertTrue(matcher.match(.flagsChanged(modifiers: [.control])).isEmpty)
-        uptime = 0.36; XCTAssertTrue(matcher.match(.flagsChanged(modifiers: [])).isEmpty)
-        uptime = 0.4; XCTAssertTrue(matcher.match(.flagsChanged(modifiers: [.control])).isEmpty)
+        uptime = 0.9; XCTAssertTrue(matcher.match(.flagsChanged(modifiers: [])).isEmpty)
+        uptime = 1.0
+        XCTAssertEqual(
+            matcher.match(.flagsChanged(modifiers: [.control])),
+            [.init(action: .dictate, phase: .pressed)]
+        )
     }
 
     func testAdditionalModifierCancelsPendingDoubleControlRecognition() {
@@ -182,7 +189,7 @@ final class GlobalHotkeyManagerTests: XCTestCase {
         XCTAssertTrue(matcher.match(.flagsChanged(modifiers: [.control])).isEmpty)
         uptime = 0.1
         XCTAssertTrue(matcher.match(.flagsChanged(modifiers: [])).isEmpty)
-        uptime = 0.46
+        uptime = 0.61
         XCTAssertTrue(matcher.match(.flagsChanged(modifiers: [.control])).isEmpty)
     }
 
@@ -193,7 +200,30 @@ final class GlobalHotkeyManagerTests: XCTestCase {
         XCTAssertTrue(matcher.match(.flagsChanged(modifiers: [.control])).isEmpty)
         uptime = 0.1
         XCTAssertTrue(matcher.match(.flagsChanged(modifiers: [])).isEmpty)
-        uptime = 0.45
+        uptime = 0.6
+        XCTAssertEqual(
+            matcher.match(.flagsChanged(modifiers: [.control])),
+            [.init(action: .dictate, phase: .pressed)]
+        )
+    }
+
+    /// A duplicate/no-op `flagsChanged` (same modifier set as the previous event) must not cancel
+    /// a pending double-tap gesture — common with Fn/external keyboards that resend the current
+    /// modifier state without an actual change.
+    func testDuplicateFlagsChangedDuringWindowDoesNotCancelPendingDoubleTap() {
+        var uptime: TimeInterval = 0
+        var matcher = HotkeyMatcher(definitions: [.dictate: .doubleTapModifier(.control)], uptime: { uptime })
+
+        XCTAssertTrue(matcher.match(.flagsChanged(modifiers: [.control])).isEmpty)
+        // Duplicate no-op event while tap 1 is still held.
+        XCTAssertTrue(matcher.match(.flagsChanged(modifiers: [.control])).isEmpty)
+
+        uptime = 0.1
+        XCTAssertTrue(matcher.match(.flagsChanged(modifiers: [])).isEmpty)
+        // Duplicate no-op event while awaiting the second press.
+        XCTAssertTrue(matcher.match(.flagsChanged(modifiers: [])).isEmpty)
+
+        uptime = 0.2
         XCTAssertEqual(
             matcher.match(.flagsChanged(modifiers: [.control])),
             [.init(action: .dictate, phase: .pressed)]

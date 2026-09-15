@@ -3,8 +3,8 @@ import XCTest
 @testable import Relay
 
 /// `SynthesizedAudioPlayer` decode and error-mapping tests run unconditionally: they never start
-/// an `AVAudioEngine` and so never depend on the test host having a usable audio output device.
-/// Tests that exercise real playback (which requires `AVAudioEngine.start()` to succeed) are
+/// an `AVAudioPlayer` and so never depend on the test host having a usable audio output device.
+/// Tests that exercise real playback (which requires an `AVAudioPlayer` to actually play) are
 /// gated behind `requireAudioOutput()` and skip themselves with `XCTSkip` on a host that can't
 /// start one, per the plan's "keep audio-producing assertions capability-gated" guidance.
 @MainActor
@@ -60,7 +60,7 @@ final class SynthesizedAudioPlayerTests: XCTestCase {
         XCTAssertTrue(events.isEmpty, "A decode failure must not emit any playback lifecycle event")
     }
 
-    // MARK: - Audio-producing: requires a working AVAudioEngine output device
+    // MARK: - Audio-producing: requires a working audio output device
 
     func testPlayEmitsScheduledThenStartedThenFinishedForTheGivenSession() async throws {
         try requireAudioOutput()
@@ -115,17 +115,19 @@ final class SynthesizedAudioPlayerTests: XCTestCase {
 
     /// Skips the calling test unless explicitly opted in via an environment variable.
     ///
-    /// `AVAudioEngine.start()` does not merely throw when this sandboxed automated test host has
-    /// no usable audio output device - confirmed experimentally, it hard-crashes the whole test
-    /// process with a fatal Objective-C assertion inside CoreAudio
-    /// (`AVAudioEngineGraph.mm:1322:Initialize: (inputNode != nullptr || outputNode != nullptr)`),
-    /// even for a bare `AVAudioEngine()` with nothing attached. That crash is not catchable from
-    /// Swift, so there is no safe runtime probe that can gate this without risking the same
-    /// crash. These tests are therefore skipped unless `RELAY_TEST_REAL_AUDIO_ENGINE=1` is set,
-    /// which a developer can do on a normal interactive Mac with a real audio output device.
-    /// Real playback is otherwise exercised manually, per the implementation plan's acceptance
-    /// pass ("Test Voice speaks in the Kokoro voice... the overlay pill shows a live speaking
-    /// waveform").
+    /// Playback used to go through a hand-built `AVAudioEngine` graph, and starting that engine
+    /// did not merely throw on a sandboxed automated test host with no usable audio output
+    /// device - confirmed experimentally, it hard-crashed the whole test process with a fatal
+    /// Objective-C assertion inside CoreAudio (`AVAudioEngineGraph.mm:1322:Initialize:
+    /// (inputNode != nullptr || outputNode != nullptr)`), even for a bare `AVAudioEngine()` with
+    /// nothing attached, and that crash was not catchable from Swift. Playback now goes through
+    /// `AVAudioPlayer` instead, which does not have that failure mode, but these tests are kept
+    /// behind the same `RELAY_TEST_REAL_AUDIO_ENGINE=1` gate (rather than assumed safe by
+    /// default) since a sandboxed CI host may still have no usable output device at all. Set the
+    /// variable on a normal interactive Mac with a real audio output device to run these
+    /// assertions; real playback is otherwise exercised manually, per the implementation plan's
+    /// acceptance pass ("Test Voice speaks in the Kokoro voice... the overlay pill shows a live
+    /// speaking waveform").
     private func requireAudioOutput() throws {
         guard ProcessInfo.processInfo.environment["RELAY_TEST_REAL_AUDIO_ENGINE"] == "1" else {
             throw XCTSkip(

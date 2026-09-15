@@ -2,7 +2,7 @@ import AVFoundation
 import Foundation
 
 /// Seam over `SynthesizedAudioPlayer` so `KokoroTTSBackend` can be tested without exercising a
-/// real `AVAudioEngine`.
+/// real `AVAudioPlayer`.
 @MainActor
 protocol SynthesizedAudioPlaying: AnyObject {
     var onEvent: (@MainActor (TTSPlaybackEvent) -> Void)? { get set }
@@ -13,7 +13,7 @@ protocol SynthesizedAudioPlaying: AnyObject {
 }
 
 /// Errors raised by `SynthesizedAudioPlayer` itself (as opposed to ones AVFoundation raises
-/// while decoding or starting the engine, which are propagated as-is).
+/// while decoding or constructing the player, which are propagated as-is).
 enum SynthesizedAudioPlayerError: Error, Equatable, Sendable {
     /// The WAV data decoded to a valid `AVAudioFile` but a playback buffer could not be
     /// allocated for it. Should not happen in practice; guards a force-unwrap.
@@ -21,12 +21,19 @@ enum SynthesizedAudioPlayerError: Error, Equatable, Sendable {
 }
 
 /// Plays a complete WAV `Data` value (as returned by Kokoro's `synthesize`) through
-/// `AVAudioEngine` and emits the same `TTSPlaybackEvent` lifecycle `AppleTTSBackend` emits via
+/// `AVAudioPlayer` and emits the same `TTSPlaybackEvent` lifecycle `AppleTTSBackend` emits via
 /// `AVSpeechSynthesizer`, plus `.level` from a precomputed envelope walked by a `MainActor` timer
 /// - the first backend to emit `.level` at all, since Apple's backend has no equivalent signal.
-/// (An earlier version drove `.level` from a realtime `AVAudioPlayerNode` tap; allocating a
-/// `Task` on every tap callback - on the realtime audio render thread - caused periodic playback
-/// dropouts, so `.level` is now driven entirely off that thread.)
+///
+/// This used to play back through a hand-built `AVAudioEngine` graph (`AVAudioPlayerNode` ->
+/// `mainMixerNode`). The engine resamples Kokoro's 24kHz buffer to the hardware's output rate
+/// inside its realtime render loop, and that resampling periodically underran, dropping or
+/// garbling words. `AVAudioPlayer(data:)` decodes and resamples the whole file up front via
+/// AVFoundation's file-based path, which does not have that failure mode, so playback now goes
+/// through it instead. (An earlier version drove `.level` from a realtime `AVAudioPlayerNode`
+/// tap; allocating a `Task` on every tap callback - on the realtime audio render thread - caused
+/// its own periodic playback dropouts, so `.level` is driven entirely off that thread via a
+/// precomputed envelope regardless of which player does the actual playback.)
 @MainActor
 final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
     /// Matches `MicrophoneLevelMeter`'s RMS-to-level scaling so the pill's speaking waveform
@@ -38,12 +45,15 @@ final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
 
     var onEvent: (@MainActor (TTSPlaybackEvent) -> Void)?
 
-    private var engine: AVAudioEngine?
-    private var playerNode: AVAudioPlayerNode?
+    private var audioPlayer: AVAudioPlayer?
+    /// Bridges `AVAudioPlayerDelegate`'s completion callback (which AVFoundation may invoke off
+    /// the main actor) back onto the main actor, without making `SynthesizedAudioPlayer` itself
+    /// nonisolated. Held for the lifetime of `audioPlayer` since `AVAudioPlayer.delegate` is weak.
+    private var delegateShim: PlayerDelegateShim?
     private var currentSessionID: UUID?
-    /// Set by `stop()` before tearing the graph down, so the `scheduleBuffer` completion handler
-    /// (which fires both on natural completion and on an explicit stop) knows not to also emit
-    /// `.finished` for a session `stop()` already emitted `.cancelled` for.
+    /// Set by `stop()` before tearing playback down, so the delegate's finish callback (which
+    /// fires both on natural completion and, harmlessly, after an explicit stop) knows not to
+    /// also emit `.finished` for a session `stop()` already emitted `.cancelled` for.
     private var didStopExplicitly = false
     /// Resumed once playback reaches a terminal state (finished or stopped), so `play(_:sessionID:)`
     /// does not return until then - matching `AppleTTSBackend`, whose `speak` only returns once
@@ -57,67 +67,59 @@ final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
     private var levelTask: Task<Void, Never>?
 
     func play(_ wav: Data, sessionID: UUID) async throws {
+        // Still decode to PCM - not for playback, only so `levelEnvelope` has samples to walk.
         let buffer = try Self.decode(wav)
 
-        tearDownGraph()
+        tearDownPlayback()
 
-        let engine = AVAudioEngine()
-        let player = AVAudioPlayerNode()
-        engine.attach(player)
-        engine.connect(player, to: engine.mainMixerNode, format: buffer.format)
+        let envelope = Self.levelEnvelope(from: buffer, windowSeconds: Self.levelWindowSeconds)
 
-        self.engine = engine
-        playerNode = player
+        let player = try AVAudioPlayer(data: wav)
+        let shim = PlayerDelegateShim { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.handleCompletion(sessionID: sessionID)
+            }
+        }
+        player.delegate = shim
+        player.prepareToPlay()
+
+        audioPlayer = player
+        delegateShim = shim
         currentSessionID = sessionID
         didStopExplicitly = false
-        let envelope = Self.levelEnvelope(from: buffer, windowSeconds: Self.levelWindowSeconds)
 
         onEvent?(.scheduled(sessionID: sessionID))
 
-        do {
-            try engine.start()
-        } catch {
-            tearDownGraph()
-            currentSessionID = nil
-            throw error
-        }
-
+        player.play()
         onEvent?(.started(sessionID: sessionID))
         startLevelTimer(envelope: envelope, sessionID: sessionID)
 
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             completionContinuation = continuation
-            player.scheduleBuffer(buffer, at: nil, options: []) { @Sendable [weak self] in
-                Task { @MainActor [weak self] in
-                    self?.handleCompletion(sessionID: sessionID)
-                }
-            }
-            player.play()
         }
     }
 
     func stop() {
         guard let sessionID = currentSessionID else { return }
         didStopExplicitly = true
-        playerNode?.stop()
-        tearDownGraph()
+        tearDownPlayback()
         currentSessionID = nil
         onEvent?(.cancelled(sessionID: sessionID))
         resumeCompletionIfNeeded()
     }
 
     func pause() {
-        playerNode?.pause()
+        audioPlayer?.pause()
     }
 
     func resume() {
-        playerNode?.play()
+        audioPlayer?.play()
     }
 
     private func handleCompletion(sessionID: UUID) {
         defer { resumeCompletionIfNeeded() }
         guard currentSessionID == sessionID, !didStopExplicitly else { return }
-        tearDownGraph()
+        tearDownPlayback()
         currentSessionID = nil
         onEvent?(.finished(sessionID: sessionID))
     }
@@ -127,16 +129,17 @@ final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
         completionContinuation = nil
     }
 
-    private func tearDownGraph() {
+    private func tearDownPlayback() {
         stopLevelTimer()
-        engine?.stop()
-        engine = nil
-        playerNode = nil
+        audioPlayer?.delegate = nil
+        audioPlayer?.stop()
+        audioPlayer = nil
+        delegateShim = nil
     }
 
     /// Starts a `MainActor` loop that walks `envelope` at `levelWindowSeconds` cadence, emitting
     /// `.level` events roughly in sync with playback. No realtime audio thread involved, so
-    /// nothing here can glitch the render callback.
+    /// nothing here can glitch AVAudioPlayer's internal render path.
     private func startLevelTimer(envelope: [Float], sessionID: UUID) {
         stopLevelTimer()
         guard !envelope.isEmpty else { return }
@@ -158,7 +161,7 @@ final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
     /// Splits `buffer`'s samples into fixed `windowSeconds` windows and computes an RMS-based
     /// level (matching `MicrophoneLevelMeter`'s scaling) for each, so `.level` events can be
     /// driven from data precomputed on the main actor instead of a realtime audio tap. Internal
-    /// (not private) so it can be unit tested directly, without a working `AVAudioEngine`.
+    /// (not private) so it can be unit tested directly, without a working audio output device.
     static func levelEnvelope(from buffer: AVAudioPCMBuffer, windowSeconds: TimeInterval) -> [Float] {
         guard let channelData = buffer.floatChannelData else { return [] }
         let frameLength = Int(buffer.frameLength)
@@ -189,9 +192,11 @@ final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
     }
 
     /// Writes `wav` to a temporary file (deleted before returning - never a user path, never
-    /// logged) and decodes it at its own processing format via `AVAudioFile`/`AVAudioPCMBuffer`.
-    /// Internal (not private) so decode failures can be exercised directly in tests without
-    /// requiring a working `AVAudioEngine` output device.
+    /// logged) and decodes it at its own processing format via `AVAudioFile`/`AVAudioPCMBuffer`,
+    /// purely so `levelEnvelope(from:windowSeconds:)` has PCM samples to walk. Playback itself
+    /// goes through `AVAudioPlayer(data:)`, not this buffer. Internal (not private) so decode
+    /// failures can be exercised directly in tests without requiring a working audio output
+    /// device.
     static func decode(_ wav: Data) throws -> AVAudioPCMBuffer {
         let temporaryURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
@@ -210,5 +215,23 @@ final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
         }
         try file.read(into: buffer)
         return buffer
+    }
+}
+
+/// Bridges `AVAudioPlayerDelegate`'s completion callback onto the main actor. `AVAudioPlayer`'s
+/// delegate is a plain `NSObjectProtocol` callback that AVFoundation does not guarantee arrives
+/// on the main actor, so this is its own `nonisolated` object rather than a method directly on
+/// `SynthesizedAudioPlayer` (which is `@MainActor`-isolated and could not conform to the
+/// nonisolated delegate protocol otherwise). It carries only a `Sendable` closure that hops back
+/// to `SynthesizedAudioPlayer` via `Task { @MainActor ... }`, so no audio work happens here.
+private final class PlayerDelegateShim: NSObject, AVAudioPlayerDelegate, @unchecked Sendable {
+    private let onFinish: @Sendable () -> Void
+
+    init(onFinish: @escaping @Sendable () -> Void) {
+        self.onFinish = onFinish
+    }
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully _: Bool) {
+        onFinish()
     }
 }

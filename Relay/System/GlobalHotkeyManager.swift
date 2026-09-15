@@ -34,7 +34,7 @@ struct HotkeyMatcher {
         case secondPress(HotkeyModifier, HotkeyAction)
     }
 
-    private static let doubleTapWindow: TimeInterval = 0.35
+    private static let doubleTapWindow: TimeInterval = 0.5
 
     init(
         definitions: [HotkeyAction: HotkeyDefinition],
@@ -66,6 +66,11 @@ struct HotkeyMatcher {
             return actions.map { HotkeyInvocation(action: $0, phase: .released) }
 
         case let .flagsChanged(modifiers):
+            // Ignore no-op repeats: some keyboards (notably Fn/external ones) resend the current
+            // modifier state without an actual change. A strict alternating-state guard below
+            // would otherwise treat that duplicate as a genuine extra modifier and cancel any
+            // pending double-tap gesture.
+            guard modifiers != previousModifiers else { return [] }
             let doubleTapInvocations = matchDoubleTapModifier(modifiers: modifiers)
             previousModifiers = modifiers
             if !doubleTapInvocations.isEmpty { return doubleTapInvocations }
@@ -102,9 +107,11 @@ struct HotkeyMatcher {
             }
             return []
 
-        case let .firstPress(modifier, action, pressedAt):
-            guard previousModifiers == [modifier], modifiers.isEmpty,
-                  currentTime - pressedAt <= Self.doubleTapWindow
+        case let .firstPress(modifier, action, _):
+            // Tap 1's hold duration is deliberately not charged against the double-tap window:
+            // only the release→second-press gap (checked below, in .awaitingSecondPress) governs
+            // whether the gesture is recognized, so a user holding tap 1 a bit long still arms it.
+            guard previousModifiers == [modifier], modifiers.isEmpty
             else {
                 cancelPendingDoubleTap()
                 return []
