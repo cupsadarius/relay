@@ -326,7 +326,7 @@ private actor FakePocketTTSModelLoader: PocketTTSModelLoading {
     }
 
     func lastSessionStreamFrames() async -> [[Float]] {
-        await lastSession?.streamFrames ?? []
+        lastSession?.streamFrames ?? []
     }
 
     func setStreamError(_ error: Error?) async {

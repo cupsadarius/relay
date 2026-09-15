@@ -368,7 +368,7 @@ private final class FakePocketTTSEngine: PocketTTSEngine {
 
 @MainActor
 private final class FakePlayer: StreamingAudioPlaying {
-    var onEvent: (@MainActor (TTSPlaybackEvent) -> Void)?
+    var onEvent: (@MainActor @Sendable (TTSPlaybackEvent) -> Void)?
     var playError: Error?
     /// Events this fake emits (via `onEvent`) from inside a successful `play(_:sampleRate:sessionID:)`
     /// call, simulating the real player's lifecycle.

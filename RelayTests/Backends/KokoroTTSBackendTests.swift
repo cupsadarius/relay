@@ -245,12 +245,12 @@ final class KokoroTTSBackendTests: XCTestCase {
     func testDownloadModelsCallsEngineWithDownloadAllowedAndForwardsProgress() async throws {
         let engine = FakeKokoroEngine()
         let backend = KokoroTTSBackend(engine: engine, player: FakePlayer())
-        var reported: [Double] = []
+        let reported = ProgressBox()
 
-        try await backend.downloadModels(progress: { reported.append($0) })
+        try await backend.downloadModels(progress: { reported.values.append($0) })
 
         XCTAssertEqual(engine.loadCalls, [true])
-        XCTAssertEqual(reported, [0.5, 1.0])
+        XCTAssertEqual(reported.values, [0.5, 1.0])
     }
 
     func testDownloadModelsMapsEngineFailureToFallbackWorthyError() async {
@@ -372,4 +372,10 @@ private final class FakePlayer: SynthesizedAudioPlaying {
     func stop() { stopCallCount += 1 }
     func pause() { pauseCallCount += 1 }
     func resume() { resumeCallCount += 1 }
+}
+
+/// Sendable accumulator for progress callbacks. `@escaping @Sendable` closures can't safely
+/// capture a mutable local `var`, so tests that record progress ticks use this instead.
+private final class ProgressBox: @unchecked Sendable {
+    var values: [Double] = []
 }
