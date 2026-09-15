@@ -60,3 +60,13 @@ struct ProcessInspector: Sendable {
 }
 
 enum ProcessInspectionError: Error { case psFailed }
+
+protocol ProcessTreeReading: Sendable {
+    func ancestry(from pid: Int32) async throws -> [Int32]
+}
+
+extension ProcessInspector: ProcessTreeReading {
+    func ancestry(from pid: Int32) async throws -> [Int32] {
+        try snapshot().ancestry(from: pid).map(\.pid)
+    }
+}
