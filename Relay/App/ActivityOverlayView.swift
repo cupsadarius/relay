@@ -18,9 +18,10 @@ struct ActivityOverlayView: View {
     @ViewBuilder
     private func capsule(for presentation: ActivityOverlayPresentation) -> some View {
         Group {
-            if presentation.title != nil {
+            switch presentation.layout {
+            case .interactive:
                 interactiveLayout(for: presentation)
-            } else {
+            case .minimal:
                 minimalLayout(for: presentation)
             }
         }
@@ -30,19 +31,26 @@ struct ActivityOverlayView: View {
                 .fill(.ultraThinMaterial)
             RoundedRectangle(cornerRadius: presentation.cornerRadius, style: .continuous)
                 .fill(OverlayPalette.chromeFill)
+                .shadow(color: .black.opacity(0.6), radius: 12, y: 6)
         }
         .overlay(
             RoundedRectangle(cornerRadius: presentation.cornerRadius, style: .continuous)
-                .stroke(OverlayPalette.border, lineWidth: 1)
+                .strokeBorder(OverlayPalette.border, lineWidth: 1)
+                .allowsHitTesting(false)
         )
-        .shadow(color: .black.opacity(0.6), radius: 12, y: 6)
         .foregroundStyle(.white)
     }
 
     @ViewBuilder
     private func minimalLayout(for presentation: ActivityOverlayPresentation) -> some View {
         HStack(spacing: 11) {
-            StateDot(color: OverlayPalette.dotColor(for: presentation.accent), reduceMotion: reduceMotion)
+            if presentation.accent == .error {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(OverlayPalette.dotError)
+            } else {
+                StateDot(color: OverlayPalette.dotColor(for: presentation.accent), pulses: !reduceMotion)
+            }
             WaveformView(presentation: presentation)
         }
     }
@@ -152,11 +160,14 @@ private extension Color {
     }
 }
 
-/// The 9pt state dot shown in the Minimal capsule: a colored, glowing circle that gently pulses
-/// unless Reduce Motion is on.
+/// The 9pt state dot shown in the Minimal capsule (non-error states): a colored, glowing circle
+/// that gently pulses unless Reduce Motion is on. The `.animation(value:)` + plain `onAppear`
+/// assignment (rather than wrapping the assignment in `withAnimation`) keeps the pulse running
+/// across later updates that only change `color` — a `withAnimation` block tied to the one-time
+/// `onAppear` call can otherwise be implicitly cancelled by an unrelated property change.
 private struct StateDot: View {
     let color: Color
-    let reduceMotion: Bool
+    let pulses: Bool
     @State private var isPulsing = false
 
     var body: some View {
@@ -166,11 +177,10 @@ private struct StateDot: View {
             .shadow(color: color.opacity(0.9), radius: 7)
             .opacity(isPulsing ? 0.5 : 1)
             .scaleEffect(isPulsing ? 0.8 : 1)
+            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isPulsing)
             .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                    isPulsing = true
-                }
+                guard pulses else { return }
+                isPulsing = true
             }
     }
 }
@@ -180,43 +190,64 @@ private struct StateDot: View {
 /// Processing breathes uniformly in place of the old spinner, and Error sits static and dimmed.
 private struct WaveformView: View {
     let presentation: ActivityOverlayPresentation
-    @State private var isBreathing = false
 
     var body: some View {
         switch presentation.kind {
-        case .listening:
+        case let .listening(level):
             WaveformBars(scales: presentation.listeningWaveformBars())
+                .animation(presentation.animatesWaveform ? .linear(duration: 0.08) : nil, value: level)
         case .speaking:
             if presentation.animatesWaveform {
                 TimelineView(.animation) { context in
-                    WaveformBars(scales: presentation.waveformBars(at: context.date))
+                    let scales = presentation.waveformBars(at: context.date)
+                    WaveformBars(scales: scales, opacities: scales.map(Self.speakingOpacity))
                 }
             } else {
                 WaveformBars(scales: Self.restScales)
             }
         case .processing:
             if presentation.animatesWaveform {
-                WaveformBars(
-                    scales: Array(repeating: isBreathing ? 0.34 : 1, count: 7),
-                    opacity: isBreathing ? 0.65 : 1
-                )
-                .animation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true), value: isBreathing)
-                .onAppear { isBreathing = true }
+                ProcessingWaveform()
             } else {
                 WaveformBars(scales: Self.restScales)
             }
         case .error:
-            WaveformBars(scales: Self.restScales, opacity: 0.5)
+            WaveformBars(scales: Self.restScales, opacities: Self.dimOpacities)
         }
     }
 
     private static let restScales = Array(repeating: CGFloat(1), count: 7)
+    private static let dimOpacities = Array(repeating: 0.5, count: 7)
+
+    /// The mockup's `wave` keyframe moves opacity (0.65...1) in lockstep with scale (0.34...1).
+    private static func speakingOpacity(forScale scale: CGFloat) -> Double {
+        0.65 + Double((scale - 0.34) / 0.66) * 0.35
+    }
+}
+
+/// Owns its own animation state so SwiftUI resets it whenever this view is removed and later
+/// reinserted (e.g. Processing ends and starts again): a `@State` living on the shared
+/// `WaveformView` instead would persist `isBreathing == true` across that gap, leaving the next
+/// Processing pass rendered as a frozen, dim set of bars instead of a fresh breathing animation.
+private struct ProcessingWaveform: View {
+    @State private var isBreathing = false
+
+    var body: some View {
+        WaveformBars(
+            scales: Array(repeating: isBreathing ? 0.34 : 1, count: 7),
+            opacities: Array(repeating: isBreathing ? 0.65 : 1, count: 7)
+        )
+        .animation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true), value: isBreathing)
+        .onAppear { isBreathing = true }
+    }
 }
 
 /// Renders the 7 bars themselves from a rest-height baseline and a per-bar scale multiplier.
 private struct WaveformBars: View {
     let scales: [CGFloat]
-    var opacity: Double = 1
+    var opacities: [Double] = Self.fullOpacities
+
+    private static let fullOpacities = Array(repeating: 1.0, count: 7)
 
     var body: some View {
         HStack(spacing: 3) {
@@ -224,13 +255,17 @@ private struct WaveformBars: View {
                 RoundedRectangle(cornerRadius: 3)
                     .fill(OverlayPalette.waveformGradient)
                     .frame(width: 3, height: restHeight * scale(at: index))
+                    .opacity(opacity(at: index))
             }
         }
         .frame(height: 25)
-        .opacity(opacity)
     }
 
     private func scale(at index: Int) -> CGFloat {
         index < scales.count ? scales[index] : 1
+    }
+
+    private func opacity(at index: Int) -> Double {
+        index < opacities.count ? opacities[index] : 1
     }
 }

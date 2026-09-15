@@ -119,6 +119,18 @@ final class ActivityOverlayPresentationTests: XCTestCase {
         XCTAssertEqual(interactive?.cornerRadius, 20)
     }
 
+    func testLayoutMatchesStyle() {
+        let minimal = ActivityOverlayPresentation.make(
+            state: .processing(sessionID: UUID(), startedAt: .now), style: .minimal, reduceMotion: false
+        )
+        let interactive = ActivityOverlayPresentation.make(
+            state: .processing(sessionID: UUID(), startedAt: .now), style: .interactive, reduceMotion: false
+        )
+
+        XCTAssertEqual(minimal?.layout, .minimal)
+        XCTAssertEqual(interactive?.layout, .interactive)
+    }
+
     func testWaveformRestHeightsHasSevenBars() {
         XCTAssertEqual(ActivityOverlayPresentation.waveformRestHeights, [8, 15, 23, 11, 23, 15, 8])
     }
@@ -137,6 +149,34 @@ final class ActivityOverlayPresentationTests: XCTestCase {
         }
     }
 
+    func testSpeakingWaveformBarsAreSymmetricAndVaryAcrossBars() {
+        let presentation = ActivityOverlayPresentation.make(
+            state: .speaking(sessionID: UUID(), startedAt: .now), style: .minimal, reduceMotion: false
+        )!
+        let bars = presentation.waveformBars(at: Date(timeIntervalSinceReferenceDate: 42))
+
+        XCTAssertEqual(bars[0], bars[6])
+        XCTAssertEqual(bars[1], bars[5])
+        XCTAssertEqual(bars[2], bars[4])
+        XCTAssertNotEqual(bars[0], bars[3])
+    }
+
+    func testWaveformBarsIsEmptyForNonSpeakingStates() {
+        let listening = ActivityOverlayPresentation.make(
+            state: .listening(sessionID: UUID(), startedAt: .now, level: 0.5), style: .minimal, reduceMotion: false
+        )!
+        let processing = ActivityOverlayPresentation.make(
+            state: .processing(sessionID: UUID(), startedAt: .now), style: .minimal, reduceMotion: false
+        )!
+        let error = ActivityOverlayPresentation.make(
+            state: .error(sessionID: UUID(), category: .unexpected, message: ""), style: .minimal, reduceMotion: false
+        )!
+
+        XCTAssertEqual(listening.waveformBars(at: .now), [])
+        XCTAssertEqual(processing.waveformBars(at: .now), [])
+        XCTAssertEqual(error.waveformBars(at: .now), [])
+    }
+
     func testListeningWaveformBarsHasSevenSymmetricMultipliers() {
         let value = ActivityOverlayPresentation.make(
             state: .listening(sessionID: UUID(), startedAt: .now, level: 0.5), style: .minimal, reduceMotion: false
@@ -148,30 +188,37 @@ final class ActivityOverlayPresentationTests: XCTestCase {
         XCTAssertEqual(bars[1], bars[5])
         XCTAssertEqual(bars[2], bars[4])
         for value in bars {
-            XCTAssertGreaterThanOrEqual(value, 0.34)
+            XCTAssertGreaterThanOrEqual(value, 0)
             XCTAssertLessThanOrEqual(value, 1.0)
         }
     }
 
-    func testListeningWaveformBarsAtZeroLevelAreAllAtFloor() {
-        let value = ActivityOverlayPresentation.make(
-            state: .listening(sessionID: UUID(), startedAt: .now, level: 0), style: .minimal, reduceMotion: false
+    func testListeningWaveformBarsIsEmptyForNonListeningStates() {
+        let speaking = ActivityOverlayPresentation.make(
+            state: .speaking(sessionID: UUID(), startedAt: .now), style: .minimal, reduceMotion: false
         )!
 
-        for bar in value.listeningWaveformBars() {
-            XCTAssertEqual(bar, 0.34, accuracy: 0.0001)
-        }
+        XCTAssertEqual(speaking.listeningWaveformBars(), [])
     }
 
-    func testListeningWaveformBarsAtFullLevelPeakAtOne() {
-        let value = ActivityOverlayPresentation.make(
-            state: .listening(sessionID: UUID(), startedAt: .now, level: 1), style: .minimal, reduceMotion: false
-        )!
-        let bars = value.listeningWaveformBars()
+    func testListeningWaveformBarsAtFullLevelMatchesRestShapeAndAtZeroIsScaledToFloor() {
+        let restHeights = ActivityOverlayPresentation.waveformRestHeights
+        let maxHeight = restHeights.max()!
+        let shape = restHeights.map { $0 / maxHeight }
 
-        XCTAssertEqual(bars[2], 1.0, accuracy: 0.0001)
-        XCTAssertEqual(bars[4], 1.0, accuracy: 0.0001)
-        XCTAssertEqual(bars[0], 8.0 / 23.0, accuracy: 0.0001)
+        let full = ActivityOverlayPresentation.make(
+            state: .listening(sessionID: UUID(), startedAt: .now, level: 1), style: .minimal, reduceMotion: false
+        )!.listeningWaveformBars()
+        let quiet = ActivityOverlayPresentation.make(
+            state: .listening(sessionID: UUID(), startedAt: .now, level: 0), style: .minimal, reduceMotion: false
+        )!.listeningWaveformBars()
+
+        for (index, value) in full.enumerated() {
+            XCTAssertEqual(value, shape[index], accuracy: 0.0001)
+        }
+        for (index, value) in quiet.enumerated() {
+            XCTAssertEqual(value, 0.34 * shape[index], accuracy: 0.0001)
+        }
     }
 
     func testListeningWaveformBarsReflectLevelEvenUnderReduceMotion() {

@@ -50,7 +50,7 @@ protocol ActivityOverlayPanelHosting: AnyObject {
 /// A `chromeInset` margin is added around the capsule so its own shadow/stroke aren't clipped
 /// by the panel's bounds (the panel itself stays invisible/borderless).
 enum ActivityOverlayPlacement {
-    static let chromeInset: CGFloat = 16
+    static let chromeInset: CGFloat = 24
 
     static func origin(capsuleSize: CGSize, visibleFrame: CGRect) -> CGPoint {
         CGPoint(
