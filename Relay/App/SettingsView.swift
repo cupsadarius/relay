@@ -37,9 +37,16 @@ struct SettingsView: View {
             }
 
             Section("Speech Recognition") {
-                ForEach(orderedSpeechBackends) { backend in
+                ForEach(model.sttBackends) { backend in
                     speechBackendRow(backend)
                 }
+
+                if let message = model.speechBackendMessage {
+                    Text(message)
+                        .foregroundStyle(.red)
+                        .accessibilityIdentifier("speech-backend-message")
+                }
+
                 Text("Relay tries enabled backends in order and falls back to the next one. Parakeet runs fully on-device after a one-time model download (about 1 GB).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -107,14 +114,6 @@ struct SettingsView: View {
         .task { await model.refreshSpeechBackendStatuses() }
     }
 
-    private var orderedSpeechBackends: [STTBackendStatus] {
-        model.sttBackends.sorted { lhs, rhs in
-            if lhs.isEnabled != rhs.isEnabled { return lhs.isEnabled && !rhs.isEnabled }
-            if lhs.isEnabled { return lhs.position < rhs.position }
-            return lhs.id < rhs.id
-        }
-    }
-
     private func speechBackendRow(_ backend: STTBackendStatus) -> some View {
         let enabledCount = model.sttBackends.filter(\.isEnabled).count
         return HStack {
@@ -161,11 +160,13 @@ struct SettingsView: View {
         case let .downloading(progress):
             ProgressView(value: progress)
                 .frame(width: 80)
-        case .modelNotDownloaded, .failed:
-            Button("Download") {
-                Task { await model.downloadSpeechModel(backend.id) }
+        case .modelNotDownloaded, .downloadFailed:
+            if model.canDownloadSpeechModel(backend.id) {
+                Button("Download") {
+                    Task { await model.downloadSpeechModel(backend.id) }
+                }
+                .controlSize(.small)
             }
-            .controlSize(.small)
         case .ready, .unsupported, .unavailable:
             EmptyView()
         }
@@ -176,9 +177,9 @@ struct SettingsView: View {
         case .ready: "Ready"
         case .modelNotDownloaded: "Model not downloaded"
         case let .downloading(progress): "Downloading \(Int((progress * 100).rounded()))%"
-        case let .unsupported(reason): reason
-        case let .unavailable(reason): reason
-        case .failed: "Download failed"
+        case .downloadFailed: "Download failed"
+        case .unsupported: "Unsupported on this Mac"
+        case .unavailable: "Unavailable"
         }
     }
 

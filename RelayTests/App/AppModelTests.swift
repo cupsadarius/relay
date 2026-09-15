@@ -319,8 +319,7 @@ final class AppModelTests: XCTestCase {
         let b = FakeSTTBackend(id: "b", displayName: "B")
         let c = FakeSTTBackend(id: "c", displayName: "C")
         let model = makeModel(store: store, sttRegistry: ["a": a, "b": b, "c": c])
-
-        await model.refreshSpeechBackendStatuses()
+        await model.initialSpeechBackendRefresh?.value
 
         XCTAssertEqual(model.sttBackends.map(\.id), ["b", "a", "c"])
         XCTAssertEqual(model.sttBackends.map(\.isEnabled), [true, true, false])
@@ -335,7 +334,7 @@ final class AppModelTests: XCTestCase {
         let a = FakeSTTBackend(id: "a", displayName: "A")
         let b = FakeSTTBackend(id: "b", displayName: "B")
         let model = makeModel(store: store, sttRegistry: ["a": a, "b": b])
-        await model.refreshSpeechBackendStatuses()
+        await model.initialSpeechBackendRefresh?.value
 
         model.setSTTBackendEnabled("b", true)
 
@@ -352,7 +351,7 @@ final class AppModelTests: XCTestCase {
         let a = FakeSTTBackend(id: "a", displayName: "A")
         let b = FakeSTTBackend(id: "b", displayName: "B")
         let model = makeModel(store: store, sttRegistry: ["a": a, "b": b])
-        await model.refreshSpeechBackendStatuses()
+        await model.initialSpeechBackendRefresh?.value
 
         model.moveSTTBackend("b", up: true)
 
@@ -366,13 +365,36 @@ final class AppModelTests: XCTestCase {
         let store = FakeSettingsStore(settings: settings)
         let a = FakeSTTBackend(id: "a", displayName: "A")
         let model = makeModel(store: store, sttRegistry: ["a": a])
-        await model.refreshSpeechBackendStatuses()
+        await model.initialSpeechBackendRefresh?.value
 
         model.setSTTBackendEnabled("a", false)
 
         XCTAssertEqual(model.settings.sttBackendOrder, ["a"])
         XCTAssertTrue(store.saved.isEmpty)
         XCTAssertEqual(model.statusText, "At least one speech recognition backend must stay enabled.")
+    }
+
+    func testUnknownIDsInSettingsOrderAreIgnoredAndDroppedWhenPersisted() async {
+        var settings = AppSettings.defaults
+        settings.sttBackendOrder = ["ghost", "a"]
+        let store = FakeSettingsStore(settings: settings)
+        let a = FakeSTTBackend(id: "a", displayName: "A")
+        let b = FakeSTTBackend(id: "b", displayName: "B")
+        let model = makeModel(store: store, sttRegistry: ["a": a, "b": b])
+        await model.initialSpeechBackendRefresh?.value
+
+        // "ghost" isn't in the registry, so "a" is treated as the first (and only) known
+        // enabled backend, not the second.
+        XCTAssertEqual(model.sttBackends.map(\.id), ["a", "b"])
+        XCTAssertEqual(model.sttBackends.first { $0.id == "a" }?.position, 0)
+
+        model.setSTTBackendEnabled("a", false)
+        XCTAssertEqual(model.statusText, "At least one speech recognition backend must stay enabled.")
+
+        model.setSTTBackendEnabled("b", true)
+
+        XCTAssertEqual(model.settings.sttBackendOrder, ["a", "b"])
+        XCTAssertEqual(store.saved.last?.sttBackendOrder, ["a", "b"])
     }
 
     func testDownloadSpeechModelReportsProgressThenBecomesReady() async {
@@ -390,11 +412,11 @@ final class AppModelTests: XCTestCase {
             speechModelDownloaders: ["parakeet": downloader],
             diagnostics: diagnostics
         )
-        await model.refreshSpeechBackendStatuses()
+        await model.initialSpeechBackendRefresh?.value
 
         let downloadTask = Task { await model.downloadSpeechModel("parakeet") }
-        while model.sttBackends.first(where: { $0.id == "parakeet" })?.state != .downloading(progress: 0.5) {
-            await Task.yield()
+        await waitUntil {
+            model.sttBackends.first(where: { $0.id == "parakeet" })?.state == .downloading(progress: 0.5)
         }
 
         await parakeet.setAvailability(.available)
@@ -406,6 +428,7 @@ final class AppModelTests: XCTestCase {
             .speechModelDownloadFinished(backendID: "parakeet"),
             .speechModelDownloadStarted(backendID: "parakeet"),
         ])
+        XCTAssertNil(model.speechBackendMessage)
     }
 
     func testDownloadSpeechModelFailureSetsFailedStateFixedStatusTextAndDiagnostics() async {
@@ -422,16 +445,41 @@ final class AppModelTests: XCTestCase {
             speechModelDownloaders: ["parakeet": downloader],
             diagnostics: diagnostics
         )
-        await model.refreshSpeechBackendStatuses()
+        await model.initialSpeechBackendRefresh?.value
 
         await model.downloadSpeechModel("parakeet")
 
-        XCTAssertEqual(model.sttBackends.first(where: { $0.id == "parakeet" })?.state, .failed)
-        XCTAssertEqual(model.statusText, "Parakeet model download failed. Check your connection and try again.")
+        XCTAssertEqual(model.sttBackends.first(where: { $0.id == "parakeet" })?.state, .downloadFailed)
+        let expectedMessage = "Parakeet model download failed. Check your connection and try again."
+        XCTAssertEqual(model.statusText, expectedMessage)
+        XCTAssertEqual(model.speechBackendMessage, expectedMessage)
         XCTAssertEqual(model.diagnosticsEntries.map(\.event), [
             .speechModelDownloadFailed(backendID: "parakeet"),
             .speechModelDownloadStarted(backendID: "parakeet"),
         ])
+    }
+
+    func testDownloadCanBeRetriedAfterAFailureWithoutGettingStuck() async {
+        var settings = AppSettings.defaults
+        settings.sttBackendOrder = ["parakeet"]
+        let store = FakeSettingsStore(settings: settings)
+        let parakeet = FakeSTTBackend(id: "parakeet", displayName: "Parakeet", availability: .modelNotDownloaded)
+        let downloader = FakeSpeechModelDownloader()
+        await downloader.setErrorToThrow(TestError.saveFailed)
+        let model = makeModel(store: store, sttRegistry: ["parakeet": parakeet], speechModelDownloaders: ["parakeet": downloader])
+        await model.initialSpeechBackendRefresh?.value
+
+        await model.downloadSpeechModel("parakeet")
+        XCTAssertEqual(model.sttBackends.first?.state, .downloadFailed)
+
+        await downloader.setErrorToThrow(nil)
+        await parakeet.setAvailability(.available)
+        await model.downloadSpeechModel("parakeet")
+
+        XCTAssertEqual(model.sttBackends.first?.state, .ready)
+        XCTAssertNil(model.speechBackendMessage)
+        let callCount = await downloader.callCount
+        XCTAssertEqual(callCount, 2)
     }
 
     func testSecondDownloadClickWhileDownloadingIsIgnored() async {
@@ -446,10 +494,10 @@ final class AppModelTests: XCTestCase {
             sttRegistry: ["parakeet": parakeet],
             speechModelDownloaders: ["parakeet": downloader]
         )
-        await model.refreshSpeechBackendStatuses()
+        await model.initialSpeechBackendRefresh?.value
 
         let firstTask = Task { await model.downloadSpeechModel("parakeet") }
-        while await downloader.callCount == 0 { await Task.yield() }
+        await waitUntil { await downloader.callCount > 0 }
 
         await model.downloadSpeechModel("parakeet")
 
@@ -460,25 +508,183 @@ final class AppModelTests: XCTestCase {
         await firstTask.value
     }
 
+    func testDownloadInsertsMissingRowWhenNoStatusExistsYet() async {
+        var settings = AppSettings.defaults
+        settings.sttBackendOrder = ["parakeet"]
+        let store = FakeSettingsStore(settings: settings)
+        let parakeet = FakeSTTBackend(id: "parakeet", displayName: "Parakeet", availability: .modelNotDownloaded)
+        let downloader = FakeSpeechModelDownloader()
+        await downloader.setShouldBlock(true)
+        let model = makeModel(
+            store: store,
+            sttRegistry: ["parakeet": parakeet],
+            speechModelDownloaders: ["parakeet": downloader]
+        )
+        await model.initialSpeechBackendRefresh?.value
+        model.sttBackends = [] // simulate a Download click before any status row exists
+
+        let downloadTask = Task { await model.downloadSpeechModel("parakeet") }
+        await waitUntil { model.sttBackends.first(where: { $0.id == "parakeet" }) != nil }
+
+        let row = model.sttBackends.first(where: { $0.id == "parakeet" })
+        XCTAssertEqual(row?.displayName, "Parakeet")
+        XCTAssertEqual(row?.state, .downloading(progress: 0))
+
+        await downloader.resume()
+        await downloadTask.value
+    }
+
+    func testConcurrentRefreshDuringADownloadDoesNotClobberDownloadingState() async {
+        var settings = AppSettings.defaults
+        settings.sttBackendOrder = ["parakeet"]
+        let store = FakeSettingsStore(settings: settings)
+        let parakeet = FakeSTTBackend(id: "parakeet", displayName: "Parakeet", availability: .modelNotDownloaded)
+        let downloader = FakeSpeechModelDownloader()
+        await downloader.setShouldBlock(true)
+        let model = makeModel(
+            store: store,
+            sttRegistry: ["parakeet": parakeet],
+            speechModelDownloaders: ["parakeet": downloader]
+        )
+        await model.initialSpeechBackendRefresh?.value
+
+        // Block availability() so a refresh started now is still awaiting mid-flight.
+        await parakeet.setShouldBlockAvailability(true)
+        let refreshTask = Task { await model.refreshSpeechBackendStatuses() }
+        await waitUntil { await parakeet.availabilityCallCount > 0 }
+
+        // A Download starts while that refresh is still suspended inside availability().
+        let downloadTask = Task { await model.downloadSpeechModel("parakeet") }
+        await waitUntil {
+            model.sttBackends.first(where: { $0.id == "parakeet" })?.state == .downloading(progress: 0)
+        }
+
+        await parakeet.resumeAvailability()
+        await refreshTask.value
+
+        // The refresh's now-stale "model not downloaded" snapshot must not have clobbered the
+        // download that started while it was in flight.
+        XCTAssertEqual(model.sttBackends.first(where: { $0.id == "parakeet" })?.state, .downloading(progress: 0))
+
+        await parakeet.setShouldBlockAvailability(false)
+        await parakeet.setAvailability(.available)
+        await downloader.resume()
+        await downloadTask.value
+
+        XCTAssertEqual(model.sttBackends.first(where: { $0.id == "parakeet" })?.state, .ready)
+    }
+
+    func testLateProgressCallbackAfterCompletionDoesNotChangeReadyState() async {
+        var settings = AppSettings.defaults
+        settings.sttBackendOrder = ["parakeet"]
+        let store = FakeSettingsStore(settings: settings)
+        let parakeet = FakeSTTBackend(id: "parakeet", displayName: "Parakeet", availability: .modelNotDownloaded)
+        let downloader = FakeSpeechModelDownloader()
+        let model = makeModel(store: store, sttRegistry: ["parakeet": parakeet], speechModelDownloaders: ["parakeet": downloader])
+        await model.initialSpeechBackendRefresh?.value
+        await parakeet.setAvailability(.available)
+
+        await model.downloadSpeechModel("parakeet")
+        XCTAssertEqual(model.sttBackends.first(where: { $0.id == "parakeet" })?.state, .ready)
+
+        await downloader.reportProgress(1.0) // a tick arriving after the download already finished
+        await Task.yield()
+        await Task.yield()
+
+        XCTAssertEqual(model.sttBackends.first(where: { $0.id == "parakeet" })?.state, .ready)
+    }
+
+    func testOutOfOrderLowerProgressTickIsIgnored() async {
+        var settings = AppSettings.defaults
+        settings.sttBackendOrder = ["parakeet"]
+        let store = FakeSettingsStore(settings: settings)
+        let parakeet = FakeSTTBackend(id: "parakeet", displayName: "Parakeet", availability: .modelNotDownloaded)
+        let downloader = FakeSpeechModelDownloader()
+        await downloader.setShouldBlock(true)
+        let model = makeModel(store: store, sttRegistry: ["parakeet": parakeet], speechModelDownloaders: ["parakeet": downloader])
+        await model.initialSpeechBackendRefresh?.value
+
+        let downloadTask = Task { await model.downloadSpeechModel("parakeet") }
+        await waitUntil { await downloader.callCount > 0 }
+
+        await downloader.reportProgress(0.7)
+        await waitUntil {
+            model.sttBackends.first(where: { $0.id == "parakeet" })?.state == .downloading(progress: 0.7)
+        }
+
+        await downloader.reportProgress(0.3) // out of order: must not move progress backwards
+        await Task.yield()
+        await Task.yield()
+
+        XCTAssertEqual(model.sttBackends.first(where: { $0.id == "parakeet" })?.state, .downloading(progress: 0.7))
+
+        await downloader.resume()
+        await downloadTask.value
+    }
+
+    func testCanDownloadSpeechModelReflectsWhetherADownloaderIsRegistered() {
+        let a = FakeSTTBackend(id: "a", displayName: "A")
+        let modelWithoutDownloader = makeModel(sttRegistry: ["a": a])
+        XCTAssertFalse(modelWithoutDownloader.canDownloadSpeechModel("a"))
+
+        let downloader = FakeSpeechModelDownloader()
+        let modelWithDownloader = makeModel(sttRegistry: ["a": a], speechModelDownloaders: ["a": downloader])
+        XCTAssertTrue(modelWithDownloader.canDownloadSpeechModel("a"))
+    }
+
+    func testSpeechBackendMessageIsSetOnRefusalAndClearedOnNextSuccessfulAction() async {
+        var settings = AppSettings.defaults
+        settings.sttBackendOrder = ["a"]
+        let store = FakeSettingsStore(settings: settings)
+        let a = FakeSTTBackend(id: "a", displayName: "A")
+        let b = FakeSTTBackend(id: "b", displayName: "B")
+        let model = makeModel(store: store, sttRegistry: ["a": a, "b": b])
+        await model.initialSpeechBackendRefresh?.value
+
+        model.setSTTBackendEnabled("a", false)
+        XCTAssertEqual(model.speechBackendMessage, "At least one speech recognition backend must stay enabled.")
+
+        model.setSTTBackendEnabled("b", true)
+        XCTAssertNil(model.speechBackendMessage)
+    }
+
     func testRefreshMapsBackendAvailabilityCasesToFixedStates() async {
         let cases: [(BackendAvailability, STTBackendStatus.State)] = [
             (.available, .ready),
             (.modelNotDownloaded, .modelNotDownloaded),
-            (.unsupportedOS, .unsupported(reason: "Unsupported on this Mac")),
-            (.unsupportedHardware, .unsupported(reason: "Unsupported on this Mac")),
-            (.permissionDenied, .unavailable(reason: "Unavailable")),
-            (.unavailable("some reason"), .unavailable(reason: "Unavailable")),
-            (.initializing, .unavailable(reason: "Unavailable")),
-            (.failed("boom"), .failed),
+            (.unsupportedOS, .unsupported),
+            (.unsupportedHardware, .unsupported),
+            (.permissionDenied, .unavailable),
+            (.unavailable("some reason"), .unavailable),
+            (.initializing, .unavailable),
+            (.failed("boom"), .unavailable),
         ]
 
         for (availability, expected) in cases {
             let backend = FakeSTTBackend(id: "x", displayName: "X", availability: availability)
             let model = makeModel(sttRegistry: ["x": backend])
-
-            await model.refreshSpeechBackendStatuses()
+            await model.initialSpeechBackendRefresh?.value
 
             XCTAssertEqual(model.sttBackends.first?.state, expected, "availability: \(availability)")
+        }
+    }
+
+    /// Polls `condition` until it's true, yielding between checks so other tasks (fakes waiting
+    /// on a continuation, progress callbacks hopping to the main actor, etc.) get a chance to
+    /// run. Fails the test instead of hanging forever if `condition` never becomes true.
+    private func waitUntil(
+        timeout: TimeInterval = 2,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        _ condition: () async -> Bool
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while await !condition() {
+            if Date() > deadline {
+                XCTFail("Timed out waiting for condition", file: file, line: line)
+                return
+            }
+            await Task.yield()
         }
     }
 
@@ -616,6 +822,9 @@ private actor FakeSTTBackend: SpeechToTextBackend {
     nonisolated let displayName: String
     nonisolated let capabilities = STTCapabilities([])
     private var availabilityResult: BackendAvailability
+    private var shouldBlockAvailability = false
+    private(set) var availabilityCallCount = 0
+    private var availabilityContinuation: CheckedContinuation<Void, Never>?
 
     init(id: String, displayName: String, availability: BackendAvailability = .available) {
         self.id = id
@@ -623,8 +832,26 @@ private actor FakeSTTBackend: SpeechToTextBackend {
         availabilityResult = availability
     }
 
-    func availability() async -> BackendAvailability { availabilityResult }
+    func availability() async -> BackendAvailability {
+        availabilityCallCount += 1
+        if shouldBlockAvailability {
+            await withCheckedContinuation { availabilityContinuation = $0 }
+        }
+        return availabilityResult
+    }
+
     func setAvailability(_ value: BackendAvailability) { availabilityResult = value }
+
+    /// Makes `availability()` suspend on a continuation instead of returning immediately, so a
+    /// test can deterministically hold a refresh mid-flight and interleave other work before
+    /// calling `resumeAvailability()`.
+    func setShouldBlockAvailability(_ value: Bool) { shouldBlockAvailability = value }
+
+    func resumeAvailability() {
+        availabilityContinuation?.resume()
+        availabilityContinuation = nil
+    }
+
     func prepare() async throws {}
 
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
@@ -638,13 +865,15 @@ private actor FakeSpeechModelDownloader: SpeechModelDownloading {
     private var errorToThrow: Error?
     private var shouldBlock = false
     private var continuation: CheckedContinuation<Void, Never>?
+    private var capturedProgress: (@Sendable (Double) -> Void)?
 
     func setProgressToReport(_ values: [Double]) { progressToReport = values }
-    func setErrorToThrow(_ error: Error) { errorToThrow = error }
+    func setErrorToThrow(_ error: Error?) { errorToThrow = error }
     func setShouldBlock(_ value: Bool) { shouldBlock = value }
 
     func downloadModels(progress: @escaping @Sendable (Double) -> Void) async throws {
         callCount += 1
+        capturedProgress = progress
         for value in progressToReport {
             progress(value)
         }
@@ -659,6 +888,13 @@ private actor FakeSpeechModelDownloader: SpeechModelDownloading {
     func resume() {
         continuation?.resume()
         continuation = nil
+    }
+
+    /// Invokes the progress closure captured from the most recent `downloadModels` call, letting
+    /// a test simulate a tick arriving at an arbitrary time — including after completion, or out
+    /// of order relative to an earlier tick.
+    func reportProgress(_ value: Double) {
+        capturedProgress?(value)
     }
 }
 

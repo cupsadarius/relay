@@ -23,11 +23,16 @@ final class AppModel {
     var diagnosticsEntries: [DiagnosticEntry] { diagnostics.entries.reversed() }
     var diagnosticsCounters: DiagnosticsCounters { diagnostics.counters }
     var sttBackends: [STTBackendStatus] = []
+    var speechBackendMessage: String?
     @ObservationIgnored let overlayModel: ActivityOverlayModel
 
     @ObservationIgnored let sttRegistry: [String: any SpeechToTextBackend]
     @ObservationIgnored let speechModelDownloaders: [String: any SpeechModelDownloading]
     @ObservationIgnored var downloadingBackendIDs: Set<String> = []
+    @ObservationIgnored var refreshGeneration = 0
+    /// The fire-and-forget initial status refresh kicked off from `init`. Exposed so tests can
+    /// await it instead of racing an explicit `refreshSpeechBackendStatuses()` call against it.
+    @ObservationIgnored var initialSpeechBackendRefresh: Task<Void, Never>?
     @ObservationIgnored private let settingsStore: any SettingsStoring
     @ObservationIgnored private let selectionReader: any SelectionReading
     @ObservationIgnored private let preprocessor: RulesSpeechPreprocessor
@@ -38,7 +43,7 @@ final class AppModel {
     @ObservationIgnored private let permissionService: any GlobalPermissionAuthorizing
     @ObservationIgnored private let microphonePermissions: any MicrophonePermissionStatusProviding
     @ObservationIgnored private let privacySettingsOpener: any PrivacySettingsOpening
-    @ObservationIgnored let diagnostics: DiagnosticsRecorder
+    @ObservationIgnored private let diagnostics: DiagnosticsRecorder
     @ObservationIgnored private let overlayPresenter: any ActivityOverlayPresenting
     @ObservationIgnored private var activationObserver: NSObjectProtocol?
     @ObservationIgnored private var dictationTask: Task<Void, Never>?
@@ -162,7 +167,7 @@ final class AppModel {
         registerHotkeys()
         observeAppActivation()
         bindOverlayPresenter()
-        Task { [weak self] in await self?.refreshSpeechBackendStatuses() }
+        initialSpeechBackendRefresh = Task { [weak self] in await self?.refreshSpeechBackendStatuses() }
     }
 
     private init(
@@ -206,7 +211,7 @@ final class AppModel {
         registerHotkeys()
         observeAppActivation()
         bindOverlayPresenter()
-        Task { [weak self] in await self?.refreshSpeechBackendStatuses() }
+        initialSpeechBackendRefresh = Task { [weak self] in await self?.refreshSpeechBackendStatuses() }
     }
 
     func setHotkey(_ definition: HotkeyDefinition, for action: HotkeyAction) {
@@ -247,7 +252,7 @@ final class AppModel {
         }
     }
 
-    func updateSettings(_ update: (inout AppSettings) -> Void) {
+    private func updateSettings(_ update: (inout AppSettings) -> Void) {
         update(&settings)
         settingsState.value = settings
         registerHotkeys()
@@ -256,6 +261,18 @@ final class AppModel {
         } catch {
             statusText = "Could not save settings: \(error.localizedDescription)"
         }
+    }
+
+    /// The single write path `SpeechBackendCatalog.swift` uses to persist `sttBackendOrder`,
+    /// kept narrow so that file doesn't need broader access to `updateSettings`.
+    func setSTTBackendOrder(_ order: [String]) {
+        updateSettings { $0.sttBackendOrder = order }
+    }
+
+    /// Lets `SpeechBackendCatalog.swift` record diagnostics without widening `diagnostics` past
+    /// this file.
+    func recordDiagnostic(_ event: DiagnosticsEvent) {
+        diagnostics.record(event)
     }
 
     private func registerHotkeys() {
