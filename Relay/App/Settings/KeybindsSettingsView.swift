@@ -10,20 +10,18 @@ struct KeybindsSettingsView: View {
                 ForEach(HotkeyAction.allCases, id: \.self) { action in
                     LabeledContent(action.title) {
                         HotkeyRecorder(
-                            definition: model.settings.hotkeys[action] ?? .chord(
-                                keyCode: 0,
-                                modifiers: []
-                            )
+                            definition: model.settings.hotkeys[action]
                         ) { definition in
                             model.setHotkey(definition, for: action)
                         }
-                        Menu("Double Tap") {
-                            ForEach(HotkeyModifier.allCases, id: \.self) { modifier in
-                                Button("\(modifier.symbol) \(modifier.symbol)") {
-                                    model.setHotkey(.doubleTapModifier(modifier), for: action)
-                                }
-                            }
+                        Button {
+                            model.removeHotkey(for: action)
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
                         }
+                        .buttonStyle(.plain)
+                        .disabled(model.settings.hotkeys[action] == nil)
+                        .accessibilityLabel("Clear \(action.title) shortcut")
                     }
                 }
 
@@ -33,7 +31,7 @@ struct KeybindsSettingsView: View {
                         .accessibilityIdentifier("hotkey-conflict-message")
                 }
 
-                Text("Click a shortcut to record a key combination, or choose Double Tap. The Fn key can be recorded by itself. Hotkeys are listen-only, so keys such as Escape still reach the active app.")
+                Text("Click a shortcut to record. Double-tap a modifier (⌘ ⌥ ⌃ ⇧) to bind it. Fn can be recorded alone. ✕ clears. Hotkeys are listen-only, so keys such as Escape still reach the active app.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -43,7 +41,7 @@ struct KeybindsSettingsView: View {
 }
 
 private struct HotkeyRecorder: NSViewRepresentable {
-    let definition: HotkeyDefinition
+    let definition: HotkeyDefinition?
     let onChange: (HotkeyDefinition) -> Void
 
     func makeNSView(context: Context) -> HotkeyRecorderButton {
@@ -61,9 +59,9 @@ private struct HotkeyRecorder: NSViewRepresentable {
 
 private final class HotkeyRecorderButton: NSButton {
     var onChange: ((HotkeyDefinition) -> Void)?
-    var definition: HotkeyDefinition = .chord(keyCode: 0, modifiers: []) {
+    var definition: HotkeyDefinition? {
         didSet {
-            if !isRecording { title = definition.displayName }
+            if !isRecording { title = Self.displayName(for: definition) }
         }
     }
     private var isRecording = false
@@ -72,7 +70,7 @@ private final class HotkeyRecorderButton: NSButton {
         super.init(frame: frameRect)
         bezelStyle = .rounded
         setButtonType(.momentaryPushIn)
-        title = definition.displayName
+        title = Self.displayName(for: definition)
     }
 
     required init?(coder: NSCoder) {
@@ -112,6 +110,10 @@ private final class HotkeyRecorderButton: NSButton {
         isRecording = false
         self.definition = definition
         onChange?(definition)
+    }
+
+    private static func displayName(for definition: HotkeyDefinition?) -> String {
+        definition?.displayName ?? "Not set"
     }
 
     private static func modifiers(from flags: NSEvent.ModifierFlags) -> Set<HotkeyModifier> {
@@ -168,7 +170,6 @@ private extension HotkeyDefinition {
 }
 
 private extension HotkeyModifier {
-    static let allCases: [HotkeyModifier] = [.control, .option, .shift, .command, .function]
     static let displayOrder: [HotkeyModifier] = [
         .control, .option, .shift, .command, .function,
     ]
