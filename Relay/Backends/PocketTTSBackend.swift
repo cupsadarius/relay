@@ -2,10 +2,12 @@ import FluidAudio
 import Foundation
 
 /// On-device text-to-speech backend built on FluidAudio's PocketTTS flow-matching model. Fully
-/// offline once its model is downloaded; synthesizes to a WAV `Data` value via `PocketTTSEngine`,
-/// then plays it through a `SynthesizedAudioPlaying` player, forwarding its lifecycle events
-/// (including `.level`, which Apple's backend never emits). Unlike `KokoroTTSBackend`, PocketTTS
-/// has no speed parameter, so the shared rate slider (`options.rate`) is ignored here.
+/// offline once its model is downloaded; streams synthesized audio frames via `PocketTTSEngine`'s
+/// `synthesizeStream(text:voice:)` and plays them through a `StreamingAudioPlaying` player as they
+/// arrive, so playback starts within a fraction of a second instead of waiting for the whole
+/// utterance to synthesize. Forwards the player's lifecycle events (including `.level`, which
+/// Apple's backend never emits). Unlike `KokoroTTSBackend`, PocketTTS has no speed parameter, so
+/// the shared rate slider (`options.rate`) is ignored here.
 @MainActor
 final class PocketTTSBackend: TextToSpeechBackend {
     let id = "pocket-tts"
@@ -15,15 +17,16 @@ final class PocketTTSBackend: TextToSpeechBackend {
         .voiceSelection,
         .pauseResume,
         .outputLevel,
+        .streaming,
     ])
 
     private let engine: any PocketTTSEngine
-    private let player: any SynthesizedAudioPlaying
+    private let player: any StreamingAudioPlaying
     private var playbackEventHandler: (@MainActor (TTSPlaybackEvent) -> Void)?
 
     init(
         engine: any PocketTTSEngine = FluidAudioPocketTTSEngine(),
-        player: any SynthesizedAudioPlaying = SynthesizedAudioPlayer()
+        player: any StreamingAudioPlaying = StreamingAudioPlayer()
     ) {
         self.engine = engine
         self.player = player
@@ -52,9 +55,9 @@ final class PocketTTSBackend: TextToSpeechBackend {
 
         let voice = options.pocketVoice ?? PocketTtsConstants.defaultVoice
 
-        let wav: Data
+        let stream: AsyncThrowingStream<[Float], Error>
         do {
-            wav = try await engine.synthesize(text: text, voice: voice)
+            stream = try await engine.synthesizeStream(text: text, voice: voice)
         } catch is CancellationError {
             throw CancellationError()
         } catch {
@@ -63,12 +66,14 @@ final class PocketTTSBackend: TextToSpeechBackend {
         }
 
         do {
-            try await player.play(wav, sessionID: sessionID)
+            try await player.play(stream, sampleRate: Double(PocketTtsConstants.audioSampleRate), sessionID: sessionID)
         } catch is CancellationError {
             throw CancellationError()
         } catch {
             // Same terminal-event contract even after `.started` may already have been emitted
             // by the player: the router, not the backend, decides when `.failed` is warranted.
+            // A source-stream failure surfaces here too, since `player.play` propagates whatever
+            // error draining the stream throws.
             throw SpeechBackendError.inferenceFailed("PocketTTS playback failed")
         }
     }

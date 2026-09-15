@@ -110,10 +110,10 @@ final class PocketTTSBackendTests: XCTestCase {
         XCTAssertEqual(engine.synthesizeCalls.map(\.text), ["hello", "hello"])
     }
 
-    func testSpeakHandsSynthesizedWavToThePlayerWithTheSameSessionID() async throws {
+    func testSpeakHandsSynthesizedFramesToThePlayerWithTheSameSessionIDAndSampleRate() async throws {
         let engine = FakePocketTTSEngine()
         engine.modelsPresent = true
-        engine.synthesizeResult = Data([1, 2, 3])
+        engine.synthesizeStreamFrames = [[1, 2, 3], [4, 5, 6]]
         let player = FakePlayer()
         let backend = PocketTTSBackend(engine: engine, player: player)
         let sessionID = UUID()
@@ -121,8 +121,9 @@ final class PocketTTSBackendTests: XCTestCase {
         try await backend.speak(text: "hello", options: .init(), sessionID: sessionID)
 
         XCTAssertEqual(player.playCalls.count, 1)
-        XCTAssertEqual(player.playCalls.first?.wav, Data([1, 2, 3]))
+        XCTAssertEqual(player.playCalls.first?.frames, [[1, 2, 3], [4, 5, 6]])
         XCTAssertEqual(player.playCalls.first?.sessionID, sessionID)
+        XCTAssertEqual(player.playCalls.first?.sampleRate, Double(PocketTtsConstants.audioSampleRate))
     }
 
     func testSpeakForwardsPlayerEventsToTheInstalledHandler() async throws {
@@ -216,7 +217,7 @@ final class PocketTTSBackendTests: XCTestCase {
         let engine = FakePocketTTSEngine()
         engine.modelsPresent = true
         let player = FakePlayer()
-        player.playError = SynthesizedAudioPlayerError.bufferAllocationFailed
+        player.playError = StreamingAudioPlayerError.bufferAllocationFailed
         let backend = PocketTTSBackend(engine: engine, player: player)
         var received: [TTSPlaybackEvent] = []
         backend.setPlaybackEventHandler { received.append($0) }
@@ -307,8 +308,11 @@ private final class ProgressBox: @unchecked Sendable {
 private final class FakePocketTTSEngine: PocketTTSEngine {
     var modelsPresent = false
     var loadError: Error?
+    /// Thrown synchronously from `synthesizeStream` itself (mirroring the real engine's "not
+    /// loaded" guard, or a mapped session failure) - never from inside the returned stream.
     var synthesizeError: Error?
-    var synthesizeResult = Data()
+    /// Canned frames the returned stream yields, in order, before finishing.
+    var synthesizeStreamFrames: [[Float]] = []
     var progressToReport: [Double] = [0.5, 1.0]
     private(set) var loadCalls: [Bool] = []
     private(set) var synthesizeCalls: [(text: String, voice: String)] = []
@@ -337,12 +341,14 @@ private final class FakePocketTTSEngine: PocketTTSEngine {
         isLoaded = true
     }
 
+    /// Unused by `PocketTTSBackend` since it moved to the streaming path, but still part of the
+    /// `PocketTTSEngine` protocol.
     func synthesize(text: String, voice: String) async throws -> Data {
         synthesizeCalls.append((text, voice))
         if let synthesizeError {
             throw synthesizeError
         }
-        return synthesizeResult
+        return Data()
     }
 
     func synthesizeStream(text: String, voice: String) async throws -> AsyncThrowingStream<[Float], Error> {
@@ -350,26 +356,34 @@ private final class FakePocketTTSEngine: PocketTTSEngine {
         if let synthesizeError {
             throw synthesizeError
         }
+        let frames = synthesizeStreamFrames
         return AsyncThrowingStream { continuation in
+            for frame in frames {
+                continuation.yield(frame)
+            }
             continuation.finish()
         }
     }
 }
 
 @MainActor
-private final class FakePlayer: SynthesizedAudioPlaying {
-    var onEvent: (@MainActor @Sendable (TTSPlaybackEvent) -> Void)?
+private final class FakePlayer: StreamingAudioPlaying {
+    var onEvent: (@MainActor (TTSPlaybackEvent) -> Void)?
     var playError: Error?
-    /// Events this fake emits (via `onEvent`) from inside a successful `play(_:sessionID:)` call,
-    /// simulating the real player's lifecycle.
+    /// Events this fake emits (via `onEvent`) from inside a successful `play(_:sampleRate:sessionID:)`
+    /// call, simulating the real player's lifecycle.
     var emitOnPlay: [TTSPlaybackEvent] = []
-    private(set) var playCalls: [(wav: Data, sessionID: UUID)] = []
+    private(set) var playCalls: [(frames: [[Float]], sampleRate: Double, sessionID: UUID)] = []
     private(set) var stopCallCount = 0
     private(set) var pauseCallCount = 0
     private(set) var resumeCallCount = 0
 
-    func play(_ wav: Data, sessionID: UUID) async throws {
-        playCalls.append((wav, sessionID))
+    func play(_ frames: AsyncThrowingStream<[Float], Error>, sampleRate: Double, sessionID: UUID) async throws {
+        var received: [[Float]] = []
+        for try await frame in frames {
+            received.append(frame)
+        }
+        playCalls.append((received, sampleRate, sessionID))
         if let playError {
             throw playError
         }
