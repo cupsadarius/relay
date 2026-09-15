@@ -585,17 +585,20 @@ git commit -m "feat: manage agent response integrations"
 
 ## Task 7: Expose integration installation and manual speech in the UI
 
+> **REVISED (user decision, 2026-09-15):** the settings surface is now an Integrations **tab**, not rows appended to a single settings view. Phase 1.6 split the old monolithic `Relay/App/SettingsView.swift` into a `TabView` container `Relay/App/Settings/SettingsView.swift` with per-tab files. So Task 7 ADDS a new `Relay/App/Settings/IntegrationsSettingsView.swift` tab (5th tab, after Keybinds / Dictation / TTS / Security & Permissions) and wires it into the container's `TabView`. The tab also shows a live socket-listening row and a per-provider Check (refresh-status) action.
+
 **Files:**
-- Modify: `Relay/App/AppModel.swift`
-- Modify: `Relay/App/MenuBarContentView.swift`
-- Modify: `Relay/App/SettingsView.swift`
+- Modify: `Relay/App/AppModel.swift` (socket lifecycle, `IntegrationManager`, installers, `isSocketListening`, install/uninstall/check/speakLatest actions).
+- Modify: `Relay/App/MenuBarContentView.swift` (Speak Latest + per-provider status).
+- Create: `Relay/App/Settings/IntegrationsSettingsView.swift` (the new tab).
+- Modify: `Relay/App/Settings/SettingsView.swift` (add the tab to the `TabView`).
 
 **Interfaces:**
-- Produces user-facing install/uninstall/status actions and `Speak Latest Agent Response`.
+- Produces user-facing install/uninstall/check/status actions, a socket-listening indicator, and `Speak Latest Agent Response`.
 
 - [ ] **Step 1: Start/stop socket lifecycle with the app model**
 
-At app initialization, start `HookEnvelopeReceiver` at the fixed Relay socket path, then start `IntegrationManager`. Stop/unlink the socket on app termination.
+At app initialization, start `UnixSocketServer` + `HookEnvelopeReceiver` at the fixed Relay socket path, then start `IntegrationManager`. Stop/unlink the socket on app termination. Expose a MainActor-observable `isSocketListening` (from the server) for the tab's socket row. Hold `ClaudeCodeInstaller`/`CodexInstaller` (default base dirs, helper path from `Bundle.main`) and expose install/uninstall/refreshStatus per provider, surfacing installer errors as status/message without crashing.
 
 - [ ] **Step 2: Add menu-bar controls**
 
@@ -610,9 +613,13 @@ Codex: Active / Trust Required / Not Installed
 
 Do not auto-speak on receipt yet.
 
-- [ ] **Step 3: Add settings integration rows**
+- [ ] **Step 3: Add the Integrations settings tab**
 
-Each integration gets Install/Uninstall and status. For Codex trust-required state, include the exact instruction `Run /hooks in Codex and trust the Relay hook.`
+New `IntegrationsSettingsView` tab. Contents:
+- A **socket status** row: "Listening" / "Not listening" driven by `AppModel.isSocketListening` (+ the socket path shown for reference).
+- Per provider (Claude Code, Codex): **Install** / **Uninstall** buttons, a **Check** button that refreshes status, and the current status label from `IntegrationStatus` (Not installed / Installed, awaiting first event / Trust required / Active / Configuration error).
+- For Codex trust-required state, show the exact instruction `Run /hooks in Codex and trust the Relay hook.` For config-disabled, show `Codex hooks are disabled in config.toml.`
+- Keep a per-tab build-smoke test like the other tabs.
 
 - [ ] **Step 4: Run full tests and manual acceptance**
 
