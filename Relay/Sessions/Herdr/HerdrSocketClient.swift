@@ -15,9 +15,14 @@ struct HerdrSocketClient: HerdrQuerying {
     }
 }
 
-enum HerdrQueryError: Error { case invalidResponse, socketFailure, pathTooLong, responseTooLarge }
+enum HerdrQueryError: Error { case invalidResponse, socketFailure, pathTooLong, responseTooLarge, timedOut }
 
 enum UnixLineRequest {
+    /// Upper bound on total request duration, comfortably above the per-recv
+    /// timeout, so a peer that dribbles bytes without a trailing newline
+    /// cannot hold the detached I/O thread indefinitely.
+    private static let totalDeadlineNanoseconds: UInt64 = 1_000_000_000 // 1 second
+
     static func send(path: String, line: String, timeoutMilliseconds: Int32) async throws -> String {
         try await Task.detached(priority: .userInitiated) {
             try sendBlocking(path: path, line: line, timeoutMilliseconds: timeoutMilliseconds)
@@ -25,6 +30,7 @@ enum UnixLineRequest {
     }
 
     private static func sendBlocking(path: String, line: String, timeoutMilliseconds: Int32) throws -> String {
+        let deadline = DispatchTime.now() + .nanoseconds(Int(totalDeadlineNanoseconds))
         var address = sockaddr_un()
         let pathBytes = Array(path.utf8CString)
         guard pathBytes.count <= MemoryLayout.size(ofValue: address.sun_path) else {
@@ -69,13 +75,23 @@ enum UnixLineRequest {
             sent += wrote
         }
 
+        let maxResponseBytes = 64 * 1024
         var response = Data()
-        var byte: UInt8 = 0
-        while response.count <= 64 * 1024 {
-            let count = Darwin.read(fd, &byte, 1)
+        var chunk = [UInt8](repeating: 0, count: 4096)
+        while response.count <= maxResponseBytes {
+            guard DispatchTime.now() < deadline else { throw HerdrQueryError.timedOut }
+
+            let toRead = min(chunk.count, maxResponseBytes - response.count + 1)
+            let count = chunk.withUnsafeMutableBytes { raw -> Int in
+                Darwin.read(fd, raw.baseAddress, toRead)
+            }
             guard count > 0 else { throw HerdrQueryError.socketFailure }
-            if byte == 0x0A { return String(decoding: response, as: UTF8.self) }
-            response.append(byte)
+
+            if let newlineIndex = chunk[0..<count].firstIndex(of: 0x0A) {
+                response.append(contentsOf: chunk[0..<newlineIndex])
+                return String(decoding: response, as: UTF8.self)
+            }
+            response.append(contentsOf: chunk[0..<count])
         }
         throw HerdrQueryError.responseTooLarge
     }

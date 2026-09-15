@@ -143,6 +143,7 @@
 		F48AD940DAE6412EC677A8BB /* IntegrationsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4F6B57B98EE3D5605E724E8 /* IntegrationsSettingsView.swift */; };
 		F9565864D90DAB867000F0A0 /* RulesSpeechPreprocessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01700458AA3E57B79695FD7 /* RulesSpeechPreprocessor.swift */; };
 		FC7E8DB4267BEA6CA620A14E /* AgentSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C8084505DDA7AD9AACEA069 /* AgentSession.swift */; };
+		FD8ACDA2DE0E5905707C8859 /* HerdrSocketClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13B9E204D55C00E48942AA2 /* HerdrSocketClientTests.swift */; };
 		FEEB68ED69E952C82B735A84 /* DictationCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8319285D2256A603BD08A571 /* DictationCoordinatorTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -292,6 +293,7 @@
 		EBABB87F78A5D75EB1569320 /* HerdrHostOwnership.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HerdrHostOwnership.swift; sourceTree = "<group>"; };
 		ED330EE6049AE116AFB2F072 /* AppSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsTests.swift; sourceTree = "<group>"; };
 		ED7F4126C70AC7872DBFD520 /* StreamingAudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingAudioPlayer.swift; sourceTree = "<group>"; };
+		F13B9E204D55C00E48942AA2 /* HerdrSocketClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HerdrSocketClientTests.swift; sourceTree = "<group>"; };
 		F3332E401CE6B77C9E9402E3 /* FocusModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusModels.swift; sourceTree = "<group>"; };
 		F4F6B57B98EE3D5605E724E8 /* IntegrationsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrationsSettingsView.swift; sourceTree = "<group>"; };
 		F5BF4958844B2771537AF08D /* AppModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModelTests.swift; sourceTree = "<group>"; };
@@ -546,6 +548,7 @@
 				5BE27F0D0A2BEF34BD00F5A4 /* FocusResolutionServiceTests.swift */,
 				23D267BE7B2C822655C9AE70 /* GenericTerminalFocusResolverTests.swift */,
 				29B1662107A24EA83ABA5EE5 /* HerdrFocusResolverTests.swift */,
+				F13B9E204D55C00E48942AA2 /* HerdrSocketClientTests.swift */,
 				05610B86735D45923309417C /* ProcessInspectorTests.swift */,
 				0AD65EC395A1803AB1DFF385 /* TmuxFocusResolverTests.swift */,
 			);
@@ -854,6 +857,7 @@
 				95C9BCDDDA4FE8DE23CED11C /* GenericTerminalFocusResolverTests.swift in Sources */,
 				5BB20F6CC812C4783D7205B6 /* GlobalHotkeyManagerTests.swift in Sources */,
 				8883E0AF33FA7D86B73DA6E1 /* HerdrFocusResolverTests.swift in Sources */,
+				FD8ACDA2DE0E5905707C8859 /* HerdrSocketClientTests.swift in Sources */,
 				E2C6E7141B67B8F4DBA3DE7B /* HookEnvelopeReceiverTests.swift in Sources */,
 				DE60F514AF7DB717FE878E05 /* HookEnvelopeTests.swift in Sources */,
 				874B71D6563F1754868E4872 /* IntegrationManagerTests.swift in Sources */,
