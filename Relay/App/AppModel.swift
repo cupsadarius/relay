@@ -447,6 +447,29 @@ final class AppModel {
             statusText = error.localizedDescription
         }
     }
+
+    /// Fixed sample sentence spoken by the TTS tab's "Test Voice" button. Never user-authored
+    /// content, so routing it through the normal speak path carries no privacy risk.
+    private static let testVoiceSampleText = "This is a preview of the selected voice and speaking rate."
+
+    /// Speaks a fixed sample sentence through the current TTS backend order and options (voice,
+    /// rate). Used by the TTS settings tab's Test Voice button.
+    func testVoice() async {
+        let request = SpeechRequest(
+            text: Self.testVoiceSampleText,
+            source: .testVoice,
+            mode: .userRequested,
+            sessionID: nil
+        )
+        do {
+            try await speechCoordinator.speak(request)
+            diagnostics.record(.ttsSubmitted)
+            statusText = "Speaking test voice"
+        } catch {
+            diagnostics.record(.ttsFailed)
+            statusText = error.localizedDescription
+        }
+    }
 }
 
 /// Default presenter for tests and any composition that doesn't host the overlay panel.

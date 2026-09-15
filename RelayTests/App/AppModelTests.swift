@@ -116,6 +116,29 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.diagnosticsEntries.first?.event, .ttsFailed)
     }
 
+    func testTestVoiceSpeaksAFixedSampleSentenceThroughTheCurrentSelection() async {
+        let speech = FakeSpeechCoordinator()
+        let model = makeModel(speech: speech)
+
+        await model.testVoice()
+
+        XCTAssertEqual(speech.requests.count, 1)
+        XCTAssertEqual(speech.requests.first?.source, .testVoice)
+        XCTAssertEqual(speech.requests.first?.mode, .userRequested)
+        XCTAssertFalse(speech.requests.first?.text.isEmpty ?? true)
+        XCTAssertEqual(model.statusText, "Speaking test voice")
+        XCTAssertEqual(model.diagnosticsEntries.first?.event, .ttsSubmitted)
+    }
+
+    func testTestVoiceFailureIsLoggedAsTTSFailure() async {
+        let speech = FakeSpeechCoordinator(speakError: TestError.saveFailed)
+        let model = makeModel(speech: speech)
+
+        await model.testVoice()
+
+        XCTAssertEqual(model.diagnosticsEntries.first?.event, .ttsFailed)
+    }
+
     func testHoldToTalkStartsOnPressAndFinishesOnRelease() async {
         let hotkeys = FakeHotkeyManager()
         let dictation = FakeDictationCoordinator()
@@ -996,9 +1019,16 @@ private final class FakeSpeechCoordinator: SpeechCoordinating {
     private(set) var stoppedSessionIDs: [UUID] = []
     private(set) var replayCount = 0
     let replayError: Error?
-    init(replayError: Error? = nil) { self.replayError = replayError }
+    let speakError: Error?
+    init(replayError: Error? = nil, speakError: Error? = nil) {
+        self.replayError = replayError
+        self.speakError = speakError
+    }
 
-    func speak(_ request: SpeechRequest) async throws { requests.append(request) }
+    func speak(_ request: SpeechRequest) async throws {
+        requests.append(request)
+        if let speakError { throw speakError }
+    }
     func stop() { stopCount += 1 }
     func stop(sessionID: UUID) { stoppedSessionIDs.append(sessionID) }
     func replayLast() async throws { replayCount += 1; if let replayError { throw replayError } }
