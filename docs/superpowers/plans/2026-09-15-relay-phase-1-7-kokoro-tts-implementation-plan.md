@@ -100,11 +100,17 @@ enum KokoroEngineError: Error, Equatable {
 
 - [ ] **Step 2: Write failing tests** in `FluidAudioKokoroEngineTests.swift` against a fake `KokoroModelLoading`, mirroring the Parakeet engine tests: `load(allowDownload:false)` with no model throws `.modelsNotDownloaded` and never calls download; `load(allowDownload:true)` downloads then synth works; concurrent loads single-flight; a load failure does not cache a false "present"; synthesize before load throws. Run red.
 
-- [ ] **Step 3: Implement `actor FluidAudioKokoroEngine: KokoroEngine`** mirroring `FluidAudioParakeetEngine` (single-flight keyed by `localOnly`/`download`, `validatedModelsPresent` cleared on failure, `awaitAndClear`/`clearIfCurrent`). The production `KokoroModelLoading` wraps FluidAudio: `modelsArePresent()` checks `TtsModels.cacheDirectoryURL()` for the model files without downloading; `loadLocal()` constructs `KokoroTtsManager(...)` and calls `initialize(models:)` with models loaded from the cache directory (never the downloading `initialize(preloadVoices:)`); `downloadAndLoad` calls `TtsModels.download(directory:progressHandler:)` then `initialize(models:)`. The `KokoroModelSession` wrapper calls `manager.synthesize(text:voice:voiceSpeed:)`.
+- [ ] **Step 3: Implement `actor FluidAudioKokoroEngine: KokoroEngine`** mirroring `FluidAudioParakeetEngine` (single-flight keyed by `localOnly`/`download`, `validatedModelsPresent` cleared on failure, `awaitAndClear`/`clearIfCurrent`). Three FluidAudio-TTS specifics that differ from Parakeet and are load-bearing — get these exactly right:
 
-- [ ] **Step 4: Run tests green.**
+  - **Presence check must be hand-rolled; there is NO TTS models-exist API.** Unlike ASR (`AsrModels.modelsExist`/`isModelValid`), FluidAudio's TTS module exposes none. `TtsModels.cacheDirectoryURL()` returns `~/.cache/fluidaudio` and **creates that directory if missing**, so testing "does the cache dir exist" is always true and would make Kokoro falsely report ready. Instead, `modelsArePresent()` must use `FileManager` to check that the actual model bundles exist under the `Models/` subdirectory of the cache dir, one per `ModelNames.TTS.Variant` (on macOS: `kokoro_21_5s_v2.mlmodelc`, `kokoro_21_15s_v2.mlmodelc` — derive the names from `ModelNames.TTS.Variant.allCases.map(\.fileName)`, do not hardcode if the enum is reachable). Return true only if every required bundle is present.
+  - **There is NO `TtsModels.load(from:)`.** The only way to get a `TtsModels` for `initialize(models:)` is `TtsModels.download(directory:)`, which loads from disk when files are present but **re-downloads if any are absent/corrupt**. So `loadLocal()` must call `TtsModels.download(directory:)` gated strictly behind the hand-rolled presence check above, then `KokoroTtsManager(directory:).initialize(models:)`. This is the same residual-network risk documented on `FluidAudioParakeetEngine`; the presence gate is the ONLY protection — there is no network-free load. Never call `KokoroTtsManager.initialize(preloadVoices:)` (that one downloads unconditionally).
+  - `downloadAndLoad` calls `TtsModels.download(directory:progressHandler:)` then `initialize(models:)`. The `KokoroModelSession` wrapper calls `manager.synthesize(text:voice:voiceSpeed:)` (the `voice` param is `String?`; nil uses the manager default).
 
-- [ ] **Step 5: Commit** `feat(tts): add Kokoro engine seam and FluidAudio engine`.
+- [ ] **Step 4: Add a presence-check regression test.** Assert `modelsArePresent()` returns false when only `~/.cache/fluidaudio` exists but no `Models/*.mlmodelc` bundles do. Do this through the `KokoroModelLoading` fake (make the fake model the check against a temp directory you control), so no real cache is touched. This guards against the "dir auto-created" trap.
+
+- [ ] **Step 5: Run tests green.**
+
+- [ ] **Step 6: Commit** `feat(tts): add Kokoro engine seam and FluidAudio engine`.
 
 ---
 
@@ -126,8 +132,11 @@ final class SynthesizedAudioPlayer {
     /// pill's speaking waveform behaves consistently.
     var onEvent: (@MainActor (TTSPlaybackEvent) -> Void)?
 
-    /// Decodes `wav` and plays it. Emits .scheduled immediately, .started on the
-    /// first rendered buffer, .level from an output tap, and .finished on natural end.
+    /// Decodes `wav` and plays it, awaiting natural completion before returning.
+    /// Emits .scheduled immediately, .started on the first rendered buffer, .level
+    /// from an output tap, and .finished on natural end. Awaiting completion keeps
+    /// the router's activeBackend handoff and .finished ordering correct (the
+    /// backend's speak() only returns once playback ends, like AppleTTSBackend).
     func play(_ wav: Data, sessionID: UUID) async throws
     func stop()      // emits .cancelled if playing
     func pause()
@@ -157,9 +166,15 @@ Ties the engine and player into the `TextToSpeechBackend` contract.
 - Create: `Relay/Backends/KokoroTTSBackend.swift`
 - Test: `RelayTests/Backends/KokoroTTSBackendTests.swift`
 
-- [ ] **Step 1: Failing tests** against a fake `KokoroEngine` and a fake player: `id == "kokoro"`, `displayName == "Kokoro"`, capabilities include fully-offline + neural; `availability()` returns `.available` when the engine reports models present, `.modelNotDownloaded` when not, `.failed`/`.unavailable` on load error; `speak` calls engine `synthesize` (lazy `load(allowDownload:false)` first, like ParakeetBackend's lazy prepare) then hands the WAV to the player and forwards its events with the same `sessionID`; empty text does not crash; a synthesis error surfaces as a fallback-worthy `SpeechBackendError`. Run red.
+- [ ] **Step 1: Failing tests** against a fake `KokoroEngine` and a fake player: `id == "kokoro"`, `displayName == "Kokoro"`, capabilities `[.fullyOffline, .voiceSelection, .pauseResume, .outputLevel]`; `availability()` returns `.available` when the engine reports models present, `.modelNotDownloaded` when not, `.failed`/`.unavailable` on load error; `speak` calls engine `synthesize` with the Kokoro voice from `options.kokoroVoice` (lazy `load(allowDownload:false)` first, like ParakeetBackend's lazy prepare) then hands the WAV to the player and forwards its events with the same `sessionID`; empty text does not crash; a synthesis/model error surfaces as a fallback-worthy `SpeechBackendError`. Run red.
 
-- [ ] **Step 2: Implement `@MainActor final class KokoroTTSBackend: TextToSpeechBackend`.** `setPlaybackEventHandler` stores the handler; wire the player's `onEvent` to it. `availability()` maps engine presence to `BackendAvailability` the same way `ParakeetBackend` maps its states (`.available` / `.modelNotDownloaded` / `.failed`). `speak(text:options:sessionID:)`: ensure loaded (`load(allowDownload:false)`, throwing `modelNotDownloaded` → a fallback-worthy `SpeechBackendError` so the router falls back to Apple), read the voice from `options` (add a `voiceIdentifier`-style field or reuse the existing `TTSOptions.voiceIdentifier`) or the backend's configured `kokoroVoice`, call `engine.synthesize`, then `await player.play(wav, sessionID:)`. Map errors to `SpeechBackendError` with `isFallbackWorthy == true` for load/model issues.
+- [ ] **Step 2: Implement `@MainActor final class KokoroTTSBackend: TextToSpeechBackend`.**
+  - Capabilities: `TTSCapabilities([.fullyOffline, .voiceSelection, .pauseResume, .outputLevel])`. Note `.neural` does NOT exist in `TTSCapability` (only `pauseResume, voiceSelection, fullyOffline, outputLevel`); `.outputLevel` is the correct, meaningful flag here because Kokoro is the first backend to emit `.level`.
+  - `setPlaybackEventHandler` stores the handler; wire the player's `onEvent` to it.
+  - `availability()` maps engine presence to `BackendAvailability` the same way `ParakeetBackend` maps its states (`.available` / `.modelNotDownloaded` / `.failed`).
+  - `speak(text:options:sessionID:)`: ensure loaded (`load(allowDownload:false)`, throwing `modelNotDownloaded` → a fallback-worthy `SpeechBackendError` so the router falls back to Apple). **Voice:** read `options.kokoroVoice ?? TtsConstants.recommendedVoice`. Ignore `options.voiceIdentifier` (that is Apple's `com.apple.voice.*` id and is meaningless to Kokoro). **Speed:** the shared rate slider is on Apple's 0…1 scale (default 0.5), but Kokoro's `voiceSpeed` uses 1.0 = normal. Map so the shared default lines up: `voiceSpeed = options.rate / 0.5` (rate 0.5 → 1.0, 0.1 → 0.2, 1.0 → 2.0), clamped to a sane range if needed. Do NOT pass `options.rate` straight through, or Kokoro speaks at half speed.
+  - Call `engine.synthesize(text:voice:speed:)`, then `await player.play(wav, sessionID:)`.
+  - Map errors to `SpeechBackendError` with `isFallbackWorthy == true` for load/model issues.
 
 - [ ] **Step 3: Green. Step 4: Commit** `feat(tts): add Kokoro TTS backend`.
 
@@ -171,11 +186,25 @@ Ties the engine and player into the `TextToSpeechBackend` contract.
 - Modify: `Relay/Domain/AppSettings.swift` (add `kokoroVoice`), `Relay/App/AppModel.swift`
 - Test: additions to `RelayTests/App/AppModelTests.swift`
 
-- [ ] **Step 1: `AppSettings`.** Add `var kokoroVoice: String?`, wire it through `init`, `Codable` (`decodeIfPresent`, default nil), and the memberwise/default builders. Test: round-trips through encode/decode; default nil. `ttsBackendOrder` already exists (default `["apple-tts"]`); do not re-add it.
+- [ ] **Step 1: `TTSOptions` gains a Kokoro voice field.** In `Relay/Domain/SpeechModels.swift`, add `var kokoroVoice: String?` to `TTSOptions` (keep `voiceIdentifier` for Apple, `rate` shared). This is the mechanism that carries the Kokoro voice to whichever backend the router picks, since the options value is built once before routing. Test: `TTSOptions` equatable/default still holds.
 
-- [ ] **Step 2: AppModel.** Build `let kokoroTTS = KokoroTTSBackend(...)`. Add it to the `TTSRouter` backends dict: `[appleTTS.id: appleTTS, kokoroTTS.id: kokoroTTS]`. The router's `backendOrder` already reads `state.value.ttsBackendOrder`, so Auto ordering is data-driven — no router code change. Add a TTS registry `[String: any TextToSpeechBackend]` and a TTS downloaders map for the catalog (Task 5), mirroring `sttRegistry`/`speechModelDownloaders`. Add a `setKokoroVoice(_:)` setter using the existing private `updateSettings` path. Keep the default order `["apple-tts"]` so behavior is unchanged until the user enables Kokoro.
+- [ ] **Step 2: `AppSettings`.** Add `var kokoroVoice: String?`, wire it through `init`, `Codable` (`decodeIfPresent`, default nil), and the memberwise/default builders. Test: round-trips through encode/decode; default nil. `ttsBackendOrder` already exists (default `["apple-tts"]`); do not re-add it.
 
-- [ ] **Step 3:** Tests — router is constructed with both backends; enabling Kokoro first in order routes to Kokoro when available and falls back to Apple when Kokoro reports model-missing (use fakes, mirror `STTRouter` fallback tests). Green. Commit `feat(tts): register Kokoro backend and kokoroVoice setting`.
+- [ ] **Step 3: AppModel — register the backend AND thread the voice/speed into the options closure.** Build `let kokoroTTS = KokoroTTSBackend(...)`. Add it to the `TTSRouter` backends dict: `[appleTTS.id: appleTTS, kokoroTTS.id: kokoroTTS]`. The router's `backendOrder` already reads `state.value.ttsBackendOrder`, so Auto ordering is data-driven — no router code change. **Critically, edit the `SpeechCoordinator` options closure (currently `AppModel.swift:64-69`) to also populate the Kokoro voice:**
+
+  ```swift
+  options: {
+      TTSOptions(
+          voiceIdentifier: state.value.ttsVoiceIdentifier,
+          rate: state.value.ttsRate,
+          kokoroVoice: state.value.kokoroVoice
+      )
+  },
+  ```
+
+  Without this edit the Kokoro voice never reaches the speak path — this is the single easiest step to miss. Add a TTS registry `[String: any TextToSpeechBackend]` and a TTS downloaders map for the catalog (Task 5), mirroring `sttRegistry`/`speechModelDownloaders`. Add a `setKokoroVoice(_:)` setter using the existing private `updateSettings` path. Keep the default order `["apple-tts"]` so behavior is unchanged until the user enables Kokoro.
+
+- [ ] **Step 4:** Tests — router is constructed with both backends; enabling Kokoro first in order routes to Kokoro when available and falls back to Apple when Kokoro reports model-missing (use fakes, mirror `STTRouter` fallback tests); the options closure carries `kokoroVoice`. Green. Commit `feat(tts): register Kokoro backend and thread kokoroVoice through options`.
 
 ---
 
