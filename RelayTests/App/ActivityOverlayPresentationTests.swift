@@ -188,7 +188,7 @@ final class ActivityOverlayPresentationTests: XCTestCase {
         XCTAssertEqual(bars[1], bars[5])
         XCTAssertEqual(bars[2], bars[4])
         for value in bars {
-            XCTAssertGreaterThanOrEqual(value, 0)
+            XCTAssertGreaterThanOrEqual(value, 0.34)
             XCTAssertLessThanOrEqual(value, 1.0)
         }
     }
@@ -201,11 +201,11 @@ final class ActivityOverlayPresentationTests: XCTestCase {
         XCTAssertEqual(speaking.listeningWaveformBars(), [])
     }
 
-    func testListeningWaveformBarsAtFullLevelMatchesRestShapeAndAtZeroIsScaledToFloor() {
-        let restHeights = ActivityOverlayPresentation.waveformRestHeights
-        let maxHeight = restHeights.max()!
-        let shape = restHeights.map { $0 / maxHeight }
-
+    func testListeningWaveformBarsAtFullLevelAreAllOneAndAtZeroAreAllFloor() {
+        // `WaveformBars` renders each bar as `restHeight × scale`, so the shape lives entirely in
+        // `waveformRestHeights`: the multiplier returned here must be identical across all seven
+        // bars for level 1 to reproduce the rest heights exactly (scale 1.0) and level 0 to dim
+        // every bar to the same 0.34 proportion, rather than re-applying the shape a second time.
         let full = ActivityOverlayPresentation.make(
             state: .listening(sessionID: UUID(), startedAt: .now, level: 1), style: .minimal, reduceMotion: false
         )!.listeningWaveformBars()
@@ -213,11 +213,13 @@ final class ActivityOverlayPresentationTests: XCTestCase {
             state: .listening(sessionID: UUID(), startedAt: .now, level: 0), style: .minimal, reduceMotion: false
         )!.listeningWaveformBars()
 
-        for (index, value) in full.enumerated() {
-            XCTAssertEqual(value, shape[index], accuracy: 0.0001)
+        XCTAssertEqual(full.count, 7)
+        XCTAssertEqual(quiet.count, 7)
+        for value in full {
+            XCTAssertEqual(value, 1.0, accuracy: 0.000001)
         }
-        for (index, value) in quiet.enumerated() {
-            XCTAssertEqual(value, 0.34 * shape[index], accuracy: 0.0001)
+        for value in quiet {
+            XCTAssertEqual(value, 0.34, accuracy: 0.000001)
         }
     }
 
