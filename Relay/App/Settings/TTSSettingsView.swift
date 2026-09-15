@@ -70,22 +70,24 @@ struct TTSSettingsView: View {
 
     private func ttsBackendRow(_ backend: TTSBackendStatus) -> some View {
         let enabledCount = model.ttsBackends.filter(\.isEnabled).count
-        return HStack {
-            Toggle(isOn: Binding(
-                get: { backend.isEnabled },
-                set: { model.setTTSBackendEnabled(backend.id, $0) }
-            )) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(backend.displayName)
-                    Text(ttsBackendStatusLabel(backend.state))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+        let isEnabledBinding = Binding(
+            get: { backend.isEnabled },
+            set: { model.setTTSBackendEnabled(backend.id, $0) }
+        )
+        return HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(backend.displayName)
+                Text(ttsBackendStatusLabel(backend.state))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Spacer()
 
             ttsBackendActionView(backend)
+
+            Toggle("", isOn: isEnabledBinding)
+                .labelsHidden()
 
             if backend.isEnabled {
                 VStack(spacing: 2) {

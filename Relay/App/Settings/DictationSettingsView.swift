@@ -43,22 +43,24 @@ struct DictationSettingsView: View {
 
     private func speechBackendRow(_ backend: STTBackendStatus) -> some View {
         let enabledCount = model.sttBackends.filter(\.isEnabled).count
-        return HStack {
-            Toggle(isOn: Binding(
-                get: { backend.isEnabled },
-                set: { model.setSTTBackendEnabled(backend.id, $0) }
-            )) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(backend.displayName)
-                    Text(speechBackendStatusLabel(backend.state))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+        let isEnabledBinding = Binding(
+            get: { backend.isEnabled },
+            set: { model.setSTTBackendEnabled(backend.id, $0) }
+        )
+        return HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(backend.displayName)
+                Text(speechBackendStatusLabel(backend.state))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Spacer()
 
             speechBackendActionView(backend)
+
+            Toggle("", isOn: isEnabledBinding)
+                .labelsHidden()
 
             if backend.isEnabled {
                 VStack(spacing: 2) {
