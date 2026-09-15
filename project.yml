@@ -3,6 +3,10 @@ options:
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
+packages:
+  FluidAudio:
+    url: https://github.com/FluidInference/FluidAudio.git
+    exactVersion: 0.12.6
 targets:
   Relay:
     type: application
@@ -12,6 +16,9 @@ targets:
         excludes:
           - Relay.xcodeproj
           - "**/*.xcworkspace"
+    dependencies:
+      - package: FluidAudio
+        product: FluidAudio
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.relaymac.Relay

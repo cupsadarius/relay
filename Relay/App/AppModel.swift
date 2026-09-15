@@ -61,7 +61,11 @@ final class AppModel {
             overlay: overlayModel
         )
         let sttBackend = AppleSpeechBackend()
-        let sttRegistry: [String: any SpeechToTextBackend] = [sttBackend.id: sttBackend]
+        let parakeetBackend = ParakeetBackend()
+        let sttRegistry: [String: any SpeechToTextBackend] = [
+            sttBackend.id: sttBackend,
+            parakeetBackend.id: parakeetBackend,
+        ]
         let dictation = DictationCoordinator(
             microphone: MicrophoneCapture(),
             sttRouter: STTRouter(
