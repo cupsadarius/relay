@@ -6,6 +6,13 @@ import XCTest
 /// through an injected `ParakeetModelLoading` fake, since the real FluidAudio types can't be
 /// constructed without downloaded model weights.
 final class FluidAudioParakeetEngineTests: XCTestCase {
+    func testUsesEnglishOnlyParakeetModel() async {
+        let engine = makeEngine(loader: FakeModelLoader())
+        let modelDirectory = await engine.modelDirectory
+
+        XCTAssertEqual(modelDirectory.lastPathComponent, "parakeet-tdt-0.6b-v2-coreml")
+    }
+
     func testLoadThrowsModelsNotDownloadedWhenLocalValidationFailsAndNeverCallsLoad() async {
         let loader = FakeModelLoader()
         await loader.setIsValid(false)
@@ -155,10 +162,7 @@ final class FluidAudioParakeetEngineTests: XCTestCase {
     }
 
     private func makeEngine(loader: FakeModelLoader) -> FluidAudioParakeetEngine {
-        FluidAudioParakeetEngine(
-            modelDirectory: URL(fileURLWithPath: "/tmp/relay-parakeet-engine-tests-unused"),
-            modelLoader: loader
-        )
+        FluidAudioParakeetEngine(modelLoader: loader)
     }
 }
 

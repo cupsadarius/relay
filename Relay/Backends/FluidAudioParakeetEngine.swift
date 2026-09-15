@@ -2,8 +2,10 @@ import FluidAudio
 import Foundation
 import os
 
-/// A loaded Parakeet model, ready to transcribe. Wraps FluidAudio's `AsrManager` behind an actor
-/// so the non-`Sendable` manager never has to cross an isolation boundary.
+/// A loaded Parakeet model, ready to transcribe. `FluidAudioModelLoader` wraps FluidAudio's
+/// `AsrManager` (already a `public actor`, hence already `Sendable` on its own) behind this
+/// protocol purely as a test seam, so `FluidAudioParakeetEngine`'s loading logic can be exercised
+/// against a fake without constructing real CoreML models.
 protocol ParakeetModelSession: Sendable {
     func transcribe(samples: [Float]) async throws -> String
 }
@@ -23,8 +25,8 @@ protocol ParakeetModelLoading: Sendable {
     func downloadAndLoad(progress: @escaping @Sendable (Double) -> Void) async throws -> any ParakeetModelSession
 }
 
-/// Production `ParakeetEngine` backed by FluidAudio's Parakeet TDT v3 model. Loads and runs the
-/// model entirely on-device.
+/// Production `ParakeetEngine` backed by FluidAudio's English-only Parakeet TDT v2 model. Loads
+/// and runs the model entirely on-device.
 ///
 /// `load(allowDownload: false)` never *initiates* a download: it first calls
 /// `AsrModels.isModelValid`, which only opens local files, and refuses to proceed to
@@ -34,34 +36,46 @@ protocol ParakeetModelLoading: Sendable {
 /// cache and redownload from HuggingFace. Only `load(allowDownload: true)` is meant to reach the
 /// network; this is the closest to that guarantee this engine can make without patching FluidAudio.
 actor FluidAudioParakeetEngine: ParakeetEngine {
-    private static let version: AsrModelVersion = .v3
+    private static let version: AsrModelVersion = .v2
     /// FluidAudio requires at least one second of 16 kHz audio (`ASRError.invalidAudioData`);
     /// shorter clips are zero-padded up to this length before transcription.
     private static let minimumSampleCount = 16_000
 
-    /// The directory FluidAudio stores (or expects to find) the Parakeet model files in. Must
-    /// equal `AsrModels.defaultCacheDirectory(for: .v3)` for `AsrModels.isModelValid` to see the
-    /// same location this engine checks: FluidAudio's `isModelValid()` takes no directory
-    /// parameter and always resolves the default cache path for the given version itself.
+    /// Which flavor of load is in flight, tracked alongside its task. A caller with a different
+    /// `allowDownload` value decides whether to join it, ignore it and start its own, or refuse
+    /// to wait on it - see `load(allowDownload:progress:)`.
+    private enum LoadKind: Equatable {
+        case localOnly
+        case download
+    }
+
+    /// The directory FluidAudio stores the Parakeet model files in. Always
+    /// `AsrModels.defaultCacheDirectory(for: .v2)`: FluidAudio's own `AsrModels.isModelValid`
+    /// takes no directory parameter and only ever checks that location, so this can't safely be
+    /// pointed anywhere else.
     let modelDirectory: URL
 
     private let modelLoader: any ParakeetModelLoading
     private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "parakeet")
 
     private var session: (any ParakeetModelSession)?
-    private var inFlightLoad: Task<Void, Error>?
-    /// Caches a positive `isModelValid()` result for the process lifetime so repeated `load`
-    /// attempts (e.g. from repeated `prepare()` calls before the first one settles) don't re-open
-    /// every model file each time. Never caches a negative result, since the user may download
-    /// the model between calls.
-    private var validatedModelsPresent = false
+    private var inFlightLoad: (task: Task<Void, Error>, kind: LoadKind)?
+    /// Caches a positive `isModelValid()` result for as long as it remains trustworthy: cleared
+    /// on any load failure, since FluidAudio's own failure handling can delete and redownload
+    /// files out from under us (see the type-level doc comment), so a stale `true` could let a
+    /// later `allowDownload: false` call reach `AsrModels.load` ungated. Never caches a negative
+    /// result, since the user may download the model between calls. Only ever set by a
+    /// `localOnly` load's own validation step - a `download` load never touches it directly.
+    private var validatedModelsPresent: Bool
 
     init(
-        modelDirectory: URL = AsrModels.defaultCacheDirectory(for: FluidAudioParakeetEngine.version),
-        modelLoader: (any ParakeetModelLoading)? = nil
+        modelLoader: (any ParakeetModelLoading)? = nil,
+        validatedModelsPresent: Bool = false
     ) {
+        let modelDirectory = AsrModels.defaultCacheDirectory(for: Self.version)
         self.modelDirectory = modelDirectory
         self.modelLoader = modelLoader ?? FluidAudioModelLoader(modelDirectory: modelDirectory, version: Self.version)
+        self.validatedModelsPresent = validatedModelsPresent
     }
 
     func modelsArePresent() async -> Bool {
@@ -74,23 +88,38 @@ actor FluidAudioParakeetEngine: ParakeetEngine {
         }
 
         if let inFlightLoad {
-            try await inFlightLoad.value
-            return
+            switch (inFlightLoad.kind, allowDownload) {
+            case (.localOnly, false), (.download, true):
+                // Same kind of load already running: just join it.
+                try await awaitAndClear(inFlightLoad.task)
+                return
+
+            case (.localOnly, true):
+                // A local-only load is running. A download caller wants a fresh download
+                // regardless of that load's outcome, so it waits for it to get out of the way
+                // (ignoring whether it succeeded or failed) and only then starts its own
+                // download - unless the local-only load already produced a session.
+                _ = try? await inFlightLoad.task.value
+                clearIfCurrent(inFlightLoad.task)
+                if session != nil {
+                    return
+                }
+                try await startLoad(allowDownload: true, progress: progress)
+                return
+
+            case (.download, false):
+                // A download (potentially ~1 GB) is running. Only worth waiting on if we already
+                // know the model is locally valid; otherwise fail fast rather than block a caller
+                // that only asked for a local load on a transfer it never requested.
+                guard validatedModelsPresent else {
+                    throw ParakeetEngineError.modelsNotDownloaded
+                }
+                try await awaitAndClear(inFlightLoad.task)
+                return
+            }
         }
 
-        let task = Task { try await self.performLoad(allowDownload: allowDownload, progress: progress) }
-        inFlightLoad = task
-
-        do {
-            try await task.value
-            inFlightLoad = nil
-        } catch is CancellationError {
-            inFlightLoad = nil
-            throw CancellationError()
-        } catch {
-            inFlightLoad = nil
-            throw error
-        }
+        try await startLoad(allowDownload: allowDownload, progress: progress)
     }
 
     func transcribe(samples: [Float]) async throws -> String {
@@ -112,6 +141,39 @@ actor FluidAudioParakeetEngine: ParakeetEngine {
         } catch {
             logger.debug("Parakeet transcription failed: \(error.localizedDescription, privacy: .private)")
             throw ParakeetEngineError.transcriptionFailed("Parakeet transcription failed")
+        }
+    }
+
+    /// Starts a fresh load of the given kind, registers it as in flight, and awaits it.
+    private func startLoad(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws {
+        let kind: LoadKind = allowDownload ? .download : .localOnly
+        let task = Task { try await self.performLoad(allowDownload: allowDownload, progress: progress) }
+        inFlightLoad = (task, kind)
+        try await awaitAndClear(task)
+    }
+
+    /// Awaits `task`, then clears `inFlightLoad` - but only if it still refers to this exact
+    /// task, so a newer load started while we were suspended (e.g. by a joiner that decided to
+    /// start its own load once we finished) is never clobbered. A failure also invalidates any
+    /// cached local validation, since we can no longer trust the on-disk state matches what was
+    /// last checked.
+    private func awaitAndClear(_ task: Task<Void, Error>) async throws {
+        do {
+            try await task.value
+            clearIfCurrent(task)
+        } catch is CancellationError {
+            clearIfCurrent(task)
+            throw CancellationError()
+        } catch {
+            clearIfCurrent(task)
+            validatedModelsPresent = false
+            throw error
+        }
+    }
+
+    private func clearIfCurrent(_ task: Task<Void, Error>) {
+        if inFlightLoad?.task == task {
+            inFlightLoad = nil
         }
     }
 
@@ -138,7 +200,6 @@ actor FluidAudioParakeetEngine: ParakeetEngine {
         }
 
         session = loadedSession
-        validatedModelsPresent = true
     }
 
     /// Network-free. Returns the cached positive result when available; otherwise asks the
@@ -194,13 +255,11 @@ private struct FluidAudioModelLoader: ParakeetModelLoading {
     }
 }
 
-/// Isolates FluidAudio's non-`Sendable` `AsrManager` so it never has to cross an actor boundary.
-private actor AsrManagerSession: ParakeetModelSession {
-    private let manager: AsrManager
-
-    init(manager: AsrManager) {
-        self.manager = manager
-    }
+/// Thin wrapper around FluidAudio's `AsrManager` so it can conform to `ParakeetModelSession`.
+/// `AsrManager` is a `public actor` - already `Sendable` on its own - so this exists purely to
+/// give `FluidAudioParakeetEngine` a protocol seam to fake in tests, not for concurrency safety.
+private struct AsrManagerSession: ParakeetModelSession {
+    let manager: AsrManager
 
     func transcribe(samples: [Float]) async throws -> String {
         let result = try await manager.transcribe(samples)
