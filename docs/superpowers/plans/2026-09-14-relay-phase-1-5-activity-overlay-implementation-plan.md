@@ -898,6 +898,13 @@ Build/run Relay from Xcode and verify:
 6. Reduce Motion removes waveform/scale motion; VoiceOver announces the Interactive action label without forced focus.
 7. A forced presentation failure leaves dictation/TTS functional and records only `Activity overlay failed` in Diagnostics.
 
+Acceptance record 2026-09-15 at `64490cd` (live on the user's Mac):
+- Items 1, 2, 3: pass. Cancel and Stop controls work. Off mid-dictation works. Minimal works.
+- Item 4: Spaces, display selection, and full-screen app pass. Pointer-move-while-dictating not yet checked.
+- Item 5: not yet checked. Item 6 (Reduce Motion, VoiceOver): optional accessibility checks, not yet run.
+- Item 7: covered by unit tests only; not reachable by hand without a code change.
+- Insertion: `via paste` confirmed in Ghostty, `via accessibility` confirmed in a native field.
+
 - [ ] **Step 4: Commit any verified integration fixes**
 
 ```bash
