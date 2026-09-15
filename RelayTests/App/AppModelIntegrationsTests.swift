@@ -363,6 +363,12 @@ final class AppModelIntegrationsTests: XCTestCase {
     // itself: a decoded event reaches the coordinator, upserts a session into the registry, and
     // speaks exactly once when focus is stubbed `.focused`/`.high` and auto-read is enabled; a
     // disabled flag or a non-`.focused`/`.high` decision stays silent while still upserting.
+    //
+    // NOTE: these validate the onResponse -> coordinator wiring SHAPE via this harness, not the
+    // production `convenience init()`'s real resolver graph (Herdr/tmux/generic-terminal order,
+    // shared frontmost/recent-interaction instances) — that graph is verified by inspection only;
+    // `testAllSettingsTabViewsConstruct`/`testRealAppModelRegistersAKokoroDownloaderButNoAppleDownloader`
+    // separately confirm it constructs without crashing or touching a socket.
 
     func testOnResponseWiringSpeaksOnceWhenFocusedHighAndAutoReadEnabled() async {
         let harness = makeAutoReadWiringHarness(

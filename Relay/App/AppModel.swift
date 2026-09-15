@@ -5,12 +5,7 @@ import AVFoundation
 @MainActor
 @Observable
 final class AppModel {
-    /// `@unchecked Sendable`: `value` is only ever mutated from `AppModel`'s `@MainActor`
-    /// isolation (via `updateSettings`). Marking this Sendable lets a `@Sendable` closure (e.g.
-    /// `AgentAutoReadCoordinator`'s `autoReadEnabled` reader, called from that actor's own
-    /// isolation) capture and read `state.value` without the compiler requiring a full
-    /// actor-hop — mirroring `SpeechCoordinator`'s `@unchecked Sendable` conformance above.
-    private final class SettingsState: @unchecked Sendable {
+    private final class SettingsState {
         var value: AppSettings
 
         init(_ value: AppSettings) {
@@ -152,7 +147,16 @@ final class AppModel {
             focus: focusResolution,
             preprocess: { RulesSpeechPreprocessor().prepare(text: $0, mode: .automatic) },
             speech: coordinator,
-            autoReadEnabled: { state.value.autoReadEnabled }
+            // `@MainActor` here (not merely `@Sendable`): `state.value` is only ever WRITTEN on
+            // the MainActor (`updateSettings`), so every reader must also run there. This closure
+            // is invoked from `AgentAutoReadCoordinator`'s own actor isolation as `await
+            // autoReadEnabled()`; being `@MainActor`-isolated makes that call hop to the main
+            // actor to read `state.value`, landing in the same isolation domain as every write —
+            // rather than reading the mutable, heap-backed `AppSettings` struct across domains
+            // with no synchronization. A `@MainActor` closure converts implicitly to the
+            // coordinator's plain `@Sendable () async -> Bool` parameter type; the hop happens at
+            // the call site, not by widening that parameter.
+            autoReadEnabled: { @MainActor in state.value.autoReadEnabled }
         )
 
         let dictation = DictationCoordinator(
