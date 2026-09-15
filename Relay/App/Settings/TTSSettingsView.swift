@@ -29,7 +29,7 @@ struct TTSSettingsView: View {
                         .accessibilityIdentifier("tts-backend-message")
                 }
 
-                Text("Relay speaks through enabled backends in order and falls back to the next one. Kokoro runs fully on-device after a one-time model download (about 100 MB).")
+                Text("Relay speaks through enabled backends in order and falls back to the next one. Neural backends run fully on-device after a one-time model download.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
