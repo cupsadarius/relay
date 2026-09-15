@@ -175,7 +175,7 @@ final class KokoroTTSBackendTests: XCTestCase {
         }
     }
 
-    func testSpeakMapsLoadFailureToFallbackWorthyErrorAndEmitsFailedEvent() async {
+    func testSpeakMapsLoadFailureToFallbackWorthyErrorWithoutEmittingFailed() async {
         let engine = FakeKokoroEngine()
         engine.modelsPresent = true
         engine.loadError = KokoroEngineError.loadFailed
@@ -192,10 +192,13 @@ final class KokoroTTSBackendTests: XCTestCase {
             XCTAssertEqual(mapped, .initializationFailed("Kokoro model load failed"))
             XCTAssertEqual(mapped?.isFallbackWorthy, true)
         }
-        XCTAssertEqual(received, [.failed(sessionID: sessionID)])
+        // TTSRouter centralizes `.failed`, emitting it only once all backends are exhausted -
+        // the backend itself must never emit it, or a successful Apple fallback would still
+        // show a stale failure in the UI.
+        XCTAssertFalse(received.contains(.failed(sessionID: sessionID)), "Backend must not emit .failed - TTSRouter owns that")
     }
 
-    func testSpeakMapsSynthesisFailureToFallbackWorthyErrorAndEmitsFailedEvent() async {
+    func testSpeakMapsSynthesisFailureToFallbackWorthyErrorWithoutEmittingFailed() async {
         let engine = FakeKokoroEngine()
         engine.modelsPresent = true
         engine.synthesizeError = KokoroEngineError.synthesisFailed
@@ -212,10 +215,10 @@ final class KokoroTTSBackendTests: XCTestCase {
             XCTAssertEqual(mapped, .inferenceFailed("Kokoro synthesis failed"))
             XCTAssertEqual(mapped?.isFallbackWorthy, true)
         }
-        XCTAssertEqual(received, [.failed(sessionID: sessionID)])
+        XCTAssertFalse(received.contains(.failed(sessionID: sessionID)), "Backend must not emit .failed - TTSRouter owns that")
     }
 
-    func testSpeakMapsPlaybackFailureToFallbackWorthyErrorAndEmitsFailedEvent() async {
+    func testSpeakMapsPlaybackFailureToFallbackWorthyErrorWithoutEmittingFailed() async {
         let engine = FakeKokoroEngine()
         engine.modelsPresent = true
         let player = FakePlayer()
@@ -233,7 +236,9 @@ final class KokoroTTSBackendTests: XCTestCase {
             XCTAssertEqual(mapped, .inferenceFailed("Kokoro playback failed"))
             XCTAssertEqual(mapped?.isFallbackWorthy, true)
         }
-        XCTAssertEqual(received, [.failed(sessionID: sessionID)])
+        // Uniform terminal-event contract: even when `.started` already fired before playback
+        // failed, the backend still must not emit `.failed` itself.
+        XCTAssertFalse(received.contains(.failed(sessionID: sessionID)), "Backend must not emit .failed - TTSRouter owns that")
     }
 
     func testDownloadModelsCallsEngineWithDownloadAllowedAndForwardsProgress() async throws {

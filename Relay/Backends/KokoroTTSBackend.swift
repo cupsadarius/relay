@@ -43,7 +43,9 @@ final class KokoroTTSBackend: TextToSpeechBackend {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            playbackEventHandler?(.failed(sessionID: sessionID))
+            // Don't emit `.failed` here: `TTSRouter` centralizes that event and emits it only
+            // once every backend has been exhausted. Emitting it from the backend would surface
+            // a failure even when the router successfully falls back to another backend.
             throw Self.mapEngineError(error)
         }
 
@@ -58,7 +60,7 @@ final class KokoroTTSBackend: TextToSpeechBackend {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            playbackEventHandler?(.failed(sessionID: sessionID))
+            // See the load-failure path above: the router owns `.failed`, not the backend.
             throw SpeechBackendError.inferenceFailed("Kokoro synthesis failed")
         }
 
@@ -67,7 +69,8 @@ final class KokoroTTSBackend: TextToSpeechBackend {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            playbackEventHandler?(.failed(sessionID: sessionID))
+            // Same terminal-event contract even after `.started` may already have been emitted
+            // by the player: the router, not the backend, decides when `.failed` is warranted.
             throw SpeechBackendError.inferenceFailed("Kokoro playback failed")
         }
     }
