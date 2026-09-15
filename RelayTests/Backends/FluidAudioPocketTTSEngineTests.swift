@@ -67,6 +67,55 @@ final class FluidAudioPocketTTSEngineTests: XCTestCase {
         }
     }
 
+    func testSynthesizeStreamBeforeLoadThrowsSynthesisFailed() async {
+        let loader = FakePocketTTSModelLoader()
+        let engine = FluidAudioPocketTTSEngine(modelLoader: loader)
+
+        do {
+            _ = try await engine.synthesizeStream(text: "hi", voice: "alba")
+            XCTFail("Expected synthesisFailed")
+        } catch {
+            XCTAssertEqual(error as? PocketTTSEngineError, .synthesisFailed)
+        }
+    }
+
+    func testSynthesizeStreamAfterLoadYieldsCannedFramesInOrderAndFinishes() async throws {
+        let loader = FakePocketTTSModelLoader()
+        await loader.setPresent(true)
+        let engine = FluidAudioPocketTTSEngine(modelLoader: loader)
+        try await engine.load(allowDownload: false)
+
+        let stream = try await engine.synthesizeStream(text: "hello", voice: "alba")
+
+        var received: [[Float]] = []
+        for try await frame in stream {
+            received.append(frame)
+        }
+
+        let expected = await loader.lastSessionStreamFrames()
+        XCTAssertEqual(received, expected)
+        XCTAssertFalse(received.isEmpty)
+    }
+
+    func testSynthesizeStreamPropagatesASourceError() async throws {
+        let loader = FakePocketTTSModelLoader()
+        await loader.setPresent(true)
+        let engine = FluidAudioPocketTTSEngine(modelLoader: loader)
+        try await engine.load(allowDownload: false)
+        await loader.setStreamError(FakeLoaderError.boom)
+
+        let stream = try await engine.synthesizeStream(text: "hello", voice: "alba")
+
+        do {
+            for try await _ in stream {}
+            XCTFail("Expected the stream to throw")
+        } catch {
+            // The engine forwards the source's stream error as-is rather than remapping it, so
+            // the router-facing `synthesize(text:voice:)` remains the only error-mapping seam.
+            XCTAssertEqual(error as? FakeLoaderError, .boom)
+        }
+    }
+
     func testModelsArePresentDelegatesToLoaderWithoutLoading() async {
         let loader = FakePocketTTSModelLoader()
         await loader.setPresent(true)
@@ -216,6 +265,8 @@ private final class ProgressBox: @unchecked Sendable {
 private actor FakePocketTTSSession: PocketTTSModelSession {
     let text: String
     private(set) var received: (String, String)?
+    let streamFrames: [[Float]] = [[1, 2, 3], [4, 5, 6]]
+    private var streamError: Error?
 
     init(text: String) {
         self.text = text
@@ -224,6 +275,22 @@ private actor FakePocketTTSSession: PocketTTSModelSession {
     func synthesize(text: String, voice: String) async throws -> Data {
         received = (text, voice)
         return Data(text.utf8)
+    }
+
+    func synthesizeStream(text: String, voice: String) async throws -> AsyncThrowingStream<[Float], Error> {
+        received = (text, voice)
+        let frames = streamFrames
+        let error = streamError
+        return AsyncThrowingStream { continuation in
+            for frame in frames {
+                continuation.yield(frame)
+            }
+            continuation.finish(throwing: error)
+        }
+    }
+
+    func setStreamError(_ error: Error?) {
+        streamError = error
     }
 }
 
@@ -256,6 +323,14 @@ private actor FakePocketTTSModelLoader: PocketTTSModelLoading {
 
     func lastSessionReceivedArgs() async -> (String, String)? {
         await lastSession?.received
+    }
+
+    func lastSessionStreamFrames() async -> [[Float]] {
+        await lastSession?.streamFrames ?? []
+    }
+
+    func setStreamError(_ error: Error?) async {
+        await lastSession?.setStreamError(error)
     }
 
     func modelsArePresent() async -> Bool {

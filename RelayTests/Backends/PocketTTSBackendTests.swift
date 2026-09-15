@@ -344,6 +344,16 @@ private final class FakePocketTTSEngine: PocketTTSEngine {
         }
         return synthesizeResult
     }
+
+    func synthesizeStream(text: String, voice: String) async throws -> AsyncThrowingStream<[Float], Error> {
+        synthesizeCalls.append((text, voice))
+        if let synthesizeError {
+            throw synthesizeError
+        }
+        return AsyncThrowingStream { continuation in
+            continuation.finish()
+        }
+    }
 }
 
 @MainActor
