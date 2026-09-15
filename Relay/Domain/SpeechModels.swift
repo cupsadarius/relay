@@ -17,6 +17,10 @@ struct STTOptions: Sendable, Equatable {
 struct TTSOptions: Sendable, Equatable {
     var voiceIdentifier: String?
     var rate: Float = 0.5
+    /// The Kokoro voice id (e.g. `"af_heart"`), read by `KokoroTTSBackend` and ignored by every
+    /// other backend. `voiceIdentifier` remains Apple's own `com.apple.voice.*` id, which is
+    /// meaningless to Kokoro.
+    var kokoroVoice: String?
 }
 
 enum SpeechSource: String, Codable, Equatable, Sendable {

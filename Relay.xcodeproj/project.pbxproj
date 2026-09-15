@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		010EFDE2D6C4A73206572BBE /* SpeechToTextBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E124777F58D54CEDE5CA61 /* SpeechToTextBackend.swift */; };
 		077DCF588705F7C9A0D435DE /* ActivityOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110BEA16859A4BC3BC171427 /* ActivityOverlayView.swift */; };
+		0C3C74A43B72D383164C555C /* KokoroTTSBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 203E8DFFD8E671A374DB34E3 /* KokoroTTSBackendTests.swift */; };
 		131B33B0A7200D30823A1201 /* SpeechModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA7F679F877AB1E080B262A1 /* SpeechModels.swift */; };
 		18A0B28B851CB76A0406F54E /* AppSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED330EE6049AE116AFB2F072 /* AppSettingsTests.swift */; };
 		1BAD7007F7ACB0C185A59759 /* PermissionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 272BF7900B279928282E93C7 /* PermissionService.swift */; };
@@ -43,6 +44,7 @@
 		63950769791664D8A9424529 /* HotkeyDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36BC1C589CC6F88B197B1EF0 /* HotkeyDefinition.swift */; };
 		64C783F59CA61E2FF905B254 /* AppleTTSBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 311ABBF060EBB992AF95420A /* AppleTTSBackendTests.swift */; };
 		6EBCA693556C0B8F07AE9656 /* WindowFocusCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F90592F0F4CAEF1DF31EC85 /* WindowFocusCoordinator.swift */; };
+		6F7EFC40D66A19BCCF074782 /* KokoroTTSBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0715D2F1C1EE6D1D8CA70C6E /* KokoroTTSBackend.swift */; };
 		6F8E0185EBFBB32801034947 /* FluidAudioParakeetEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1950E87F2DF1360304DC63A /* FluidAudioParakeetEngineTests.swift */; };
 		70155993155C43ABD4EACFE4 /* SpeechBackendContractsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B3B42F4D8ADC705985B0C3 /* SpeechBackendContractsTests.swift */; };
 		740BAC00FB22AFBE28844B6E /* SpeechBackendError.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAB0B39FEA02933CC4354E8D /* SpeechBackendError.swift */; };
@@ -102,6 +104,7 @@
 		035CD1C6FBA0F8F91F652E6F /* WindowFocusCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowFocusCoordinatorTests.swift; sourceTree = "<group>"; };
 		0426F6B17538598D1ECA3EB8 /* ParakeetBackendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParakeetBackendTests.swift; sourceTree = "<group>"; };
 		06E124777F58D54CEDE5CA61 /* SpeechToTextBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechToTextBackend.swift; sourceTree = "<group>"; };
+		0715D2F1C1EE6D1D8CA70C6E /* KokoroTTSBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KokoroTTSBackend.swift; sourceTree = "<group>"; };
 		0C2D9AB71BE0958979C201CB /* RulesTranscriptProcessorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RulesTranscriptProcessorTests.swift; sourceTree = "<group>"; };
 		0DCE840658936E7271FAB146 /* MenuBarContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarContentView.swift; sourceTree = "<group>"; };
 		0F476045417F42F97BC90298 /* PermissionsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsSettingsView.swift; sourceTree = "<group>"; };
@@ -113,6 +116,7 @@
 		1BE24F398C26E7C916733EF1 /* ClipboardService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardService.swift; sourceTree = "<group>"; };
 		1D080F5789BE1F241509F1C2 /* ProjectSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectSmokeTests.swift; sourceTree = "<group>"; };
 		1F90592F0F4CAEF1DF31EC85 /* WindowFocusCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowFocusCoordinator.swift; sourceTree = "<group>"; };
+		203E8DFFD8E671A374DB34E3 /* KokoroTTSBackendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KokoroTTSBackendTests.swift; sourceTree = "<group>"; };
 		2388EB91FEE36FAF3715B0FE /* Diagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Diagnostics.swift; sourceTree = "<group>"; };
 		2499709E52B7C2AE389E0A68 /* GlobalHotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotkeyManager.swift; sourceTree = "<group>"; };
 		264D3B761DD35FEF92E86BAC /* TTSRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSRouterTests.swift; sourceTree = "<group>"; };
@@ -226,6 +230,7 @@
 				49DEB5422690339D2759CC63 /* AppleSpeechBackendTests.swift */,
 				2F2A1198E9E19F425709AF21 /* FluidAudioKokoroEngineTests.swift */,
 				C1950E87F2DF1360304DC63A /* FluidAudioParakeetEngineTests.swift */,
+				203E8DFFD8E671A374DB34E3 /* KokoroTTSBackendTests.swift */,
 				0426F6B17538598D1ECA3EB8 /* ParakeetBackendTests.swift */,
 			);
 			path = Backends;
@@ -337,6 +342,7 @@
 				FE7691D4AED60790AE873F6C /* AppleSpeechBackend.swift */,
 				1541D758E496D69D90CB308E /* FluidAudioKokoroEngine.swift */,
 				5CB732B846FC4C710B2410FC /* FluidAudioParakeetEngine.swift */,
+				0715D2F1C1EE6D1D8CA70C6E /* KokoroTTSBackend.swift */,
 				29EE80E2D79C7BCF9E1806A0 /* ParakeetBackend.swift */,
 			);
 			path = Backends;
@@ -513,6 +519,7 @@
 				28A7CDCD3BCC3B97A35DAED7 /* FluidAudioKokoroEngineTests.swift in Sources */,
 				6F8E0185EBFBB32801034947 /* FluidAudioParakeetEngineTests.swift in Sources */,
 				5BB20F6CC812C4783D7205B6 /* GlobalHotkeyManagerTests.swift in Sources */,
+				0C3C74A43B72D383164C555C /* KokoroTTSBackendTests.swift in Sources */,
 				30F97D8C0898E2D97E683F3F /* MicrophoneCaptureStateTests.swift in Sources */,
 				9DEDED0E43E753BCE3E9414B /* ParakeetBackendTests.swift in Sources */,
 				91CA532F4429D5B65476BEBC /* ProjectSmokeTests.swift in Sources */,
@@ -557,6 +564,7 @@
 				8C7FB013D71A83B74950862F /* GlobalHotkeyManager.swift in Sources */,
 				63950769791664D8A9424529 /* HotkeyDefinition.swift in Sources */,
 				26610864A9E3551C29288FA7 /* KeybindsSettingsView.swift in Sources */,
+				6F7EFC40D66A19BCCF074782 /* KokoroTTSBackend.swift in Sources */,
 				629B951FA84E58D245591D7B /* MenuBarContentView.swift in Sources */,
 				5DFE942299A26F7BEA31560A /* MicrophoneCapture.swift in Sources */,
 				ED473F93C25865ED39A16D6B /* ParakeetBackend.swift in Sources */,
