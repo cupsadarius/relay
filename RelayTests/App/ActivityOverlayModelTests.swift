@@ -216,6 +216,38 @@ final class ActivityOverlayModelTests: XCTestCase {
         XCTAssertNil(model.backendName)
     }
 
+    func testBackendNameIsClearedWhenTheCompletionGracePeriodTimerHides() {
+        let scheduler = FakeOverlayScheduler()
+        let model = ActivityOverlayModel(scheduler: scheduler)
+        let session = UUID()
+        model.begin(sessionID: session)
+        model.speak(sessionID: session)
+        model.setBackendName("Apple System Voice", sessionID: session)
+
+        model.complete(sessionID: session)
+        XCTAssertEqual(model.backendName, "Apple System Voice")
+
+        scheduler.run(after: .milliseconds(180))
+
+        XCTAssertNil(model.backendName)
+    }
+
+    func testBackendNameIsClearedWhenTheErrorDismissalTimerHides() {
+        let scheduler = FakeOverlayScheduler()
+        let model = ActivityOverlayModel(scheduler: scheduler)
+        let session = UUID()
+        model.begin(sessionID: session)
+        model.listen(sessionID: session)
+        model.setBackendName("Apple Speech", sessionID: session)
+
+        model.fail(sessionID: session, category: .speechPlayback, message: "Speech playback failed.")
+        XCTAssertEqual(model.backendName, "Apple Speech")
+
+        scheduler.run(after: .milliseconds(2_500))
+
+        XCTAssertNil(model.backendName)
+    }
+
     func testStateDerivesCancelAndStopActions() {
         let session = UUID()
 

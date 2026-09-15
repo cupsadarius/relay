@@ -230,7 +230,8 @@ private struct WaveformView: View {
                 .animation(presentation.animatesWaveform ? .linear(duration: 0.08) : nil, value: level)
         case .speaking:
             if let level = presentation.speakingLevel {
-                WaveformBars(scales: presentation.speakingLevelBars())
+                let scales = presentation.speakingLevelBars()
+                WaveformBars(scales: scales, opacities: scales.map(Self.speakingOpacity))
                     .animation(presentation.animatesWaveform ? .linear(duration: 0.08) : nil, value: level)
             } else if presentation.animatesWaveform {
                 TimelineView(.animation) { context in

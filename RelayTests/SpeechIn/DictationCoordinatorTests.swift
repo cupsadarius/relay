@@ -174,6 +174,44 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertFalse(statuses.contains("Inserted dictation"))
     }
 
+    /// Regression test: the backend-name lookup in `start()` suspends on an `await`. If a
+    /// concurrent `finish()` is admitted during that suspension and runs the entire processing
+    /// pipeline to completion before `start()` resumes, the "Listening…" status and `.listening`
+    /// diagnostic must already have been recorded — not appended late, after "Inserted dictation".
+    func testStaleListeningStatusAndDiagnosticCannotLandAfterConcurrentFinishCompletes() async {
+        let probe = BlockingAvailabilityBackend()
+        let sttRouter = STTRouter(backends: [probe.id: probe], backendOrder: { [probe.id] })
+        let events = EventLog()
+        let diagnostics = DiagnosticsRecorder()
+        var statuses: [String] = []
+        let coordinator = DictationCoordinator(
+            microphone: FakeMicrophone(events: events),
+            sttRouter: sttRouter,
+            processor: RulesTranscriptProcessor(),
+            textInserter: FakeTextInserter(events: events),
+            stopSpeech: {},
+            status: { statuses.append($0) },
+            activity: RecordingActivityOverlay(),
+            diagnostics: diagnostics
+        )
+
+        let startTask = Task { await coordinator.start() }
+        // `start()` records "Listening…" synchronously, then suspends on the blocked backend-name
+        // lookup below - waiting for that status confirms it's now parked there.
+        await waitUntil { statuses.last == "Listening…" }
+
+        await coordinator.finish()
+
+        XCTAssertEqual(statuses.last, "Inserted dictation")
+        let diagnosticsAfterFinish = diagnostics.entries.map(\.event)
+
+        probe.release()
+        await startTask.value
+
+        XCTAssertEqual(statuses.last, "Inserted dictation")
+        XCTAssertEqual(diagnostics.entries.map(\.event), diagnosticsAfterFinish)
+    }
+
     func testFailedStartClearsPendingFinishSoRetryRecords() async {
         let events = EventLog()
         let microphone = DelayedFailingMicrophone(events: events)
@@ -776,6 +814,47 @@ private final class BlockingBackend: SpeechToTextBackend, @unchecked Sendable {
 
     var pendingCount: Int { lock.withLock { pending.count } }
     var cancellationCount: Int { lock.withLock { cancellations } }
+}
+
+/// A backend whose `availability()` blocks on its very first call until `release()` is invoked,
+/// then answers immediately on every later call. Simulates a `preferredBackendDisplayName()`
+/// lookup that's still in flight when a concurrent `finish()` reaches its own (separate)
+/// `transcribe()`-driven availability check on the same backend.
+private final class BlockingAvailabilityBackend: SpeechToTextBackend, @unchecked Sendable {
+    let id = "blocking-availability"
+    let displayName = "Blocking Availability"
+    let capabilities = STTCapabilities([])
+    private let lock = NSLock()
+    private var callCount = 0
+    private var waiter: CheckedContinuation<Void, Never>?
+
+    func availability() async -> BackendAvailability {
+        let isFirstCall: Bool = lock.withLock {
+            callCount += 1
+            return callCount == 1
+        }
+        if isFirstCall {
+            await withCheckedContinuation { continuation in
+                lock.withLock { waiter = continuation }
+            }
+        }
+        return .available
+    }
+
+    func prepare() async throws {}
+
+    func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
+        Transcript(text: "hello relay", backendID: id)
+    }
+
+    func release() {
+        let continuation: CheckedContinuation<Void, Never>? = lock.withLock {
+            let waiter = self.waiter
+            self.waiter = nil
+            return waiter
+        }
+        continuation?.resume()
+    }
 }
 
 @MainActor

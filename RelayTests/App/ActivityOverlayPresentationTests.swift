@@ -66,7 +66,7 @@ final class ActivityOverlayPresentationTests: XCTestCase {
         )
 
         XCTAssertEqual(value?.accent, .violetCyan)
-        XCTAssertEqual(value?.subtitle, "Speaking")
+        XCTAssertEqual(value?.subtitle, "Voice")
         XCTAssertEqual(value?.action, .stopSpeech(sessionID: id))
         XCTAssertEqual(value?.actionAccessibilityLabel, "Stop speech")
     }
@@ -105,7 +105,7 @@ final class ActivityOverlayPresentationTests: XCTestCase {
 
         XCTAssertEqual(listening?.subtitle, "Microphone")
         XCTAssertEqual(processing?.subtitle, "Transcribing")
-        XCTAssertEqual(speaking?.subtitle, "Speaking")
+        XCTAssertEqual(speaking?.subtitle, "Voice")
     }
 
     func testErrorSubtitleIsAlwaysTryAgainRegardlessOfBackendName() {

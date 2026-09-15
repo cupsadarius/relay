@@ -90,7 +90,7 @@ struct ActivityOverlayPresentation: Equatable {
             return .init(
                 kind: .speaking, accent: .violetCyan, layout: layout, cornerRadius: cornerRadius, size: size,
                 title: interactive ? "Speaking" : nil,
-                subtitle: interactive ? (backendName ?? "Speaking") : nil,
+                subtitle: interactive ? (backendName ?? "Voice") : nil,
                 startedAt: startedAt,
                 action: interactive ? .stopSpeech(sessionID: sessionID) : nil,
                 actionAccessibilityLabel: interactive ? "Stop speech" : nil,

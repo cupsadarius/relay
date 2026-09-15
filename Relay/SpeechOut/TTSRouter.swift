@@ -33,14 +33,15 @@ final class TTSRouter {
     /// backend, for the matching session, are forwarded — except router-
     /// emitted `.failed` events, which bypass that filter by design so a
     /// failure is never swallowed just because routing/activity state has
-    /// already moved on.
+    /// already moved on. Because it bypasses the filter, a router-emitted
+    /// `.failed` always carries a `nil` backend rather than whichever
+    /// backend most recently failed.
     func setPlaybackEventHandler(_ handler: @escaping @MainActor (TTSPlaybackEvent, (any TextToSpeechBackend)?) -> Void) {
         eventHandler = handler
     }
 
     func speak(text: String, options: TTSOptions, sessionID: UUID) async throws {
         var lastError: SpeechBackendError = .unavailable("No TTS backend is available")
-        var lastAttemptedBackend: (any TextToSpeechBackend)?
 
         for id in backendOrder() {
             guard let backend = backends[id] else { continue }
@@ -58,7 +59,6 @@ final class TTSRouter {
                     routingBackend = nil
                     routingSessionID = nil
                 }
-                lastAttemptedBackend = backend
                 try await backend.speak(text: text, options: options, sessionID: sessionID)
                 activeBackend = backend
                 activeSessionID = sessionID
@@ -66,12 +66,12 @@ final class TTSRouter {
             } catch let error as SpeechBackendError where error.isFallbackWorthy {
                 lastError = error
             } catch {
-                eventHandler?(.failed(sessionID: sessionID), backend)
+                eventHandler?(.failed(sessionID: sessionID), nil)
                 throw error
             }
         }
 
-        eventHandler?(.failed(sessionID: sessionID), lastAttemptedBackend)
+        eventHandler?(.failed(sessionID: sessionID), nil)
         throw lastError
     }
 

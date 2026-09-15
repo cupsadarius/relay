@@ -108,13 +108,17 @@ final class DictationCoordinator: DictationCoordinating {
         guard isStarting(session) else { return }
         state = .recording(session)
         activity.listen(sessionID: session, startedAt: .now)
+        // Recorded here, before the `await` below, so nothing can interleave between them: a
+        // concurrent `finish()` admitted during the backend-name lookup's suspension could
+        // otherwise run the entire processing pipeline to completion first, landing this stale
+        // "Listening…" status and diagnostic after the session's own "Inserted dictation".
+        status("Listening…")
+        diagnostics?.record(.dictation(.listening))
         announcedBackendName = nil
         if let name = await sttRouter.preferredBackendDisplayName(), isRecording(session) {
             announcedBackendName = name
             activity.setBackendName(name, sessionID: session)
         }
-        status("Listening…")
-        diagnostics?.record(.dictation(.listening))
         if finishRequested {
             finishRequested = false
             await finish()
@@ -207,7 +211,7 @@ final class DictationCoordinator: DictationCoordinating {
         }
 
         guard !Task.isCancelled, isFinishing(session) else { return }
-        if let usedName = sttRouter.lastUsedBackendDisplayName, usedName != announcedBackendName {
+        if let usedName = sttRouter.displayName(forBackendID: transcript.backendID), usedName != announcedBackendName {
             announcedBackendName = usedName
             activity.setBackendName(usedName, sessionID: session)
         }

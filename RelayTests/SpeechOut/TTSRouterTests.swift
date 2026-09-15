@@ -229,52 +229,51 @@ final class TTSRouterTests: XCTestCase {
         XCTAssertEqual(receivedBackendIDs, ["apple"])
     }
 
-    func testNonFallbackFailureIncludesTheFailingBackend() async {
+    func testNonFallbackFailureCarriesNilBackend() async {
         let backend = FakeTTSBackend(id: "apple")
         backend.error = SpeechBackendError.invalidInput
         let router = makeRouter([backend])
-        var receivedBackendIDs: [String?] = []
+        var receivedBackends: [(any TextToSpeechBackend)?] = []
         router.setPlaybackEventHandler { _, receivedBackend in
-            receivedBackendIDs.append((receivedBackend as? FakeTTSBackend)?.id)
+            receivedBackends.append(receivedBackend)
         }
 
         _ = try? await router.speak(text: "hello", options: .init(), sessionID: UUID())
 
-        XCTAssertEqual(receivedBackendIDs, ["apple"])
+        XCTAssertEqual(receivedBackends.count, 1)
+        XCTAssertNil(receivedBackends[0])
     }
 
-    func testExhaustedFallbackFailureIncludesTheLastAttemptedBackend() async {
+    func testExhaustedFallbackFailureCarriesNilBackend() async {
         let first = FakeTTSBackend(id: "first")
         first.error = SpeechBackendError.inferenceFailed("boom")
         let second = FakeTTSBackend(id: "second")
         second.error = SpeechBackendError.inferenceFailed("boom again")
         let router = makeRouter([first, second])
-        var receivedBackendIDs: [String?] = []
+        var receivedBackends: [(any TextToSpeechBackend)?] = []
         router.setPlaybackEventHandler { _, receivedBackend in
-            receivedBackendIDs.append((receivedBackend as? FakeTTSBackend)?.id)
+            receivedBackends.append(receivedBackend)
         }
 
         _ = try? await router.speak(text: "hello", options: .init(), sessionID: UUID())
 
-        XCTAssertEqual(receivedBackendIDs, ["second"])
+        XCTAssertEqual(receivedBackends.count, 1)
+        XCTAssertNil(receivedBackends[0])
     }
 
     func testFailureWithNoAvailableBackendPassesNilBackend() async {
         let unavailable = FakeTTSBackend(id: "unavailable")
         unavailable.availabilityValue = .unavailable("disabled")
         let router = makeRouter([unavailable])
-        var receivedBackendIDs: [String?] = []
-        var receivedNilBackend = false
+        var receivedBackends: [(any TextToSpeechBackend)?] = []
         router.setPlaybackEventHandler { _, receivedBackend in
-            if receivedBackend == nil {
-                receivedNilBackend = true
-            }
-            receivedBackendIDs.append((receivedBackend as? FakeTTSBackend)?.id)
+            receivedBackends.append(receivedBackend)
         }
 
         _ = try? await router.speak(text: "hello", options: .init(), sessionID: UUID())
 
-        XCTAssertTrue(receivedNilBackend)
+        XCTAssertEqual(receivedBackends.count, 1)
+        XCTAssertNil(receivedBackends[0])
     }
 
     private func makeRouter(_ backends: [FakeTTSBackend]) -> TTSRouter {

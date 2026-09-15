@@ -148,15 +148,74 @@ final class STTRouterTests: XCTestCase {
         XCTAssertNil(name)
     }
 
-    func testLastUsedBackendDisplayNameReflectsTheBackendThatProducedTheTranscript() async throws {
-        let first = FakeSTTBackend(id: "first", error: .inferenceFailed("boom"))
+    func testPreferredBackendDisplayNameTreatsPermissionDeniedAsTerminal() async {
+        let first = FakeSTTBackend(id: "first")
+        first.availabilityValue = .permissionDenied
         let second = FakeSTTBackend(id: "second")
         let router = makeRouter([first, second])
 
-        XCTAssertNil(router.lastUsedBackendDisplayName)
+        let name = await router.preferredBackendDisplayName()
+
+        XCTAssertNil(name)
+        XCTAssertEqual(second.availabilityCallCount, 0)
+    }
+
+    func testDisplayNameForBackendIDReturnsTheConfiguredBackendsName() {
+        let first = FakeSTTBackend(id: "first")
+        let second = FakeSTTBackend(id: "second")
+        let router = makeRouter([first, second])
+
+        XCTAssertEqual(router.displayName(forBackendID: "first"), "first")
+        XCTAssertEqual(router.displayName(forBackendID: "second"), "second")
+        XCTAssertNil(router.displayName(forBackendID: "missing"))
+    }
+
+    func testTranscribeReusesTheSelectionCachedByPreferredBackendDisplayNameWithoutReprobingSkippedBackends() async throws {
+        let first = FakeSTTBackend(id: "first")
+        first.availabilityValue = .unavailable("offline")
+        let second = FakeSTTBackend(id: "second")
+        let router = makeRouter([first, second])
+
+        let name = await router.preferredBackendDisplayName()
+        XCTAssertEqual(name, "second")
+        XCTAssertEqual(first.availabilityCallCount, 1)
+        XCTAssertEqual(second.availabilityCallCount, 1)
+
+        let transcript = try await router.transcribe(audio: audio, options: .init())
+
+        XCTAssertEqual(transcript, Transcript(text: "second", backendID: "second"))
+        // "first" was already ruled out by the lookup above and must not be re-probed; "second"
+        // is re-checked once more (the one backend the cache actually resumes from).
+        XCTAssertEqual(first.availabilityCallCount, 1)
+        XCTAssertEqual(second.availabilityCallCount, 2)
+    }
+
+    func testCachedSelectionIsClearedAfterOneTranscribeCallSoALaterCallReprobesFromScratch() async throws {
+        let first = FakeSTTBackend(id: "first")
+        first.availabilityValue = .unavailable("offline")
+        let second = FakeSTTBackend(id: "second")
+        let router = makeRouter([first, second])
+
+        _ = await router.preferredBackendDisplayName()
         _ = try await router.transcribe(audio: audio, options: .init())
 
-        XCTAssertEqual(router.lastUsedBackendDisplayName, "second")
+        first.availabilityValue = .available
+        let transcript = try await router.transcribe(audio: audio, options: .init())
+
+        XCTAssertEqual(transcript, Transcript(text: "first", backendID: "first"))
+    }
+
+    func testTranscribeWithoutAPrecedingLookupPerformsItsOwnFullWalk() async throws {
+        let first = FakeSTTBackend(id: "first")
+        first.availabilityValue = .unavailable("offline")
+        let second = FakeSTTBackend(id: "second")
+        let router = makeRouter([first, second])
+
+        let transcript = try await router.transcribe(audio: audio, options: .init())
+
+        XCTAssertEqual(transcript, Transcript(text: "second", backendID: "second"))
+        XCTAssertEqual(first.availabilityCallCount, 1)
+        XCTAssertEqual(second.availabilityCallCount, 1)
     }
 
     private let audio = AudioInput(samples: [0.1], sampleRate: 16_000)
@@ -204,6 +263,7 @@ private final class FakeSTTBackend: SpeechToTextBackend {
     var availabilityValue: BackendAvailability = .available
     var error: SpeechBackendError?
     private(set) var transcriptionCount = 0
+    private(set) var availabilityCallCount = 0
 
     init(id: String, error: SpeechBackendError? = nil) {
         self.id = id
@@ -211,7 +271,10 @@ private final class FakeSTTBackend: SpeechToTextBackend {
         displayName = id
     }
 
-    func availability() async -> BackendAvailability { availabilityValue }
+    func availability() async -> BackendAvailability {
+        availabilityCallCount += 1
+        return availabilityValue
+    }
     func prepare() async throws {}
 
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
