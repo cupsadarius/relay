@@ -11,7 +11,7 @@ struct ClaudeCodeHookPayload: Decodable {
     let transcriptPath: String?
     let cwd: String
     let hookEventName: String
-    let stopHookActive: Bool
+    let stopHookActive: Bool?
     let lastAssistantMessage: String?
 
     enum CodingKeys: String, CodingKey {

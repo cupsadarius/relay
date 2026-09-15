@@ -143,6 +143,55 @@ final class ClaudeCodeInstallerTests: XCTestCase {
         XCTAssertEqual(relayCommands.count, 1)
     }
 
+    func testInstallThrowsWhenHooksIsNotAnObjectAndLeavesFileUntouched() throws {
+        try writeRawSettings(#"""
+        { "hooks": "x" }
+        """#)
+        let bytesBefore = try Data(contentsOf: settingsURL)
+
+        XCTAssertThrowsError(try makeInstaller().install()) { error in
+            XCTAssertEqual(error as? ClaudeCodeInstallerError, .settingsFileMalformed)
+        }
+
+        let bytesAfter = try Data(contentsOf: settingsURL)
+        XCTAssertEqual(bytesBefore, bytesAfter)
+    }
+
+    func testInstallThrowsWhenHooksStopIsNotAnArrayAndLeavesFileUntouched() throws {
+        try writeRawSettings(#"""
+        { "hooks": { "Stop": "x" } }
+        """#)
+        let bytesBefore = try Data(contentsOf: settingsURL)
+
+        XCTAssertThrowsError(try makeInstaller().install()) { error in
+            XCTAssertEqual(error as? ClaudeCodeInstallerError, .settingsFileMalformed)
+        }
+
+        let bytesAfter = try Data(contentsOf: settingsURL)
+        XCTAssertEqual(bytesBefore, bytesAfter)
+    }
+
+    func testInstallThrowsWhenHooksStopContainsNonObjectElementAndLeavesFileUntouched() throws {
+        try writeRawSettings(#"""
+        {
+          "hooks": {
+            "Stop": [
+              { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] },
+              123
+            ]
+          }
+        }
+        """#)
+        let bytesBefore = try Data(contentsOf: settingsURL)
+
+        XCTAssertThrowsError(try makeInstaller().install()) { error in
+            XCTAssertEqual(error as? ClaudeCodeInstallerError, .settingsFileMalformed)
+        }
+
+        let bytesAfter = try Data(contentsOf: settingsURL)
+        XCTAssertEqual(bytesBefore, bytesAfter)
+    }
+
     func testInstallDoesNotDuplicateWhenRelayEntryWasInstalledFromDifferentPath() throws {
         try writeRawSettings(#"""
         {
@@ -259,6 +308,18 @@ final class ClaudeCodeInstallerTests: XCTestCase {
 
         let settings = try readSettings()
         XCTAssertEqual(commandStrings(stopGroups(settings)), ["/usr/local/bin/notify-stop.sh"])
+    }
+
+    func testUninstallDoesNotRewriteFileWhenNoRelayHookIsPresent() throws {
+        try writeRawSettings(#"""
+        { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] } ] } }
+        """#)
+        let bytesBefore = try Data(contentsOf: settingsURL)
+
+        try makeInstaller().uninstall()
+
+        let bytesAfter = try Data(contentsOf: settingsURL)
+        XCTAssertEqual(bytesBefore, bytesAfter)
     }
 
     // MARK: - Status

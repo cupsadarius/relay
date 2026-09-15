@@ -87,6 +87,21 @@ final class ClaudeCodeIntegrationTests: XCTestCase {
         }
     }
 
+    func testDecodesStopEventWhenStopHookActiveFieldIsAbsent() throws {
+        let payload = #"""
+        {
+          "session_id": "abc123",
+          "cwd": "/Users/me/project",
+          "hook_event_name": "Stop",
+          "last_assistant_message": "I've completed the refactoring."
+        }
+        """#
+
+        let event = try integration.decode(envelope(rawPayload: payload))
+
+        XCTAssertEqual(event.text, "I've completed the refactoring.")
+    }
+
     func testMalformedRawPayloadIsRejected() {
         XCTAssertThrowsError(try integration.decode(envelope(rawPayload: "not json"))) { error in
             XCTAssertEqual(error as? ClaudeCodeIntegrationError, .malformedPayload)

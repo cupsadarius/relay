@@ -4,6 +4,10 @@ import Foundation
 enum ClaudeCodeInstallerError: Error, Equatable, Sendable {
     /// The settings file's top-level JSON value was not an object.
     case settingsFileNotObject
+    /// The settings file's `hooks` key (or `hooks.Stop` within it) is present
+    /// but not shaped the way Relay expects, so it cannot be safely modified
+    /// without risking data loss.
+    case settingsFileMalformed
 }
 
 /// Installs, removes, and reports on the Relay `Stop` hook entry inside
@@ -81,8 +85,8 @@ struct ClaudeCodeInstaller {
     /// - The Relay hook is already present: no-op (idempotent, no duplicate).
     func install() throws {
         var settings = try readSettings()
-        var hooks = (settings["hooks"] as? [String: Any]) ?? [:]
-        var stopGroups = (hooks["Stop"] as? [[String: Any]]) ?? []
+        var hooks = try Self.validatedHooks(from: settings)
+        var stopGroups = try Self.validatedStopGroups(from: hooks)
 
         let alreadyPresent = stopGroups.contains { group in
             Self.commandStrings(in: group).contains { Self.isRelayOwnedCommand($0) }
@@ -108,6 +112,8 @@ struct ClaudeCodeInstaller {
         guard var hooks = settings["hooks"] as? [String: Any] else { return }
         guard var stopGroups = hooks["Stop"] as? [[String: Any]] else { return }
 
+        var didRemoveAnyRelayEntry = false
+
         stopGroups = stopGroups.compactMap { group -> [String: Any]? in
             guard let hookEntries = group["hooks"] as? [[String: Any]] else { return group }
 
@@ -122,6 +128,8 @@ struct ClaudeCodeInstaller {
                 return group
             }
 
+            didRemoveAnyRelayEntry = true
+
             if filteredEntries.isEmpty && group.keys.count == 1 {
                 return nil
             }
@@ -130,6 +138,8 @@ struct ClaudeCodeInstaller {
             updatedGroup["hooks"] = filteredEntries
             return updatedGroup
         }
+
+        guard didRemoveAnyRelayEntry else { return }
 
         if stopGroups.isEmpty {
             hooks.removeValue(forKey: "Stop")
@@ -158,6 +168,29 @@ struct ClaudeCodeInstaller {
             Self.commandStrings(in: group).contains { Self.isRelayOwnedCommand($0) }
         }
         return present ? .installedAwaitingFirstEvent : .notInstalled
+    }
+
+    /// Returns `settings["hooks"]` as a `[String: Any]`, or an empty dictionary
+    /// if the key is absent. Throws `settingsFileMalformed` if the key is
+    /// present but not an object, so `install()` never silently discards it.
+    private static func validatedHooks(from settings: [String: Any]) throws -> [String: Any] {
+        guard let rawHooks = settings["hooks"] else { return [:] }
+        guard let hooks = rawHooks as? [String: Any] else {
+            throw ClaudeCodeInstallerError.settingsFileMalformed
+        }
+        return hooks
+    }
+
+    /// Returns `hooks["Stop"]` as a `[[String: Any]]`, or an empty array if
+    /// the key is absent. Throws `settingsFileMalformed` if the key is
+    /// present but not an array of objects (including an array containing a
+    /// non-object element), so `install()` never silently discards it.
+    private static func validatedStopGroups(from hooks: [String: Any]) throws -> [[String: Any]] {
+        guard let rawStop = hooks["Stop"] else { return [] }
+        guard let stopGroups = rawStop as? [[String: Any]] else {
+            throw ClaudeCodeInstallerError.settingsFileMalformed
+        }
+        return stopGroups
     }
 
     private static func commandStrings(in group: [String: Any]) -> [String] {
