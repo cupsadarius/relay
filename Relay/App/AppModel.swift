@@ -24,16 +24,24 @@ final class AppModel {
     var diagnosticsCounters: DiagnosticsCounters { diagnostics.counters }
     var sttBackends: [STTBackendStatus] = []
     var speechBackendMessage: String?
+    var ttsBackends: [TTSBackendStatus] = []
+    var ttsBackendMessage: String?
     @ObservationIgnored let overlayModel: ActivityOverlayModel
 
     @ObservationIgnored let sttRegistry: [String: any SpeechToTextBackend]
     @ObservationIgnored let speechModelDownloaders: [String: any SpeechModelDownloading]
     @ObservationIgnored let ttsRegistry: [String: any TextToSpeechBackend]
+    @ObservationIgnored let ttsModelDownloaders: [String: any SpeechModelDownloading]
     @ObservationIgnored var downloadingBackendIDs: Set<String> = []
     @ObservationIgnored var refreshGeneration = 0
+    @ObservationIgnored var downloadingTTSBackendIDs: Set<String> = []
+    @ObservationIgnored var ttsRefreshGeneration = 0
     /// The fire-and-forget initial status refresh kicked off from `init`. Exposed so tests can
     /// await it instead of racing an explicit `refreshSpeechBackendStatuses()` call against it.
     @ObservationIgnored var initialSpeechBackendRefresh: Task<Void, Never>?
+    /// The fire-and-forget initial TTS status refresh kicked off from `init`. Exposed so tests
+    /// can await it instead of racing an explicit `refreshTTSBackendStatuses()` call against it.
+    @ObservationIgnored var initialTTSBackendRefresh: Task<Void, Never>?
     @ObservationIgnored private let settingsStore: any SettingsStoring
     @ObservationIgnored private let selectionReader: any SelectionReading
     @ObservationIgnored private let preprocessor: RulesSpeechPreprocessor
@@ -109,6 +117,9 @@ final class AppModel {
         let speechModelDownloaders: [String: any SpeechModelDownloading] = [
             parakeetBackend.id: parakeetBackend,
         ]
+        // Kokoro's downloader is registered once its download conformance lands (see the TTS
+        // settings tab work); Apple never registers one, since it has no model to download.
+        let ttsModelDownloaders: [String: any SpeechModelDownloading] = [:]
         self.init(
             settingsStore: settingsStore,
             selectionReader: SelectionReader(
@@ -129,7 +140,8 @@ final class AppModel {
             overlayPresenter: overlayPresenter,
             sttRegistry: sttRegistry,
             speechModelDownloaders: speechModelDownloaders,
-            ttsRegistry: ttsRegistry
+            ttsRegistry: ttsRegistry,
+            ttsModelDownloaders: ttsModelDownloaders
         )
         dictation.setStatusHandler { [weak self] in self?.statusText = $0 }
     }
@@ -149,7 +161,8 @@ final class AppModel {
         overlayPresenter: any ActivityOverlayPresenting = NoOpActivityOverlayPresenter(),
         sttRegistry: [String: any SpeechToTextBackend] = [:],
         speechModelDownloaders: [String: any SpeechModelDownloading] = [:],
-        ttsRegistry: [String: any TextToSpeechBackend] = [:]
+        ttsRegistry: [String: any TextToSpeechBackend] = [:],
+        ttsModelDownloaders: [String: any SpeechModelDownloading] = [:]
     ) {
         let settings = settingsStore.load()
         self.settingsStore = settingsStore
@@ -167,6 +180,7 @@ final class AppModel {
         self.sttRegistry = sttRegistry
         self.speechModelDownloaders = speechModelDownloaders
         self.ttsRegistry = ttsRegistry
+        self.ttsModelDownloaders = ttsModelDownloaders
         activationObserver = nil
         dictationTask = nil
         permissionSnapshot = permissionService.snapshot()
@@ -178,6 +192,7 @@ final class AppModel {
         observeAppActivation()
         bindOverlayPresenter()
         initialSpeechBackendRefresh = Task { [weak self] in await self?.refreshSpeechBackendStatuses() }
+        initialTTSBackendRefresh = Task { [weak self] in await self?.refreshTTSBackendStatuses() }
     }
 
     private init(
@@ -197,7 +212,8 @@ final class AppModel {
         overlayPresenter: any ActivityOverlayPresenting,
         sttRegistry: [String: any SpeechToTextBackend],
         speechModelDownloaders: [String: any SpeechModelDownloading],
-        ttsRegistry: [String: any TextToSpeechBackend]
+        ttsRegistry: [String: any TextToSpeechBackend],
+        ttsModelDownloaders: [String: any SpeechModelDownloading]
     ) {
         self.settingsStore = settingsStore
         self.selectionReader = selectionReader
@@ -214,6 +230,7 @@ final class AppModel {
         self.sttRegistry = sttRegistry
         self.speechModelDownloaders = speechModelDownloaders
         self.ttsRegistry = ttsRegistry
+        self.ttsModelDownloaders = ttsModelDownloaders
         activationObserver = nil
         dictationTask = nil
         permissionSnapshot = permissionService.snapshot()
@@ -224,6 +241,7 @@ final class AppModel {
         observeAppActivation()
         bindOverlayPresenter()
         initialSpeechBackendRefresh = Task { [weak self] in await self?.refreshSpeechBackendStatuses() }
+        initialTTSBackendRefresh = Task { [weak self] in await self?.refreshTTSBackendStatuses() }
     }
 
     func setHotkey(_ definition: HotkeyDefinition, for action: HotkeyAction) {
@@ -283,6 +301,12 @@ final class AppModel {
     /// kept narrow so that file doesn't need broader access to `updateSettings`.
     func setSTTBackendOrder(_ order: [String]) {
         updateSettings { $0.sttBackendOrder = order }
+    }
+
+    /// The single write path `TTSBackendCatalog.swift` uses to persist `ttsBackendOrder`, kept
+    /// narrow so that file doesn't need broader access to `updateSettings`.
+    func setTTSBackendOrder(_ order: [String]) {
+        updateSettings { $0.ttsBackendOrder = order }
     }
 
     /// Lets `SpeechBackendCatalog.swift` record diagnostics without widening `diagnostics` past
