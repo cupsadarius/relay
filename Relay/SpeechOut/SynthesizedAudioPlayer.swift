@@ -28,7 +28,7 @@ enum SynthesizedAudioPlayerError: Error, Equatable, Sendable {
 final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
     /// Matches `MicrophoneLevelMeter`'s RMS-to-level scaling so the pill's speaking waveform
     /// behaves identically whichever backend is feeding it.
-    private static let levelGain: Float = 4
+    private static nonisolated let levelGain: Float = 4
     private static let tapBufferSize: AVAudioFrameCount = 1_024
 
     var onEvent: (@MainActor (TTSPlaybackEvent) -> Void)?
@@ -76,7 +76,7 @@ final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
 
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             completionContinuation = continuation
-            player.scheduleBuffer(buffer, at: nil, options: []) { [weak self] in
+            player.scheduleBuffer(buffer, at: nil, options: []) { @Sendable [weak self] in
                 Task { @MainActor [weak self] in
                     self?.handleCompletion(sessionID: sessionID)
                 }
@@ -127,7 +127,7 @@ final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
 
     private func installLevelTap(on node: AVAudioPlayerNode, sessionID: UUID) {
         let format = node.outputFormat(forBus: 0)
-        node.installTap(onBus: 0, bufferSize: Self.tapBufferSize, format: format) { buffer, _ in
+        node.installTap(onBus: 0, bufferSize: Self.tapBufferSize, format: format) { @Sendable buffer, _ in
             let level = Self.rmsLevel(of: buffer)
             Task { @MainActor [weak self] in
                 self?.onEvent?(.level(sessionID: sessionID, level: level))
@@ -135,7 +135,7 @@ final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
         }
     }
 
-    private static func rmsLevel(of buffer: AVAudioPCMBuffer) -> Float {
+    private static nonisolated func rmsLevel(of buffer: AVAudioPCMBuffer) -> Float {
         guard let channelData = buffer.floatChannelData else { return 0 }
         let frameLength = Int(buffer.frameLength)
         let channelCount = Int(buffer.format.channelCount)
