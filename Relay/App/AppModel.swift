@@ -541,15 +541,13 @@ final class AppModel {
     ///
     /// - Important: called ONLY from the real app lifecycle (`RelayApp.applicationDidFinishLaunching`).
     ///   Never called from any initializer, so constructing an `AppModel` in a test never opens a
-    ///   real socket. A failure to start the socket is caught and surfaced as `isSocketListening ==
-    ///   false`; it never crashes the app.
+    ///   real socket. A failure to start the socket never crashes the app; `isSocketListening` is
+    ///   always set from `hookEnvelopeReceiver.isListening` afterward, so it stays authoritative
+    ///   even when the start attempt throws (e.g. `.alreadyStarted` on a redundant call) while the
+    ///   socket the receiver already holds open remains listening.
     func startIntegrations() {
-        do {
-            try hookEnvelopeReceiver.start(path: Self.integrationSocketPath)
-            isSocketListening = true
-        } catch {
-            isSocketListening = false
-        }
+        try? hookEnvelopeReceiver.start(path: Self.integrationSocketPath)
+        isSocketListening = hookEnvelopeReceiver.isListening
         integrationManager.start()
     }
 
@@ -594,12 +592,18 @@ final class AppModel {
     /// Removes the Relay-owned `Stop` hook for `provider`, then refreshes its status. An
     /// installer failure is caught and surfaced as `.configurationError`; it never crashes the
     /// app, and never logs the underlying error verbatim.
+    ///
+    /// On success, also clears `provider`'s runtime status on `integrationManager` so a stale
+    /// `.active` entry from earlier this session can't keep `integrationStatus(for:)` reporting
+    /// active after the provider has just been uninstalled; `checkIntegration` then reloads the
+    /// truthful post-uninstall state straight from the installer.
     func uninstallIntegration(_ provider: AgentProvider) {
         do {
             switch provider {
             case .claudeCode: try claudeCodeInstaller.uninstall()
             case .codex: try codexInstaller.uninstall()
             }
+            integrationManager.clearRuntimeStatus(for: provider)
             checkIntegration(provider)
         } catch {
             installerStatuses[provider] = Self.configurationErrorStatus(for: provider, error: error)

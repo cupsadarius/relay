@@ -4,11 +4,14 @@ import XCTest
 
 /// SAFETY: every test in this file points `ClaudeCodeInstaller`/`CodexInstaller` at a unique
 /// temporary directory created in `setUp` and removed in `tearDown`. No test may read or write
-/// the real `~/.claude` or `~/.codex` directories, and no test ever calls
-/// `AppModel.startIntegrations()` — that would open the real, fixed-path Unix socket at
+/// the real `~/.claude` or `~/.codex` directories. Most tests never call
+/// `AppModel.startIntegrations()` at all — that would open the real, fixed-path Unix socket at
 /// `~/Library/Application Support/Relay/relay.sock`. Runtime event flow is exercised instead by
 /// constructing an `IntegrationManager` directly around a manually driven `AsyncStream`, exactly
-/// as `IntegrationManagerTests` does.
+/// as `IntegrationManagerTests` does. The one exception is the socket-indicator test below, which
+/// pre-starts an injected `HookEnvelopeReceiver` on a temp path before calling
+/// `startIntegrations()`; `UnixSocketServer.start`'s already-started guard then rejects the call
+/// before it ever touches the real production path, so that test never opens it either.
 @MainActor
 final class AppModelIntegrationsTests: XCTestCase {
     private var tempDirectory: URL!
@@ -45,7 +48,8 @@ final class AppModelIntegrationsTests: XCTestCase {
     private func makeModel(
         claudeCodeInstaller: ClaudeCodeInstaller? = nil,
         codexInstaller: CodexInstaller? = nil,
-        integrationManager: IntegrationManager? = nil
+        integrationManager: IntegrationManager? = nil,
+        hookEnvelopeReceiver: HookEnvelopeReceiver = HookEnvelopeReceiver()
     ) -> AppModel {
         AppModel(
             settingsStore: FakeSettingsStore(),
@@ -53,6 +57,7 @@ final class AppModelIntegrationsTests: XCTestCase {
             preprocessor: RulesSpeechPreprocessor(),
             speechCoordinator: FakeSpeechCoordinator(),
             hotkeyManager: FakeHotkeyManager(),
+            hookEnvelopeReceiver: hookEnvelopeReceiver,
             integrationManager: integrationManager,
             claudeCodeInstaller: claudeCodeInstaller ?? makeClaudeInstaller(),
             codexInstaller: codexInstaller ?? makeCodexInstaller()
@@ -265,6 +270,71 @@ final class AppModelIntegrationsTests: XCTestCase {
         ))
 
         await waitUntil { model.integrationStatus(for: .claudeCode) == .active(lastEventAt: event.capturedAt) }
+    }
+
+    // MARK: - Fix 1: the socket indicator stays authoritative after start
+
+    func testStartIntegrationsCalledTwiceKeepsSocketListeningTrueDespiteAlreadyStartedThrow() throws {
+        let receiver = HookEnvelopeReceiver()
+        let socketPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .path
+        // Pre-start the receiver on a TEMP path. `AppModel.startIntegrations()` always targets
+        // the fixed production path, but `UnixSocketServer.start` rejects a second `start` on an
+        // already-listening instance (`.alreadyStarted`) before it ever touches that path — so
+        // the calls below never open, bind, or unlink the real production socket.
+        try receiver.start(path: socketPath)
+        defer { receiver.stop() }
+        let model = makeModel(hookEnvelopeReceiver: receiver)
+
+        model.startIntegrations() // throws .alreadyStarted internally; caught
+        XCTAssertTrue(model.isSocketListening)
+
+        model.startIntegrations() // throws .alreadyStarted again
+        XCTAssertTrue(model.isSocketListening)
+    }
+
+    // MARK: - Fix 2: uninstall gives an immediate, truthful status change
+
+    func testUninstallAfterRuntimeActiveReportsNotInstalledInsteadOfStaleActive() async {
+        let claudeInstaller = makeClaudeInstaller()
+        let event = AgentResponseEvent(
+            id: UUID(),
+            provider: .claudeCode,
+            providerSessionID: "session-4",
+            turnID: nil,
+            text: "All done.",
+            cwd: "/Users/me/project",
+            transcriptPath: nil,
+            parentPID: 100,
+            environment: [:],
+            capturedAt: Date(timeIntervalSince1970: 1_700_000_888)
+        )
+        let integration = AlwaysSucceedIntegration(provider: .claudeCode, event: event)
+        var continuation: AsyncStream<HookEnvelope>.Continuation!
+        let events = AsyncStream<HookEnvelope> { continuation = $0 }
+        let manager = IntegrationManager(events: events, integrations: [integration], speechCoordinator: FakeSpeechCoordinator())
+        let model = makeModel(claudeCodeInstaller: claudeInstaller, integrationManager: manager)
+
+        model.installIntegration(.claudeCode)
+        XCTAssertEqual(model.integrationStatus(for: .claudeCode), .installedAwaitingFirstEvent)
+
+        manager.start()
+        defer { manager.stop() }
+        continuation.yield(HookEnvelope(
+            schemaVersion: 1,
+            provider: .claudeCode,
+            rawPayload: "{}",
+            parentPID: 100,
+            environment: [:],
+            capturedAt: event.capturedAt
+        ))
+        await waitUntil { model.integrationStatus(for: .claudeCode) == .active(lastEventAt: event.capturedAt) }
+
+        model.uninstallIntegration(.claudeCode)
+
+        XCTAssertEqual(model.integrationStatus(for: .claudeCode), .notInstalled)
+        XCTAssertNil(manager.status[.claudeCode])
     }
 
     /// Polls `condition` on a bounded loop instead of waiting unboundedly.

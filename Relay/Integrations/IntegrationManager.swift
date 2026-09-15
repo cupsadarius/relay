@@ -89,6 +89,15 @@ final class IntegrationManager {
         status[event.provider] = .active(lastEventAt: event.capturedAt)
     }
 
+    /// Clears any runtime status recorded for `provider`, removing its entry from `status`
+    /// entirely rather than pinning it to some other value. Called by `AppModel` right after a
+    /// successful uninstall, so a stale `.active` entry from earlier this session can't keep
+    /// winning `AppModel.integrationStatus(for:)`'s merge once the provider's installer state is
+    /// reloaded as not-installed.
+    func clearRuntimeStatus(for provider: AgentProvider) {
+        status[provider] = nil
+    }
+
     /// Reads the ephemeral latest response (if any) and submits it for speech as a
     /// user-requested request. Never invoked automatically.
     func speakLatest() async throws {
