@@ -153,6 +153,19 @@ final class UnixSocketServerTests: XCTestCase {
         await fulfillment(of: [received], timeout: 1)
     }
 
+    func testIsListeningReflectsStartAndStopLifecycle() throws {
+        let path = temporarySocketPath()
+        let server = UnixSocketServer()
+
+        XCTAssertFalse(server.isListening)
+
+        try server.start(path: path) { _ in }
+        XCTAssertTrue(server.isListening)
+
+        server.stop()
+        XCTAssertFalse(server.isListening)
+    }
+
     func testStopUnlinksTheSocketPath() throws {
         let path = temporarySocketPath()
         let server = UnixSocketServer()

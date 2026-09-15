@@ -61,6 +61,13 @@ final class UnixSocketServer: @unchecked Sendable {
 
     init() {}
 
+    /// Whether the server currently holds an open listening socket. Reads
+    /// are serialized through the same queue that owns `listenDescriptor`,
+    /// so this never races `start`/`stop`.
+    var isListening: Bool {
+        queue.sync { listenDescriptor >= 0 }
+    }
+
     /// Safety net for instances dropped without an explicit `stop()` call
     /// (e.g. a crash path, or a caller that simply forgets). Tears down
     /// dispatch sources and closes file descriptors so nothing leaks.

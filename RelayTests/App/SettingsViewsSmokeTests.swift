@@ -11,5 +11,6 @@ final class SettingsViewsSmokeTests: XCTestCase {
         _ = DictationSettingsView(model: model)
         _ = TTSSettingsView(model: model)
         _ = PermissionsSettingsView(model: model)
+        _ = IntegrationsSettingsView(model: model)
     }
 }

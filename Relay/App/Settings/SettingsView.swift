@@ -13,6 +13,8 @@ struct SettingsView: View {
                 .tabItem { Label("TTS", systemImage: "speaker.wave.2") }
             PermissionsSettingsView(model: model)
                 .tabItem { Label("Security", systemImage: "lock.shield") }
+            IntegrationsSettingsView(model: model)
+                .tabItem { Label("Integrations", systemImage: "app.connected.to.app.below.fill") }
         }
         .frame(width: 620, height: 610)
         .task { await model.refreshSpeechBackendStatuses() }

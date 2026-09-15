@@ -26,6 +26,13 @@ final class AppModel {
     var speechBackendMessage: String?
     var ttsBackends: [TTSBackendStatus] = []
     var ttsBackendMessage: String?
+    /// Whether the Relay agent-hook Unix socket is currently listening. Only ever flipped by
+    /// `startIntegrations()`/`stopIntegrations()`, called from the real app lifecycle.
+    private(set) var isSocketListening = false
+    /// Install-time status per provider, refreshed by `installIntegration`/`uninstallIntegration`/
+    /// `checkIntegration`. Independent of `integrationManager.status`, which tracks only runtime
+    /// (event-driven) activity; `integrationStatus(for:)` merges the two.
+    private(set) var installerStatuses: [AgentProvider: IntegrationStatus] = [:]
     @ObservationIgnored let overlayModel: ActivityOverlayModel
 
     @ObservationIgnored let sttRegistry: [String: any SpeechToTextBackend]
@@ -56,6 +63,10 @@ final class AppModel {
     @ObservationIgnored private let overlayPresenter: any ActivityOverlayPresenting
     @ObservationIgnored private var activationObserver: NSObjectProtocol?
     @ObservationIgnored private var dictationTask: Task<Void, Never>?
+    @ObservationIgnored private let hookEnvelopeReceiver: HookEnvelopeReceiver
+    @ObservationIgnored private let integrationManager: IntegrationManager
+    @ObservationIgnored private let claudeCodeInstaller: ClaudeCodeInstaller
+    @ObservationIgnored private let codexInstaller: CodexInstaller
 
     convenience init() {
         let settingsStore = SettingsStore()
@@ -109,6 +120,12 @@ final class AppModel {
             activity: overlayModel,
             diagnostics: diagnostics
         )
+        let hookEnvelopeReceiver = HookEnvelopeReceiver()
+        let integrationManager = IntegrationManager(
+            events: hookEnvelopeReceiver.events,
+            integrations: [ClaudeCodeIntegration(), CodexIntegration()],
+            speechCoordinator: coordinator
+        )
         let actionDispatcher: any ActivityOverlayControlling = ActivityOverlayActionDispatcher(dictation: dictation, speech: coordinator)
         let overlayPresenter = ActivityOverlayWindowController(
             model: overlayModel,
@@ -146,7 +163,11 @@ final class AppModel {
             sttRegistry: sttRegistry,
             speechModelDownloaders: speechModelDownloaders,
             ttsRegistry: ttsRegistry,
-            ttsModelDownloaders: ttsModelDownloaders
+            ttsModelDownloaders: ttsModelDownloaders,
+            hookEnvelopeReceiver: hookEnvelopeReceiver,
+            integrationManager: integrationManager,
+            claudeCodeInstaller: ClaudeCodeInstaller(),
+            codexInstaller: CodexInstaller()
         )
         dictation.setStatusHandler { [weak self] in self?.statusText = $0 }
     }
@@ -167,7 +188,11 @@ final class AppModel {
         sttRegistry: [String: any SpeechToTextBackend] = [:],
         speechModelDownloaders: [String: any SpeechModelDownloading] = [:],
         ttsRegistry: [String: any TextToSpeechBackend] = [:],
-        ttsModelDownloaders: [String: any SpeechModelDownloading] = [:]
+        ttsModelDownloaders: [String: any SpeechModelDownloading] = [:],
+        hookEnvelopeReceiver: HookEnvelopeReceiver = HookEnvelopeReceiver(),
+        integrationManager: IntegrationManager? = nil,
+        claudeCodeInstaller: ClaudeCodeInstaller = ClaudeCodeInstaller(),
+        codexInstaller: CodexInstaller = CodexInstaller()
     ) {
         let settings = settingsStore.load()
         self.settingsStore = settingsStore
@@ -186,6 +211,14 @@ final class AppModel {
         self.speechModelDownloaders = speechModelDownloaders
         self.ttsRegistry = ttsRegistry
         self.ttsModelDownloaders = ttsModelDownloaders
+        self.hookEnvelopeReceiver = hookEnvelopeReceiver
+        self.integrationManager = integrationManager ?? IntegrationManager(
+            events: hookEnvelopeReceiver.events,
+            integrations: [ClaudeCodeIntegration(), CodexIntegration()],
+            speechCoordinator: speechCoordinator
+        )
+        self.claudeCodeInstaller = claudeCodeInstaller
+        self.codexInstaller = codexInstaller
         activationObserver = nil
         dictationTask = nil
         permissionSnapshot = permissionService.snapshot()
@@ -218,7 +251,11 @@ final class AppModel {
         sttRegistry: [String: any SpeechToTextBackend],
         speechModelDownloaders: [String: any SpeechModelDownloading],
         ttsRegistry: [String: any TextToSpeechBackend],
-        ttsModelDownloaders: [String: any SpeechModelDownloading]
+        ttsModelDownloaders: [String: any SpeechModelDownloading],
+        hookEnvelopeReceiver: HookEnvelopeReceiver,
+        integrationManager: IntegrationManager,
+        claudeCodeInstaller: ClaudeCodeInstaller,
+        codexInstaller: CodexInstaller
     ) {
         self.settingsStore = settingsStore
         self.selectionReader = selectionReader
@@ -236,6 +273,10 @@ final class AppModel {
         self.speechModelDownloaders = speechModelDownloaders
         self.ttsRegistry = ttsRegistry
         self.ttsModelDownloaders = ttsModelDownloaders
+        self.hookEnvelopeReceiver = hookEnvelopeReceiver
+        self.integrationManager = integrationManager
+        self.claudeCodeInstaller = claudeCodeInstaller
+        self.codexInstaller = codexInstaller
         activationObserver = nil
         dictationTask = nil
         permissionSnapshot = permissionService.snapshot()
@@ -482,6 +523,125 @@ final class AppModel {
         } catch {
             diagnostics.record(.ttsFailed)
             statusText = error.localizedDescription
+        }
+    }
+
+    // MARK: - Agent integrations
+
+    /// The fixed Unix-domain socket location Relay listens on for local agent-hook envelopes.
+    /// Must match `RelayHook`'s `HookTransportClient.defaultSocketPath` exactly.
+    static var integrationSocketPath: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Relay/relay.sock")
+            .path
+    }
+
+    /// Starts listening for local agent-hook envelopes on the fixed Relay socket path and begins
+    /// dispatching decoded events through `integrationManager`.
+    ///
+    /// - Important: called ONLY from the real app lifecycle (`RelayApp.applicationDidFinishLaunching`).
+    ///   Never called from any initializer, so constructing an `AppModel` in a test never opens a
+    ///   real socket. A failure to start the socket is caught and surfaced as `isSocketListening ==
+    ///   false`; it never crashes the app.
+    func startIntegrations() {
+        do {
+            try hookEnvelopeReceiver.start(path: Self.integrationSocketPath)
+            isSocketListening = true
+        } catch {
+            isSocketListening = false
+        }
+        integrationManager.start()
+    }
+
+    /// Stops dispatching agent-hook events and stops/unlinks the Unix socket.
+    ///
+    /// - Important: called ONLY from `RelayApp.applicationWillTerminate`.
+    func stopIntegrations() {
+        integrationManager.stop()
+        hookEnvelopeReceiver.stop()
+        isSocketListening = false
+    }
+
+    /// The status shown to the user for `provider`: the manager's live `.active` runtime status
+    /// when present, else the most recently checked install-time status.
+    func integrationStatus(for provider: AgentProvider) -> IntegrationStatus {
+        if let runtimeStatus = integrationManager.status[provider], case .active = runtimeStatus {
+            return runtimeStatus
+        }
+        return installerStatuses[provider] ?? .notInstalled
+    }
+
+    /// Whether an ephemeral latest agent response is currently available to speak.
+    var latestAgentResponseAvailable: Bool {
+        integrationManager.latestResponse != nil
+    }
+
+    /// Installs the Relay `Stop` hook for `provider`, then refreshes its status. An installer
+    /// failure is caught and surfaced as `.configurationError`; it never crashes the app, and
+    /// never logs the underlying error verbatim.
+    func installIntegration(_ provider: AgentProvider) {
+        do {
+            switch provider {
+            case .claudeCode: try claudeCodeInstaller.install()
+            case .codex: try codexInstaller.install()
+            }
+            checkIntegration(provider)
+        } catch {
+            installerStatuses[provider] = Self.configurationErrorStatus(for: provider, error: error)
+        }
+    }
+
+    /// Removes the Relay-owned `Stop` hook for `provider`, then refreshes its status. An
+    /// installer failure is caught and surfaced as `.configurationError`; it never crashes the
+    /// app, and never logs the underlying error verbatim.
+    func uninstallIntegration(_ provider: AgentProvider) {
+        do {
+            switch provider {
+            case .claudeCode: try claudeCodeInstaller.uninstall()
+            case .codex: try codexInstaller.uninstall()
+            }
+            checkIntegration(provider)
+        } catch {
+            installerStatuses[provider] = Self.configurationErrorStatus(for: provider, error: error)
+        }
+    }
+
+    /// Refreshes `provider`'s install-time status by re-reading its agent config. A read failure
+    /// is caught and surfaced as `.configurationError`; it never crashes the app, and never logs
+    /// the underlying error verbatim.
+    func checkIntegration(_ provider: AgentProvider) {
+        do {
+            switch provider {
+            case .claudeCode: installerStatuses[provider] = try claudeCodeInstaller.status()
+            case .codex: installerStatuses[provider] = try codexInstaller.status()
+            }
+        } catch {
+            installerStatuses[provider] = Self.configurationErrorStatus(for: provider, error: error)
+        }
+    }
+
+    /// Maps a thrown installer error to a user-facing `.configurationError`, without ever
+    /// including the underlying error's text (which may carry file paths or content).
+    private static func configurationErrorStatus(for provider: AgentProvider, error: Error) -> IntegrationStatus {
+        if provider == .codex, case CodexInstallerError.hooksDisabledInConfig = error {
+            return .configurationError(CodexInstaller.hooksDisabledMessage)
+        }
+        switch provider {
+        case .claudeCode: return .configurationError("Could not update the Claude Code integration.")
+        case .codex: return .configurationError("Could not update the Codex integration.")
+        }
+    }
+
+    /// Speaks the ephemeral latest agent response (if any) as a user-requested speech request.
+    /// Never invoked automatically; only ever called from an explicit user action.
+    func speakLatestAgentResponse() async {
+        do {
+            try await integrationManager.speakLatest()
+            diagnostics.record(.ttsSubmitted)
+            statusText = "Speaking latest agent response"
+        } catch {
+            diagnostics.record(.ttsFailed)
+            statusText = "Could not speak the latest agent response."
         }
     }
 }

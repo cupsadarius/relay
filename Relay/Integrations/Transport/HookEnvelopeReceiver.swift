@@ -20,6 +20,10 @@ enum HookEnvelopeDropReason: Sendable {
 final class HookEnvelopeReceiver: @unchecked Sendable {
     let events: AsyncStream<HookEnvelope>
 
+    /// Whether the underlying `UnixSocketServer` currently holds an open
+    /// listening socket.
+    var isListening: Bool { server.isListening }
+
     private let server: UnixSocketServer
     private let decoder = JSONDecoder()
     private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "integrations")

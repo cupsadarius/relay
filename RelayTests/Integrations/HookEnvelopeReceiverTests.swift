@@ -103,6 +103,19 @@ final class HookEnvelopeReceiverTests: XCTestCase {
         await fulfillment(of: [receivedUnexpected], timeout: 0.3)
     }
 
+    func testIsListeningReflectsStartAndStopLifecycle() throws {
+        let path = temporarySocketPath()
+        let receiver = HookEnvelopeReceiver()
+
+        XCTAssertFalse(receiver.isListening)
+
+        try receiver.start(path: path)
+        XCTAssertTrue(receiver.isListening)
+
+        receiver.stop()
+        XCTAssertFalse(receiver.isListening)
+    }
+
     func testStopFinishesTheEventsStream() async throws {
         let path = temporarySocketPath()
         let receiver = HookEnvelopeReceiver()
