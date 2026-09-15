@@ -19,6 +19,8 @@
 		23E6C9B2DB1F71CE066D828B /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC1EE06D54321DF43FE4A78E /* SettingsStore.swift */; };
 		26610864A9E3551C29288FA7 /* KeybindsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E72993D876294B84028D5D5 /* KeybindsSettingsView.swift */; };
 		26689C3A31F905B40F2AF9BF /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BCF70B97ADB9DCB148D1934 /* DiagnosticsView.swift */; };
+		2827FC2730471A70B1A60D7F /* AgentSessionRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3040811122AB7731EB71724 /* AgentSessionRegistryTests.swift */; };
+		28891C390D5A34C7863FDB0D /* TerminalContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = C32FF9C1F2EBE4E2345AF573 /* TerminalContext.swift */; };
 		28A7CDCD3BCC3B97A35DAED7 /* FluidAudioKokoroEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F2A1198E9E19F425709AF21 /* FluidAudioKokoroEngineTests.swift */; };
 		3025C432DE8ACDA88701092F /* ClipboardService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE24F398C26E7C916733EF1 /* ClipboardService.swift */; };
 		308DF8C3E698E57C77853A62 /* STTRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A283E013EB4D5C368889260 /* STTRouterTests.swift */; };
@@ -51,6 +53,7 @@
 		5AEB040E011549C43640F5CA /* ActivityOverlayPanelHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032A9782E9C2C931DFB89322 /* ActivityOverlayPanelHost.swift */; };
 		5BB20F6CC812C4783D7205B6 /* GlobalHotkeyManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CE61334B063F0337C2E6BB7 /* GlobalHotkeyManagerTests.swift */; };
 		5DFE942299A26F7BEA31560A /* MicrophoneCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90563D92C2FAAA30698339C5 /* MicrophoneCapture.swift */; };
+		5E3C0D7C2CEA693C9285FCCC /* AgentSessionRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66FC6B9D3FF3241E9F3B71E1 /* AgentSessionRegistry.swift */; };
 		629B951FA84E58D245591D7B /* MenuBarContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DCE840658936E7271FAB146 /* MenuBarContentView.swift */; };
 		63950769791664D8A9424529 /* HotkeyDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36BC1C589CC6F88B197B1EF0 /* HotkeyDefinition.swift */; };
 		63AA0D8807170642E93DD632 /* CodexIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFD1A51B15D0752BB3928039 /* CodexIntegrationTests.swift */; };
@@ -122,6 +125,7 @@
 		EF566C8F2403D690427266AC /* IntegrationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E97532C0DC60BE1D2FE106E5 /* IntegrationManager.swift */; };
 		F48AD940DAE6412EC677A8BB /* IntegrationsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4F6B57B98EE3D5605E724E8 /* IntegrationsSettingsView.swift */; };
 		F9565864D90DAB867000F0A0 /* RulesSpeechPreprocessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01700458AA3E57B79695FD7 /* RulesSpeechPreprocessor.swift */; };
+		FC7E8DB4267BEA6CA620A14E /* AgentSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C8084505DDA7AD9AACEA069 /* AgentSession.swift */; };
 		FEEB68ED69E952C82B735A84 /* DictationCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8319285D2256A603BD08A571 /* DictationCoordinatorTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -172,6 +176,7 @@
 		275F0AFDBD57596BB855D04B /* HookTransportClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookTransportClient.swift; sourceTree = "<group>"; };
 		29EE80E2D79C7BCF9E1806A0 /* ParakeetBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParakeetBackend.swift; sourceTree = "<group>"; };
 		2ACB3A9F06DA9A4999C2D065 /* ActivityOverlayActionDispatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverlayActionDispatcherTests.swift; sourceTree = "<group>"; };
+		2C8084505DDA7AD9AACEA069 /* AgentSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSession.swift; sourceTree = "<group>"; };
 		2F2A1198E9E19F425709AF21 /* FluidAudioKokoroEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FluidAudioKokoroEngineTests.swift; sourceTree = "<group>"; };
 		30523FE7FC87D2A513D0DAF1 /* AppModelIntegrationsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModelIntegrationsTests.swift; sourceTree = "<group>"; };
 		311ABBF060EBB992AF95420A /* AppleTTSBackendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleTTSBackendTests.swift; sourceTree = "<group>"; };
@@ -190,6 +195,7 @@
 		5CB732B846FC4C710B2410FC /* FluidAudioParakeetEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FluidAudioParakeetEngine.swift; sourceTree = "<group>"; };
 		5DED03634A55B66FBCED816D /* TTSBackendCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSBackendCatalogTests.swift; sourceTree = "<group>"; };
 		6354F61BA4CE6CE9E6F5206D /* AccessibilityServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityServiceTests.swift; sourceTree = "<group>"; };
+		66FC6B9D3FF3241E9F3B71E1 /* AgentSessionRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSessionRegistry.swift; sourceTree = "<group>"; };
 		6A5013145E15E5C746C59782 /* AgentProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProvider.swift; sourceTree = "<group>"; };
 		6AAA555F92CDA973E5FD1ACA /* MicrophoneCaptureStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicrophoneCaptureStateTests.swift; sourceTree = "<group>"; };
 		6B541411E315249B0E88DAE3 /* SpeechCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechCoordinatorTests.swift; sourceTree = "<group>"; };
@@ -232,6 +238,7 @@
 		B4C055D5BF893F187719EF44 /* ClaudeCodeIntegration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCodeIntegration.swift; sourceTree = "<group>"; };
 		BABB516AF90FA95A49A1731E /* RelayTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RelayTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C1950E87F2DF1360304DC63A /* FluidAudioParakeetEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FluidAudioParakeetEngineTests.swift; sourceTree = "<group>"; };
+		C32FF9C1F2EBE4E2345AF573 /* TerminalContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalContext.swift; sourceTree = "<group>"; };
 		C9310CC2B63FAED92154DB23 /* SelectionReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionReader.swift; sourceTree = "<group>"; };
 		C946F6D8E4671F893A836DF2 /* TTSBackendCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSBackendCatalog.swift; sourceTree = "<group>"; };
 		CA7F679F877AB1E080B262A1 /* SpeechModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechModels.swift; sourceTree = "<group>"; };
@@ -240,6 +247,7 @@
 		CFD159D40C20E2EB860D1629 /* RelayIntegration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayIntegration.swift; sourceTree = "<group>"; };
 		D01700458AA3E57B79695FD7 /* RulesSpeechPreprocessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RulesSpeechPreprocessor.swift; sourceTree = "<group>"; };
 		D2945AA36C2854FD4A7C9469 /* ActivityOverlayWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverlayWindowController.swift; sourceTree = "<group>"; };
+		D3040811122AB7731EB71724 /* AgentSessionRegistryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSessionRegistryTests.swift; sourceTree = "<group>"; };
 		D52815C78FFC96732B4BC0DE /* DiagnosticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsTests.swift; sourceTree = "<group>"; };
 		DA1878571E35A1485700DA5C /* TTSRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSRouter.swift; sourceTree = "<group>"; };
 		DAA71CF6D19AFEA28AC72CE1 /* ActivityOverlayModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverlayModel.swift; sourceTree = "<group>"; };
@@ -425,6 +433,15 @@
 			path = Transport;
 			sourceTree = "<group>";
 		};
+		7B82E629980A64EABA478532 /* Domain */ = {
+			isa = PBXGroup;
+			children = (
+				2C8084505DDA7AD9AACEA069 /* AgentSession.swift */,
+				C32FF9C1F2EBE4E2345AF573 /* TerminalContext.swift */,
+			);
+			path = Domain;
+			sourceTree = "<group>";
+		};
 		8108792C7BDAA099F962E116 /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -476,6 +493,14 @@
 				71B3B42F4D8ADC705985B0C3 /* SpeechBackendContractsTests.swift */,
 			);
 			path = Domain;
+			sourceTree = "<group>";
+		};
+		A9C98CE98619F32B501C1C85 /* Sessions */ = {
+			isa = PBXGroup;
+			children = (
+				D3040811122AB7731EB71724 /* AgentSessionRegistryTests.swift */,
+			);
+			path = Sessions;
 			sourceTree = "<group>";
 		};
 		BB59EBF38C38532FAC2EAB8A /* SpeechOut */ = {
@@ -533,11 +558,21 @@
 				DB2D484EE2072926850FD348 /* Backends */,
 				FDEA6DBE16EC5221B53015C6 /* Domain */,
 				16D77C9EF27381A0203FFD77 /* Integrations */,
+				E9B42ACE6C57C793ECC7230F /* Sessions */,
 				370CCB652C846F1DC6580429 /* SpeechIn */,
 				BB59EBF38C38532FAC2EAB8A /* SpeechOut */,
 				1D5C6A10CD6B121EB1EF0031 /* System */,
 			);
 			path = Relay;
+			sourceTree = "<group>";
+		};
+		E9B42ACE6C57C793ECC7230F /* Sessions */ = {
+			isa = PBXGroup;
+			children = (
+				66FC6B9D3FF3241E9F3B71E1 /* AgentSessionRegistry.swift */,
+				7B82E629980A64EABA478532 /* Domain */,
+			);
+			path = Sessions;
 			sourceTree = "<group>";
 		};
 		E9C14B8A9590FCA3EDCFEAEA /* RelayTests */ = {
@@ -549,6 +584,7 @@
 				31FBF222EAD919F3755F2425 /* Backends */,
 				A89903B3BCFD871D73F30B39 /* Domain */,
 				1DC21581A672696A8892A074 /* Integrations */,
+				A9C98CE98619F32B501C1C85 /* Sessions */,
 				6F7D79CCDDFB38CEDDD6D7C4 /* SpeechIn */,
 				6C1A6BC3ACEA9AC2F35DFD6B /* SpeechOut */,
 				55F9F67CCCD674A771BA3A40 /* System */,
@@ -723,6 +759,7 @@
 				458711DCB7F0780003DE325F /* ActivityOverlayModelTests.swift in Sources */,
 				5587EE4800F58032E7EB7806 /* ActivityOverlayPresentationTests.swift in Sources */,
 				1FBD462C1D169A1B2983213F /* ActivityOverlayWindowControllerTests.swift in Sources */,
+				2827FC2730471A70B1A60D7F /* AgentSessionRegistryTests.swift in Sources */,
 				3DB3D551D7447EC9F85D06C2 /* AppModelIntegrationsTests.swift in Sources */,
 				B2E2ACBD73D895AA81FBD1B4 /* AppModelTests.swift in Sources */,
 				18A0B28B851CB76A0406F54E /* AppSettingsTests.swift in Sources */,
@@ -787,6 +824,8 @@
 				5A940B7CDFFD5E197ACA7422 /* ActivityOverlayWindowController.swift in Sources */,
 				4A7BF6773CB46992FA06B09A /* AgentProvider.swift in Sources */,
 				EAB39791025AC7188F9DD9C9 /* AgentResponseEvent.swift in Sources */,
+				FC7E8DB4267BEA6CA620A14E /* AgentSession.swift in Sources */,
+				5E3C0D7C2CEA693C9285FCCC /* AgentSessionRegistry.swift in Sources */,
 				D0CCD89167ACBB59A2D873B6 /* AppModel.swift in Sources */,
 				C5F5763A4617CDDD616EB1F3 /* AppSettings.swift in Sources */,
 				B8D654E9189C297049AFAB10 /* AppleSpeechBackend.swift in Sources */,
@@ -841,6 +880,7 @@
 				0B604089F852B83304D81658 /* TTSBackendCatalog.swift in Sources */,
 				4F2437BBF321F303DFF307C5 /* TTSRouter.swift in Sources */,
 				DAADDCA17C999363EEE95FCB /* TTSSettingsView.swift in Sources */,
+				28891C390D5A34C7863FDB0D /* TerminalContext.swift in Sources */,
 				C7BAB420C2ACEAAD2615513F /* TextInsertionService.swift in Sources */,
 				581FC3101A3FE16E88052CDC /* TextToSpeechBackend.swift in Sources */,
 				AC21C5CAF0A02A9029C1127C /* UnixSocketServer.swift in Sources */,
