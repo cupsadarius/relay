@@ -79,6 +79,7 @@
 		84EEBCE5125549F18CE06C06 /* RelayIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFD159D40C20E2EB860D1629 /* RelayIntegration.swift */; };
 		874B71D6563F1754868E4872 /* IntegrationManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88315C1ADD14F6767C42B75C /* IntegrationManagerTests.swift */; };
 		8C7FB013D71A83B74950862F /* GlobalHotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2499709E52B7C2AE389E0A68 /* GlobalHotkeyManager.swift */; };
+		8DFFB706EDF3C5BF8EE57406 /* FocusResolutionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1FC20A718A0939B4DDA9CB0 /* FocusResolutionService.swift */; };
 		912B483ECC93452865AC4A29 /* ClipboardServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 929A7ED797B49CEE115E1DA6 /* ClipboardServiceTests.swift */; };
 		91CA532F4429D5B65476BEBC /* ProjectSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D080F5789BE1F241509F1C2 /* ProjectSmokeTests.swift */; };
 		94AE744F4CA8CE70CBB9687B /* RelayHook in Resources */ = {isa = PBXBuildFile; fileRef = CD7B5DDABCD6925ACF15C1B3 /* RelayHook */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -89,6 +90,7 @@
 		9DEDED0E43E753BCE3E9414B /* ParakeetBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0426F6B17538598D1ECA3EB8 /* ParakeetBackendTests.swift */; };
 		9ED060105B789ED3C5278037 /* RelayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82F98404629EA6F3162215CC /* RelayTests.swift */; };
 		9F4340F141218B792C4792F0 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54E4B351A16CE237218FE5C0 /* SettingsView.swift */; };
+		9FE03DC36147EFCCF7FD4D45 /* FocusModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3332E401CE6B77C9E9402E3 /* FocusModels.swift */; };
 		A81AECAA6FC7AB0F87F442DE /* SynthesizedAudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E5FC6AD7B609779FB7B0A48 /* SynthesizedAudioPlayer.swift */; };
 		AC049B62E4684DDDE0ABB970 /* ClaudeCodeIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C055D5BF893F187719EF44 /* ClaudeCodeIntegration.swift */; };
 		AC21C5CAF0A02A9029C1127C /* UnixSocketServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91ED1D7A6F95F0D69DB81AEF /* UnixSocketServer.swift */; };
@@ -110,6 +112,7 @@
 		C5FAB2BF576BBC52717C7E8E /* SpeechCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B541411E315249B0E88DAE3 /* SpeechCoordinatorTests.swift */; };
 		C7BAB420C2ACEAAD2615513F /* TextInsertionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FEA7F12EBADD824A6D473D8 /* TextInsertionService.swift */; };
 		CA5EDFFEEA88571D939A8E86 /* TextInsertionServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74C937F1F8E31916F4428507 /* TextInsertionServiceTests.swift */; };
+		CD416A4E79E4B88A5659B964 /* FocusResolutionServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BE27F0D0A2BEF34BD00F5A4 /* FocusResolutionServiceTests.swift */; };
 		D0CCD89167ACBB59A2D873B6 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3772B7BC9E1856FB2551A9D4 /* AppModel.swift */; };
 		D24C6988EFA159A3FC1042F8 /* FluidAudioPocketTTSEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E76185120FF9AE021058358D /* FluidAudioPocketTTSEngineTests.swift */; };
 		D3DF712D1B92B3D921467185 /* SpeechCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2E464DE9B8D3EF3FBAF0A9E /* SpeechCoordinator.swift */; };
@@ -196,6 +199,7 @@
 		54E4B351A16CE237218FE5C0 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		5B0A9C8344C96ABA62442D91 /* HookEnvelopeReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookEnvelopeReceiver.swift; sourceTree = "<group>"; };
 		5BCF70B97ADB9DCB148D1934 /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
+		5BE27F0D0A2BEF34BD00F5A4 /* FocusResolutionServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusResolutionServiceTests.swift; sourceTree = "<group>"; };
 		5CB732B846FC4C710B2410FC /* FluidAudioParakeetEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FluidAudioParakeetEngine.swift; sourceTree = "<group>"; };
 		5DED03634A55B66FBCED816D /* TTSBackendCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSBackendCatalogTests.swift; sourceTree = "<group>"; };
 		6354F61BA4CE6CE9E6F5206D /* AccessibilityServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityServiceTests.swift; sourceTree = "<group>"; };
@@ -238,6 +242,7 @@
 		AC1EE06D54321DF43FE4A78E /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
 		AC232F60ABB4C877E9AFBAC8 /* ClaudeCodeInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCodeInstaller.swift; sourceTree = "<group>"; };
 		AE11899BF95D51FEF77A4A4C /* SettingsViewsSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewsSmokeTests.swift; sourceTree = "<group>"; };
+		B1FC20A718A0939B4DDA9CB0 /* FocusResolutionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusResolutionService.swift; sourceTree = "<group>"; };
 		B2640FB004F58617990C7498 /* Relay.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Relay.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B4C055D5BF893F187719EF44 /* ClaudeCodeIntegration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCodeIntegration.swift; sourceTree = "<group>"; };
 		BABB516AF90FA95A49A1731E /* RelayTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RelayTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -266,6 +271,7 @@
 		EAB0B39FEA02933CC4354E8D /* SpeechBackendError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechBackendError.swift; sourceTree = "<group>"; };
 		ED330EE6049AE116AFB2F072 /* AppSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsTests.swift; sourceTree = "<group>"; };
 		ED7F4126C70AC7872DBFD520 /* StreamingAudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingAudioPlayer.swift; sourceTree = "<group>"; };
+		F3332E401CE6B77C9E9402E3 /* FocusModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusModels.swift; sourceTree = "<group>"; };
 		F4F6B57B98EE3D5605E724E8 /* IntegrationsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrationsSettingsView.swift; sourceTree = "<group>"; };
 		F5BF4958844B2771537AF08D /* AppModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModelTests.swift; sourceTree = "<group>"; };
 		F7C79B2E08F2B4993BD03EFE /* ClaudeCodeIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCodeIntegrationTests.swift; sourceTree = "<group>"; };
@@ -443,6 +449,7 @@
 			isa = PBXGroup;
 			children = (
 				2C8084505DDA7AD9AACEA069 /* AgentSession.swift */,
+				F3332E401CE6B77C9E9402E3 /* FocusModels.swift */,
 				C32FF9C1F2EBE4E2345AF573 /* TerminalContext.swift */,
 			);
 			path = Domain;
@@ -505,6 +512,7 @@
 			isa = PBXGroup;
 			children = (
 				D3040811122AB7731EB71724 /* AgentSessionRegistryTests.swift */,
+				5BE27F0D0A2BEF34BD00F5A4 /* FocusResolutionServiceTests.swift */,
 				05610B86735D45923309417C /* ProcessInspectorTests.swift */,
 			);
 			path = Sessions;
@@ -577,6 +585,7 @@
 			isa = PBXGroup;
 			children = (
 				66FC6B9D3FF3241E9F3B71E1 /* AgentSessionRegistry.swift */,
+				B1FC20A718A0939B4DDA9CB0 /* FocusResolutionService.swift */,
 				FBBA71BFC002BDCF446FAF0D /* FrontmostAppMonitor.swift */,
 				DDE382A48C3099EB2F2FC565 /* ProcessInspector.swift */,
 				7B82E629980A64EABA478532 /* Domain */,
@@ -784,6 +793,7 @@
 				28A7CDCD3BCC3B97A35DAED7 /* FluidAudioKokoroEngineTests.swift in Sources */,
 				6F8E0185EBFBB32801034947 /* FluidAudioParakeetEngineTests.swift in Sources */,
 				D24C6988EFA159A3FC1042F8 /* FluidAudioPocketTTSEngineTests.swift in Sources */,
+				CD416A4E79E4B88A5659B964 /* FocusResolutionServiceTests.swift in Sources */,
 				5BB20F6CC812C4783D7205B6 /* GlobalHotkeyManagerTests.swift in Sources */,
 				E2C6E7141B67B8F4DBA3DE7B /* HookEnvelopeReceiverTests.swift in Sources */,
 				DE60F514AF7DB717FE878E05 /* HookEnvelopeTests.swift in Sources */,
@@ -855,6 +865,8 @@
 				4608679CC210E16C4D702708 /* FluidAudioKokoroEngine.swift in Sources */,
 				37FBA412106C897F84C4B36A /* FluidAudioParakeetEngine.swift in Sources */,
 				769E8F7AE0CB447ABAA8BCEE /* FluidAudioPocketTTSEngine.swift in Sources */,
+				9FE03DC36147EFCCF7FD4D45 /* FocusModels.swift in Sources */,
+				8DFFB706EDF3C5BF8EE57406 /* FocusResolutionService.swift in Sources */,
 				EB5A44B3DB43C66A7A1B5D8E /* FrontmostAppMonitor.swift in Sources */,
 				8C7FB013D71A83B74950862F /* GlobalHotkeyManager.swift in Sources */,
 				97BBF047A631155332E9FB06 /* HookEnvelope.swift in Sources */,
