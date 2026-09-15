@@ -57,6 +57,7 @@
 		9DEDED0E43E753BCE3E9414B /* ParakeetBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0426F6B17538598D1ECA3EB8 /* ParakeetBackendTests.swift */; };
 		9ED060105B789ED3C5278037 /* RelayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82F98404629EA6F3162215CC /* RelayTests.swift */; };
 		9F4340F141218B792C4792F0 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54E4B351A16CE237218FE5C0 /* SettingsView.swift */; };
+		AF4EAB5EC47262D70DE776AC /* SettingsViewsSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE11899BF95D51FEF77A4A4C /* SettingsViewsSmokeTests.swift */; };
 		B2E2ACBD73D895AA81FBD1B4 /* AppModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5BF4958844B2771537AF08D /* AppModelTests.swift */; };
 		B5059A51D144C468B1843122 /* RelayApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75C54FA6D0E67AA81510F66A /* RelayApp.swift */; };
 		B65DB48D76D9E762F4D8DF4C /* AppleSpeechBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49DEB5422690339D2759CC63 /* AppleSpeechBackendTests.swift */; };
@@ -149,6 +150,7 @@
 		A3A1971CFBDF8C170DD9B32F /* ActivityOverlayPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverlayPresentation.swift; sourceTree = "<group>"; };
 		A7357E0F76AF76DF9C69ACD1 /* TextToSpeechBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextToSpeechBackend.swift; sourceTree = "<group>"; };
 		AC1EE06D54321DF43FE4A78E /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
+		AE11899BF95D51FEF77A4A4C /* SettingsViewsSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewsSmokeTests.swift; sourceTree = "<group>"; };
 		B2640FB004F58617990C7498 /* Relay.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Relay.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BABB516AF90FA95A49A1731E /* RelayTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RelayTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C1950E87F2DF1360304DC63A /* FluidAudioParakeetEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FluidAudioParakeetEngineTests.swift; sourceTree = "<group>"; };
@@ -189,6 +191,7 @@
 				4CE409E03262A10710015F9A /* ActivityOverlayPresentationTests.swift */,
 				7FCE353359D9AFF090867950 /* ActivityOverlayWindowControllerTests.swift */,
 				F5BF4958844B2771537AF08D /* AppModelTests.swift */,
+				AE11899BF95D51FEF77A4A4C /* SettingsViewsSmokeTests.swift */,
 				035CD1C6FBA0F8F91F652E6F /* WindowFocusCoordinatorTests.swift */,
 			);
 			path = App;
@@ -505,6 +508,7 @@
 				C49E0E417AF998014B597166 /* RulesTranscriptProcessorTests.swift in Sources */,
 				308DF8C3E698E57C77853A62 /* STTRouterTests.swift in Sources */,
 				BB3C78E83707FBC0309FF4D5 /* SelectionReaderTests.swift in Sources */,
+				AF4EAB5EC47262D70DE776AC /* SettingsViewsSmokeTests.swift in Sources */,
 				70155993155C43ABD4EACFE4 /* SpeechBackendContractsTests.swift in Sources */,
 				C5FAB2BF576BBC52717C7E8E /* SpeechCoordinatorTests.swift in Sources */,
 				B6A7E723B9BA8FE5CCF0BFD6 /* TTSRouterTests.swift in Sources */,
