@@ -26,7 +26,7 @@
   ```
   xcodebuild -project Relay.xcodeproj -scheme Relay -destination 'platform=macOS' -derivedDataPath .derived-data test
   ```
-- This phase is a pure refactor. The correctness bar is: **the build succeeds, the full existing suite stays green, and every control keeps its exact current binding, label, and action.** After each extraction, diff the moved code against the original to confirm it is byte-for-byte the same logic (only the enclosing `struct`/`Section` wrapper changes).
+- This phase is a pure refactor. The correctness bar is: **the build succeeds, the full existing suite stays green, and every control keeps its exact current binding, label, and action.** After each extraction, diff the moved code against the original to confirm the logic is unchanged (only the enclosing `struct`/`Section` wrapper and form styling change). The one deliberate visual adaptation is dropping the old outer `.padding()` in favor of per-tab `.formStyle(.grouped)`; see Task 5.
 
 ## File structure (end state)
 
@@ -249,7 +249,7 @@ Copy the three `speechBackend*` helpers and the two bindings exactly as they are
 - [ ] **Step 2: Regenerate and build**
 
 Run: `xcodegen generate && xcodebuild -project Relay.xcodeproj -scheme Relay -destination 'platform=macOS' -derivedDataPath .derived-data build`
-Expected: `** BUILD SUCCEEDED **`. If you get a "redeclaration" error for `DictationMode.title`, it is still declared in the old `SettingsView.swift`; that is expected until Task 5 removes it. To keep the build green in the interim, temporarily leave the old `SettingsView.swift` as the sole owner of shared private extensions and only move section BODIES in Tasks 1–4, then move the extensions in Task 5. (Simpler: perform Tasks 3, 4, and 5 as one commit if interim redeclaration is unavoidable — see Task 5 note.)
+Expected: `** BUILD SUCCEEDED **`. The moved `private extension DictationMode` is file-scoped, so it can coexist with the copy still in the old `SettingsView.swift` (Swift `private` is invisible across files) — no redeclaration error occurs. The old `SettingsView` keeps working until Task 5 replaces it.
 
 - [ ] **Step 3: Commit**
 
@@ -313,10 +313,17 @@ struct KeybindsSettingsView: View {
 // private extensions here VERBATIM from the old SettingsView.swift.
 ```
 
-- [ ] **Step 2: Commit together with Task 5** if the shared private extensions cause redeclaration errors while both the old and new files exist. Otherwise regenerate + build now:
+- [ ] **Step 2: Regenerate and build**
 
 Run: `xcodegen generate && xcodebuild -project Relay.xcodeproj -scheme Relay -destination 'platform=macOS' -derivedDataPath .derived-data build`
-Expected: `** BUILD SUCCEEDED **`
+Expected: `** BUILD SUCCEEDED **`. As in Task 3, the moved `private` `HotkeyRecorder` / `HotkeyRecorderButton` / `HotkeyDefinition` / `HotkeyModifier` declarations are file-scoped and coexist with the copies still in the old `SettingsView.swift` without collision.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add Relay/App/Settings/KeybindsSettingsView.swift Relay.xcodeproj/project.pbxproj
+git commit -m "refactor(settings): extract Keybinds tab view"
+```
 
 ---
 
@@ -353,7 +360,9 @@ struct SettingsView: View {
 }
 ```
 
-Rationale: the `.frame` and `.task { refreshSpeechBackendStatuses() }` move from the old `SettingsView.body` to the container so the size and the on-open backend refresh behavior are preserved exactly. The tab labels use SF Symbols matching each tab's purpose.
+Rationale: the `.frame` and `.task { refreshSpeechBackendStatuses() }` move from the old `SettingsView.body` to the container so the size and the on-open backend refresh behavior are preserved exactly. The tab labels use SF Symbols matching each tab's purpose. The fourth tab's spec name is "Security & Permissions"; the toolbar label is shortened to "Security" to fit the tab strip — the section inside still reads "Permissions".
+
+Note on `.padding()`: the old single `Form` had a trailing `.padding()`. It is intentionally not carried over. Each per-tab view uses `.formStyle(.grouped)`, which supplies its own standard insets inside a tab, so an extra outer `.padding()` is not wanted. This is the one deliberate visual adaptation of the refactor; every control binding, label, and action is still preserved unchanged.
 
 - [ ] **Step 2: Delete the old file**
 
@@ -373,7 +382,7 @@ Expected: `** BUILD SUCCEEDED **` with zero warnings. If a "redeclaration" or "c
 Run: `xcodebuild -project Relay.xcodeproj -scheme Relay -destination 'platform=macOS' -derivedDataPath .derived-data test`
 Expected: `** TEST SUCCEEDED **`, same test count as before this phase.
 
-- [ ] **Step 5: Commit** (this commit includes Task 4's file if it was deferred here)
+- [ ] **Step 5: Commit**
 
 ```bash
 git add -A Relay/App Relay.xcodeproj/project.pbxproj
@@ -389,19 +398,19 @@ Give each extracted view a minimal test that it constructs against a test `AppMo
 **Files:**
 - Create: `RelayTests/App/SettingsViewsSmokeTests.swift`
 
-- [ ] **Step 1: Check how existing tests build an `AppModel`.** Read `RelayTests/App/AppModelTests.swift` and reuse its exact `AppModel` construction (initializer, fakes, `@MainActor` setup). Do not invent a new construction path.
+- [ ] **Step 1: Use the `AppModel()` convenience init, not the private test fakes.** `AppModelTests.makeModel(...)` and all its fakes are `private` to that file and cannot be reached from a new test file. Instead use the parameterless `AppModel()` convenience init (`Relay/App/AppModel.swift:51`) on the MainActor, exactly as `RelayTests/ProjectSmokeTests.swift` already does (`await MainActor.run { AppModel() }`).
 
-- [ ] **Step 2: Write the smoke test** using the same `AppModel` setup:
+- [ ] **Step 2: Write the smoke test:**
 
 ```swift
 import XCTest
 import SwiftUI
 @testable import Relay
 
-@MainActor
 final class SettingsViewsSmokeTests: XCTestCase {
+    @MainActor
     func testAllSettingsTabViewsConstruct() {
-        let model = /* build the same way AppModelTests builds it */
+        let model = AppModel()
         _ = SettingsView(model: model)
         _ = KeybindsSettingsView(model: model)
         _ = DictationSettingsView(model: model)
@@ -437,6 +446,6 @@ git commit -m "test(settings): smoke-construct the four tab views"
 
 ## Notes for the implementer
 
-- The interim redeclaration risk (Tasks 3–5) comes only from `private` extensions being defined in both the old and new files at once. The safe path: do Tasks 1 and 2 as standalone commits (their helpers are instance methods, not shared file-private extensions, so no conflict), then do Tasks 3, 4, and 5 together in one commit that creates the two remaining tab files, moves the shared private extensions, adds the container, and deletes the old file atomically. Choose whichever keeps every commit building.
+- Each of Tasks 1–4 is a standalone commit and builds with the old `SettingsView.swift` still present. Swift `private` declarations are file-scoped, so a moved `private extension` or `private struct` never collides with its copy still in the old file. The only cross-file collision would be the `internal struct SettingsView` name, and Task 5 avoids it by creating the new container, `git rm`-ing the old file, and only then building — the two `SettingsView` types never coexist at build time.
 - Do not change `RelayApp.swift`. It already references `SettingsView(model:)`, and the new container keeps that exact name and initializer, so the `Settings { SettingsView(model: model) ... }` scene is unaffected.
 - Keep `.formStyle(.grouped)` identical on all four tabs for a consistent look.
