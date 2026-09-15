@@ -45,7 +45,7 @@ final class ActivityOverlayWindowControllerTests: XCTestCase {
         let presenter = makeController(model: ActivityOverlayModel(), host: host, screens: FakeOverlayScreens())
 
         presenter.update(state: .hidden, style: .interactive)
-        presenter.update(state: .speaking(sessionID: UUID(), startedAt: .now), style: .off)
+        presenter.update(state: .speaking(sessionID: UUID(), startedAt: .now, level: nil), style: .off)
 
         XCTAssertEqual(host.createCount, 0)
     }
@@ -89,7 +89,7 @@ final class ActivityOverlayWindowControllerTests: XCTestCase {
         let diagnostics = DiagnosticsRecorder()
         let presenter = makeController(model: ActivityOverlayModel(), host: host, screens: FakeOverlayScreens(), diagnostics: diagnostics)
 
-        presenter.update(state: .speaking(sessionID: UUID(), startedAt: .now), style: .interactive)
+        presenter.update(state: .speaking(sessionID: UUID(), startedAt: .now, level: nil), style: .interactive)
 
         XCTAssertEqual(diagnostics.entries.map(\.event), [.overlayFailed])
     }
@@ -159,7 +159,7 @@ final class ActivityOverlayWindowControllerTests: XCTestCase {
         // `orderFront` again instead of skipping it as already-visible, then fail it again.
         presenter.update(state: .processing(sessionID: session, startedAt: .now), style: .off)
         host.orderFrontError = FakeOverlayHostError.boom
-        presenter.update(state: .speaking(sessionID: session, startedAt: .now), style: .interactive)
+        presenter.update(state: .speaking(sessionID: session, startedAt: .now, level: nil), style: .interactive)
         XCTAssertEqual(diagnostics.entries.map(\.event), [.overlayFailed, .overlayFailed])
     }
 

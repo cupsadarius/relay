@@ -71,7 +71,7 @@ final class ActivityOverlayModelTests: XCTestCase {
 
         model.fail(sessionID: session, category: .speechPlayback, message: "Speech playback failed.")
 
-        XCTAssertEqual(model.state, .speaking(sessionID: session, startedAt: startedAt))
+        XCTAssertEqual(model.state, .speaking(sessionID: session, startedAt: startedAt, level: nil))
         scheduler.run(at: 0)
         XCTAssertTrue(model.state.isHidden)
     }
@@ -127,12 +127,101 @@ final class ActivityOverlayModelTests: XCTestCase {
         XCTAssertTrue(model.state.isHidden)
     }
 
+    func testUpdateSpeakingLevelSetsLevelWhileSpeakingForMatchingSession() {
+        let model = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let session = UUID()
+        let startedAt = Date(timeIntervalSinceReferenceDate: 42)
+        model.begin(sessionID: session)
+        model.speak(sessionID: session, startedAt: startedAt)
+
+        model.updateSpeakingLevel(0.75, sessionID: session)
+
+        XCTAssertEqual(model.state, .speaking(sessionID: session, startedAt: startedAt, level: 0.75))
+    }
+
+    func testUpdateSpeakingLevelIsClampedToUnitInterval() {
+        let model = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let session = UUID()
+        let startedAt = Date(timeIntervalSinceReferenceDate: 42)
+        model.begin(sessionID: session)
+        model.speak(sessionID: session, startedAt: startedAt)
+
+        model.updateSpeakingLevel(1.6, sessionID: session)
+        XCTAssertEqual(model.state, .speaking(sessionID: session, startedAt: startedAt, level: 1))
+        model.updateSpeakingLevel(-1, sessionID: session)
+        XCTAssertEqual(model.state, .speaking(sessionID: session, startedAt: startedAt, level: 0))
+    }
+
+    func testUpdateSpeakingLevelIgnoresStaleSession() {
+        let model = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let session = UUID()
+        let startedAt = Date(timeIntervalSinceReferenceDate: 42)
+        model.begin(sessionID: session)
+        model.speak(sessionID: session, startedAt: startedAt)
+
+        model.updateSpeakingLevel(0.5, sessionID: UUID())
+
+        XCTAssertEqual(model.state, .speaking(sessionID: session, startedAt: startedAt, level: nil))
+    }
+
+    func testUpdateSpeakingLevelIgnoresNonSpeakingState() {
+        let model = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let session = UUID()
+        let startedAt = Date(timeIntervalSinceReferenceDate: 42)
+        model.begin(sessionID: session)
+        model.listen(sessionID: session, startedAt: startedAt)
+
+        model.updateSpeakingLevel(0.5, sessionID: session)
+
+        XCTAssertEqual(model.state, .listening(sessionID: session, startedAt: startedAt, level: 0))
+    }
+
+    func testSetBackendNameOnlyAppliesToActiveSession() {
+        let model = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let session = UUID()
+        model.begin(sessionID: session)
+        model.listen(sessionID: session)
+
+        model.setBackendName("Stale Backend", sessionID: UUID())
+        XCTAssertNil(model.backendName)
+
+        model.setBackendName("Apple Speech", sessionID: session)
+        XCTAssertEqual(model.backendName, "Apple Speech")
+    }
+
+    func testBackendNameIsClearedOnBegin() {
+        let model = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let session = UUID()
+        model.begin(sessionID: session)
+        model.listen(sessionID: session)
+        model.setBackendName("Apple Speech", sessionID: session)
+        XCTAssertEqual(model.backendName, "Apple Speech")
+
+        let nextSession = UUID()
+        model.begin(sessionID: nextSession)
+
+        XCTAssertNil(model.backendName)
+    }
+
+    func testBackendNameIsClearedWhenStateBecomesHidden() {
+        let scheduler = FakeOverlayScheduler()
+        let model = ActivityOverlayModel(scheduler: scheduler)
+        let session = UUID()
+        model.begin(sessionID: session)
+        model.listen(sessionID: session)
+        model.setBackendName("Apple Speech", sessionID: session)
+
+        model.cancel(sessionID: session)
+
+        XCTAssertNil(model.backendName)
+    }
+
     func testStateDerivesCancelAndStopActions() {
         let session = UUID()
 
         XCTAssertEqual(ActivityOverlayState.listening(sessionID: session, startedAt: .now, level: 0).action, .cancelDictation(sessionID: session))
         XCTAssertEqual(ActivityOverlayState.processing(sessionID: session, startedAt: .now).action, .cancelDictation(sessionID: session))
-        XCTAssertEqual(ActivityOverlayState.speaking(sessionID: session, startedAt: .now).action, .stopSpeech(sessionID: session))
+        XCTAssertEqual(ActivityOverlayState.speaking(sessionID: session, startedAt: .now, level: nil).action, .stopSpeech(sessionID: session))
         XCTAssertNil(ActivityOverlayState.hidden.action)
     }
 }

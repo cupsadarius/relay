@@ -117,6 +117,48 @@ final class STTRouterTests: XCTestCase {
         XCTAssertEqual(secondTranscript, Transcript(text: "second", backendID: "second"))
     }
 
+    func testPreferredBackendDisplayNameReturnsFirstAvailableBackend() async {
+        let first = FakeSTTBackend(id: "first")
+        let second = FakeSTTBackend(id: "second")
+        let router = makeRouter([first, second])
+
+        let name = await router.preferredBackendDisplayName()
+
+        XCTAssertEqual(name, "first")
+    }
+
+    func testPreferredBackendDisplayNameSkipsUnavailableBackends() async {
+        let first = FakeSTTBackend(id: "first")
+        first.availabilityValue = .unavailable("offline")
+        let second = FakeSTTBackend(id: "second")
+        let router = makeRouter([first, second])
+
+        let name = await router.preferredBackendDisplayName()
+
+        XCTAssertEqual(name, "second")
+    }
+
+    func testPreferredBackendDisplayNameIsNilWhenNoneAreAvailable() async {
+        let first = FakeSTTBackend(id: "first")
+        first.availabilityValue = .unavailable("offline")
+        let router = makeRouter([first])
+
+        let name = await router.preferredBackendDisplayName()
+
+        XCTAssertNil(name)
+    }
+
+    func testLastUsedBackendDisplayNameReflectsTheBackendThatProducedTheTranscript() async throws {
+        let first = FakeSTTBackend(id: "first", error: .inferenceFailed("boom"))
+        let second = FakeSTTBackend(id: "second")
+        let router = makeRouter([first, second])
+
+        XCTAssertNil(router.lastUsedBackendDisplayName)
+        _ = try await router.transcribe(audio: audio, options: .init())
+
+        XCTAssertEqual(router.lastUsedBackendDisplayName, "second")
+    }
+
     private let audio = AudioInput(samples: [0.1], sampleRate: 16_000)
 
     private func assertFallsBack(after error: SpeechBackendError) async throws {

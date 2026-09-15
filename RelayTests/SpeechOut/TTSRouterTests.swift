@@ -51,7 +51,7 @@ final class TTSRouterTests: XCTestCase {
         backend.error = SpeechBackendError.invalidInput
         let router = makeRouter([backend])
         var events: [TTSPlaybackEvent] = []
-        router.setPlaybackEventHandler { events.append($0) }
+        router.setPlaybackEventHandler { event, _ in events.append(event) }
         let sessionID = UUID()
 
         _ = try? await router.speak(text: "hello", options: .init(), sessionID: sessionID)
@@ -66,7 +66,7 @@ final class TTSRouterTests: XCTestCase {
         second.error = SpeechBackendError.inferenceFailed("boom again")
         let router = makeRouter([first, second])
         var events: [TTSPlaybackEvent] = []
-        router.setPlaybackEventHandler { events.append($0) }
+        router.setPlaybackEventHandler { event, _ in events.append(event) }
         let sessionID = UUID()
 
         do {
@@ -168,7 +168,7 @@ final class TTSRouterTests: XCTestCase {
             backendOrder: { order }
         )
         var events: [TTSPlaybackEvent] = []
-        router.setPlaybackEventHandler { events.append($0) }
+        router.setPlaybackEventHandler { event, _ in events.append(event) }
 
         try await router.speak(text: "one", options: .init(), sessionID: UUID())
         let firstSessionID = first.lastSessionID!
@@ -186,7 +186,7 @@ final class TTSRouterTests: XCTestCase {
         let backend = FakeTTSBackend(id: "apple")
         let router = makeRouter([backend])
         var events: [TTSPlaybackEvent] = []
-        router.setPlaybackEventHandler { events.append($0) }
+        router.setPlaybackEventHandler { event, _ in events.append(event) }
         let sessionID = UUID()
         backend.duringSpeak = { sessionID in
             backend.emit(.scheduled(sessionID: sessionID))
@@ -203,7 +203,7 @@ final class TTSRouterTests: XCTestCase {
         backend.yieldBeforeEmitting = true
         let router = makeRouter([backend])
         var events: [TTSPlaybackEvent] = []
-        router.setPlaybackEventHandler { events.append($0) }
+        router.setPlaybackEventHandler { event, _ in events.append(event) }
         let sessionID = UUID()
         backend.duringSpeak = { sessionID in
             backend.emit(.started(sessionID: sessionID))
@@ -212,6 +212,69 @@ final class TTSRouterTests: XCTestCase {
         try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
 
         XCTAssertEqual(events, [.started(sessionID: sessionID)])
+    }
+
+    func testForwardedEventsIncludeTheEmittingBackend() async throws {
+        let backend = FakeTTSBackend(id: "apple")
+        let router = makeRouter([backend])
+        var receivedBackendIDs: [String?] = []
+        router.setPlaybackEventHandler { _, receivedBackend in
+            receivedBackendIDs.append((receivedBackend as? FakeTTSBackend)?.id)
+        }
+        let sessionID = UUID()
+
+        try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
+        backend.emit(.started(sessionID: sessionID))
+
+        XCTAssertEqual(receivedBackendIDs, ["apple"])
+    }
+
+    func testNonFallbackFailureIncludesTheFailingBackend() async {
+        let backend = FakeTTSBackend(id: "apple")
+        backend.error = SpeechBackendError.invalidInput
+        let router = makeRouter([backend])
+        var receivedBackendIDs: [String?] = []
+        router.setPlaybackEventHandler { _, receivedBackend in
+            receivedBackendIDs.append((receivedBackend as? FakeTTSBackend)?.id)
+        }
+
+        _ = try? await router.speak(text: "hello", options: .init(), sessionID: UUID())
+
+        XCTAssertEqual(receivedBackendIDs, ["apple"])
+    }
+
+    func testExhaustedFallbackFailureIncludesTheLastAttemptedBackend() async {
+        let first = FakeTTSBackend(id: "first")
+        first.error = SpeechBackendError.inferenceFailed("boom")
+        let second = FakeTTSBackend(id: "second")
+        second.error = SpeechBackendError.inferenceFailed("boom again")
+        let router = makeRouter([first, second])
+        var receivedBackendIDs: [String?] = []
+        router.setPlaybackEventHandler { _, receivedBackend in
+            receivedBackendIDs.append((receivedBackend as? FakeTTSBackend)?.id)
+        }
+
+        _ = try? await router.speak(text: "hello", options: .init(), sessionID: UUID())
+
+        XCTAssertEqual(receivedBackendIDs, ["second"])
+    }
+
+    func testFailureWithNoAvailableBackendPassesNilBackend() async {
+        let unavailable = FakeTTSBackend(id: "unavailable")
+        unavailable.availabilityValue = .unavailable("disabled")
+        let router = makeRouter([unavailable])
+        var receivedBackendIDs: [String?] = []
+        var receivedNilBackend = false
+        router.setPlaybackEventHandler { _, receivedBackend in
+            if receivedBackend == nil {
+                receivedNilBackend = true
+            }
+            receivedBackendIDs.append((receivedBackend as? FakeTTSBackend)?.id)
+        }
+
+        _ = try? await router.speak(text: "hello", options: .init(), sessionID: UUID())
+
+        XCTAssertTrue(receivedNilBackend)
     }
 
     private func makeRouter(_ backends: [FakeTTSBackend]) -> TTSRouter {

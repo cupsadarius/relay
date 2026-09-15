@@ -251,7 +251,10 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.start()
         let session = overlay.sessionID!
         await coordinator.finish()
-        XCTAssertEqual(overlay.events, [.listening(session), .processing(session), .completed(session)])
+        XCTAssertEqual(
+            overlay.events,
+            [.listening(session), .backendName(session, "Fake"), .processing(session), .completed(session)]
+        )
     }
 
     func testInteractiveCancelStopsOnlyMatchingListeningSession() async {
@@ -275,7 +278,7 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.cancel(sessionID: UUID())
 
         XCTAssertEqual(microphone.cancelCount, 0)
-        XCTAssertEqual(overlay.events, [.listening(session)])
+        XCTAssertEqual(overlay.events, [.listening(session), .backendName(session, "Fake")])
     }
 
     /// The overlay must hide the instant `cancel(sessionID:)` is called, not once
@@ -327,7 +330,10 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.start()
         let newSession = overlay.sessionID!
         XCTAssertNotEqual(newSession, session)
-        XCTAssertEqual(overlay.events.last, .listening(newSession))
+        XCTAssertEqual(
+            Array(overlay.events.suffix(2)),
+            [.listening(newSession), .backendName(newSession, "Fake")]
+        )
     }
 
     func testRecordingLevelUpdatesReachOverlayWhileListening() async {
@@ -441,6 +447,37 @@ final class DictationCoordinatorTests: XCTestCase {
         backend.resumeOldest(with: .success(Transcript(text: "b", backendID: backend.id)))
         await finishB.value
         XCTAssertTrue(inserter.inserted.isEmpty)
+    }
+
+    func testListenPublishesThePreferredSTTBackendDisplayName() async {
+        let overlay = RecordingActivityOverlay()
+        let coordinator = makeCoordinator(overlay: overlay)
+
+        await coordinator.start()
+        let session = overlay.sessionID!
+
+        XCTAssertEqual(overlay.events, [.listening(session), .backendName(session, "Fake")])
+    }
+
+    func testFallbackDuringTranscriptionPublishesTheBackendThatActuallySucceeded() async {
+        let events = EventLog()
+        let first = NamedFakeBackend(id: "first", displayName: "First", events: events, error: .inferenceFailed("boom"))
+        let second = NamedFakeBackend(id: "second", displayName: "Second", events: events)
+        let sttRouter = STTRouter(backends: [first.id: first, second.id: second], backendOrder: { [first.id, second.id] })
+        let overlay = RecordingActivityOverlay()
+        let coordinator = makeCoordinator(sttRouter: sttRouter, overlay: overlay)
+
+        await coordinator.start()
+        let session = overlay.sessionID!
+        await coordinator.finish()
+
+        XCTAssertEqual(overlay.events, [
+            .listening(session),
+            .backendName(session, "First"),
+            .processing(session),
+            .backendName(session, "Second"),
+            .completed(session),
+        ])
     }
 
     func testMicrophoneStopThrowingNoUsableAudioReportsNoUsableAudioCategoryNotMicrophone() async {
@@ -676,6 +713,32 @@ private final class FakeBackend: SpeechToTextBackend {
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript { events.append("stt.transcribe"); if let error { throw error }; return Transcript(text: transcript, backendID: id) }
 }
 
+/// Like `FakeBackend`, but with a configurable `id`/`displayName` so tests can exercise a
+/// multi-backend `STTRouter` fallback and verify which backend's display name is published.
+@MainActor
+private final class NamedFakeBackend: SpeechToTextBackend {
+    let id: String
+    let displayName: String
+    let capabilities = STTCapabilities([])
+    let events: EventLog
+    let transcript: String
+    let error: SpeechBackendError?
+    init(id: String, displayName: String, events: EventLog, transcript: String = "text", error: SpeechBackendError? = nil) {
+        self.id = id
+        self.displayName = displayName
+        self.events = events
+        self.transcript = transcript
+        self.error = error
+    }
+    func availability() async -> BackendAvailability { .available }
+    func prepare() async throws {}
+    func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
+        events.append("stt.transcribe.\(id)")
+        if let error { throw error }
+        return Transcript(text: transcript, backendID: id)
+    }
+}
+
 /// A backend whose `transcribe` calls each suspend (FIFO) until explicitly released, so tests can
 /// observe coordinator behavior while a transcription stage is still in flight — including
 /// multiple overlapping calls across sessions, and whether the calling `Task` was genuinely
@@ -741,6 +804,7 @@ private final class RecordingActivityOverlay: DictationActivityPublishing {
         case completed(UUID)
         case cancelled(UUID)
         case failed(UUID, ActivityOverlayErrorCategory)
+        case backendName(UUID, String)
     }
 
     private(set) var sessionID: UUID?
@@ -763,6 +827,10 @@ private final class RecordingActivityOverlay: DictationActivityPublishing {
 
     func updateLevel(_ level: Float, sessionID: UUID) {
         levels.append(level)
+    }
+
+    func setBackendName(_ name: String, sessionID: UUID) {
+        events.append(.backendName(sessionID, name))
     }
 
     func process(sessionID: UUID) {

@@ -8,7 +8,7 @@ struct ActivityOverlayView: View {
 
     var body: some View {
         if let presentation = ActivityOverlayPresentation.make(
-            state: model.state, style: style, reduceMotion: reduceMotion
+            state: model.state, style: style, reduceMotion: reduceMotion, backendName: model.backendName
         ) {
             capsule(for: presentation)
                 .transition(presentation.usesScaleTransition ? .scale.combined(with: .opacity) : .opacity)
@@ -229,7 +229,10 @@ private struct WaveformView: View {
             WaveformBars(scales: presentation.listeningWaveformBars())
                 .animation(presentation.animatesWaveform ? .linear(duration: 0.08) : nil, value: level)
         case .speaking:
-            if presentation.animatesWaveform {
+            if let level = presentation.speakingLevel {
+                WaveformBars(scales: presentation.speakingLevelBars())
+                    .animation(presentation.animatesWaveform ? .linear(duration: 0.08) : nil, value: level)
+            } else if presentation.animatesWaveform {
                 TimelineView(.animation) { context in
                     let scales = presentation.waveformBars(at: context.date)
                     WaveformBars(scales: scales, opacities: scales.map(Self.speakingOpacity))

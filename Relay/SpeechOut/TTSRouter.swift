@@ -12,7 +12,7 @@ final class TTSRouter {
     /// `activeSessionID` are only assigned once it succeeds.
     private var routingBackend: (any TextToSpeechBackend)?
     private var routingSessionID: UUID?
-    private var eventHandler: (@MainActor (TTSPlaybackEvent) -> Void)?
+    private var eventHandler: (@MainActor (TTSPlaybackEvent, (any TextToSpeechBackend)?) -> Void)?
 
     init(
         backends: [String: any TextToSpeechBackend],
@@ -34,12 +34,13 @@ final class TTSRouter {
     /// emitted `.failed` events, which bypass that filter by design so a
     /// failure is never swallowed just because routing/activity state has
     /// already moved on.
-    func setPlaybackEventHandler(_ handler: @escaping @MainActor (TTSPlaybackEvent) -> Void) {
+    func setPlaybackEventHandler(_ handler: @escaping @MainActor (TTSPlaybackEvent, (any TextToSpeechBackend)?) -> Void) {
         eventHandler = handler
     }
 
     func speak(text: String, options: TTSOptions, sessionID: UUID) async throws {
         var lastError: SpeechBackendError = .unavailable("No TTS backend is available")
+        var lastAttemptedBackend: (any TextToSpeechBackend)?
 
         for id in backendOrder() {
             guard let backend = backends[id] else { continue }
@@ -57,6 +58,7 @@ final class TTSRouter {
                     routingBackend = nil
                     routingSessionID = nil
                 }
+                lastAttemptedBackend = backend
                 try await backend.speak(text: text, options: options, sessionID: sessionID)
                 activeBackend = backend
                 activeSessionID = sessionID
@@ -64,12 +66,12 @@ final class TTSRouter {
             } catch let error as SpeechBackendError where error.isFallbackWorthy {
                 lastError = error
             } catch {
-                eventHandler?(.failed(sessionID: sessionID))
+                eventHandler?(.failed(sessionID: sessionID), backend)
                 throw error
             }
         }
 
-        eventHandler?(.failed(sessionID: sessionID))
+        eventHandler?(.failed(sessionID: sessionID), lastAttemptedBackend)
         throw lastError
     }
 
@@ -100,11 +102,11 @@ final class TTSRouter {
     private func forward(_ event: TTSPlaybackEvent, from backend: any TextToSpeechBackend) {
         if let routingBackend, routingBackend === backend,
            let routingSessionID, event.sessionID == routingSessionID {
-            eventHandler?(event)
+            eventHandler?(event, backend)
             return
         }
         guard let activeBackend, activeBackend === backend,
               let activeSessionID, event.sessionID == activeSessionID else { return }
-        eventHandler?(event)
+        eventHandler?(event, backend)
     }
 }

@@ -4,7 +4,7 @@ import XCTest
 
 final class ActivityOverlayPresentationTests: XCTestCase {
     func testOffAlwaysMapsToHidden() {
-        let state = ActivityOverlayState.speaking(sessionID: UUID(), startedAt: .now)
+        let state = ActivityOverlayState.speaking(sessionID: UUID(), startedAt: .now, level: nil)
 
         XCTAssertNil(ActivityOverlayPresentation.make(state: state, style: .off, reduceMotion: false))
     }
@@ -39,7 +39,7 @@ final class ActivityOverlayPresentationTests: XCTestCase {
 
     func testReduceMotionDisablesAnimatedWaveformsAndScale() {
         let value = ActivityOverlayPresentation.make(
-            state: .speaking(sessionID: UUID(), startedAt: .now),
+            state: .speaking(sessionID: UUID(), startedAt: .now, level: nil),
             style: .interactive,
             reduceMotion: true
         )
@@ -62,13 +62,89 @@ final class ActivityOverlayPresentationTests: XCTestCase {
     func testSpeakingMapsToStopWithVioletCyanAccent() {
         let id = UUID()
         let value = ActivityOverlayPresentation.make(
-            state: .speaking(sessionID: id, startedAt: .now), style: .interactive, reduceMotion: false
+            state: .speaking(sessionID: id, startedAt: .now, level: nil), style: .interactive, reduceMotion: false
         )
 
         XCTAssertEqual(value?.accent, .violetCyan)
-        XCTAssertEqual(value?.subtitle, "Apple voice")
+        XCTAssertEqual(value?.subtitle, "Speaking")
         XCTAssertEqual(value?.action, .stopSpeech(sessionID: id))
         XCTAssertEqual(value?.actionAccessibilityLabel, "Stop speech")
+    }
+
+    // MARK: - Backend name subtitle
+
+    func testSubtitleUsesBackendNameWhenProvidedForListeningProcessingAndSpeaking() {
+        let listening = ActivityOverlayPresentation.make(
+            state: .listening(sessionID: UUID(), startedAt: .now, level: 0), style: .interactive, reduceMotion: false,
+            backendName: "Apple Speech"
+        )
+        let processing = ActivityOverlayPresentation.make(
+            state: .processing(sessionID: UUID(), startedAt: .now), style: .interactive, reduceMotion: false,
+            backendName: "Apple Speech"
+        )
+        let speaking = ActivityOverlayPresentation.make(
+            state: .speaking(sessionID: UUID(), startedAt: .now, level: nil), style: .interactive, reduceMotion: false,
+            backendName: "Apple System Voice"
+        )
+
+        XCTAssertEqual(listening?.subtitle, "Apple Speech")
+        XCTAssertEqual(processing?.subtitle, "Apple Speech")
+        XCTAssertEqual(speaking?.subtitle, "Apple System Voice")
+    }
+
+    func testSubtitleFallsBackWhenNoBackendNameProvided() {
+        let listening = ActivityOverlayPresentation.make(
+            state: .listening(sessionID: UUID(), startedAt: .now, level: 0), style: .interactive, reduceMotion: false
+        )
+        let processing = ActivityOverlayPresentation.make(
+            state: .processing(sessionID: UUID(), startedAt: .now), style: .interactive, reduceMotion: false
+        )
+        let speaking = ActivityOverlayPresentation.make(
+            state: .speaking(sessionID: UUID(), startedAt: .now, level: nil), style: .interactive, reduceMotion: false
+        )
+
+        XCTAssertEqual(listening?.subtitle, "Microphone")
+        XCTAssertEqual(processing?.subtitle, "Transcribing")
+        XCTAssertEqual(speaking?.subtitle, "Speaking")
+    }
+
+    func testErrorSubtitleIsAlwaysTryAgainRegardlessOfBackendName() {
+        let value = ActivityOverlayPresentation.make(
+            state: .error(sessionID: UUID(), category: .speechPlayback, message: "boom"),
+            style: .interactive, reduceMotion: false, backendName: "Apple System Voice"
+        )
+
+        XCTAssertEqual(value?.subtitle, "Try again")
+    }
+
+    // MARK: - Speaking waveform: live level vs synthetic curve
+
+    func testSpeakingWithLevelUsesLevelDrivenBarsInsteadOfSyntheticCurve() {
+        let presentation = ActivityOverlayPresentation.make(
+            state: .speaking(sessionID: UUID(), startedAt: .now, level: 0.5), style: .minimal, reduceMotion: false
+        )!
+
+        XCTAssertEqual(presentation.speakingLevel, 0.5)
+        let bars = presentation.speakingLevelBars()
+        XCTAssertEqual(bars.count, 7)
+        XCTAssertTrue(bars.allSatisfy { $0 == bars[0] })
+    }
+
+    func testSpeakingWithoutLevelHasNilSpeakingLevelAndEmptyLevelBars() {
+        let presentation = ActivityOverlayPresentation.make(
+            state: .speaking(sessionID: UUID(), startedAt: .now, level: nil), style: .minimal, reduceMotion: false
+        )!
+
+        XCTAssertNil(presentation.speakingLevel)
+        XCTAssertEqual(presentation.speakingLevelBars(), [])
+    }
+
+    func testSpeakingLevelBarsIsEmptyForNonSpeakingStates() {
+        let listening = ActivityOverlayPresentation.make(
+            state: .listening(sessionID: UUID(), startedAt: .now, level: 0.5), style: .minimal, reduceMotion: false
+        )!
+
+        XCTAssertEqual(listening.speakingLevelBars(), [])
     }
 
     func testListeningUsesRedAccent() {
@@ -137,7 +213,7 @@ final class ActivityOverlayPresentationTests: XCTestCase {
 
     func testSpeakingWaveformIsDeterministicForTimestampAndHasSevenBars() {
         let presentation = ActivityOverlayPresentation.make(
-            state: .speaking(sessionID: UUID(), startedAt: .now), style: .minimal, reduceMotion: false
+            state: .speaking(sessionID: UUID(), startedAt: .now, level: nil), style: .minimal, reduceMotion: false
         )!
         let timestamp = Date(timeIntervalSinceReferenceDate: 42)
 
@@ -151,7 +227,7 @@ final class ActivityOverlayPresentationTests: XCTestCase {
 
     func testSpeakingWaveformBarsAreSymmetricAndVaryAcrossBars() {
         let presentation = ActivityOverlayPresentation.make(
-            state: .speaking(sessionID: UUID(), startedAt: .now), style: .minimal, reduceMotion: false
+            state: .speaking(sessionID: UUID(), startedAt: .now, level: nil), style: .minimal, reduceMotion: false
         )!
         let bars = presentation.waveformBars(at: Date(timeIntervalSinceReferenceDate: 42))
 
@@ -195,7 +271,7 @@ final class ActivityOverlayPresentationTests: XCTestCase {
 
     func testListeningWaveformBarsIsEmptyForNonListeningStates() {
         let speaking = ActivityOverlayPresentation.make(
-            state: .speaking(sessionID: UUID(), startedAt: .now), style: .minimal, reduceMotion: false
+            state: .speaking(sessionID: UUID(), startedAt: .now, level: nil), style: .minimal, reduceMotion: false
         )!
 
         XCTAssertEqual(speaking.listeningWaveformBars(), [])

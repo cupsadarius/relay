@@ -8,6 +8,7 @@ protocol DictationActivityPublishing: AnyObject {
     func begin(sessionID: UUID)
     func listen(sessionID: UUID, startedAt: Date)
     func updateLevel(_ level: Float, sessionID: UUID)
+    func setBackendName(_ name: String, sessionID: UUID)
     func process(sessionID: UUID)
     func complete(sessionID: UUID)
     func cancel(sessionID: UUID)
@@ -52,6 +53,9 @@ final class DictationCoordinator: DictationCoordinating {
     /// session's `finish()` has since replaced it, and clobbering it would leave that newer
     /// session's task unreachable from `cancel(sessionID:)`.
     private var processingSession: UUID?
+    /// The STT backend display name announced to the overlay when listening began, so a later
+    /// fallback to a different backend during transcription can be detected and re-announced.
+    private var announcedBackendName: String?
 
     init(
         microphone: any MicrophoneCapturing,
@@ -104,6 +108,11 @@ final class DictationCoordinator: DictationCoordinating {
         guard isStarting(session) else { return }
         state = .recording(session)
         activity.listen(sessionID: session, startedAt: .now)
+        announcedBackendName = nil
+        if let name = await sttRouter.preferredBackendDisplayName(), isRecording(session) {
+            announcedBackendName = name
+            activity.setBackendName(name, sessionID: session)
+        }
         status("Listening…")
         diagnostics?.record(.dictation(.listening))
         if finishRequested {
@@ -198,6 +207,10 @@ final class DictationCoordinator: DictationCoordinating {
         }
 
         guard !Task.isCancelled, isFinishing(session) else { return }
+        if let usedName = sttRouter.lastUsedBackendDisplayName, usedName != announcedBackendName {
+            announcedBackendName = usedName
+            activity.setBackendName(usedName, sessionID: session)
+        }
         let text = processor.process(transcript.text)
         guard !text.isEmpty else {
             state = .idle

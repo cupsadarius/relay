@@ -34,6 +34,7 @@ struct ActivityOverlayPresentation: Equatable {
     let actionAccessibilityLabel: String?
     let animatesWaveform: Bool
     let usesScaleTransition: Bool
+    let speakingLevel: Float?
 
     /// Rest-state bar heights (points) for the 7-bar waveform, shared by both styles.
     static let waveformRestHeights: [CGFloat] = [8, 15, 23, 11, 23, 15, 8]
@@ -49,7 +50,8 @@ struct ActivityOverlayPresentation: Equatable {
     static func make(
         state: ActivityOverlayState,
         style: ActivityOverlayStyle,
-        reduceMotion: Bool
+        reduceMotion: Bool,
+        backendName: String? = nil
     ) -> Self? {
         guard style != .off, !state.isHidden else { return nil }
 
@@ -66,31 +68,34 @@ struct ActivityOverlayPresentation: Equatable {
             return .init(
                 kind: .listening(level: level), accent: .red, layout: layout, cornerRadius: cornerRadius, size: size,
                 title: interactive ? "Listening" : nil,
-                subtitle: interactive ? "Microphone" : nil,
+                subtitle: interactive ? (backendName ?? "Microphone") : nil,
                 startedAt: startedAt,
                 action: interactive ? .cancelDictation(sessionID: sessionID) : nil,
                 actionAccessibilityLabel: interactive ? "Cancel dictation" : nil,
-                animatesWaveform: !reduceMotion, usesScaleTransition: scaleTransition
+                animatesWaveform: !reduceMotion, usesScaleTransition: scaleTransition,
+                speakingLevel: nil
             )
         case let .processing(sessionID, startedAt):
             return .init(
                 kind: .processing, accent: .amber, layout: layout, cornerRadius: cornerRadius, size: size,
                 title: interactive ? "Processing" : nil,
-                subtitle: interactive ? "Transcribing" : nil,
+                subtitle: interactive ? (backendName ?? "Transcribing") : nil,
                 startedAt: startedAt,
                 action: interactive ? .cancelDictation(sessionID: sessionID) : nil,
                 actionAccessibilityLabel: interactive ? "Cancel dictation" : nil,
-                animatesWaveform: !reduceMotion, usesScaleTransition: scaleTransition
+                animatesWaveform: !reduceMotion, usesScaleTransition: scaleTransition,
+                speakingLevel: nil
             )
-        case let .speaking(sessionID, startedAt):
+        case let .speaking(sessionID, startedAt, level):
             return .init(
                 kind: .speaking, accent: .violetCyan, layout: layout, cornerRadius: cornerRadius, size: size,
                 title: interactive ? "Speaking" : nil,
-                subtitle: interactive ? "Apple voice" : nil,
+                subtitle: interactive ? (backendName ?? "Speaking") : nil,
                 startedAt: startedAt,
                 action: interactive ? .stopSpeech(sessionID: sessionID) : nil,
                 actionAccessibilityLabel: interactive ? "Stop speech" : nil,
-                animatesWaveform: !reduceMotion, usesScaleTransition: scaleTransition
+                animatesWaveform: !reduceMotion, usesScaleTransition: scaleTransition,
+                speakingLevel: level
             )
         case let .error(_, category, _):
             return .init(
@@ -99,7 +104,8 @@ struct ActivityOverlayPresentation: Equatable {
                 subtitle: interactive ? "Try again" : nil,
                 startedAt: nil,
                 action: nil, actionAccessibilityLabel: nil,
-                animatesWaveform: false, usesScaleTransition: scaleTransition
+                animatesWaveform: false, usesScaleTransition: scaleTransition,
+                speakingLevel: nil
             )
         }
     }
@@ -132,9 +138,21 @@ struct ActivityOverlayPresentation: Equatable {
     /// motionless across the whole level range.
     func listeningWaveformBars() -> [CGFloat] {
         guard case let .listening(level) = kind else { return [] }
+        return Array(repeating: Self.uniformMultiplier(for: level), count: Self.waveformRestHeights.count)
+    }
+
+    /// Level-driven bars for the Speaking waveform, used in place of `waveformBars(at:)` whenever
+    /// the active TTS backend reports a live output level (`speakingLevel != nil`). Reuses the same
+    /// uniform-multiplier shape as `listeningWaveformBars()` since both represent a live scalar
+    /// level rather than a synthetic animation.
+    func speakingLevelBars() -> [CGFloat] {
+        guard case .speaking = kind, let speakingLevel else { return [] }
+        return Array(repeating: Self.uniformMultiplier(for: speakingLevel), count: Self.waveformRestHeights.count)
+    }
+
+    private static func uniformMultiplier(for level: Float) -> CGFloat {
         let clampedLevel = CGFloat(min(max(level, 0), 1))
-        let multiplier = Self.waveformMinScale + clampedLevel * (1 - Self.waveformMinScale)
-        return Array(repeating: multiplier, count: Self.waveformRestHeights.count)
+        return Self.waveformMinScale + clampedLevel * (1 - Self.waveformMinScale)
     }
 
     private static func errorDisplayCopy(for category: ActivityOverlayErrorCategory) -> String {

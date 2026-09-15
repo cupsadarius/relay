@@ -41,14 +41,17 @@ final class SpeechBackendContractsTests: XCTestCase {
             .pauseResume,
             .voiceSelection,
             .fullyOffline,
+            .outputLevel,
         ])
 
         XCTAssertTrue(capabilities.contains(.pauseResume))
         XCTAssertTrue(capabilities.contains(.voiceSelection))
         XCTAssertTrue(capabilities.contains(.fullyOffline))
+        XCTAssertTrue(capabilities.contains(.outputLevel))
 
         let fixedVoice = TTSCapabilities([.fullyOffline])
         XCTAssertFalse(fixedVoice.contains(.voiceSelection))
+        XCTAssertFalse(fixedVoice.contains(.outputLevel))
     }
 
     func testBackendsExposeCapabilitiesThroughProviderNeutralContracts() async {

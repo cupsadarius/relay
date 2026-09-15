@@ -25,8 +25,8 @@ final class SpeechCoordinator: SpeechCoordinating {
         self.router = router
         self.options = options
         self.overlay = overlay
-        router.setPlaybackEventHandler { [weak self] event in
-            self?.handle(event)
+        router.setPlaybackEventHandler { [weak self] event, backend in
+            self?.handle(event, backend: backend)
         }
     }
 
@@ -83,7 +83,7 @@ final class SpeechCoordinator: SpeechCoordinating {
         try await router.speak(text: lastRequest.text, options: options(), sessionID: sessionID)
     }
 
-    private func handle(_ event: TTSPlaybackEvent) {
+    private func handle(_ event: TTSPlaybackEvent, backend: (any TextToSpeechBackend)?) {
         switch event {
         case .scheduled:
             break
@@ -92,6 +92,11 @@ final class SpeechCoordinator: SpeechCoordinating {
                 overlay.begin(sessionID: sessionID)
             }
             overlay.speak(sessionID: sessionID)
+            if let backend {
+                overlay.setBackendName(backend.displayName, sessionID: sessionID)
+            }
+        case let .level(sessionID, level):
+            overlay.updateSpeakingLevel(level, sessionID: sessionID)
         case let .finished(sessionID):
             // A pending automatic session that never started was never
             // shown in the overlay; nothing to complete.

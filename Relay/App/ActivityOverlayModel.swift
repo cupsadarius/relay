@@ -14,7 +14,7 @@ enum ActivityOverlayState: Equatable, Sendable {
     case hidden
     case listening(sessionID: UUID, startedAt: Date, level: Float)
     case processing(sessionID: UUID, startedAt: Date)
-    case speaking(sessionID: UUID, startedAt: Date)
+    case speaking(sessionID: UUID, startedAt: Date, level: Float?)
     case error(sessionID: UUID, category: ActivityOverlayErrorCategory, message: String)
 
     var sessionID: UUID? {
@@ -23,7 +23,7 @@ enum ActivityOverlayState: Equatable, Sendable {
             nil
         case let .listening(sessionID, _, _),
              let .processing(sessionID, _),
-             let .speaking(sessionID, _),
+             let .speaking(sessionID, _, _),
              let .error(sessionID, _, _):
             sessionID
         }
@@ -37,7 +37,7 @@ enum ActivityOverlayState: Equatable, Sendable {
         switch self {
         case let .listening(sessionID, _, _), let .processing(sessionID, _):
             .cancelDictation(sessionID: sessionID)
-        case let .speaking(sessionID, _):
+        case let .speaking(sessionID, _, _):
             .stopSpeech(sessionID: sessionID)
         case .hidden, .error:
             nil
@@ -69,6 +69,7 @@ struct MainActorOverlayScheduler: ActivityOverlayScheduling {
 @Observable
 final class ActivityOverlayModel {
     private(set) var state: ActivityOverlayState = .hidden
+    private(set) var backendName: String?
     @ObservationIgnored private let scheduler: any ActivityOverlayScheduling
     @ObservationIgnored private var activeSessionID: UUID?
     @ObservationIgnored private var terminalGeneration = 0
@@ -110,7 +111,18 @@ final class ActivityOverlayModel {
 
     func speak(sessionID: UUID, startedAt: Date = .now) {
         guard activeSessionID == sessionID else { return }
-        setState(.speaking(sessionID: sessionID, startedAt: startedAt))
+        setState(.speaking(sessionID: sessionID, startedAt: startedAt, level: nil))
+    }
+
+    func updateSpeakingLevel(_ level: Float, sessionID: UUID) {
+        guard case let .speaking(activeID, startedAt, _) = state,
+              activeID == sessionID else { return }
+        setState(.speaking(sessionID: sessionID, startedAt: startedAt, level: min(max(level, 0), 1)))
+    }
+
+    func setBackendName(_ name: String, sessionID: UUID) {
+        guard activeSessionID == sessionID else { return }
+        backendName = name
     }
 
     func complete(sessionID: UUID) {
@@ -152,6 +164,7 @@ final class ActivityOverlayModel {
 
     private func setState(_ nextState: ActivityOverlayState) {
         state = nextState
+        if case .hidden = nextState { backendName = nil }
         stateDidChange?(nextState)
     }
 }
