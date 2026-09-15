@@ -72,6 +72,7 @@
 		CA5EDFFEEA88571D939A8E86 /* TextInsertionServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74C937F1F8E31916F4428507 /* TextInsertionServiceTests.swift */; };
 		D0CCD89167ACBB59A2D873B6 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3772B7BC9E1856FB2551A9D4 /* AppModel.swift */; };
 		D3DF712D1B92B3D921467185 /* SpeechCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2E464DE9B8D3EF3FBAF0A9E /* SpeechCoordinator.swift */; };
+		D97F726C0048114D443BDB31 /* PermissionsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F476045417F42F97BC90298 /* PermissionsSettingsView.swift */; };
 		DAADDCA17C999363EEE95FCB /* TTSSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F810D496F4EB25DFF87CD3E9 /* TTSSettingsView.swift */; };
 		DEB7ABD3D2EE7EB76531B9D1 /* RelayWindowTagger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A2D71436EB216912EA0F366 /* RelayWindowTagger.swift */; };
 		ED473F93C25865ED39A16D6B /* ParakeetBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29EE80E2D79C7BCF9E1806A0 /* ParakeetBackend.swift */; };
@@ -96,6 +97,7 @@
 		06E124777F58D54CEDE5CA61 /* SpeechToTextBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechToTextBackend.swift; sourceTree = "<group>"; };
 		0C2D9AB71BE0958979C201CB /* RulesTranscriptProcessorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RulesTranscriptProcessorTests.swift; sourceTree = "<group>"; };
 		0DCE840658936E7271FAB146 /* MenuBarContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarContentView.swift; sourceTree = "<group>"; };
+		0F476045417F42F97BC90298 /* PermissionsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsSettingsView.swift; sourceTree = "<group>"; };
 		110BEA16859A4BC3BC171427 /* ActivityOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverlayView.swift; sourceTree = "<group>"; };
 		1230C06958285AB1CAE2418A /* BackendAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendAvailability.swift; sourceTree = "<group>"; };
 		1B6ABB9D76B40D6F416C4B0C /* DictationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationCoordinator.swift; sourceTree = "<group>"; };
@@ -363,6 +365,7 @@
 		F80ADB4C2E35962B077F6A82 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				0F476045417F42F97BC90298 /* PermissionsSettingsView.swift */,
 				F810D496F4EB25DFF87CD3E9 /* TTSSettingsView.swift */,
 			);
 			path = Settings;
@@ -531,6 +534,7 @@
 				5DFE942299A26F7BEA31560A /* MicrophoneCapture.swift in Sources */,
 				ED473F93C25865ED39A16D6B /* ParakeetBackend.swift in Sources */,
 				1BAD7007F7ACB0C185A59759 /* PermissionService.swift in Sources */,
+				D97F726C0048114D443BDB31 /* PermissionsSettingsView.swift in Sources */,
 				B5059A51D144C468B1843122 /* RelayApp.swift in Sources */,
 				DEB7ABD3D2EE7EB76531B9D1 /* RelayWindowTagger.swift in Sources */,
 				F9565864D90DAB867000F0A0 /* RulesSpeechPreprocessor.swift in Sources */,
