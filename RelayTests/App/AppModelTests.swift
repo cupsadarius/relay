@@ -116,6 +116,13 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.diagnosticsEntries.first?.event, .ttsFailed)
     }
 
+    func testRealAppModelRegistersAKokoroDownloaderButNoAppleDownloader() {
+        let model = AppModel()
+
+        XCTAssertTrue(model.canDownloadTTSModel("kokoro"))
+        XCTAssertFalse(model.canDownloadTTSModel("apple-tts"))
+    }
+
     func testTestVoiceSpeaksAFixedSampleSentenceThroughTheCurrentSelection() async {
         let speech = FakeSpeechCoordinator()
         let model = makeModel(speech: speech)

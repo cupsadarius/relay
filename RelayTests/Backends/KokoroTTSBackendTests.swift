@@ -236,6 +236,43 @@ final class KokoroTTSBackendTests: XCTestCase {
         XCTAssertEqual(received, [.failed(sessionID: sessionID)])
     }
 
+    func testDownloadModelsCallsEngineWithDownloadAllowedAndForwardsProgress() async throws {
+        let engine = FakeKokoroEngine()
+        let backend = KokoroTTSBackend(engine: engine, player: FakePlayer())
+        var reported: [Double] = []
+
+        try await backend.downloadModels(progress: { reported.append($0) })
+
+        XCTAssertEqual(engine.loadCalls, [true])
+        XCTAssertEqual(reported, [0.5, 1.0])
+    }
+
+    func testDownloadModelsMapsEngineFailureToFallbackWorthyError() async {
+        let engine = FakeKokoroEngine()
+        engine.loadError = KokoroEngineError.loadFailed
+        let backend = KokoroTTSBackend(engine: engine, player: FakePlayer())
+
+        do {
+            try await backend.downloadModels(progress: { _ in })
+            XCTFail("Expected initializationFailed")
+        } catch {
+            let mapped = error as? SpeechBackendError
+            XCTAssertEqual(mapped, .initializationFailed("Kokoro model load failed"))
+            XCTAssertEqual(mapped?.isFallbackWorthy, true)
+        }
+    }
+
+    func testDownloadModelsDoesNotEmitAnyPlaybackEvent() async throws {
+        let engine = FakeKokoroEngine()
+        let backend = KokoroTTSBackend(engine: engine, player: FakePlayer())
+        var received: [TTSPlaybackEvent] = []
+        backend.setPlaybackEventHandler { received.append($0) }
+
+        try await backend.downloadModels(progress: { _ in })
+
+        XCTAssertTrue(received.isEmpty, "A model download is not a playback session and must not emit playback events")
+    }
+
     func testStopPauseResumeDelegateToThePlayer() {
         let player = FakePlayer()
         let backend = KokoroTTSBackend(engine: FakeKokoroEngine(), player: player)
@@ -267,6 +304,7 @@ private final class FakeKokoroEngine: KokoroEngine {
     var loadError: Error?
     var synthesizeError: Error?
     var synthesizeResult = Data()
+    var progressToReport: [Double] = [0.5, 1.0]
     private(set) var loadCalls: [Bool] = []
     private(set) var synthesizeCalls: [(text: String, voice: String, speed: Float)] = []
     private var isLoaded = false
@@ -278,6 +316,11 @@ private final class FakeKokoroEngine: KokoroEngine {
     func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws {
         guard !isLoaded else { return }
         loadCalls.append(allowDownload)
+        if allowDownload {
+            for fraction in progressToReport {
+                progress(fraction)
+            }
+        }
         if let loadError {
             throw loadError
         }

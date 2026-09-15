@@ -117,9 +117,10 @@ final class AppModel {
         let speechModelDownloaders: [String: any SpeechModelDownloading] = [
             parakeetBackend.id: parakeetBackend,
         ]
-        // Kokoro's downloader is registered once its download conformance lands (see the TTS
-        // settings tab work); Apple never registers one, since it has no model to download.
-        let ttsModelDownloaders: [String: any SpeechModelDownloading] = [:]
+        // Apple never registers a downloader, since it has no model to download.
+        let ttsModelDownloaders: [String: any SpeechModelDownloading] = [
+            kokoroTTS.id: kokoroTTS,
+        ]
         self.init(
             settingsStore: settingsStore,
             selectionReader: SelectionReader(

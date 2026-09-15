@@ -99,3 +99,18 @@ final class KokoroTTSBackend: TextToSpeechBackend {
         }
     }
 }
+
+extension KokoroTTSBackend: SpeechModelDownloading {
+    /// Downloads Kokoro's model, bypassing `speak`'s lazy, download-refusing
+    /// `load(allowDownload: false)` path. Used only by the Settings "Download" action - never
+    /// called from the speak path.
+    func downloadModels(progress: @escaping @Sendable (Double) -> Void) async throws {
+        do {
+            try await engine.load(allowDownload: true, progress: progress)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw Self.mapEngineError(error)
+        }
+    }
+}
