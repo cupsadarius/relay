@@ -22,14 +22,19 @@ enum SynthesizedAudioPlayerError: Error, Equatable, Sendable {
 
 /// Plays a complete WAV `Data` value (as returned by Kokoro's `synthesize`) through
 /// `AVAudioEngine` and emits the same `TTSPlaybackEvent` lifecycle `AppleTTSBackend` emits via
-/// `AVSpeechSynthesizer`, plus `.level` from an output tap - the first backend to do so, since
-/// Apple's backend has no equivalent signal to tap.
+/// `AVSpeechSynthesizer`, plus `.level` from a precomputed envelope walked by a `MainActor` timer
+/// - the first backend to emit `.level` at all, since Apple's backend has no equivalent signal.
+/// (An earlier version drove `.level` from a realtime `AVAudioPlayerNode` tap; allocating a
+/// `Task` on every tap callback - on the realtime audio render thread - caused periodic playback
+/// dropouts, so `.level` is now driven entirely off that thread.)
 @MainActor
 final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
     /// Matches `MicrophoneLevelMeter`'s RMS-to-level scaling so the pill's speaking waveform
     /// behaves identically whichever backend is feeding it.
     private static nonisolated let levelGain: Float = 4
-    private static let tapBufferSize: AVAudioFrameCount = 1_024
+    /// Window size used to precompute the `.level` envelope and to pace the timer that walks it.
+    /// ~40ms matches the cadence the old realtime tap emitted at (1024 samples / 24kHz).
+    private static let levelWindowSeconds: TimeInterval = 0.04
 
     var onEvent: (@MainActor (TTSPlaybackEvent) -> Void)?
 
@@ -45,6 +50,11 @@ final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
     /// the utterance finishes, which keeps the router's `activeBackend` handoff and `.finished`
     /// ordering correct.
     private var completionContinuation: CheckedContinuation<Void, Never>?
+    /// Drives `.level` events for the in-flight session. Walks `levelEnvelope(from:windowSeconds:)`
+    /// on a `MainActor` timer instead of a realtime audio tap - allocating (the `Task { @MainActor
+    /// ... }` the old tap made per callback) on the audio render thread caused periodic dropouts
+    /// ("pulsing", noise breaks between words).
+    private var levelTask: Task<Void, Never>?
 
     func play(_ wav: Data, sessionID: UUID) async throws {
         let buffer = try Self.decode(wav)
@@ -55,12 +65,12 @@ final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
         let player = AVAudioPlayerNode()
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: buffer.format)
-        installLevelTap(on: player, sessionID: sessionID)
 
         self.engine = engine
         playerNode = player
         currentSessionID = sessionID
         didStopExplicitly = false
+        let envelope = Self.levelEnvelope(from: buffer, windowSeconds: Self.levelWindowSeconds)
 
         onEvent?(.scheduled(sessionID: sessionID))
 
@@ -73,6 +83,7 @@ final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
         }
 
         onEvent?(.started(sessionID: sessionID))
+        startLevelTimer(envelope: envelope, sessionID: sessionID)
 
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             completionContinuation = continuation
@@ -117,41 +128,64 @@ final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
     }
 
     private func tearDownGraph() {
-        if let playerNode {
-            playerNode.removeTap(onBus: 0)
-        }
+        stopLevelTimer()
         engine?.stop()
         engine = nil
         playerNode = nil
     }
 
-    private func installLevelTap(on node: AVAudioPlayerNode, sessionID: UUID) {
-        let format = node.outputFormat(forBus: 0)
-        node.installTap(onBus: 0, bufferSize: Self.tapBufferSize, format: format) { @Sendable buffer, _ in
-            let level = Self.rmsLevel(of: buffer)
-            Task { @MainActor [weak self] in
-                self?.onEvent?(.level(sessionID: sessionID, level: level))
+    /// Starts a `MainActor` loop that walks `envelope` at `levelWindowSeconds` cadence, emitting
+    /// `.level` events roughly in sync with playback. No realtime audio thread involved, so
+    /// nothing here can glitch the render callback.
+    private func startLevelTimer(envelope: [Float], sessionID: UUID) {
+        stopLevelTimer()
+        guard !envelope.isEmpty else { return }
+        let intervalNanoseconds = UInt64(Self.levelWindowSeconds * 1_000_000_000)
+        levelTask = Task { @MainActor [weak self] in
+            for level in envelope {
+                guard let self, !Task.isCancelled, self.currentSessionID == sessionID else { return }
+                self.onEvent?(.level(sessionID: sessionID, level: level))
+                try? await Task.sleep(nanoseconds: intervalNanoseconds)
             }
         }
     }
 
-    private static nonisolated func rmsLevel(of buffer: AVAudioPCMBuffer) -> Float {
-        guard let channelData = buffer.floatChannelData else { return 0 }
+    private func stopLevelTimer() {
+        levelTask?.cancel()
+        levelTask = nil
+    }
+
+    /// Splits `buffer`'s samples into fixed `windowSeconds` windows and computes an RMS-based
+    /// level (matching `MicrophoneLevelMeter`'s scaling) for each, so `.level` events can be
+    /// driven from data precomputed on the main actor instead of a realtime audio tap. Internal
+    /// (not private) so it can be unit tested directly, without a working `AVAudioEngine`.
+    static func levelEnvelope(from buffer: AVAudioPCMBuffer, windowSeconds: TimeInterval) -> [Float] {
+        guard let channelData = buffer.floatChannelData else { return [] }
         let frameLength = Int(buffer.frameLength)
         let channelCount = Int(buffer.format.channelCount)
-        guard frameLength > 0, channelCount > 0 else { return 0 }
+        guard frameLength > 0, channelCount > 0 else { return [] }
 
-        var sumOfSquares: Float = 0
-        for channel in 0..<channelCount {
-            let samples = channelData[channel]
-            for frame in 0..<frameLength {
-                let sample = samples[frame]
-                sumOfSquares += sample * sample
+        let windowFrames = max(1, Int(buffer.format.sampleRate * windowSeconds))
+        var envelope: [Float] = []
+        envelope.reserveCapacity((frameLength + windowFrames - 1) / windowFrames)
+
+        var start = 0
+        while start < frameLength {
+            let end = min(start + windowFrames, frameLength)
+            var sumOfSquares: Float = 0
+            for channel in 0..<channelCount {
+                let samples = channelData[channel]
+                for frame in start..<end {
+                    let sample = samples[frame]
+                    sumOfSquares += sample * sample
+                }
             }
+            let meanSquare = sumOfSquares / Float((end - start) * channelCount)
+            let rms = sqrt(meanSquare)
+            envelope.append(min(max(rms * levelGain, 0), 1))
+            start = end
         }
-        let meanSquare = sumOfSquares / Float(frameLength * channelCount)
-        let rms = sqrt(meanSquare)
-        return min(max(rms * levelGain, 0), 1)
+        return envelope
     }
 
     /// Writes `wav` to a temporary file (deleted before returning - never a user path, never

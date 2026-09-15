@@ -25,6 +25,24 @@ final class SynthesizedAudioPlayerTests: XCTestCase {
         XCTAssertThrowsError(try SynthesizedAudioPlayer.decode(malformed))
     }
 
+    func testLevelEnvelopeOfSilentBufferIsNearZero() {
+        let buffer = Self.makePCMBuffer(amplitude: 0, durationSeconds: 0.2)
+
+        let envelope = SynthesizedAudioPlayer.levelEnvelope(from: buffer, windowSeconds: 0.04)
+
+        XCTAssertFalse(envelope.isEmpty)
+        XCTAssertTrue(envelope.allSatisfy { $0 < 0.01 }, "Expected near-zero levels, got \(envelope)")
+    }
+
+    func testLevelEnvelopeOfFullScaleBufferIsNearOne() {
+        let buffer = Self.makePCMBuffer(amplitude: 1, durationSeconds: 0.2)
+
+        let envelope = SynthesizedAudioPlayer.levelEnvelope(from: buffer, windowSeconds: 0.04)
+
+        XCTAssertFalse(envelope.isEmpty)
+        XCTAssertTrue(envelope.allSatisfy { $0 > 0.99 }, "Expected near-one levels, got \(envelope)")
+    }
+
     func testPlayWithMalformedDataThrowsWithoutStartingPlayback() async {
         let player = SynthesizedAudioPlayer()
         var events: [TTSPlaybackEvent] = []
@@ -133,6 +151,21 @@ final class SynthesizedAudioPlayerTests: XCTestCase {
             }
             await Task.yield()
         }
+    }
+
+    /// Builds a mono `AVAudioPCMBuffer` of constant `amplitude` (a square wave, so its RMS equals
+    /// `amplitude` exactly) for exercising `levelEnvelope(from:windowSeconds:)` without decoding
+    /// a WAV or touching `AVAudioEngine`.
+    private static func makePCMBuffer(amplitude: Float, durationSeconds: Double, sampleRate: Double = 24_000) -> AVAudioPCMBuffer {
+        let frameCount = AVAudioFrameCount(max(1, Int(durationSeconds * sampleRate)))
+        let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
+        buffer.frameLength = frameCount
+        let samples = buffer.floatChannelData![0]
+        for frame in 0..<Int(frameCount) {
+            samples[frame] = frame.isMultiple(of: 2) ? amplitude : -amplitude
+        }
+        return buffer
     }
 
     /// Generates a minimal, valid 16-bit PCM mono WAV file in memory (a short sine wave) so
