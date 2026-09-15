@@ -28,6 +28,8 @@ struct TTSOptions: Sendable, Equatable {
 
 enum SpeechSource: String, Codable, Equatable, Sendable {
     case selection
+    case claudeCode
+    case codex
     case manualReplay
     case futureIntegration
     case testVoice
