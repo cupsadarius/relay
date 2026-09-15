@@ -69,13 +69,45 @@ final class SpeechCoordinatorTests: XCTestCase {
         XCTAssertEqual(backend.stopCount, 0)
     }
 
-    func testOverlayStartsOnlyWhenBackendReportsStarted() async throws {
+    func testOverlayShowsPreparingSpeechBeforeBackendReportsStarted() async throws {
         let backend = FakeTTSBackend(id: "apple")
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
         try await coordinator.speak(request(text: "hello", mode: .userRequested))
+        guard case .preparingSpeech = overlay.state else {
+            return XCTFail("Expected preparingSpeech before playback started, got \(overlay.state)")
+        }
+
+        backend.emitStarted()
+        guard case .speaking = overlay.state else { return XCTFail("Expected speaking") }
+    }
+
+    func testAutomaticSpeechDoesNotShowPreparingSpeechBeforeStarted() async throws {
+        let backend = FakeTTSBackend(id: "apple")
+        let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let coordinator = makeCoordinator(backend: backend, overlay: overlay)
+
+        try await coordinator.speak(request(text: "hello", mode: .automatic))
         XCTAssertTrue(overlay.state.isHidden)
+
+        backend.emitStarted()
+        guard case .speaking = overlay.state else { return XCTFail("Expected speaking") }
+    }
+
+    func testReplayLastShowsPreparingSpeechBeforeBackendReportsStarted() async throws {
+        let backend = FakeTTSBackend(id: "apple")
+        let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let coordinator = makeCoordinator(backend: backend, overlay: overlay)
+
+        try await coordinator.speak(request(text: "hello", mode: .userRequested))
+        backend.emitStarted()
+        backend.emit(.finished(sessionID: backend.lastSessionID!))
+
+        try await coordinator.replayLast()
+        guard case .preparingSpeech = overlay.state else {
+            return XCTFail("Expected preparingSpeech before replay playback started, got \(overlay.state)")
+        }
 
         backend.emitStarted()
         guard case .speaking = overlay.state else { return XCTFail("Expected speaking") }

@@ -14,6 +14,7 @@ enum ActivityOverlayState: Equatable, Sendable {
     case hidden
     case listening(sessionID: UUID, startedAt: Date, level: Float)
     case processing(sessionID: UUID, startedAt: Date)
+    case preparingSpeech(sessionID: UUID, startedAt: Date)
     case speaking(sessionID: UUID, startedAt: Date, level: Float?)
     case error(sessionID: UUID, category: ActivityOverlayErrorCategory, message: String)
 
@@ -23,6 +24,7 @@ enum ActivityOverlayState: Equatable, Sendable {
             nil
         case let .listening(sessionID, _, _),
              let .processing(sessionID, _),
+             let .preparingSpeech(sessionID, _),
              let .speaking(sessionID, _, _),
              let .error(sessionID, _, _):
             sessionID
@@ -37,7 +39,7 @@ enum ActivityOverlayState: Equatable, Sendable {
         switch self {
         case let .listening(sessionID, _, _), let .processing(sessionID, _):
             .cancelDictation(sessionID: sessionID)
-        case let .speaking(sessionID, _, _):
+        case let .preparingSpeech(sessionID, _), let .speaking(sessionID, _, _):
             .stopSpeech(sessionID: sessionID)
         case .hidden, .error:
             nil
@@ -107,6 +109,14 @@ final class ActivityOverlayModel {
         guard case let .listening(activeSessionID, startedAt, _) = state,
               activeSessionID == sessionID else { return }
         setState(.processing(sessionID: sessionID, startedAt: startedAt))
+    }
+
+    /// Shows the amber "Processing" pill immediately for user-requested speech, before synthesis
+    /// has produced any audio to play. `speak(sessionID:)` transitions this to the Speaking
+    /// waveform once playback actually starts.
+    func prepareSpeaking(sessionID: UUID, startedAt: Date = .now) {
+        guard activeSessionID == sessionID else { return }
+        setState(.preparingSpeech(sessionID: sessionID, startedAt: startedAt))
     }
 
     func speak(sessionID: UUID, startedAt: Date = .now) {

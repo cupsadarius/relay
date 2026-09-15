@@ -59,6 +59,40 @@ final class ActivityOverlayPresentationTests: XCTestCase {
         XCTAssertEqual(value?.action, .cancelDictation(sessionID: id))
     }
 
+    func testPreparingSpeechMapsToStopWithAmberAccentAndProcessingKind() {
+        let id = UUID()
+        let value = ActivityOverlayPresentation.make(
+            state: .preparingSpeech(sessionID: id, startedAt: .now), style: .interactive, reduceMotion: false
+        )
+
+        XCTAssertEqual(value?.kind, .processing)
+        XCTAssertEqual(value?.accent, .amber)
+        XCTAssertEqual(value?.title, "Processing")
+        XCTAssertEqual(value?.subtitle, "Preparing")
+        XCTAssertEqual(value?.action, .stopSpeech(sessionID: id))
+        XCTAssertEqual(value?.actionAccessibilityLabel, "Stop speech")
+    }
+
+    func testPreparingSpeechUsesBackendNameWhenProvided() {
+        let value = ActivityOverlayPresentation.make(
+            state: .preparingSpeech(sessionID: UUID(), startedAt: .now), style: .interactive, reduceMotion: false,
+            backendName: "Apple System Voice"
+        )
+
+        XCTAssertEqual(value?.subtitle, "Apple System Voice")
+    }
+
+    func testPreparingSpeechMinimalHasNoTextOrControl() {
+        let value = ActivityOverlayPresentation.make(
+            state: .preparingSpeech(sessionID: UUID(), startedAt: .now), style: .minimal, reduceMotion: false
+        )
+
+        XCTAssertNil(value?.title)
+        XCTAssertNil(value?.subtitle)
+        XCTAssertNil(value?.action)
+        XCTAssertEqual(value?.size, CGSize(width: 154, height: 40))
+    }
+
     func testSpeakingMapsToStopWithVioletCyanAccent() {
         let id = UUID()
         let value = ActivityOverlayPresentation.make(

@@ -86,6 +86,17 @@ struct ActivityOverlayPresentation: Equatable {
                 animatesWaveform: !reduceMotion, usesScaleTransition: scaleTransition,
                 speakingLevel: nil
             )
+        case let .preparingSpeech(sessionID, startedAt):
+            return .init(
+                kind: .processing, accent: .amber, layout: layout, cornerRadius: cornerRadius, size: size,
+                title: interactive ? "Processing" : nil,
+                subtitle: interactive ? (backendName ?? "Preparing") : nil,
+                startedAt: startedAt,
+                action: interactive ? .stopSpeech(sessionID: sessionID) : nil,
+                actionAccessibilityLabel: interactive ? "Stop speech" : nil,
+                animatesWaveform: !reduceMotion, usesScaleTransition: scaleTransition,
+                speakingLevel: nil
+            )
         case let .speaking(sessionID, startedAt, level):
             return .init(
                 kind: .speaking, accent: .violetCyan, layout: layout, cornerRadius: cornerRadius, size: size,

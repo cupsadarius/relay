@@ -254,7 +254,45 @@ final class ActivityOverlayModelTests: XCTestCase {
         XCTAssertEqual(ActivityOverlayState.listening(sessionID: session, startedAt: .now, level: 0).action, .cancelDictation(sessionID: session))
         XCTAssertEqual(ActivityOverlayState.processing(sessionID: session, startedAt: .now).action, .cancelDictation(sessionID: session))
         XCTAssertEqual(ActivityOverlayState.speaking(sessionID: session, startedAt: .now, level: nil).action, .stopSpeech(sessionID: session))
+        XCTAssertEqual(ActivityOverlayState.preparingSpeech(sessionID: session, startedAt: .now).action, .stopSpeech(sessionID: session))
         XCTAssertNil(ActivityOverlayState.hidden.action)
+    }
+
+    func testPrepareSpeakingAfterBeginSetsPreparingSpeech() {
+        let model = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let session = UUID()
+        let startedAt = Date(timeIntervalSinceReferenceDate: 42)
+
+        model.begin(sessionID: session)
+        model.prepareSpeaking(sessionID: session, startedAt: startedAt)
+
+        XCTAssertEqual(model.state, .preparingSpeech(sessionID: session, startedAt: startedAt))
+        XCTAssertFalse(model.state.isHidden)
+    }
+
+    func testPrepareSpeakingIsNoOpForNonActiveSession() {
+        let model = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let session = UUID()
+
+        model.begin(sessionID: session)
+        model.prepareSpeaking(sessionID: UUID())
+
+        XCTAssertEqual(model.state, .hidden)
+    }
+
+    func testPrepareSpeakingThenSpeakTransitionsToSpeaking() {
+        let model = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let session = UUID()
+
+        model.begin(sessionID: session)
+        model.prepareSpeaking(sessionID: session)
+        model.speak(sessionID: session)
+
+        guard case let .speaking(sessionID, _, level) = model.state else {
+            return XCTFail("Expected speaking, got \(model.state)")
+        }
+        XCTAssertEqual(sessionID, session)
+        XCTAssertNil(level)
     }
 }
 

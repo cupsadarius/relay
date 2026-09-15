@@ -41,6 +41,7 @@ final class SpeechCoordinator: SpeechCoordinating {
         switch request.mode {
         case .userRequested:
             overlay.begin(sessionID: sessionID)
+            overlay.prepareSpeaking(sessionID: sessionID)
         case .automatic:
             pendingAutomaticSessions.insert(sessionID)
         }
@@ -79,6 +80,7 @@ final class SpeechCoordinator: SpeechCoordinating {
         let sessionID = UUID()
         currentSessionID = sessionID
         overlay.begin(sessionID: sessionID)
+        overlay.prepareSpeaking(sessionID: sessionID)
 
         try await router.speak(text: lastRequest.text, options: options(), sessionID: sessionID)
     }
