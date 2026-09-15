@@ -236,6 +236,67 @@ final class PocketTTSBackendTests: XCTestCase {
         XCTAssertFalse(received.contains(.failed(sessionID: sessionID)), "Backend must not emit .failed - TTSRouter owns that")
     }
 
+    func testSpeakRethrowsCancellationErrorFromLoadWithoutRemappingOrEmittingFailed() async {
+        let engine = FakePocketTTSEngine()
+        engine.modelsPresent = true
+        engine.loadError = CancellationError()
+        let backend = PocketTTSBackend(engine: engine, player: FakePlayer())
+        var received: [TTSPlaybackEvent] = []
+        backend.setPlaybackEventHandler { received.append($0) }
+        let sessionID = UUID()
+
+        do {
+            try await backend.speak(text: "hello", options: .init(), sessionID: sessionID)
+            XCTFail("Expected CancellationError")
+        } catch is CancellationError {
+            // expected - must not be remapped to SpeechBackendError
+        } catch {
+            XCTFail("Expected CancellationError, got \(error)")
+        }
+        XCTAssertFalse(received.contains(.failed(sessionID: sessionID)), "Backend must not emit .failed - TTSRouter owns that")
+    }
+
+    func testSpeakRethrowsCancellationErrorFromSynthesisWithoutRemappingOrEmittingFailed() async {
+        let engine = FakePocketTTSEngine()
+        engine.modelsPresent = true
+        engine.synthesizeError = CancellationError()
+        let backend = PocketTTSBackend(engine: engine, player: FakePlayer())
+        var received: [TTSPlaybackEvent] = []
+        backend.setPlaybackEventHandler { received.append($0) }
+        let sessionID = UUID()
+
+        do {
+            try await backend.speak(text: "hello", options: .init(), sessionID: sessionID)
+            XCTFail("Expected CancellationError")
+        } catch is CancellationError {
+            // expected - must not be remapped to SpeechBackendError
+        } catch {
+            XCTFail("Expected CancellationError, got \(error)")
+        }
+        XCTAssertFalse(received.contains(.failed(sessionID: sessionID)), "Backend must not emit .failed - TTSRouter owns that")
+    }
+
+    func testSpeakRethrowsCancellationErrorFromPlaybackWithoutRemappingOrEmittingFailed() async {
+        let engine = FakePocketTTSEngine()
+        engine.modelsPresent = true
+        let player = FakePlayer()
+        player.playError = CancellationError()
+        let backend = PocketTTSBackend(engine: engine, player: player)
+        var received: [TTSPlaybackEvent] = []
+        backend.setPlaybackEventHandler { received.append($0) }
+        let sessionID = UUID()
+
+        do {
+            try await backend.speak(text: "hello", options: .init(), sessionID: sessionID)
+            XCTFail("Expected CancellationError")
+        } catch is CancellationError {
+            // expected - must not be remapped to SpeechBackendError
+        } catch {
+            XCTFail("Expected CancellationError, got \(error)")
+        }
+        XCTAssertFalse(received.contains(.failed(sessionID: sessionID)), "Backend must not emit .failed - TTSRouter owns that")
+    }
+
     func testDownloadModelsCallsEngineWithDownloadAllowedAndForwardsProgress() async throws {
         let engine = FakePocketTTSEngine()
         let backend = PocketTTSBackend(engine: engine, player: FakePlayer())

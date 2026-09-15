@@ -42,16 +42,33 @@ final class SpeechBackendContractsTests: XCTestCase {
             .voiceSelection,
             .fullyOffline,
             .outputLevel,
+            .streaming,
         ])
 
         XCTAssertTrue(capabilities.contains(.pauseResume))
         XCTAssertTrue(capabilities.contains(.voiceSelection))
         XCTAssertTrue(capabilities.contains(.fullyOffline))
         XCTAssertTrue(capabilities.contains(.outputLevel))
+        XCTAssertTrue(capabilities.contains(.streaming))
 
         let fixedVoice = TTSCapabilities([.fullyOffline])
         XCTAssertFalse(fixedVoice.contains(.voiceSelection))
         XCTAssertFalse(fixedVoice.contains(.outputLevel))
+        XCTAssertFalse(fixedVoice.contains(.streaming))
+    }
+
+    func testStreamingCapabilityIsExclusiveToPocketTTS() async {
+        let pocket = await MainActor.run { PocketTTSBackend() }
+        let kokoro = await MainActor.run { KokoroTTSBackend() }
+        let apple = await MainActor.run { AppleTTSBackend() }
+
+        let pocketSupportsStreaming = await MainActor.run { pocket.capabilities.contains(.streaming) }
+        let kokoroSupportsStreaming = await MainActor.run { kokoro.capabilities.contains(.streaming) }
+        let appleSupportsStreaming = await MainActor.run { apple.capabilities.contains(.streaming) }
+
+        XCTAssertTrue(pocketSupportsStreaming, "PocketTTSBackend streams synthesized audio as it arrives")
+        XCTAssertFalse(kokoroSupportsStreaming, "KokoroTTSBackend synthesizes a complete WAV before playback")
+        XCTAssertFalse(appleSupportsStreaming, "AppleTTSBackend hands the whole utterance to AVSpeechSynthesizer")
     }
 
     func testBackendsExposeCapabilitiesThroughProviderNeutralContracts() async {

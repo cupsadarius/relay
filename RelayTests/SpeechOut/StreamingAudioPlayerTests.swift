@@ -55,6 +55,31 @@ final class StreamingAudioPlayerTests: XCTestCase {
         XCTAssertTrue(recorded.allSatisfy { $0.sessionID == sessionID })
     }
 
+    /// The other real-engine tests in this file use short streams (a handful of 80ms frames) that
+    /// never accumulate the ~0.6s prebuffer threshold, so `.started` fires via the stream-end
+    /// fallback in `play(_:sampleRate:sessionID:)` instead of the `bufferedSeconds >=
+    /// prebufferSeconds` branch. This test feeds enough frames (20 * 80ms = 1.6s, well past the
+    /// 0.6s threshold) with no inter-frame delay that the threshold is guaranteed to be crossed
+    /// while the source stream is still being drained, exercising the prebuffer-flush path in
+    /// `startPlayback` instead.
+    func testPlayStartsViaThePrebufferThresholdWhenEnoughAudioArrivesBeforeStreamEnd() async throws {
+        try requireAudioOutput()
+        let player = StreamingAudioPlayer()
+        let events = EventBox()
+        player.onEvent = { events.append($0) }
+        let sessionID = UUID()
+
+        try await player.play(Self.makeFrameStream(frameCount: 20), sampleRate: 24_000, sessionID: sessionID)
+
+        let recorded = events.values.filter { !$0.isLevel }
+        XCTAssertEqual(recorded, [
+            .scheduled(sessionID: sessionID),
+            .started(sessionID: sessionID),
+            .finished(sessionID: sessionID),
+        ])
+        XCTAssertTrue(recorded.allSatisfy { $0.sessionID == sessionID })
+    }
+
     func testStopMidPlayEmitsCancelledInsteadOfFinished() async throws {
         try requireAudioOutput()
         let player = StreamingAudioPlayer()
