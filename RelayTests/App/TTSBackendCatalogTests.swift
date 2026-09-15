@@ -134,6 +134,72 @@ final class TTSBackendCatalogTests: XCTestCase {
         XCTAssertNil(model.ttsBackendMessage)
     }
 
+    /// Confirms `AppModel`'s real wiring (added alongside PocketTTS's backend/registry
+    /// registration) reaches the same generic, backend-agnostic download flow Kokoro already
+    /// exercises above - proving the TTS catalog's Download button drives PocketTTS's registered
+    /// `SpeechModelDownloading` through `.downloading` progress ticks to `.ready`.
+    func testDownloadPocketTTSModelReportsProgressThenBecomesReady() async {
+        var settings = AppSettings.defaults
+        settings.ttsBackendOrder = ["pocket-tts"]
+        let store = FakeSettingsStore(settings: settings)
+        let diagnostics = DiagnosticsRecorder(capacity: 10)
+        let pocket = FakeTTSCatalogBackend(id: "pocket-tts", displayName: "PocketTTS", availability: .modelNotDownloaded)
+        let downloader = FakeTTSModelDownloader()
+        await downloader.setProgressToReport([0.5])
+        await downloader.setShouldBlock(true)
+        let model = makeModel(
+            store: store,
+            ttsRegistry: ["pocket-tts": pocket],
+            ttsModelDownloaders: ["pocket-tts": downloader],
+            diagnostics: diagnostics
+        )
+        await model.initialTTSBackendRefresh?.value
+
+        let downloadTask = Task { await model.downloadTTSModel("pocket-tts") }
+        await waitUntil {
+            model.ttsBackends.first(where: { $0.id == "pocket-tts" })?.state == .downloading(progress: 0.5)
+        }
+
+        pocket.setAvailability(.available)
+        await downloader.resume()
+        await downloadTask.value
+
+        XCTAssertEqual(model.ttsBackends.first(where: { $0.id == "pocket-tts" })?.state, .ready)
+        XCTAssertEqual(model.diagnosticsEntries.map(\.event), [
+            .speechModelDownloadFinished(backendID: "pocket-tts"),
+            .speechModelDownloadStarted(backendID: "pocket-tts"),
+        ])
+        XCTAssertNil(model.ttsBackendMessage)
+    }
+
+    func testDownloadPocketTTSModelFailureSetsFailedStateFixedStatusTextAndDiagnostics() async {
+        var settings = AppSettings.defaults
+        settings.ttsBackendOrder = ["pocket-tts"]
+        let store = FakeSettingsStore(settings: settings)
+        let diagnostics = DiagnosticsRecorder(capacity: 10)
+        let pocket = FakeTTSCatalogBackend(id: "pocket-tts", displayName: "PocketTTS", availability: .modelNotDownloaded)
+        let downloader = FakeTTSModelDownloader()
+        await downloader.setErrorToThrow(TestCatalogError.boom)
+        let model = makeModel(
+            store: store,
+            ttsRegistry: ["pocket-tts": pocket],
+            ttsModelDownloaders: ["pocket-tts": downloader],
+            diagnostics: diagnostics
+        )
+        await model.initialTTSBackendRefresh?.value
+
+        await model.downloadTTSModel("pocket-tts")
+
+        XCTAssertEqual(model.ttsBackends.first(where: { $0.id == "pocket-tts" })?.state, .downloadFailed)
+        let expectedMessage = "PocketTTS model download failed. Check your connection and try again."
+        XCTAssertEqual(model.statusText, expectedMessage)
+        XCTAssertEqual(model.ttsBackendMessage, expectedMessage)
+        XCTAssertEqual(model.diagnosticsEntries.map(\.event), [
+            .speechModelDownloadFailed(backendID: "pocket-tts"),
+            .speechModelDownloadStarted(backendID: "pocket-tts"),
+        ])
+    }
+
     func testDownloadTTSModelFailureSetsFailedStateFixedStatusTextAndDiagnostics() async {
         var settings = AppSettings.defaults
         settings.ttsBackendOrder = ["kokoro"]
