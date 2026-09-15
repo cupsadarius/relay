@@ -66,6 +66,14 @@ private final class HotkeyRecorderButton: NSButton {
     }
     private var isRecording = false
 
+    /// The single non-Fn modifier currently held alone, if any — tracked so that on
+    /// release we know which modifier to remember for double-tap detection.
+    private var pressedModifier: HotkeyModifier?
+    /// The most recent release of a lone non-Fn modifier, used to detect a second
+    /// press of the same modifier within `doubleTapWindow`.
+    private var lastRelease: (modifier: HotkeyModifier, at: Date)?
+    private static let doubleTapWindow: TimeInterval = 0.4
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         bezelStyle = .rounded
@@ -81,6 +89,7 @@ private final class HotkeyRecorderButton: NSButton {
 
     override func mouseDown(with event: NSEvent) {
         isRecording = true
+        resetModifierTapState()
         title = "Press shortcut…"
         window?.makeFirstResponder(self)
     }
@@ -90,6 +99,7 @@ private final class HotkeyRecorderButton: NSButton {
             super.keyDown(with: event)
             return
         }
+        resetModifierTapState()
         finish(with: .chord(
             keyCode: event.keyCode,
             modifiers: Self.modifiers(from: event.modifierFlags)
@@ -101,13 +111,48 @@ private final class HotkeyRecorderButton: NSButton {
             super.flagsChanged(with: event)
             return
         }
-        if Self.modifiers(from: event.modifierFlags) == [.function] {
+
+        let modifiers = Self.modifiers(from: event.modifierFlags)
+
+        if modifiers == [.function] {
             finish(with: .modifierOnly(.function))
+            return
         }
+
+        guard modifiers.count == 1, let modifier = modifiers.first else {
+            // Either every modifier was released, or more than one modifier (a
+            // chord in progress) is now held — either way this isn't a lone
+            // non-Fn modifier press, so update release bookkeeping and bail.
+            if modifiers.isEmpty, let pressed = pressedModifier {
+                lastRelease = (pressed, Date())
+                pressedModifier = nil
+            } else {
+                resetModifierTapState()
+            }
+            return
+        }
+
+        if let last = lastRelease, last.modifier == modifier,
+           Date().timeIntervalSince(last.at) <= Self.doubleTapWindow {
+            finish(with: .doubleTapModifier(modifier))
+            return
+        }
+
+        // A single modifier press — don't finish yet, the user may still be
+        // starting a chord. Just remember it in case it's released and the
+        // same modifier is pressed again within the double-tap window.
+        pressedModifier = modifier
+        lastRelease = nil
+    }
+
+    private func resetModifierTapState() {
+        pressedModifier = nil
+        lastRelease = nil
     }
 
     private func finish(with definition: HotkeyDefinition) {
         isRecording = false
+        resetModifierTapState()
         self.definition = definition
         onChange?(definition)
     }
