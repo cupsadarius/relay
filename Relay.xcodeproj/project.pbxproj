@@ -72,6 +72,7 @@
 		CA5EDFFEEA88571D939A8E86 /* TextInsertionServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74C937F1F8E31916F4428507 /* TextInsertionServiceTests.swift */; };
 		D0CCD89167ACBB59A2D873B6 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3772B7BC9E1856FB2551A9D4 /* AppModel.swift */; };
 		D3DF712D1B92B3D921467185 /* SpeechCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2E464DE9B8D3EF3FBAF0A9E /* SpeechCoordinator.swift */; };
+		DAADDCA17C999363EEE95FCB /* TTSSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F810D496F4EB25DFF87CD3E9 /* TTSSettingsView.swift */; };
 		DEB7ABD3D2EE7EB76531B9D1 /* RelayWindowTagger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A2D71436EB216912EA0F366 /* RelayWindowTagger.swift */; };
 		ED473F93C25865ED39A16D6B /* ParakeetBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29EE80E2D79C7BCF9E1806A0 /* ParakeetBackend.swift */; };
 		F9565864D90DAB867000F0A0 /* RulesSpeechPreprocessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01700458AA3E57B79695FD7 /* RulesSpeechPreprocessor.swift */; };
@@ -158,6 +159,7 @@
 		EAB0B39FEA02933CC4354E8D /* SpeechBackendError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechBackendError.swift; sourceTree = "<group>"; };
 		ED330EE6049AE116AFB2F072 /* AppSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsTests.swift; sourceTree = "<group>"; };
 		F5BF4958844B2771537AF08D /* AppModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModelTests.swift; sourceTree = "<group>"; };
+		F810D496F4EB25DFF87CD3E9 /* TTSSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSSettingsView.swift; sourceTree = "<group>"; };
 		FE7691D4AED60790AE873F6C /* AppleSpeechBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleSpeechBackend.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -284,6 +286,7 @@
 				919335F17510788FF73D5500 /* SettingsView.swift */,
 				939E4B16B30B18A7F7A66345 /* SpeechBackendCatalog.swift */,
 				1F90592F0F4CAEF1DF31EC85 /* WindowFocusCoordinator.swift */,
+				F80ADB4C2E35962B077F6A82 /* Settings */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -355,6 +358,14 @@
 				55F9F67CCCD674A771BA3A40 /* System */,
 			);
 			path = RelayTests;
+			sourceTree = "<group>";
+		};
+		F80ADB4C2E35962B077F6A82 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				F810D496F4EB25DFF87CD3E9 /* TTSSettingsView.swift */,
+			);
+			path = Settings;
 			sourceTree = "<group>";
 		};
 		FDEA6DBE16EC5221B53015C6 /* Domain */ = {
@@ -534,6 +545,7 @@
 				131B33B0A7200D30823A1201 /* SpeechModels.swift in Sources */,
 				010EFDE2D6C4A73206572BBE /* SpeechToTextBackend.swift in Sources */,
 				4F2437BBF321F303DFF307C5 /* TTSRouter.swift in Sources */,
+				DAADDCA17C999363EEE95FCB /* TTSSettingsView.swift in Sources */,
 				C7BAB420C2ACEAAD2615513F /* TextInsertionService.swift in Sources */,
 				581FC3101A3FE16E88052CDC /* TextToSpeechBackend.swift in Sources */,
 				6EBCA693556C0B8F07AE9656 /* WindowFocusCoordinator.swift in Sources */,
