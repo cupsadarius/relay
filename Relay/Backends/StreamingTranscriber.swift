@@ -1,141 +1,125 @@
-import FluidAudio
 import Foundation
 import os
 
-/// SPIKE: best-effort *live* interim transcription for the dictation pill, layered on top of the
-/// existing batch `sttRouter.transcribe(...)` path — it never replaces it. Interim text is
-/// display-only; the authoritative transcript that actually gets inserted always comes from the
-/// batch path once the user stops speaking.
-///
-/// ## Why this exists instead of reusing FluidAudio's own `StreamingAsrManager`
-/// FluidAudio 0.12.6 ships a higher-level `StreamingAsrManager` that already turns
-/// `AsrManager.transcribeStreamingChunk`'s token ids into text. It was the first thing tried here,
-/// but it only emits an update once per `chunkSeconds` window (10-15s, even with the `.streaming`
-/// preset) — its `hypothesisChunkSeconds` "quick feedback" knob exists in `StreamingAsrConfig` but
-/// is dead: `appendSamplesAndProcess`/`processWindow` never read it in this version. That cadence
-/// would make the pill sit empty for the first ~10+ seconds of every utterance, which defeats the
-/// point of a *live* pill. So this type hand-rolls the same "Path A" FluidAudio itself uses
-/// internally, at a much shorter, tunable step size:
-///
-/// 1. Feed small, non-overlapping windows of raw mic samples (`stepSampleCount`, ~0.75s) to the
-///    public `AsrManager.transcribeStreamingChunk(_:source:previousTokens:isLastChunk:)`. Its
-///    decoder state persists across calls per `source`, so consecutive windows continue decoding
-///    where the previous one left off without needing to be re-fed as context.
-/// 2. Convert the returned token ids to text ourselves via `AsrModels.vocabulary` (`[Int: String]`,
-///    public), replicating `AsrManager`'s own (module-`internal`, hence inaccessible here)
-///    `convertTokensWithExistingTimings`: join each token's string, replace the SentencePiece word
-///    boundary marker "▁" with a space, then trim. Confirmed by reading that method's source.
-///
-/// This runs on its own `AsrManager`/`AsrModels` pair, loaded from the same on-disk cache
-/// `FluidAudioParakeetEngine` already uses (no extra download — the model is already present) but
-/// **not** the same in-memory instance, so this doubles the Parakeet model's memory footprint for
-/// as long as a streaming session is active. Acceptable for a spike; a production version should
-/// share one loaded `AsrModels` between the batch engine and this type instead. See the spike
-/// findings doc for the full list of production follow-ups.
+// SPIKE: best-effort live interim transcription for the dictation pill, layered on top of the
+// existing batch sttRouter.transcribe path -- it never replaces it. Interim text is
+// display-only; the authoritative transcript that actually gets inserted always comes from a
+// separate, later call to that same batch path once the user stops speaking.
+//
+// Revision history (see the spike findings doc for the full writeup):
+// The first version of this type drove interim updates from FluidAudio's low-level
+// AsrManager.transcribeStreamingChunk, called once per small (about 0.75s) raw audio chunk, with
+// token-to-text decoding done by hand. Live testing showed it rendered exactly one update
+// ("Mm-hmm.") and then froze for the rest of the utterance, and per-chunk accuracy was poor
+// besides. The most likely cause: unlike FluidAudio's own StreamingAsrManager, this fed the
+// decoder disjoint, non-overlapping, context-free windows with no per-window frame or
+// left-context bookkeeping, and transcribeStreamingChunk's persisted decoder state has
+// invariants tied to that machinery -- the second call onward most likely started throwing (or
+// returning empty token arrays) against the same decoder state the first call left behind, and
+// every error was caught and merely logged at debug level, which is why it read as a silent
+// freeze rather than a crash. That path did not need FluidAudio's streaming API to be worth it
+// (see below), so it was not root-caused further -- it was simply replaced with an approach that
+// reuses the already accurate, already-tested batch decoder instead of a second, fragile decode
+// path.
+//
+// Current approach: periodic growing-window re-transcribe.
+// Every tickInterval (about 1s), snapshot however much audio has arrived so far and re-run the
+// exact same accurate batch transcription used for the final result (transcribe, injected by the
+// caller, in practice STTRouter.transcribe, so this reuses whichever backend and model is already
+// loaded for the session rather than loading a second copy of anything). Each call is
+// independent and stateless (AsrManager's plain batch transcribe resets decoder state per call,
+// unlike the streaming-chunk API above), so there is no persisted-state invariant to violate, and
+// quality is the same as the final result would be for that much audio -- the interim text
+// degrades gracefully to "slightly stale" rather than "wrong in a new way" each second. The
+// trade-off is CPU: re-transcribing a growing buffer from scratch every tick is roughly quadratic
+// over the length of an utterance, so the buffer used for the interim snapshot is capped to the
+// most recent maxWindowSamples (about 15s) -- for anything shorter than that the window is
+// genuinely the whole utterance so far; beyond it, interim quality is based on a rolling last-15s
+// window instead. This cap applies to interim display only: the authoritative final transcript is
+// produced separately, from MicrophoneCapture's own full, uncapped accumulator.
 actor StreamingTranscriber {
-    private static let version: AsrModelVersion = .v2
-    /// ~0.75s of 16 kHz audio per step: short enough to feel live, long enough for the TDT decoder
-    /// to produce a reasonable hypothesis. Chunks are fed *without* overlap and without re-passing
-    /// `previousTokens`, so there is nothing to de-duplicate between steps — the persisted decoder
-    /// state alone is what makes each step continue the same utterance.
-    private static let stepSampleCount = 12_000
+    private static let tickInterval: Duration = .seconds(1)
+    // Caps the interim snapshot to the most recent about-15s of audio (16 kHz mono Float). Keeps
+    // per-tick re-transcription cost roughly bounded instead of growing without limit across a
+    // long dictation session. Interim-display-only -- the final transcript is unaffected, since
+    // it comes from MicrophoneCapture's own separate, uncapped accumulator.
+    private static let maxWindowSamples = 15 * 16_000
 
     private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "streaming-transcriber")
+
+    // Injected rather than hard-coded to a specific backend so this stays provider-agnostic and
+    // reuses whatever model the caller already has loaded (in practice STTRouter.transcribe,
+    // MainActor-isolated -- calling it from this actor is a plain await hop, no Sendable
+    // requirement on the router itself since the closure carries the isolation with it).
+
+    private let transcribe: @MainActor (AudioInput) async throws -> Transcript
     private let onInterimText: @Sendable (String) -> Void
 
-    private var manager: AsrManager?
-    private var vocabulary: [Int: String] = [:]
-    private var pendingSamples: [Float] = []
-    private var accumulatedTokens: [Int] = []
-    private var isProcessingStep = false
-    /// Set once `start()` has determined the models aren't available locally (or failed to load),
-    /// so every subsequent `appendSamples` call can no-op immediately instead of retrying.
-    private var isDisabled = false
+    private var samples: [Float] = []
+    private var isTranscribing = false
+    private var tickTask: Task<Void, Never>?
 
-    init(onInterimText: @escaping @Sendable (String) -> Void) {
+    init(
+        transcribe: @escaping @MainActor (AudioInput) async throws -> Transcript,
+        onInterimText: @escaping @Sendable (String) -> Void
+    ) {
+        self.transcribe = transcribe
         self.onInterimText = onInterimText
     }
 
-    /// Best-effort: any failure here (models not downloaded, load failure, ...) silently disables
-    /// interim text for this session. It never throws — the caller's dictation flow must never be
-    /// affected by this being unavailable.
-    func start() async {
-        manager = nil
-        vocabulary = [:]
-        pendingSamples.removeAll(keepingCapacity: true)
-        accumulatedTokens.removeAll(keepingCapacity: true)
-        isDisabled = false
-
-        let modelDirectory = AsrModels.defaultCacheDirectory(for: Self.version)
-        guard AsrModels.modelsExist(at: modelDirectory, version: Self.version) else {
-            logger.debug("Streaming transcriber disabled: Parakeet models not present locally")
-            isDisabled = true
-            return
-        }
-
-        do {
-            let models = try await AsrModels.load(from: modelDirectory, version: Self.version)
-            let manager = AsrManager(config: .default)
-            try await manager.initialize(models: models)
-            self.manager = manager
-            self.vocabulary = models.vocabulary
-        } catch is CancellationError {
-            isDisabled = true
-        } catch {
-            logger.debug("Streaming transcriber failed to start: \(error.localizedDescription, privacy: .private)")
-            isDisabled = true
+    // Starts a fresh interim session: clears any leftover state and begins the about-1s tick
+    // loop. Cheap and synchronous aside from the actor hop -- there is no model loading here
+    // anymore, so (unlike the previous per-chunk version) there is no window where early samples
+    // are lost while something loads in the background.
+    func start() {
+        samples.removeAll(keepingCapacity: true)
+        isTranscribing = false
+        tickTask?.cancel()
+        tickTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.tickInterval)
+                guard !Task.isCancelled else { return }
+                await self?.tick()
+            }
         }
     }
 
-    /// Feeds a batch of raw 16 kHz mono Float samples — the exact format `MicrophoneCapture`
-    /// already produces for its own accumulator, so no conversion happens here. Buffers samples
-    /// until `stepSampleCount` is reached, then transcribes that window in the background. Steps
-    /// never overlap: if a step is still in flight when more samples arrive, they simply keep
-    /// buffering for the next step rather than spawning concurrent decodes against the same
-    /// decoder state.
-    func appendSamples(_ samples: [Float]) async {
-        guard !isDisabled, let manager else { return }
-        pendingSamples.append(contentsOf: samples)
-        guard !isProcessingStep, pendingSamples.count >= Self.stepSampleCount else { return }
+    // Feeds a batch of raw 16 kHz mono Float samples -- the exact format MicrophoneCapture
+    // already produces for its own accumulator, so no conversion happens here. Purely
+    // accumulates; the actual re-transcription happens on the tick loop, not per call.
+    func appendSamples(_ newSamples: [Float]) {
+        samples.append(contentsOf: newSamples)
+        if samples.count > Self.maxWindowSamples {
+            samples.removeFirst(samples.count - Self.maxWindowSamples)
+        }
+    }
 
-        let step = pendingSamples
-        pendingSamples.removeAll(keepingCapacity: true)
-        isProcessingStep = true
-        defer { isProcessingStep = false }
+    // Stops the tick loop and clears buffered audio. Interim text is display-only, so this
+    // deliberately does not return anything -- the authoritative transcript comes from a
+    // separate call to the batch path instead.
+    func stop() {
+        tickTask?.cancel()
+        tickTask = nil
+        samples.removeAll(keepingCapacity: true)
+        isTranscribing = false
+    }
 
+    // One tick of the periodic re-transcribe. DEBOUNCE: if a previous tick's transcription is
+    // still in flight, this tick is skipped outright rather than queuing -- there is deliberately
+    // never more than one transcription in flight at a time.
+    private func tick() async {
+        guard !isTranscribing, !samples.isEmpty else { return }
+        isTranscribing = true
+        defer { isTranscribing = false }
+
+        let snapshot = samples
         do {
-            let (tokens, _, _, _) = try await manager.transcribeStreamingChunk(
-                step,
-                source: .microphone,
-                previousTokens: [],
-                isLastChunk: false
-            )
-            guard !tokens.isEmpty else { return }
-            accumulatedTokens.append(contentsOf: tokens)
-            onInterimText(Self.decode(tokens: accumulatedTokens, vocabulary: vocabulary))
+            let result = try await transcribe(AudioInput(samples: snapshot, sampleRate: 16_000))
+            guard !Task.isCancelled else { return }
+            onInterimText(result.text)
         } catch is CancellationError {
         } catch {
-            logger.debug("Streaming transcriber step failed: \(error.localizedDescription, privacy: .private)")
+            logger.debug("Streaming transcriber tick failed: \(error.localizedDescription, privacy: .private)")
         }
-    }
-
-    /// Tears down the session. Interim text is display-only, so this deliberately does not return
-    /// anything — the authoritative transcript comes from `sttRouter.transcribe(...)` instead.
-    func stop() async {
-        manager = nil
-        vocabulary = [:]
-        pendingSamples.removeAll(keepingCapacity: true)
-        accumulatedTokens.removeAll(keepingCapacity: true)
-        isProcessingStep = false
-        isDisabled = false
-    }
-
-    /// Mirrors `AsrManager.convertTokensWithExistingTimings`'s text-assembly step exactly (that
-    /// method itself is module-`internal` and so isn't callable from here): join each token's
-    /// vocabulary string, replace the SentencePiece word-boundary marker with a space, then trim.
-    private static func decode(tokens: [Int], vocabulary: [Int: String]) -> String {
-        let joined = tokens.compactMap { vocabulary[$0] }.joined()
-        return joined.replacingOccurrences(of: "\u{2581}", with: " ")
-            .trimmingCharacters(in: .whitespaces)
     }
 }

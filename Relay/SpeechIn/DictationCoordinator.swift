@@ -219,26 +219,31 @@ final class DictationCoordinator: DictationCoordinating {
 
     /// SPIKE: creates a fresh `StreamingTranscriber` for this session, wires it up as the
     /// microphone's sample observer (if the concrete `microphone` supports the optional
-    /// `MicrophoneSampleStreaming` capability), and kicks off its (best-effort, backgrounded)
-    /// model load. Must run before `microphone.start(onLevel:)` — see that protocol doc comment.
+    /// `MicrophoneSampleStreaming` capability), and starts its periodic re-transcribe loop. Must
+    /// run before `microphone.start(onLevel:)` — see that protocol's doc comment.
     private func beginStreamingTranscription(session: UUID) async {
-        // No point loading a streaming session (real CoreML models, real disk access) when there
-        // is no way to feed it samples. This also keeps every test fake that does not implement
-        // MicrophoneSampleStreaming (i.e. all of them, deliberately) from ever touching FluidAudio.
+        // No point starting an interim session when there is no way to feed it samples. This also
+        // keeps every test fake that does not implement MicrophoneSampleStreaming (i.e. all of
+        // them, deliberately) from ever touching sttRouter for anything beyond the final batch call.
         guard let streaming = microphone as? any MicrophoneSampleStreaming else { return }
-        let transcriber = StreamingTranscriber { [weak self] text in
-            Task { @MainActor [weak self] in
-                guard let self, self.isRecording(session) else { return }
-                self.activity.updateInterimText(text, sessionID: session)
+
+        let transcriber = StreamingTranscriber(
+            transcribe: { [sttRouter] audio in
+                try await sttRouter.transcribe(audio: audio, options: .init())
+            },
+            onInterimText: { [weak self] text in
+                Task { @MainActor [weak self] in
+                    guard let self, self.isRecording(session) else { return }
+                    self.activity.updateInterimText(text, sessionID: session)
+                }
             }
-        }
+        )
         streamingTranscriber = transcriber
         await streaming.setSampleObserver { samples in
             Task { await transcriber.appendSamples(samples) }
         }
-        Task { await transcriber.start() }
+        await transcriber.start()
     }
-
 
     /// SPIKE: tears down this session's `StreamingTranscriber` (if any) and detaches it from the
     /// microphone's sample observer, so a stale observer never forwards a later session's samples
