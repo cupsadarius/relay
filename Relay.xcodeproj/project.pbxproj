@@ -11,6 +11,7 @@
 		077DCF588705F7C9A0D435DE /* ActivityOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110BEA16859A4BC3BC171427 /* ActivityOverlayView.swift */; };
 		0B604089F852B83304D81658 /* TTSBackendCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = C946F6D8E4671F893A836DF2 /* TTSBackendCatalog.swift */; };
 		0C3C74A43B72D383164C555C /* KokoroTTSBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 203E8DFFD8E671A374DB34E3 /* KokoroTTSBackendTests.swift */; };
+		12D93A16EC4BC9B4719345D7 /* GeneralSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBC3BAADB745BCF1A34311A3 /* GeneralSettingsView.swift */; };
 		131B33B0A7200D30823A1201 /* SpeechModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA7F679F877AB1E080B262A1 /* SpeechModels.swift */; };
 		18A0B28B851CB76A0406F54E /* AppSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED330EE6049AE116AFB2F072 /* AppSettingsTests.swift */; };
 		1BAD7007F7ACB0C185A59759 /* PermissionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 272BF7900B279928282E93C7 /* PermissionService.swift */; };
@@ -286,6 +287,7 @@
 		C946F6D8E4671F893A836DF2 /* TTSBackendCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSBackendCatalog.swift; sourceTree = "<group>"; };
 		CA7F679F877AB1E080B262A1 /* SpeechModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechModels.swift; sourceTree = "<group>"; };
 		CA8288A8C021A7ACBC0613FE /* CodexIntegration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexIntegration.swift; sourceTree = "<group>"; };
+		CBC3BAADB745BCF1A34311A3 /* GeneralSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsView.swift; sourceTree = "<group>"; };
 		CD7B5DDABCD6925ACF15C1B3 /* RelayHook */ = {isa = PBXFileReference; includeInIndex = 0; path = RelayHook; sourceTree = BUILT_PRODUCTS_DIR; };
 		CFD159D40C20E2EB860D1629 /* RelayIntegration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayIntegration.swift; sourceTree = "<group>"; };
 		D01700458AA3E57B79695FD7 /* RulesSpeechPreprocessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RulesSpeechPreprocessor.swift; sourceTree = "<group>"; };
@@ -698,6 +700,7 @@
 			isa = PBXGroup;
 			children = (
 				1A727A1F8CEB8AC9F2E1FEB9 /* DictationSettingsView.swift */,
+				CBC3BAADB745BCF1A34311A3 /* GeneralSettingsView.swift */,
 				F4F6B57B98EE3D5605E724E8 /* IntegrationsSettingsView.swift */,
 				8E72993D876294B84028D5D5 /* KeybindsSettingsView.swift */,
 				0F476045417F42F97BC90298 /* PermissionsSettingsView.swift */,
@@ -961,6 +964,7 @@
 				9FE03DC36147EFCCF7FD4D45 /* FocusModels.swift in Sources */,
 				8DFFB706EDF3C5BF8EE57406 /* FocusResolutionService.swift in Sources */,
 				EB5A44B3DB43C66A7A1B5D8E /* FrontmostAppMonitor.swift in Sources */,
+				12D93A16EC4BC9B4719345D7 /* GeneralSettingsView.swift in Sources */,
 				BBDCAD3AC18C3C6FADA69D93 /* GenericTerminalFocusResolver.swift in Sources */,
 				8C7FB013D71A83B74950862F /* GlobalHotkeyManager.swift in Sources */,
 				BA5068A27E2BC29BA792D9A5 /* HerdrFocusResolver.swift in Sources */,
