@@ -42,11 +42,15 @@ final class AgentAutoReadCoordinatorTests: XCTestCase {
         let speech = RecordingSpeechSink()
         let focus = MutableStubFocusResolver()
         focus.focusedSessionID = .init(provider: .claudeCode, providerSessionID: "a")
-        let coordinator = makeCoordinator(focus: focus, speech: speech, autoRead: false)
+        let harness = makeCoordinatorHarness(focus: focus, speech: speech, autoRead: false)
 
-        await coordinator.handle(makeAutoReadEvent(providerSessionID: "a", text: "done"))
+        await harness.coordinator.handle(makeAutoReadEvent(providerSessionID: "a", text: "done"))
 
         XCTAssertTrue(speech.requests.isEmpty)
+        // Auto-read being disabled must still upsert the session into the registry, so a
+        // background response remains available for manual "Speak Latest".
+        let sessions = await harness.registry.sessions()
+        XCTAssertEqual(sessions.first?.latestResponse.text, "done")
     }
 
     // MARK: - Last-active handoff (rule 2)
