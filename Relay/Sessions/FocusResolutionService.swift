@@ -30,6 +30,22 @@ actor FocusResolutionService {
         }
         return .unknown(resolverID: "focus-resolution", reason: "no resolver produced high-confidence focus evidence")
     }
+
+    /// Resolves each of `sessions` in turn via `resolve(session:)` (the same per-session
+    /// machinery used everywhere else) and returns the single confidently-focused
+    /// (`.focused` + `.high`) session, or `nil` if none is. `sessions` is expected to be tiny
+    /// (the live agent session count), so resolving each one in turn — rather than trying to
+    /// batch the underlying ps/lsof-backed resolvers — keeps this simple; those resolvers are
+    /// already deadlock-hardened for repeated calls.
+    func focusedSession(among sessions: [AgentSession]) async -> AgentSession? {
+        for session in sessions {
+            let decision = await resolve(session: session)
+            if decision.state == .focused, decision.confidence == .high {
+                return session
+            }
+        }
+        return nil
+    }
 }
 
 extension FocusResolutionService: SessionFocusResolving {}

@@ -46,4 +46,22 @@ protocol FocusResolver: Sendable {
 
 protocol SessionFocusResolving: Sendable {
     func resolve(session: AgentSession) async -> FocusDecision
+
+    /// Resolves focus for each of `sessions` (in order) and returns the single
+    /// confidently-focused (`.focused` + `.high`) session, or `nil` if none is. A default
+    /// implementation built on `resolve(session:)` is provided below, so most conformers — real
+    /// and test doubles alike — never need to implement this themselves.
+    func focusedSession(among sessions: [AgentSession]) async -> AgentSession?
+}
+
+extension SessionFocusResolving {
+    func focusedSession(among sessions: [AgentSession]) async -> AgentSession? {
+        for session in sessions {
+            let decision = await resolve(session: session)
+            if decision.state == .focused, decision.confidence == .high {
+                return session
+            }
+        }
+        return nil
+    }
 }
