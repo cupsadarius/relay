@@ -41,10 +41,15 @@ final class HookEnvelopeReceiver: @unchecked Sendable {
     private let diagnostics: IntegrationDiagnosticsLog
 
     init(
-        server: UnixSocketServer = UnixSocketServer(),
+        server: UnixSocketServer? = nil,
         diagnostics: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog()
     ) {
-        self.server = server
+        // When no server is injected (the production path), construct the
+        // default one with the same diagnostics log this receiver uses, so
+        // socket-ownership entries (active owner / stale removed / unsafe
+        // path / permission failure) land in the same Diagnostics window as
+        // the receiver's own entries.
+        self.server = server ?? UnixSocketServer(diagnostics: diagnostics)
         self.diagnostics = diagnostics
 
         var capturedContinuation: AsyncStream<HookEnvelope>.Continuation?

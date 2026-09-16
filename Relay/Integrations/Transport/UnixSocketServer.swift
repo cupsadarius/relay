@@ -19,6 +19,15 @@ enum UnixSocketServerError: Error, Equatable {
     case bindFailed(Int32)
     case chmodFailed(Int32)
     case listenFailed(Int32)
+    /// Another live process already owns this socket path — either a probe
+    /// connect reached a real listener, or the single-instance lockfile is
+    /// already held by another process. Relay must never unlink or rebind
+    /// over an active owner.
+    case activeListenerPresent
+    /// The single-instance lockfile could not be opened/created for a
+    /// reason other than it already being held (see `activeListenerPresent`
+    /// for that case).
+    case lockAcquisitionFailed(Int32)
 }
 
 /// A minimal local Unix-domain socket server for receiving newline-delimited
@@ -50,7 +59,14 @@ final class UnixSocketServer: @unchecked Sendable {
     /// re-fail in a tight CPU spin.
     private static let acceptBackoff: DispatchTimeInterval = .milliseconds(100)
 
+    /// Short poll deadline used by `probeLiveListener` when checking whether
+    /// a peer is actually accepting on a candidate stale socket path. Kept
+    /// well under a second so `start()` never stalls noticeably even when
+    /// probing a completely unresponsive path.
+    private static let probeDeadline: Int32 = 200 // milliseconds
+
     private let queue = DispatchQueue(label: "dev.relaymac.Relay.UnixSocketServer")
+    private let diagnostics: IntegrationDiagnosticsLog
 
     private var listenDescriptor: Int32 = -1
     private var acceptSource: DispatchSourceRead?
@@ -59,7 +75,14 @@ final class UnixSocketServer: @unchecked Sendable {
     private var onLine: (@Sendable (String) -> Void)?
     private var connections: [Int32: ClientConnection] = [:]
 
-    init() {}
+    /// File descriptor for the single-instance lockfile (`<socketDir>/relay.lock`),
+    /// held via `flock(LOCK_EX | LOCK_NB)` for the server's entire lifetime.
+    /// `-1` when not held (not started, or already torn down).
+    private var lockDescriptor: Int32 = -1
+
+    init(diagnostics: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog()) {
+        self.diagnostics = diagnostics
+    }
 
     /// Whether the server currently holds an open listening socket. Reads
     /// are serialized through the same queue that owns `listenDescriptor`,
@@ -100,10 +123,19 @@ final class UnixSocketServer: @unchecked Sendable {
 
             let directory = (path as NSString).deletingLastPathComponent
             try Self.ensureParentDirectoryExists(directory)
-            try Self.removeStaleSocketIfSafe(at: path)
+
+            let acquiredLockFD = try acquireSingleInstanceLock(inDirectory: directory)
+
+            do {
+                try removeStaleSocketIfSafe(at: path)
+            } catch {
+                close(acquiredLockFD)
+                throw error
+            }
 
             let fd = socket(AF_UNIX, SOCK_STREAM, 0)
             guard fd >= 0 else {
+                close(acquiredLockFD)
                 throw UnixSocketServerError.socketCreationFailed(errno)
             }
             Self.setNonBlocking(fd)
@@ -112,6 +144,7 @@ final class UnixSocketServer: @unchecked Sendable {
                 try Self.bind(fd: fd, toPath: path)
             } catch {
                 close(fd)
+                close(acquiredLockFD)
                 throw error
             }
 
@@ -119,6 +152,7 @@ final class UnixSocketServer: @unchecked Sendable {
                 let capturedErrno = errno
                 close(fd)
                 unlink(path)
+                close(acquiredLockFD)
                 throw UnixSocketServerError.chmodFailed(capturedErrno)
             }
 
@@ -126,11 +160,13 @@ final class UnixSocketServer: @unchecked Sendable {
                 let capturedErrno = errno
                 close(fd)
                 unlink(path)
+                close(acquiredLockFD)
                 throw UnixSocketServerError.listenFailed(capturedErrno)
             }
 
             listenDescriptor = fd
             socketPath = path
+            lockDescriptor = acquiredLockFD
             self.onLine = onLine
 
             let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
@@ -181,6 +217,11 @@ final class UnixSocketServer: @unchecked Sendable {
 
         if let path = socketPath {
             unlink(path)
+        }
+
+        if lockDescriptor >= 0 {
+            close(lockDescriptor)
+            lockDescriptor = -1
         }
 
         listenDescriptor = -1
@@ -317,28 +358,134 @@ final class UnixSocketServer: @unchecked Sendable {
     }
 
     /// Removes a stale socket file at `path` only when it is verifiably a
-    /// Unix-domain socket owned by the current user. Any other kind of file
-    /// (or a socket owned by someone else) is left untouched and surfaced
-    /// as an error instead.
-    private static func removeStaleSocketIfSafe(at path: String) throws {
+    /// Unix-domain socket owned by the current user AND no live listener
+    /// answers a probe connect. Any other kind of file (or a socket owned by
+    /// someone else) is left untouched and surfaced as an error instead; a
+    /// socket that does answer a probe connect is left untouched too — that
+    /// is another process's live socket, not a crash leftover.
+    private func removeStaleSocketIfSafe(at path: String) throws {
         var info = stat()
         let result = path.withCString { lstat($0, &info) }
         if result != 0 {
             if errno == ENOENT {
                 return // Nothing there; nothing to remove.
             }
-            throw UnixSocketServerError.staleSocketCheckFailed(errno)
+            let capturedErrno = errno
+            diagnostics.append(
+                stage: "socket-ownership",
+                outcome: "permission-failure",
+                detail: capturedErrno == EACCES ? "lstat-denied" : "lstat-failed"
+            )
+            throw UnixSocketServerError.staleSocketCheckFailed(capturedErrno)
         }
 
         let isSocket = (info.st_mode & S_IFMT) == S_IFSOCK
         let ownedByCurrentUser = info.st_uid == getuid()
         guard isSocket, ownedByCurrentUser else {
+            diagnostics.append(stage: "socket-ownership", outcome: "unsafe-path", detail: "not-owned-socket")
             throw UnixSocketServerError.unsafeStaleSocket
         }
 
-        guard unlink(path) == 0 else {
-            throw UnixSocketServerError.staleSocketRemovalFailed(errno)
+        guard !Self.probeLiveListener(at: path) else {
+            diagnostics.append(stage: "socket-ownership", outcome: "active-owner", detail: "probe-connected")
+            throw UnixSocketServerError.activeListenerPresent
         }
+
+        guard unlink(path) == 0 else {
+            let capturedErrno = errno
+            diagnostics.append(
+                stage: "socket-ownership",
+                outcome: "permission-failure",
+                detail: capturedErrno == EACCES ? "unlink-denied" : "unlink-failed"
+            )
+            throw UnixSocketServerError.staleSocketRemovalFailed(capturedErrno)
+        }
+        diagnostics.append(stage: "socket-ownership", outcome: "stale-removed", detail: "no-live-listener")
+    }
+
+    /// Probes whether a live process is listening on the Unix-domain socket
+    /// at `path` by attempting a non-blocking `connect()` with a short
+    /// (~200 ms) deadline, mirroring `HerdrSocketClient`'s bounded-connect
+    /// pattern. Returns `true` only when a peer actually accepts the
+    /// connection; refusal, a missing path, or a timeout all read as `false`
+    /// (safe to treat the path as stale). The probe file descriptor is
+    /// always closed before returning.
+    private static func probeLiveListener(at path: String) -> Bool {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        setNonBlocking(fd)
+
+        var address = sockaddr_un()
+        address.sun_family = sa_family_t(AF_UNIX)
+        let pathBytes = Array(path.utf8)
+        let capacity = MemoryLayout.size(ofValue: address.sun_path)
+        guard pathBytes.count < capacity else { return false }
+        withUnsafeMutableBytes(of: &address.sun_path) { rawPath in
+            let base = rawPath.baseAddress!.assumingMemoryBound(to: UInt8.self)
+            base.update(repeating: 0, count: rawPath.count)
+            for (index, byte) in pathBytes.enumerated() {
+                base[index] = byte
+            }
+        }
+
+        let connectResult = withUnsafePointer(to: &address) { addressPointer -> Int32 in
+            addressPointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                connect(fd, sockaddrPointer, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+
+        if connectResult == 0 {
+            return true // Connected immediately: a live listener accepted us.
+        }
+        guard errno == EINPROGRESS else {
+            return false // ECONNREFUSED, ENOENT, EACCES, etc. — no live listener.
+        }
+
+        var pollDescriptor = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+        let pollResult = poll(&pollDescriptor, 1, probeDeadline)
+        guard pollResult > 0, (pollDescriptor.revents & Int16(POLLOUT)) != 0 else {
+            return false // Timed out, or another poll error — treat as no listener.
+        }
+
+        var socketError: Int32 = 0
+        var socketErrorLength = socklen_t(MemoryLayout<Int32>.size)
+        guard getsockopt(fd, SOL_SOCKET, SO_ERROR, &socketError, &socketErrorLength) == 0 else {
+            return false
+        }
+        return socketError == 0
+    }
+
+    /// Acquires the single-instance guard: an exclusive, non-blocking
+    /// `flock` on `<directory>/relay.lock`, opened/created fresh for this
+    /// call. `flock` locks are scoped to the *open file description*, so a
+    /// second `open()` of the same lockfile — even from the same process —
+    /// still contends for the lock; this is what lets two `UnixSocketServer`
+    /// instances in one process (as in tests) correctly exercise the guard.
+    ///
+    /// Returns the held lockfile descriptor on success. The caller owns it
+    /// and must close it (which releases the lock) during teardown.
+    private func acquireSingleInstanceLock(inDirectory directory: String) throws -> Int32 {
+        let lockPath = (directory as NSString).appendingPathComponent("relay.lock")
+        let fd = lockPath.withCString { open($0, O_CREAT | O_RDWR, 0o600) }
+        guard fd >= 0 else {
+            let capturedErrno = errno
+            diagnostics.append(stage: "socket-ownership", outcome: "permission-failure", detail: "lockfile-open-failed")
+            throw UnixSocketServerError.lockAcquisitionFailed(capturedErrno)
+        }
+
+        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+            let capturedErrno = errno
+            close(fd)
+            if capturedErrno == EWOULDBLOCK {
+                diagnostics.append(stage: "socket-ownership", outcome: "active-owner", detail: "lock-held")
+                throw UnixSocketServerError.activeListenerPresent
+            }
+            diagnostics.append(stage: "socket-ownership", outcome: "permission-failure", detail: "lock-failed")
+            throw UnixSocketServerError.lockAcquisitionFailed(capturedErrno)
+        }
+
+        return fd
     }
 
     private static func bind(fd: Int32, toPath path: String) throws {

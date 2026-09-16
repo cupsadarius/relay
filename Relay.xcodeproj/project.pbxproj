@@ -151,6 +151,7 @@
 		E205528FE59A3A731FA917AE /* HerdrModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E07986CA871BE584821FE608 /* HerdrModels.swift */; };
 		E2C6E7141B67B8F4DBA3DE7B /* HookEnvelopeReceiverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83997371307F0FA88DB5A57E /* HookEnvelopeReceiverTests.swift */; };
 		E4B7522F3415C9AFF5FD260C /* CodexInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4825CDE46AE776AE50DCD55 /* CodexInstaller.swift */; };
+		E6B54216CADEF6964C54E936 /* UnixSocketServerOwnershipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63B61F60EF2F1B91A7692398 /* UnixSocketServerOwnershipTests.swift */; };
 		E9793749361A43D80B90C59C /* InterimTextDiff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 742664766D6CE6286EB5E819 /* InterimTextDiff.swift */; };
 		E9B4F43B9424CFCAFED6BD87 /* PocketTTSBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BD1713F6B25B17ED9F3EEA7 /* PocketTTSBackendTests.swift */; };
 		EAB39791025AC7188F9DD9C9 /* AgentResponseEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F32A0AB1ECF4429A4A7F818 /* AgentResponseEvent.swift */; };
@@ -247,6 +248,7 @@
 		5CB732B846FC4C710B2410FC /* FluidAudioParakeetEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FluidAudioParakeetEngine.swift; sourceTree = "<group>"; };
 		5DED03634A55B66FBCED816D /* TTSBackendCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSBackendCatalogTests.swift; sourceTree = "<group>"; };
 		6354F61BA4CE6CE9E6F5206D /* AccessibilityServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityServiceTests.swift; sourceTree = "<group>"; };
+		63B61F60EF2F1B91A7692398 /* UnixSocketServerOwnershipTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnixSocketServerOwnershipTests.swift; sourceTree = "<group>"; };
 		64C44B2770EA66B11413E76A /* LoginItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginItemController.swift; sourceTree = "<group>"; };
 		66FC6B9D3FF3241E9F3B71E1 /* AgentSessionRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSessionRegistry.swift; sourceTree = "<group>"; };
 		6A5013145E15E5C746C59782 /* AgentProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProvider.swift; sourceTree = "<group>"; };
@@ -416,6 +418,7 @@
 				548BBA4EF43DAABAE6DEA7E0 /* HookTransportClientTests.swift */,
 				D4A3AE84BABE6230BCA922FB /* IntegrationDiagnosticsLogTests.swift */,
 				88315C1ADD14F6767C42B75C /* IntegrationManagerTests.swift */,
+				63B61F60EF2F1B91A7692398 /* UnixSocketServerOwnershipTests.swift */,
 				196EAFDEDCE964071F1FD07A /* UnixSocketServerTests.swift */,
 			);
 			path = Integrations;
@@ -954,6 +957,7 @@
 				CA5EDFFEEA88571D939A8E86 /* TextInsertionServiceTests.swift in Sources */,
 				F128E9695B4C1179C7B5FDC6 /* TmuxClientBoundsTests.swift in Sources */,
 				64FEF10D16E628C7A2F35DE5 /* TmuxFocusResolverTests.swift in Sources */,
+				E6B54216CADEF6964C54E936 /* UnixSocketServerOwnershipTests.swift in Sources */,
 				416ACED506F9EC70C96DD843 /* UnixSocketServerTests.swift in Sources */,
 				59CEB26722FB7B5250A99741 /* WindowFocusCoordinatorTests.swift in Sources */,
 			);
