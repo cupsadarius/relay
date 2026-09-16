@@ -38,14 +38,13 @@ import os
 // window instead. This cap applies to interim display only: the authoritative final transcript is
 // produced separately, from MicrophoneCapture's own full, uncapped accumulator.
 actor StreamingTranscriber {
-    private static let tickInterval: Duration = .seconds(1)
-    // Caps the interim snapshot to the most recent about-15s of audio (16 kHz mono Float). Keeps
-    // per-tick re-transcription cost roughly bounded instead of growing without limit across a
-    // long dictation session. Interim-display-only -- the final transcript is unaffected, since
-    // it comes from MicrophoneCapture's own separate, uncapped accumulator.
-    private static let maxWindowSamples = 15 * 16_000
-
     private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "streaming-transcriber")
+    // How often the tick loop re-transcribes. Injectable (default about 1s) so tests can drive a
+    // fast loop instead of waiting on real wall-clock time.
+    private let tickInterval: Duration
+    // Caps the interim snapshot to the most recent window of audio (16 kHz mono Float, default
+    // about 15s). Injectable so tests can exercise the rolling-window trim with a small buffer.
+    private let maxWindowSamples: Int
 
     // Injected rather than hard-coded to a specific backend so this stays provider-agnostic and
     // reuses whatever model the caller already has loaded (in practice STTRouter.transcribe,
@@ -60,9 +59,13 @@ actor StreamingTranscriber {
     private var tickTask: Task<Void, Never>?
 
     init(
+        tickInterval: Duration = .seconds(1),
+        maxWindowSamples: Int = 15 * 16_000,
         transcribe: @escaping @MainActor (AudioInput) async throws -> Transcript,
         onInterimText: @escaping @Sendable (String) -> Void
     ) {
+        self.tickInterval = tickInterval
+        self.maxWindowSamples = maxWindowSamples
         self.transcribe = transcribe
         self.onInterimText = onInterimText
     }
@@ -75,9 +78,10 @@ actor StreamingTranscriber {
         samples.removeAll(keepingCapacity: true)
         isTranscribing = false
         tickTask?.cancel()
+        let interval = tickInterval
         tickTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: Self.tickInterval)
+                try? await Task.sleep(for: interval)
                 guard !Task.isCancelled else { return }
                 await self?.tick()
             }
@@ -89,8 +93,8 @@ actor StreamingTranscriber {
     // accumulates; the actual re-transcription happens on the tick loop, not per call.
     func appendSamples(_ newSamples: [Float]) {
         samples.append(contentsOf: newSamples)
-        if samples.count > Self.maxWindowSamples {
-            samples.removeFirst(samples.count - Self.maxWindowSamples)
+        if samples.count > maxWindowSamples {
+            samples.removeFirst(samples.count - maxWindowSamples)
         }
     }
 
