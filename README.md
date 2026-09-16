@@ -24,6 +24,8 @@ Optional transcript cleanup
 Insert at cursor
 ```
 
+While you speak, an on-screen pill shows live interim transcription that grows, wraps, and scrolls as more words arrive. The pill is toggleable in General settings.
+
 ### Speech Out
 
 Select text anywhere on macOS, press a configurable hotkey, and Relay reads it aloud.
@@ -38,6 +40,8 @@ Speech preprocessing
 Local text-to-speech
 ```
 
+Relay shows an **Activity Overlay** — an on-screen capsule reflecting speaking status and the active backend. Speech is serialized through an **automatic queue**, so concurrent agent responses queue rather than overlap. A session-aware **Replay Last** action replays the focused session's last reply, else the global latest reply, else the last spoken/selected text.
+
 ### Agent Integrations
 
 Relay can integrate with coding agents such as:
@@ -47,7 +51,7 @@ Relay can integrate with coding agents such as:
 
 When the currently focused agent finishes responding, Relay can automatically read the response aloud.
 
-Background agent sessions remain silent.
+Background agent sessions remain silent — but the last-active session keeps reading when you tab away to a non-agent app, provided no other agent session is focused and nothing else is currently speaking (otherwise the response queues).
 
 ## Principles
 
@@ -59,7 +63,7 @@ Background agent sessions remain silent.
 - Replaceable STT and TTS backends
 - Graceful backend fallback
 - Integrations remain separate from the speech core
-- Conservative automatic speech: if session focus is uncertain, stay silent
+- Conservative automatic speech: a session speaks only if it is confidently focused, or it is the most-recently-active session and no other session is confidently focused; if focus is uncertain and no session was ever looked at, stay silent
 
 ## Architecture
 
@@ -68,22 +72,24 @@ Relay separates speech processing from integrations.
 ```text
                     Relay Core
 
-       Speech In                 Speech Out
-           │                         │
-       STT Router                 TTS Router
-           │                         │
-    ┌──────┼──────┐            ┌─────┼─────┐
-    │      │      │            │           │
-Parakeet Apple WhisperKit    Apple TTS   Future
-    │      │      │            │           │
-    └──────┴──────┘            └─────┬─────┘
-                                      │
-                              Speech Coordinator
-                                      ▲
-                        ┌─────────────┼─────────────┐
-                        │             │             │
-                   Selection       Claude        Codex
-                    Reader          Code
+       Speech In                    Speech Out
+           │                            │
+       STT Router                   TTS Router
+           │                            │
+     ┌─────┴─────┐          ┌──────┬────┴────┬────────┐
+     │           │          │      │         │        │
+ Parakeet     Apple     Apple TTS Kokoro  PocketTTS  Future
+     │           │          │      │         │        │
+     └─────┬─────┘          └──────┴────┬────┴────────┘
+           │                            │
+           └───────────┬────────────────┘
+                       │
+               Speech Coordinator
+                       ▲
+         ┌─────────────┼─────────────┐
+         │             │             │
+    Selection       Claude        Codex
+     Reader          Code
 ```
 
 Integrations feed normalized events into Relay. They do not implement speech themselves.
@@ -105,11 +111,20 @@ Terminal.app → tmux → Codex
 
 Terminal-specific and multiplexer-specific focus detection is handled through separate resolvers.
 
+## Settings
+
+Relay's settings are organized into tabs:
+
+- **General** — live-transcription pill, Activity Overlay style, launch-at-login
+- **Dictation** — speech-to-text behavior
+- **Keybinds** — configurable hotkeys
+- **TTS** — text-to-speech backends and voices
+- **Integrations** — coding-agent auto-read
+- **Permissions** — microphone and accessibility grants, plus microphone diagnostics (an Open Microphone Settings button and the last capture's frame count / sample rate) to help recover a stale mic grant after a rebuild
+
 ## Project Status
 
-Relay is currently in the implementation phase.
-
-Development is split into three phases:
+All three phases have shipped, covered by a green XCTest suite (~729 tests).
 
 1. **Core**
    - macOS app
@@ -137,11 +152,19 @@ Development is split into three phases:
 docs/
 └── superpowers/
     ├── specs/
-    │   └── 2026-09-11-relay-design.md
+    │   ├── 2026-09-11-relay-design.md
+    │   ├── 2026-09-14-relay-activity-overlay-design.md
+    │   ├── 2026-09-15-relay-settings-remodel-and-kokoro-tts-design.md
+    │   └── 2026-09-16-live-transcription-spike-findings.md
     └── plans/
-        ├── 2026-09-11-relay-phase-1-core.md
-        ├── 2026-09-11-relay-phase-2-agent-integrations.md
-        └── 2026-09-11-relay-phase-3-session-intelligence.md
+        ├── 2026-09-11-relay-phase-1-core-implementation-plan.md
+        ├── 2026-09-11-relay-phase-2-agent-integrations-implementation-plan.md
+        ├── 2026-09-11-relay-phase-3-session-intelligence-implementation-plan.md
+        ├── 2026-09-14-relay-phase-1-5-activity-overlay-implementation-plan.md
+        ├── 2026-09-15-relay-keybinds-smart-recorder-implementation-plan.md
+        ├── 2026-09-15-relay-phase-1-6-settings-remodel-implementation-plan.md
+        ├── 2026-09-15-relay-phase-1-7-kokoro-tts-implementation-plan.md
+        └── 2026-09-15-relay-pockettts-backend-implementation-plan.md
 ```
 
 ## Tech Stack
@@ -151,7 +174,8 @@ docs/
 - macOS
 - AVFoundation
 - macOS Accessibility APIs
-- Swift Package Manager
+- XcodeGen (`project.yml` → `Relay.xcodeproj`) and XCTest
+- FluidAudio models for STT/TTS (Parakeet, Kokoro, PocketTTS)
 
 Speech backends are abstracted so models and providers can be replaced without changing the rest of Relay.
 
