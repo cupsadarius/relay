@@ -46,7 +46,13 @@ struct HelperInstaller {
         Self.binDirectory(under: baseDirectory)
     }
 
-    private var helperURL: URL {
+    /// Where THIS installer's `installBundledHelper` writes to — `<baseDirectory>/bin/
+    /// RelayHook`. For an installer constructed with the default `baseDirectory`, this equals
+    /// `HelperInstaller.stableHelperURL()`; exposed as an instance property (rather than only
+    /// the static default) so a caller holding an injected installer — production code built
+    /// around a non-default base directory, or a test — can verify the destination this
+    /// SPECIFIC instance actually targets, instead of always the real default path.
+    var installedHelperURL: URL {
         binDirectory.appendingPathComponent(Self.helperBasename, isDirectory: false)
     }
 
@@ -70,7 +76,7 @@ struct HelperInstaller {
         try fileManager.copyItem(at: bundledURL, to: temporaryURL)
         do {
             try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: temporaryURL.path)
-            _ = try fileManager.replaceItemAt(helperURL, withItemAt: temporaryURL)
+            _ = try fileManager.replaceItemAt(installedHelperURL, withItemAt: temporaryURL)
         } catch {
             try? fileManager.removeItem(at: temporaryURL)
             throw error

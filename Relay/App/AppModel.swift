@@ -1,6 +1,16 @@
 import Observation
 @preconcurrency import AppKit
 import AVFoundation
+import os
+
+/// Thrown by `AppModel.installBundledHelperIfPresent` when, after attempting to refresh the
+/// bundled `RelayHook` helper at its stable Application Support path, there is still no valid
+/// (present and executable) helper there. Caught by `installIntegration`, which surfaces it as
+/// `.configurationError` instead of proceeding to write the agent config — a config pointed at
+/// a stable path with nothing runnable behind it would silently never fire.
+enum HelperInstallVerificationError: Error, Sendable {
+    case stableHelperUnavailable
+}
 
 @MainActor
 @Observable
@@ -109,6 +119,9 @@ final class AppModel {
     /// `helperInstaller` copies from. Injectable so tests can point it at a path that never
     /// exists (the default is a no-op guard: see `installBundledHelperIfPresent`).
     @ObservationIgnored private let bundledHelperURL: URL
+    /// Structural-only logging for `installBundledHelperIfPresent` (no paths, no file
+    /// contents — see that method's doc comment for what gets logged and when).
+    @ObservationIgnored private let installerLogger = Logger(subsystem: "dev.relaymac.Relay", category: "integrations")
     /// Ephemeral, memory-only registry of agent sessions observed from hook events. Shared with
     /// the production `AgentAutoReadCoordinator`/`FocusResolutionService` graph built in the
     /// production `convenience init()`. Exposed read-only for compact diagnostics
@@ -887,11 +900,15 @@ final class AppModel {
     }
 
     /// Installs the Relay `Stop` hook for `provider`, then refreshes its status. An installer
-    /// failure is caught and surfaced as `.configurationError`; it never crashes the app, and
-    /// never logs the underlying error verbatim.
+    /// failure — including the bundled helper not being reachable at its stable path (see
+    /// `installBundledHelperIfPresent`) — is caught and surfaced as `.configurationError`
+    /// BEFORE the per-provider installer writes the agent config; it never crashes the app,
+    /// and never logs the underlying error verbatim. This ordering matters: the config must
+    /// never point at a stable path with nothing runnable there, which would silently never
+    /// fire while `status()` still reports "installed".
     func installIntegration(_ provider: AgentProvider) {
-        installBundledHelperIfPresent()
         do {
+            try installBundledHelperIfPresent()
             switch provider {
             case .claudeCode: try claudeCodeInstaller.install()
             case .codex: try codexInstaller.install()
@@ -909,12 +926,37 @@ final class AppModel {
     ///
     /// Guarded on `bundledHelperURL` actually existing: in unit tests (and any host process
     /// that isn't the real, built app bundle) it normally doesn't, so this is a silent no-op
-    /// there rather than a hard dependency on a real app bundle being present. A copy failure
-    /// is swallowed rather than surfaced — this is a best-effort refresh, and the per-provider
-    /// installer that follows is what actually determines install success or failure.
-    private func installBundledHelperIfPresent() {
+    /// there rather than a hard dependency on a real app bundle being present.
+    ///
+    /// When a bundled helper DOES exist, the copy is attempted and the destination is then
+    /// re-verified with `FileManager.isExecutableFile`. A copy failure is NOT always fatal: if
+    /// a valid helper from an earlier install is already sitting at the stable path,
+    /// `installBundledHelper` never touches it on failure (see that type's doc comment), so
+    /// the existing, still-working install is left alone — logged structurally, not surfaced.
+    /// It's only fatal when, after the attempt, there is NO valid helper at the stable path at
+    /// all: writing the agent config next would then point at a path nothing can ever run
+    /// from, so this throws instead, aborting `installIntegration` before that write happens.
+    private func installBundledHelperIfPresent() throws {
         guard FileManager.default.fileExists(atPath: bundledHelperURL.path) else { return }
-        try? helperInstaller.installBundledHelper(from: bundledHelperURL)
+
+        let fileManager = FileManager.default
+        let installedHelperPath = helperInstaller.installedHelperURL.path
+        let hadValidStableHelperBefore = fileManager.isExecutableFile(atPath: installedHelperPath)
+
+        do {
+            try helperInstaller.installBundledHelper(from: bundledHelperURL)
+        } catch {
+            if hadValidStableHelperBefore {
+                installerLogger.log("bundled RelayHook helper refresh failed; a previously installed helper is still present")
+            } else {
+                installerLogger.log("bundled RelayHook helper refresh failed")
+            }
+        }
+
+        guard fileManager.isExecutableFile(atPath: installedHelperPath) else {
+            installerLogger.log("stable RelayHook helper unavailable after refresh; aborting hook install")
+            throw HelperInstallVerificationError.stableHelperUnavailable
+        }
     }
 
     /// Removes the Relay-owned `Stop` hook for `provider`, then refreshes its status. An
