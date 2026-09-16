@@ -16,6 +16,13 @@ final class ParakeetBackendTests: XCTestCase {
         XCTAssertTrue(backend.capabilities.contains(.fullyOffline))
     }
 
+    func testCapabilitiesDoNotAdvertiseMultilingual() {
+        let backend = ParakeetBackend(engine: FakeParakeetEngine())
+
+        XCTAssertFalse(backend.capabilities.contains(.multilingual))
+        XCTAssertTrue(backend.capabilities.contains(.fullyOffline))
+    }
+
     func testAvailabilityIsModelNotDownloadedWhenModelsAreAbsent() async {
         let engine = FakeParakeetEngine()
         engine.modelsPresent = false
