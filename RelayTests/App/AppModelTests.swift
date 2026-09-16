@@ -427,11 +427,12 @@ final class AppModelTests: XCTestCase {
 
     /// Hardens against a latent trap: tier 2 gates on `integrationManager.latestResponse != nil`
     /// but actually speaks via `IntegrationManager.speakLatest()`, which reads its own internal
-    /// `LatestAgentResponseStore`. Today those two can't diverge, but if a future change ever
-    /// clears the store independently of `latestResponse`, the gate would read true while
-    /// `speakLatest()` finds nothing to speak. Simulated here by driving `latestResponse` to
-    /// non-nil through the real consume loop, then clearing the backing store out from under it —
-    /// `replayLast()` must fall through to tier 3 rather than speaking nothing.
+    /// `LatestAgentResponseStore`. `latestResponse` is now a single-writer projection of that same
+    /// store (see `LatestAgentResponseStore.subscribe(_:)`), so clearing the store — even directly,
+    /// bypassing the manager's own consume loop, as done here — clears the gate too; `replayLast()`
+    /// falls through to tier 3 both because `speakLatest()` finds nothing AND because the gate
+    /// itself has already gone false. Simulated here by driving `latestResponse` to non-nil through
+    /// the real consume loop, then clearing the backing store out from under it.
     func testReplayLastFallsBackToTierThreeWhenGlobalLatestGateIsTrueButStoreHasNothingToSpeak() async {
         let registry = AgentSessionRegistry()
         _ = await registry.upsert(
@@ -461,8 +462,9 @@ final class AppModelTests: XCTestCase {
         ))
         await waitUntil { drivenManager.latestResponse != nil }
         drivenManager.stop()
-        // Force the divergence: `latestResponse` still reports a global latest exists, but the
-        // store backing `speakLatest()` has since been cleared out from under it.
+        // Clear the store directly, bypassing the manager's own consume loop entirely (stopped
+        // just above) — `latestResponse` is a projection of `store`, so this drives the gate back
+        // to `nil` on its own, same as `speakLatest()`'s own `store.get()` finding nothing.
         await store.clear()
 
         let hotkeys = FakeHotkeyManager()

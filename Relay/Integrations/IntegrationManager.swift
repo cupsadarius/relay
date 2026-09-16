@@ -7,8 +7,9 @@ import os
 /// reflects per-provider runtime status on the MainActor for UI observation.
 ///
 /// The event-consumption loop itself never runs on the MainActor: decoding and storing happen
-/// off it, and only the resulting `status`/`latestResponse` bookkeeping hops there. This keeps a
-/// burst of hook traffic from ever blocking the UI.
+/// off it, and only the resulting `status` bookkeeping and the `latestResponse` gate (a
+/// projection of `store`, see `start()`) hop there. This keeps a burst of hook traffic from ever
+/// blocking the UI.
 ///
 /// `speakLatest()` remains an explicit, user-initiated action (submitted as `.userRequested`)
 /// wired up by the UI. This manager never submits speech automatically on its own: every
@@ -21,6 +22,11 @@ import os
 @Observable
 final class IntegrationManager {
     private(set) var status: [AgentProvider: IntegrationStatus]
+    /// The gate `AppModel` reads to decide whether a "replay last" global-latest tier is
+    /// available. This is a pure projection of `store`: it is written ONLY by the subscription
+    /// registered in `start()` (see `LatestAgentResponseStore.subscribe(_:)`), never assigned
+    /// directly anywhere else, so it can never diverge from whatever `store.get()` — and
+    /// therefore `speakLatest()` — would actually speak.
     private(set) var latestResponse: AgentResponseEvent?
 
     @ObservationIgnored nonisolated private let events: AsyncStream<HookEnvelope>
@@ -28,9 +34,10 @@ final class IntegrationManager {
     @ObservationIgnored nonisolated private let store: LatestAgentResponseStore
     @ObservationIgnored nonisolated private let preprocessor: RulesSpeechPreprocessor
     @ObservationIgnored private let speechCoordinator: any SpeechCoordinating
-    /// Invoked once per successfully-decoded event, after `latestResponse`/`status` have been
-    /// updated. Lets a caller (Phase 3's `AgentAutoReadCoordinator`) apply focus-gated auto-read
-    /// semantics without this manager knowing anything about focus or sessions itself.
+    /// Invoked once per successfully-decoded event, after `status` has been updated and `store`
+    /// (and therefore the `latestResponse` gate projected from it) has caught up. Lets a caller
+    /// (Phase 3's `AgentAutoReadCoordinator`) apply focus-gated auto-read semantics without this
+    /// manager knowing anything about focus or sessions itself.
     @ObservationIgnored private let onResponse: @Sendable (AgentResponseEvent) async -> Void
     @ObservationIgnored nonisolated private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "integrations")
     @ObservationIgnored nonisolated private let diagnostics: IntegrationDiagnosticsLog
@@ -61,6 +68,13 @@ final class IntegrationManager {
     func start() {
         guard consumeTask == nil else { return }
         consumeTask = Task {
+            // Subscribing before consuming guarantees this manager's `latestResponse` projection
+            // is registered (and primed with the store's current value) before the first
+            // decoded event could possibly reach `store.set(_:)` below — no window where an
+            // early event updates `store` but not yet the gate.
+            await store.subscribe { [weak self] newValue in
+                self?.latestResponse = newValue
+            }
             await self.consume()
         }
     }
@@ -107,10 +121,12 @@ final class IntegrationManager {
         }
     }
 
-    /// Updates `latestResponse`/`status` for a successfully decoded `event`, then publishes it
-    /// through `onResponse`. This manager never submits speech on this path itself.
+    /// Updates `status` for a successfully decoded `event`, then publishes it through
+    /// `onResponse`. Does NOT touch `latestResponse` — that gate is a projection of `store`
+    /// (see `start()`/`LatestAgentResponseStore.subscribe(_:)`) and updates on its own once
+    /// `consume()`'s `store.set(event)` call above returns. This manager never submits speech on
+    /// this path itself.
     private func recordActive(_ event: AgentResponseEvent) async {
-        latestResponse = event
         status[event.provider] = .active(lastEventAt: event.capturedAt)
 
         await onResponse(event)
