@@ -28,12 +28,23 @@ struct AgentProcessContextCapture: AgentProcessContextCapturing {
 }
 
 /// Publishes decoded `AgentResponseEvent`s into session intelligence (`AgentSessionRegistry`) and,
-/// only when auto-read is enabled AND the resolved focus is a confidently-focused
-/// (`.focused`/`.high`) session, submits exactly one `.automatic` `SpeechRequest`.
+/// only when auto-read is enabled, decides whether the producing session (`S`) should be spoken
+/// (mode `.automatic`).
 ///
-/// Every other outcome — auto-read disabled, `.notFocused`, `.unknown`, or any confidence below
-/// `.high` — stays silent, but the session is still upserted into the registry so a background
-/// response remains available for manual "Speak Latest".
+/// `S` speaks if EITHER:
+///  1. `S` is confidently focused (`.focused` + `.high`), or
+///  2. `S` is the most-recently-active agent session AND no other agent session is currently
+///     confidently focused — even if `S` itself isn't focused (the user tabbed away to a
+///     non-agent app), the last session the user was in keeps reading.
+///
+/// "Most-recently-active" (`lastActiveSessionID`) is actor state updated whenever a session is
+/// found confidently focused, or whenever a session is actually spoken — never merely upserted.
+/// With no established last-active session yet and nobody focused, the coordinator stays silent
+/// (conservative: never auto-read a session the user never looked at).
+///
+/// Every other outcome — auto-read disabled, or a different session confidently focused while
+/// `S` isn't the last-active one — stays silent, but the session is still upserted into the
+/// registry so a background response remains available for manual "Speak Latest".
 actor AgentAutoReadCoordinator {
     private let registry: AgentSessionRegistry
     private let processContext: any AgentProcessContextCapturing
@@ -48,6 +59,10 @@ actor AgentAutoReadCoordinator {
     private let speech: any SpeechSubmitting & Sendable
     private let autoReadEnabled: @Sendable () async -> Bool
     private let diagnostics: IntegrationDiagnosticsLog
+    /// The most-recently-active agent session: the last one found confidently focused, or the
+    /// last one actually auto-spoken (whichever happened most recently). `nil` until the first
+    /// time either of those occurs.
+    private var lastActiveSessionID: AgentSessionID?
 
     init(
         registry: AgentSessionRegistry,
@@ -80,18 +95,36 @@ actor AgentAutoReadCoordinator {
             diagnostics.append(stage: "coordinator", outcome: "silent", detail: "auto-read-disabled")
             return
         }
-        let decision = await focus.resolve(session: session)
+
+        let sessions = await registry.sessions()
+        let focused = await focus.focusedSession(among: sessions)
         diagnostics.append(
             stage: "coordinator",
             outcome: "focus-decision",
-            detail: "state=\(decision.state.rawValue) confidence=\(Self.confidenceLabel(decision.confidence)) resolver=\(decision.resolverID) reason=\(decision.reason)"
+            detail: "focused=\(focused.map { Self.label($0.id) } ?? "none") lastActive=\(lastActiveSessionID.map(Self.label) ?? "none")"
         )
-        guard decision.state == .focused, decision.confidence == .high else {
-            diagnostics.append(stage: "coordinator", outcome: "silent", detail: "state/confidence not focused+high")
+
+        if let focused, focused.id == session.id {
+            lastActiveSessionID = session.id
+            await speak(session: session, event: event, reason: "focused")
             return
         }
 
-        diagnostics.append(stage: "coordinator", outcome: "spoke", detail: "provider=\(event.provider.rawValue)")
+        if focused == nil, lastActiveSessionID == session.id {
+            await speak(session: session, event: event, reason: "last-active")
+            return
+        }
+
+        if let focused {
+            // A different session now owns focus; the handoff means subsequent background
+            // responses should be judged against that session, not a stale last-active one.
+            lastActiveSessionID = focused.id
+        }
+        diagnostics.append(stage: "coordinator", outcome: "silent", detail: "reason=not-focused-not-last-active")
+    }
+
+    private func speak(session: AgentSession, event: AgentResponseEvent, reason: String) async {
+        diagnostics.append(stage: "coordinator", outcome: "spoke", detail: "provider=\(event.provider.rawValue) reason=\(reason)")
         let source: SpeechSource = event.provider == .claudeCode ? .claudeCode : .codex
         let request = SpeechRequest(
             text: preprocess(event.text),
@@ -102,13 +135,7 @@ actor AgentAutoReadCoordinator {
         try? await speech.speak(request)
     }
 
-    /// Structural label recorded in `IntegrationDiagnosticsLog` entries. Never any raw score —
-    /// only this fixed, privacy-safe case name.
-    private static func confidenceLabel(_ confidence: FocusConfidence) -> String {
-        switch confidence {
-        case .low: "low"
-        case .medium: "medium"
-        case .high: "high"
-        }
+    private static func label(_ id: AgentSessionID) -> String {
+        "\(id.provider.rawValue):\(id.providerSessionID)"
     }
 }

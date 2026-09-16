@@ -3,10 +3,14 @@ import XCTest
 
 @MainActor
 final class AgentAutoReadCoordinatorTests: XCTestCase {
-    func testFocusedHighResponseSpeaksAutomatically() async throws {
+    func testFocusedSessionSpeaksAutomatically() async throws {
         let speech = RecordingSpeechSink()
-        let coordinator = makeCoordinator(focus: .focused(resolverID: "tmux", reason: "exact pane"), speech: speech, autoRead: true)
-        await coordinator.handle(makeAutoReadEvent(text: "**Done.**"))
+        let focus = MutableStubFocusResolver()
+        let coordinator = makeCoordinator(focus: focus, speech: speech, autoRead: true)
+        focus.focusedSessionID = .init(provider: .claudeCode, providerSessionID: "a")
+
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "a", text: "**Done.**"))
+
         XCTAssertEqual(speech.requests.count, 1)
         XCTAssertEqual(speech.requests[0].mode, .automatic)
         XCTAssertEqual(speech.requests[0].sessionID, "claude-code:a")
@@ -14,71 +18,122 @@ final class AgentAutoReadCoordinatorTests: XCTestCase {
 
     func testBackgroundResponseStaysSilentButRegistryKeepsIt() async throws {
         let speech = RecordingSpeechSink()
-        let harness = makeCoordinatorHarness(focus: .notFocused(resolverID: "tmux", reason: "other pane"), speech: speech, autoRead: true)
-        await harness.coordinator.handle(makeAutoReadEvent(text: "background"))
+        let focus = MutableStubFocusResolver()
+        let harness = makeCoordinatorHarness(focus: focus, speech: speech, autoRead: true)
+        // Nobody focused yet and "a" has never been the last-active session: stays silent.
+        await harness.coordinator.handle(makeAutoReadEvent(providerSessionID: "a", text: "background"))
+
         XCTAssertTrue(speech.requests.isEmpty)
         let sessions = await harness.registry.sessions()
         XCTAssertEqual(sessions.first?.latestResponse.text, "background")
     }
 
-    func testUnknownFocusStaysSilent() async {
+    func testNobodyFocusedAndSessionNeverLastActiveStaysSilent() async {
         let speech = RecordingSpeechSink()
-        let coordinator = makeCoordinator(focus: .unknown(resolverID: "generic", reason: "ambiguous"), speech: speech, autoRead: true)
-        await coordinator.handle(makeAutoReadEvent(text: "done"))
+        let focus = MutableStubFocusResolver() // nobody focused
+        let coordinator = makeCoordinator(focus: focus, speech: speech, autoRead: true)
+
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "a", text: "done"))
+
         XCTAssertTrue(speech.requests.isEmpty)
     }
 
     func testDisabledAutoReadSkipsFocusAndSpeech() async {
         let speech = RecordingSpeechSink()
-        let coordinator = makeCoordinator(focus: .focused(resolverID: "tmux", reason: "exact pane"), speech: speech, autoRead: false)
-        await coordinator.handle(makeAutoReadEvent(text: "done"))
+        let focus = MutableStubFocusResolver()
+        focus.focusedSessionID = .init(provider: .claudeCode, providerSessionID: "a")
+        let coordinator = makeCoordinator(focus: focus, speech: speech, autoRead: false)
+
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "a", text: "done"))
+
         XCTAssertTrue(speech.requests.isEmpty)
+    }
+
+    // MARK: - Last-active handoff (rule 2)
+
+    /// S is confidently focused (rule 1), then focus is lost entirely (the user tabs to a
+    /// non-agent app). S, being the last-active session, keeps reading.
+    func testSessionKeepsReadingAsLastActiveAfterFocusIsLost() async {
+        let speech = RecordingSpeechSink()
+        let focus = MutableStubFocusResolver()
+        let sessionA = AgentSessionID(provider: .claudeCode, providerSessionID: "a")
+        let coordinator = makeCoordinator(focus: focus, speech: speech, autoRead: true)
+
+        focus.focusedSessionID = sessionA
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "a", text: "first"))
+        XCTAssertEqual(speech.requests.count, 1)
+
+        focus.focusedSessionID = nil // user tabbed away to a non-agent app
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "a", text: "second"))
+
+        XCTAssertEqual(speech.requests.count, 2)
+        XCTAssertEqual(speech.requests[1].sessionID, "claude-code:a")
+    }
+
+    /// A different session becomes confidently focused: the original background session stays
+    /// silent, and focus ownership (last-active) hands off to the newly-focused session.
+    func testDifferentFocusedSessionSilencesBackgroundAndBecomesLastActive() async {
+        let speech = RecordingSpeechSink()
+        let focus = MutableStubFocusResolver()
+        let sessionA = AgentSessionID(provider: .claudeCode, providerSessionID: "a")
+        let sessionB = AgentSessionID(provider: .claudeCode, providerSessionID: "b")
+        let coordinator = makeCoordinator(focus: focus, speech: speech, autoRead: true)
+
+        focus.focusedSessionID = sessionA
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "a", text: "first"))
+        XCTAssertEqual(speech.requests.count, 1)
+
+        // Register B so it's a candidate the focus resolver can return.
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "b", text: "b-background"))
+
+        // Now B becomes confidently focused; A's next response must stay silent...
+        focus.focusedSessionID = sessionB
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "a", text: "a-again"))
+        XCTAssertEqual(speech.requests.count, 1, "A must stay silent while B is confidently focused")
+
+        // ...and the handoff means B - not A - now keeps reading once focus is lost entirely.
+        focus.focusedSessionID = nil
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "b", text: "b-again"))
+        XCTAssertEqual(speech.requests.count, 2)
+        XCTAssertEqual(speech.requests[1].sessionID, "claude-code:b")
     }
 
     // MARK: - Diagnostics
 
-    func testFocusedHighConfidenceRecordsSpokeDiagnosticsEntry() async throws {
+    func testFocusedSessionRecordsSpokeDiagnosticsEntry() async throws {
         let speech = RecordingSpeechSink()
         let diagnostics = IntegrationDiagnosticsLog()
-        let coordinator = makeCoordinator(
-            focus: .focused(resolverID: "tmux", reason: "exact pane"),
-            speech: speech,
-            autoRead: true,
-            diagnostics: diagnostics
-        )
-        await coordinator.handle(makeAutoReadEvent(text: "**Done.**"))
+        let focus = MutableStubFocusResolver()
+        focus.focusedSessionID = .init(provider: .claudeCode, providerSessionID: "a")
+        let coordinator = makeCoordinator(focus: focus, speech: speech, autoRead: true, diagnostics: diagnostics)
+
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "a", text: "**Done.**"))
 
         let entries = diagnostics.snapshot()
-        XCTAssertTrue(entries.contains { $0.stage == "coordinator" && $0.outcome == "spoke" })
+        XCTAssertTrue(entries.contains { $0.stage == "coordinator" && $0.outcome == "spoke" && $0.detail.contains("reason=focused") })
         XCTAssertTrue(entries.contains { $0.stage == "coordinator" && $0.outcome == "session-upserted" })
     }
 
     func testAutoReadDisabledRecordsSilentDiagnosticsEntry() async {
         let speech = RecordingSpeechSink()
         let diagnostics = IntegrationDiagnosticsLog()
-        let coordinator = makeCoordinator(
-            focus: .focused(resolverID: "tmux", reason: "exact pane"),
-            speech: speech,
-            autoRead: false,
-            diagnostics: diagnostics
-        )
-        await coordinator.handle(makeAutoReadEvent(text: "done"))
+        let focus = MutableStubFocusResolver()
+        let coordinator = makeCoordinator(focus: focus, speech: speech, autoRead: false, diagnostics: diagnostics)
+
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "a", text: "done"))
 
         let silent = diagnostics.snapshot().first { $0.stage == "coordinator" && $0.outcome == "silent" }
         XCTAssertNotNil(silent)
         XCTAssertEqual(silent?.detail, "auto-read-disabled")
     }
 
-    func testUnknownFocusRecordsFocusDecisionThenSilentDiagnosticsEntries() async {
+    func testNobodyFocusedRecordsFocusDecisionThenSilentDiagnosticsEntries() async {
         let speech = RecordingSpeechSink()
         let diagnostics = IntegrationDiagnosticsLog()
-        let coordinator = makeCoordinator(
-            focus: .unknown(resolverID: "generic", reason: "ambiguous"),
-            speech: speech,
-            autoRead: true,
-            diagnostics: diagnostics
-        )
-        await coordinator.handle(makeAutoReadEvent(text: "done"))
+        let focus = MutableStubFocusResolver()
+        let coordinator = makeCoordinator(focus: focus, speech: speech, autoRead: true, diagnostics: diagnostics)
+
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "a", text: "done"))
 
         let entries = diagnostics.snapshot()
         let focusDecisionIndex = entries.firstIndex { $0.outcome == "focus-decision" }
@@ -90,35 +145,44 @@ final class AgentAutoReadCoordinatorTests: XCTestCase {
             // at a lower index.
             XCTAssertLessThan(silentIndex, focusDecisionIndex)
         }
-        XCTAssertTrue(entries[focusDecisionIndex!].detail.contains("state=unknown"))
-        XCTAssertTrue(entries[focusDecisionIndex!].detail.contains("confidence=low"))
-        XCTAssertTrue(entries[focusDecisionIndex!].detail.contains("resolver=generic"))
-        XCTAssertTrue(entries[focusDecisionIndex!].detail.contains("reason=ambiguous"))
+        XCTAssertTrue(entries[focusDecisionIndex!].detail.contains("focused=none"))
+        XCTAssertTrue(entries[focusDecisionIndex!].detail.contains("lastActive=none"))
+        XCTAssertEqual(entries[silentIndex!].detail, "reason=not-focused-not-last-active")
     }
 
-    func testFocusDecisionDiagnosticsEntryIncludesResolverAndReason() async throws {
+    func testDifferentSessionFocusedDiagnosticsEntryRecordsBothIDs() async throws {
         let speech = RecordingSpeechSink()
         let diagnostics = IntegrationDiagnosticsLog()
-        let coordinator = makeCoordinator(
-            focus: .notFocused(resolverID: "tmux", reason: "other pane"),
-            speech: speech,
-            autoRead: true,
-            diagnostics: diagnostics
-        )
-        await coordinator.handle(makeAutoReadEvent(text: "done"))
+        let focus = MutableStubFocusResolver()
+        let coordinator = makeCoordinator(focus: focus, speech: speech, autoRead: true, diagnostics: diagnostics)
 
-        let entries = diagnostics.snapshot()
-        let focusDecision = entries.first { $0.outcome == "focus-decision" }
-        XCTAssertEqual(
-            focusDecision?.detail,
-            "state=notFocused confidence=high resolver=tmux reason=other pane"
-        )
+        focus.focusedSessionID = .init(provider: .claudeCode, providerSessionID: "a")
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "a", text: "first"))
+
+        focus.focusedSessionID = .init(provider: .claudeCode, providerSessionID: "b")
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "b", text: "second"))
+        diagnostics.clear()
+
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "a", text: "third"))
+
+        let focusDecision = diagnostics.snapshot().first { $0.outcome == "focus-decision" }
+        XCTAssertEqual(focusDecision?.detail, "focused=claude-code:b lastActive=claude-code:b")
     }
 }
 
-private struct StubSessionFocusResolver: SessionFocusResolving {
-    let decision: FocusDecision
-    func resolve(session: AgentSession) async -> FocusDecision { decision }
+private final class MutableStubFocusResolver: SessionFocusResolving, @unchecked Sendable {
+    var focusedSessionID: AgentSessionID?
+
+    func resolve(session: AgentSession) async -> FocusDecision {
+        session.id == focusedSessionID
+            ? .focused(resolverID: "stub", reason: "stubbed focused session")
+            : .unknown(resolverID: "stub", reason: "not the stubbed focused session")
+    }
+
+    func focusedSession(among sessions: [AgentSession]) async -> AgentSession? {
+        guard let focusedSessionID else { return nil }
+        return sessions.first { $0.id == focusedSessionID }
+    }
 }
 
 private struct StubProcessContextCapture: AgentProcessContextCapturing {
@@ -143,7 +207,7 @@ private struct AutoReadHarness {
 
 @MainActor
 private func makeCoordinatorHarness(
-    focus: FocusDecision,
+    focus: MutableStubFocusResolver,
     speech: RecordingSpeechSink,
     autoRead: Bool,
     diagnostics: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog()
@@ -152,7 +216,7 @@ private func makeCoordinatorHarness(
     let coordinator = AgentAutoReadCoordinator(
         registry: registry,
         processContext: StubProcessContextCapture(),
-        focus: StubSessionFocusResolver(decision: focus),
+        focus: focus,
         preprocess: { $0.replacingOccurrences(of: "**", with: "") },
         speech: speech,
         autoReadEnabled: { autoRead },
@@ -163,7 +227,7 @@ private func makeCoordinatorHarness(
 
 @MainActor
 private func makeCoordinator(
-    focus: FocusDecision,
+    focus: MutableStubFocusResolver,
     speech: RecordingSpeechSink,
     autoRead: Bool,
     diagnostics: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog()
@@ -171,9 +235,9 @@ private func makeCoordinator(
     makeCoordinatorHarness(focus: focus, speech: speech, autoRead: autoRead, diagnostics: diagnostics).coordinator
 }
 
-private func makeAutoReadEvent(text: String) -> AgentResponseEvent {
+private func makeAutoReadEvent(providerSessionID: String = "a", text: String) -> AgentResponseEvent {
     .init(
-        id: UUID(), provider: .claudeCode, providerSessionID: "a", turnID: nil,
+        id: UUID(), provider: .claudeCode, providerSessionID: providerSessionID, turnID: nil,
         text: text, cwd: "/tmp/repo", transcriptPath: nil,
         parentPID: 900, environment: [:], capturedAt: Date()
     )
