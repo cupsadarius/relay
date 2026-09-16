@@ -103,6 +103,35 @@ final class AppModelTests: XCTestCase {
         withExtendedLifetime(model) {}
     }
 
+    /// Regression for the stale menu-bar label bug: the pill's Stop button routes through
+    /// `ActivityOverlayActionDispatcher` to `SpeechCoordinator.stop(sessionID:)`, and the real
+    /// (non-fake) coordinator hides the overlay itself by calling `overlay.cancel(sessionID:)` —
+    /// it never touches `AppModel.statusText`. `FakeSpeechCoordinator.stop(sessionID:)` only
+    /// records the call, so this drives the same overlay transition directly to exercise what
+    /// happens once the overlay actually hides. Before the fix, the speak methods left a
+    /// "Speaking…"-style string sitting in `statusText`, which `activityStatusText` fell back to
+    /// once `.hidden`; with those success-path assignments removed, the fallback must be the
+    /// clean idle status instead.
+    func testActivityStatusTextReturnsToIdleAfterOverlayHidesFollowingPillStop() {
+        let overlayModel = ActivityOverlayModel()
+        let speech = FakeSpeechCoordinator()
+        let model = makeModel(speech: speech, overlayModel: overlayModel)
+        let sessionID = UUID()
+
+        overlayModel.begin(sessionID: sessionID)
+        overlayModel.speak(sessionID: sessionID)
+        XCTAssertEqual(model.activityStatusText, "Speaking…")
+
+        speech.stop(sessionID: sessionID)
+        overlayModel.cancel(sessionID: sessionID)
+
+        XCTAssertTrue(overlayModel.state.isHidden)
+        XCTAssertEqual(speech.stoppedSessionIDs, [sessionID])
+        XCTAssertNotEqual(model.activityStatusText, "Speaking…")
+        XCTAssertEqual(model.activityStatusText, "Ready")
+        withExtendedLifetime(model) {}
+    }
+
     func testActivityStatusTextReflectsErrorOverlayStateMessage() {
         let overlayModel = ActivityOverlayModel()
         let model = makeModel(overlayModel: overlayModel)
@@ -142,7 +171,13 @@ final class AppModelTests: XCTestCase {
                 sessionID: nil
             ),
         ])
-        XCTAssertEqual(model.statusText, "Speaking selected text")
+        // The success path no longer sets a "Speaking…" `statusText`: the overlay's live state
+        // drives `activityStatusText` while speech is in flight, and a stale imperative string
+        // here is exactly what would survive after the overlay hides once speech ends (e.g. via
+        // the pill's Stop button). With no overlay transition driven by this fake, `statusText`
+        // should remain at its clean default.
+        XCTAssertEqual(model.statusText, "Ready")
+        XCTAssertEqual(model.activityStatusText, "Ready")
         XCTAssertEqual(model.diagnosticsEntries.first?.event, .ttsSubmitted)
     }
 
@@ -447,7 +482,9 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(speech.requests.first?.source, .testVoice)
         XCTAssertEqual(speech.requests.first?.mode, .userRequested)
         XCTAssertFalse(speech.requests.first?.text.isEmpty ?? true)
-        XCTAssertEqual(model.statusText, "Speaking test voice")
+        // Same rationale as `testReadSelectionPressedPreprocessesAndSpeaksUserRequest`: the
+        // success path leaves `statusText` alone so it can never go stale once the overlay hides.
+        XCTAssertEqual(model.statusText, "Ready")
         XCTAssertEqual(model.diagnosticsEntries.first?.event, .ttsSubmitted)
     }
 

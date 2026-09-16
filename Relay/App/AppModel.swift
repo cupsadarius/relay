@@ -640,7 +640,6 @@ final class AppModel {
             )
             try await speechCoordinator.speak(request)
             diagnostics.record(.ttsSubmitted)
-            statusText = "Speaking selected text"
         } catch {
             diagnostics.record(error is SelectionReadingError ? .selectionUnavailable : .ttsFailed)
             statusText = error.localizedDescription
@@ -688,7 +687,6 @@ final class AppModel {
         do {
             try await integrationManager.speakResponse(session.latestResponse)
             diagnostics.record(.ttsSubmitted)
-            statusText = "Replaying focused session's last reply"
             integrationDiagnosticsLog.append(
                 stage: "replay-last",
                 outcome: "focused-session",
@@ -713,7 +711,6 @@ final class AppModel {
         do {
             guard try await integrationManager.speakLatest() else { return false }
             diagnostics.record(.ttsSubmitted)
-            statusText = "Replaying latest agent reply"
             integrationDiagnosticsLog.append(stage: "replay-last", outcome: "global-latest", detail: "")
             return true
         } catch {
@@ -729,7 +726,6 @@ final class AppModel {
         do {
             try await speechCoordinator.replayLast()
             diagnostics.record(.ttsReplayed)
-            statusText = "Replaying last speech"
             integrationDiagnosticsLog.append(stage: "replay-last", outcome: "last-spoken", detail: "")
         } catch {
             diagnostics.record(.ttsFailed)
@@ -753,7 +749,6 @@ final class AppModel {
         do {
             try await speechCoordinator.speak(request)
             diagnostics.record(.ttsSubmitted)
-            statusText = "Speaking test voice"
         } catch {
             diagnostics.record(.ttsFailed)
             statusText = error.localizedDescription
@@ -876,7 +871,6 @@ final class AppModel {
         do {
             try await integrationManager.speakLatest()
             diagnostics.record(.ttsSubmitted)
-            statusText = "Speaking latest agent response"
         } catch {
             diagnostics.record(.ttsFailed)
             statusText = "Could not speak the latest agent response."

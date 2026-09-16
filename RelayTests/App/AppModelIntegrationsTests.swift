@@ -207,7 +207,10 @@ final class AppModelIntegrationsTests: XCTestCase {
         XCTAssertEqual(speech.requests.count, 1)
         XCTAssertEqual(speech.requests.first?.source, .claudeCode)
         XCTAssertEqual(speech.requests.first?.mode, .userRequested)
-        XCTAssertEqual(model.statusText, "Speaking latest agent response")
+        // The success path no longer sets a "Speaking…" `statusText` — the overlay's live state
+        // drives the menu label while speech is in flight, so this leaves `statusText` at its
+        // clean default rather than a string that would go stale once speech ends.
+        XCTAssertEqual(model.statusText, "Ready")
     }
 
     func testSpeakLatestAgentResponseFailureIsCaughtAndSurfacedWithoutCrashing() async {
