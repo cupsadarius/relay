@@ -76,17 +76,24 @@ final class TTSRouter {
     }
 
     func stop() {
-        activeBackend?.stop()
+        // Prefer the in-flight routing pair: during a STREAMING backend's
+        // `speak(...)`, that call doesn't return until playback finishes, so
+        // `activeBackend`/`activeSessionID` aren't assigned yet even though
+        // the backend is the one actually playing. `routingBackend`/
+        // `routingSessionID` are left untouched here — the in-flight
+        // `speak(...)`'s own `defer` clears them once it returns.
+        (routingBackend ?? activeBackend)?.stop()
         activeBackend = nil
         activeSessionID = nil
     }
 
-    /// No-ops unless `sessionID` matches the session currently being routed,
-    /// so a stale Interactive Stop cannot cut off replacement speech. Returns
-    /// whether the ID matched and a stop was actually issued.
+    /// No-ops unless `sessionID` matches the session currently being routed
+    /// or already active, so a stale Interactive Stop cannot cut off
+    /// replacement speech. Returns whether the ID matched and a stop was
+    /// actually issued.
     @discardableResult
     func stop(sessionID: UUID) -> Bool {
-        guard activeSessionID == sessionID else { return false }
+        guard routingSessionID == sessionID || activeSessionID == sessionID else { return false }
         stop()
         return true
     }

@@ -159,6 +159,79 @@ final class TTSRouterTests: XCTestCase {
         XCTAssertEqual(backend.stopCount, 1)
     }
 
+    /// Regression test: a STREAMING backend's `speak(...)` does not return
+    /// until playback finishes, so while it is in flight the router has only
+    /// set `routingBackend`/`routingSessionID` (not `activeBackend`/
+    /// `activeSessionID`, which are assigned after `speak` returns). Stop
+    /// must still be able to reach the in-flight backend.
+    func testStopWithSessionIDStopsInFlightStreamingBackend() async throws {
+        let backend = FakeTTSBackend(id: "pocket")
+        backend.suspendUntilStopped = true
+        let router = makeRouter([backend])
+        let sessionID = UUID()
+        var reachedSuspension = false
+        backend.duringSpeak = { _ in reachedSuspension = true }
+
+        let speakTask = Task { @MainActor in
+            try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
+        }
+        while !reachedSuspension {
+            await Task.yield()
+        }
+
+        let didStop = router.stop(sessionID: sessionID)
+
+        XCTAssertTrue(didStop)
+        XCTAssertEqual(backend.stopCount, 1)
+        try await speakTask.value
+    }
+
+    func testStopWithSessionIDDoesNotStopInFlightBackendForNonMatchingSession() async throws {
+        let backend = FakeTTSBackend(id: "pocket")
+        backend.suspendUntilStopped = true
+        let router = makeRouter([backend])
+        let sessionID = UUID()
+        var reachedSuspension = false
+        backend.duringSpeak = { _ in reachedSuspension = true }
+
+        let speakTask = Task { @MainActor in
+            try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
+        }
+        while !reachedSuspension {
+            await Task.yield()
+        }
+
+        let didStop = router.stop(sessionID: UUID())
+
+        XCTAssertFalse(didStop)
+        XCTAssertEqual(backend.stopCount, 0)
+
+        // Clean up: stop the real session so the suspended speak() completes.
+        router.stop(sessionID: sessionID)
+        try await speakTask.value
+    }
+
+    func testStopRoutesToInFlightBackendDuringStream() async throws {
+        let backend = FakeTTSBackend(id: "pocket")
+        backend.suspendUntilStopped = true
+        let router = makeRouter([backend])
+        let sessionID = UUID()
+        var reachedSuspension = false
+        backend.duringSpeak = { _ in reachedSuspension = true }
+
+        let speakTask = Task { @MainActor in
+            try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
+        }
+        while !reachedSuspension {
+            await Task.yield()
+        }
+
+        router.stop()
+
+        XCTAssertEqual(backend.stopCount, 1)
+        try await speakTask.value
+    }
+
     func testOnlyActiveBackendAndSessionEventsAreForwarded() async throws {
         let first = FakeTTSBackend(id: "first")
         let second = FakeTTSBackend(id: "second")
@@ -304,8 +377,16 @@ final class FakeTTSBackend: TextToSpeechBackend {
     /// When true, `speak` suspends (`Task.yield()`) before invoking
     /// `duringSpeak`, so tests can prove events survive an actor suspension.
     var yieldBeforeEmitting = false
+    /// When true, `speak` suspends indefinitely after `duringSpeak` runs,
+    /// simulating a STREAMING backend whose `speak(...)` does not return
+    /// until playback finishes. `stop()` resumes the suspension and `speak`
+    /// then returns normally, mirroring `PocketTTSBackend`/
+    /// `StreamingAudioPlayer`, which resume the in-flight completion
+    /// continuation on stop rather than throwing.
+    var suspendUntilStopped = false
     private(set) var lastSessionID: UUID?
     private var playbackEventHandler: (@MainActor (TTSPlaybackEvent) -> Void)?
+    private var stopContinuation: CheckedContinuation<Void, Never>?
 
     init(id: String) {
         self.id = id
@@ -323,6 +404,11 @@ final class FakeTTSBackend: TextToSpeechBackend {
         if let error { throw error }
         if yieldBeforeEmitting { await Task.yield() }
         duringSpeak?(sessionID)
+        if suspendUntilStopped {
+            await withCheckedContinuation { continuation in
+                stopContinuation = continuation
+            }
+        }
         onSpeak?()
         spoken.append((text, options, sessionID))
     }
@@ -330,6 +416,10 @@ final class FakeTTSBackend: TextToSpeechBackend {
     func stop() {
         stopCount += 1
         onStop?()
+        if let stopContinuation {
+            self.stopContinuation = nil
+            stopContinuation.resume()
+        }
     }
     func pause() { pauseCount += 1 }
     func resume() { resumeCount += 1 }
