@@ -69,6 +69,42 @@ final class ActivityOverlayPresentationTests: XCTestCase {
         )
     }
 
+    func testListeningReturnsToBaseCompactSizeWhenInterimTextClearsAgain() {
+        let id = UUID()
+        let longText = String(repeating: "word ", count: 200)
+        let grown = ActivityOverlayPresentation.make(
+            state: .listening(sessionID: id, startedAt: .distantPast, level: 0.4, interimText: longText),
+            style: .interactive,
+            reduceMotion: false
+        )
+        XCTAssertGreaterThan(grown?.size.height ?? 0, 62)
+
+        let clearedAgain = ActivityOverlayPresentation.make(
+            state: .listening(sessionID: id, startedAt: .distantPast, level: 0.4, interimText: ""),
+            style: .interactive,
+            reduceMotion: false
+        )
+
+        XCTAssertEqual(clearedAgain?.size, CGSize(width: 282, height: 62))
+        XCTAssertNil(clearedAgain?.interimText)
+        XCTAssertEqual(clearedAgain?.subtitle, "Microphone")
+    }
+
+    func testHiddenAfterCancelOrCompleteIsFullyCompactRegardlessOfPriorInterimSize() {
+        let id = UUID()
+        let longText = String(repeating: "word ", count: 200)
+        let grown = ActivityOverlayPresentation.make(
+            state: .listening(sessionID: id, startedAt: .distantPast, level: 0.4, interimText: longText),
+            style: .interactive,
+            reduceMotion: false
+        )
+        XCTAssertGreaterThan(grown?.size.height ?? 0, 62)
+
+        let hidden = ActivityOverlayPresentation.make(state: .hidden, style: .interactive, reduceMotion: false)
+
+        XCTAssertNil(hidden)
+    }
+
     func testListeningInMinimalStyleIgnoresInterimTextEntirely() {
         let id = UUID()
         let value = ActivityOverlayPresentation.make(
