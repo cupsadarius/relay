@@ -116,20 +116,20 @@ final class AppModel {
     @ObservationIgnored private let installerLogger = Logger(subsystem: "dev.relaymac.Relay", category: "integrations")
     /// Ephemeral, memory-only registry of agent sessions observed from hook events. Shared with
     /// the production `AgentAutoReadCoordinator`/`FocusResolutionService` graph built in the
-    /// production `convenience init()`. Exposed read-only for compact diagnostics
+    /// `RelayRuntime.makeProduction()` graph. Exposed read-only for compact diagnostics
     /// (`agentSessionSummaries()`) — never for response text or live focus resolution.
     @ObservationIgnored private let sessionRegistry: AgentSessionRegistry
     /// Shared focus-resolution service consulted by `replayLast()` to find a confidently-focused
     /// agent session. The SAME instance shared with the production `AgentAutoReadCoordinator`
-    /// graph built in the production `convenience init()` — never a second instance.
+    /// graph built by `RelayRuntime.makeProduction()` — never a second instance.
     @ObservationIgnored private let focusResolution: any SessionFocusResolving
     /// Shared frontmost-application monitor consulted by `replayLast()`'s tier-2 check (does the
     /// frontmost app host at least one agent session). The SAME instance shared with the
-    /// production dictation/auto-read graph built in the production `convenience init()`.
+    /// production dictation/auto-read graph built by `RelayRuntime.makeProduction()`.
     @ObservationIgnored private let frontmostApps: any FrontmostAppMonitoring
     /// Shared process inspector consulted by `replayLast()` to prune dead-process sessions from
     /// `sessionRegistry` before resolving focus. The SAME instance shared with the production
-    /// `AgentAutoReadCoordinator`/resolver graph built in the production `convenience init()`.
+    /// `AgentAutoReadCoordinator`/resolver graph built by `RelayRuntime.makeProduction()`.
     @ObservationIgnored private let processInspector: ProcessInspector
     /// Shared in-memory diagnostics log for the integration pipeline (socket receive -> envelope
     /// decode -> adapter decode -> registry upsert -> focus gate), independent of `os_log`. The

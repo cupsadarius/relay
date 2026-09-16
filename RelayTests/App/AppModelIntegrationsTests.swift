@@ -449,7 +449,7 @@ final class AppModelIntegrationsTests: XCTestCase {
 
     // MARK: - Phase 3 Task 9: `onResponse` wiring reaches `AgentAutoReadCoordinator`
     //
-    // These build the SAME shape of graph `AppModel`'s production `convenience init()` wires
+    // These build the SAME shape of graph `RelayRuntime.makeProduction()` wires
     // (an `IntegrationManager` whose `onResponse` forwards to an `AgentAutoReadCoordinator`), but
     // with fakes for focus/speech/process-context standing in for the real resolvers — exactly as
     // `AgentAutoReadCoordinatorTests` does for the coordinator alone. This verifies the wiring
@@ -458,7 +458,7 @@ final class AppModelIntegrationsTests: XCTestCase {
     // disabled flag or a non-`.focused`/`.high` decision stays silent while still upserting.
     //
     // NOTE: these validate the onResponse -> coordinator wiring SHAPE via this harness, not the
-    // production `convenience init()`'s real resolver graph (Herdr/tmux/generic-terminal order,
+    // production `RelayRuntime.makeProduction()`'s real resolver graph (Herdr/tmux/generic-terminal order,
     // shared frontmost/recent-interaction instances) — that graph is verified by inspection only;
     // `testAllSettingsTabViewsConstruct`/`testRealAppModelRegistersAKokoroDownloaderButNoAppleDownloader`
     // separately confirm it constructs without crashing or touching a socket.
