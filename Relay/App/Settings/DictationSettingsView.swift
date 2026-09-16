@@ -28,15 +28,6 @@ struct DictationSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-
-            Section("Activity Overlay") {
-                Picker("Style", selection: activityOverlayStyleBinding) {
-                    Text("Off").tag(ActivityOverlayStyle.off)
-                    Text("Minimal").tag(ActivityOverlayStyle.minimal)
-                    Text("Interactive").tag(ActivityOverlayStyle.interactive)
-                }
-                .pickerStyle(.segmented)
-            }
         }
         .formStyle(.grouped)
     }
@@ -119,12 +110,6 @@ struct DictationSettingsView: View {
         )
     }
 
-    private var activityOverlayStyleBinding: Binding<ActivityOverlayStyle> {
-        Binding(
-            get: { model.settings.activityOverlayStyle },
-            set: { model.setActivityOverlayStyle($0) }
-        )
-    }
 }
 
 private extension DictationMode {
