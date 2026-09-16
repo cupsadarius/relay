@@ -43,14 +43,14 @@ final class SynthesizedAudioPlayerTests: XCTestCase {
         XCTAssertTrue(envelope.allSatisfy { $0 > 0.99 }, "Expected near-one levels, got \(envelope)")
     }
 
-    func testPlayWithMalformedDataThrowsWithoutStartingPlayback() async {
+    func testStartPlaybackWithMalformedDataThrowsWithoutStartingPlayback() async {
         let player = SynthesizedAudioPlayer()
         var events: [TTSPlaybackEvent] = []
         player.onEvent = { events.append($0) }
         let sessionID = UUID()
 
         do {
-            try await player.play(Data([0x00, 0x01, 0x02, 0x03]), sessionID: sessionID)
+            try await player.startPlayback(Data([0x00, 0x01, 0x02, 0x03]), sessionID: sessionID)
             XCTFail("Expected a decode error")
         } catch {
             // Expected: any decode error. Mapped to a fallback-worthy SpeechBackendError and a
@@ -62,17 +62,28 @@ final class SynthesizedAudioPlayerTests: XCTestCase {
 
     // MARK: - Audio-producing: requires a working audio output device
 
-    func testPlayEmitsScheduledThenStartedThenFinishedForTheGivenSession() async throws {
+    /// `startPlayback` must return as soon as playback has started - never waiting for it to
+    /// finish. `.finished` always arrives later, asynchronously, through `onEvent`.
+    func testStartPlaybackEmitsScheduledThenStartedAndReturnsBeforeFinishedArrivesLater() async throws {
         try requireAudioOutput()
         let player = SynthesizedAudioPlayer()
         let events = EventBox()
         player.onEvent = { events.append($0) }
         let sessionID = UUID()
 
-        try await player.play(Self.makeWavData(), sessionID: sessionID)
+        try await player.startPlayback(Self.makeWavData(), sessionID: sessionID)
 
-        let recorded = events.values
-        XCTAssertEqual(recorded.filter { !$0.isLevel }, [
+        // startPlayback has already returned here: only .scheduled/.started so far, never
+        // .finished - proving this call did not wait for playback to terminate.
+        XCTAssertEqual(events.values.filter { !$0.isLevel }, [
+            .scheduled(sessionID: sessionID),
+            .started(sessionID: sessionID),
+        ])
+
+        try await waitUntil { events.values.contains(.finished(sessionID: sessionID)) }
+
+        let recorded = events.values.filter { !$0.isLevel }
+        XCTAssertEqual(recorded, [
             .scheduled(sessionID: sessionID),
             .started(sessionID: sessionID),
             .finished(sessionID: sessionID),
@@ -87,12 +98,11 @@ final class SynthesizedAudioPlayerTests: XCTestCase {
         player.onEvent = { events.append($0) }
         let sessionID = UUID()
 
-        // A few seconds of audio so there's time to call stop() before natural completion.
-        let playTask = Task { try await player.play(Self.makeWavData(durationSeconds: 3), sessionID: sessionID) }
-        try await waitUntil { events.values.contains(.started(sessionID: sessionID)) }
+        // A few seconds of audio so playback is still in flight once startPlayback returns.
+        try await player.startPlayback(Self.makeWavData(durationSeconds: 3), sessionID: sessionID)
+        XCTAssertTrue(events.values.contains(.started(sessionID: sessionID)))
 
         player.stop()
-        try await playTask.value
 
         let recorded = events.values.filter { !$0.isLevel }
         XCTAssertEqual(recorded, [

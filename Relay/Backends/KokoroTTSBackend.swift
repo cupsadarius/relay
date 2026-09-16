@@ -65,12 +65,15 @@ final class KokoroTTSBackend: TextToSpeechBackend {
         }
 
         do {
-            try await player.play(wav, sessionID: sessionID)
+            // `startPlayback` returns as soon as playback has started - it only throws when
+            // playback never started at all (e.g. malformed WAV data), so this catch can never
+            // fire after `.started` was already emitted. A failure once already playing is
+            // reported by the player itself as a `.failed` playback event, not by throwing here.
+            try await player.startPlayback(wav, sessionID: sessionID)
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            // Same terminal-event contract even after `.started` may already have been emitted
-            // by the player: the router, not the backend, decides when `.failed` is warranted.
+            // See the load-failure path above: the router owns `.failed`, not the backend.
             throw SpeechBackendError.inferenceFailed("Kokoro playback failed")
         }
     }

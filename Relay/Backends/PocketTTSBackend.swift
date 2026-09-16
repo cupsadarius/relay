@@ -66,14 +66,15 @@ final class PocketTTSBackend: TextToSpeechBackend {
         }
 
         do {
-            try await player.play(stream, sampleRate: Double(PocketTtsConstants.audioSampleRate), sessionID: sessionID)
+            // `startPlayback` returns as soon as playback has actually started (after
+            // prebuffering) - it only throws when playback never started at all, including a
+            // source-stream failure that surfaces before then. A failure once already playing is
+            // reported by the player itself as a `.failed` playback event, not by throwing here.
+            try await player.startPlayback(stream, sampleRate: Double(PocketTtsConstants.audioSampleRate), sessionID: sessionID)
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            // Same terminal-event contract even after `.started` may already have been emitted
-            // by the player: the router, not the backend, decides when `.failed` is warranted.
-            // A source-stream failure surfaces here too, since `player.play` propagates whatever
-            // error draining the stream throws.
+            // See the load-failure path above: the router owns `.failed`, not the backend.
             throw SpeechBackendError.inferenceFailed("PocketTTS playback failed")
         }
     }

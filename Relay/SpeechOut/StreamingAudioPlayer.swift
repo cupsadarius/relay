@@ -2,13 +2,22 @@ import AVFoundation
 import Foundation
 
 /// Seam over `StreamingAudioPlayer` so `PocketTTSBackend` can be tested without exercising a real
-/// `AVAudioEngine`. Mirrors `SynthesizedAudioPlaying`'s shape, but `play` takes a live frame
-/// stream plus the source sample rate instead of a complete WAV `Data` value, since PocketTTS
-/// streaming yields raw Float32 frames rather than a finished file.
+/// `AVAudioEngine`. Mirrors `SynthesizedAudioPlaying`'s shape, but `startPlayback` takes a live
+/// frame stream plus the source sample rate instead of a complete WAV `Data` value, since
+/// PocketTTS streaming yields raw Float32 frames rather than a finished file.
 @MainActor
 protocol StreamingAudioPlaying: AnyObject {
     var onEvent: (@MainActor (TTSPlaybackEvent) -> Void)? { get set }
-    func play(_ frames: AsyncThrowingStream<[Float], Error>, sampleRate: Double, sessionID: UUID) async throws
+    /// Starts consuming `frames` and RETURNS as soon as playback has actually started (after
+    /// prebuffering, or immediately once the source ends if it never reached the prebuffer
+    /// threshold) - never waiting for it to finish. `.scheduled` is emitted synchronously before
+    /// this returns; `.started` is emitted once buffered audio actually begins playing, which may
+    /// require awaiting real prebuffering time. The terminal event (`.finished`/`.cancelled`/
+    /// `.failed`) is always reported later, asynchronously, through `onEvent` - draining the rest
+    /// of `frames` continues in the background after this returns. Throws (emitting no event at
+    /// all) only if playback never started, e.g. the engine could not be configured or the source
+    /// stream failed before any audio played.
+    func startPlayback(_ frames: AsyncThrowingStream<[Float], Error>, sampleRate: Double, sessionID: UUID) async throws
     func stop()
     func pause()
     func resume()
@@ -90,10 +99,15 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
     /// Set by `stop()` before tearing playback down, so a buffer-completion callback that fires
     /// after an explicit stop (harmless, racy) knows not to also emit `.finished`.
     private var didStopExplicitly = false
-    /// Resumed once playback reaches a terminal state (finished or stopped), so `play` does not
-    /// return until then - matching `SynthesizedAudioPlayer`, which keeps the router's
-    /// `activeBackend` handoff and `.finished` ordering correct.
-    private var completionContinuation: CheckedContinuation<Void, Never>?
+    /// Resumed once playback has actually started (or, if that never happens, once starting it
+    /// definitively fails) so `startPlayback` can return without waiting for a terminal state.
+    /// Resumed successfully (never throwing) by a mid-prebuffer `stop()`, mirroring how `stop()`
+    /// always lets an in-flight call return normally rather than throw. `nil` once resumed -
+    /// draining `frames` and scheduling buffers continues in `pumpTask` after that.
+    private var startContinuation: CheckedContinuation<Void, Error>?
+    /// Drains `frames`, converts and schedules buffers, and drives the terminal event - running
+    /// independently of (and outliving) the `startPlayback` call that spawned it.
+    private var pumpTask: Task<Void, Never>?
 
     /// Buffers accumulated before the prebuffer threshold is reached and playback actually starts.
     private var pendingBuffers: [AVAudioPCMBuffer] = []
@@ -115,7 +129,12 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
     private var levelPausedElapsed: TimeInterval = 0
     private var levelPausedAt: Date?
 
-    func play(_ frames: AsyncThrowingStream<[Float], Error>, sampleRate: Double, sessionID: UUID) async throws {
+    func startPlayback(_ frames: AsyncThrowingStream<[Float], Error>, sampleRate: Double, sessionID: UUID) async throws {
+        // Guards against leaking a previous call's continuation if this player is (unexpectedly)
+        // asked to start a new session while a prior `startPlayback` is still awaiting its own
+        // start - `tearDownPlayback()` below cancels that prior session's `pumpTask` without
+        // itself resolving its continuation.
+        resumeStart(throwing: CancellationError())
         tearDownPlayback()
         try setUpEngine(sampleRate: sampleRate)
 
@@ -132,6 +151,23 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
 
         onEvent?(.scheduled(sessionID: sessionID))
 
+        // Resumed by `beginScheduledPlayback` once audio actually starts playing, by `stop()` if
+        // playback is cancelled before that ever happens, or by `handlePumpFailure` if the source
+        // fails before that ever happens. Draining the rest of `frames` and scheduling buffers
+        // continues in `pumpTask` after this returns - `startPlayback` never waits for a terminal
+        // event.
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            startContinuation = continuation
+            pumpTask = Task { @MainActor [weak self] in
+                await self?.pump(frames, sampleRate: sampleRate, sessionID: sessionID)
+            }
+        }
+    }
+
+    /// Drains `frames`, converting and scheduling (or prebuffering) each one, exactly like the
+    /// old synchronous `play(_:sampleRate:sessionID:)` body did - except this runs in its own
+    /// `Task` so it can keep going after `startPlayback` has already returned to its caller.
+    private func pump(_ frames: AsyncThrowingStream<[Float], Error>, sampleRate: Double, sessionID: UUID) async {
         do {
             for try await samples in frames {
                 guard currentSessionID == sessionID else { return }
@@ -146,18 +182,13 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
                     pendingBuffers.append(convertedBuffer)
                     bufferedSeconds += Double(convertedBuffer.frameLength) / (outputFormat?.sampleRate ?? sampleRate)
                     if bufferedSeconds >= Self.prebufferSeconds {
-                        try startPlayback(sessionID: sessionID)
+                        try beginScheduledPlayback(sessionID: sessionID)
                     }
                 }
             }
-        } catch is CancellationError {
-            tearDownPlayback()
-            currentSessionID = nil
-            throw CancellationError()
         } catch {
-            tearDownPlayback()
-            currentSessionID = nil
-            throw error
+            handlePumpFailure(error, sessionID: sessionID)
+            return
         }
 
         guard currentSessionID == sessionID else { return }
@@ -165,18 +196,47 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
         sourceFinished = true
         if !started {
             do {
-                try startPlayback(sessionID: sessionID)
+                try beginScheduledPlayback(sessionID: sessionID)
             } catch {
-                tearDownPlayback()
-                currentSessionID = nil
-                throw error
+                handlePumpFailure(error, sessionID: sessionID)
+                return
             }
         }
 
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            completionContinuation = continuation
-            checkForCompletion(sessionID: sessionID)
+        checkForCompletion(sessionID: sessionID)
+    }
+
+    /// A `frames` failure (including `CancellationError`) or an engine-start failure encountered
+    /// by `pump`. Before playback ever started, this resolves the still-pending `startContinuation`
+    /// by throwing - the same shape `speak()`'s callers already map to a fallback-worthy error, and
+    /// no event is emitted (mirroring `SynthesizedAudioPlayer`, where a decode failure emits none
+    /// either). Once playback had already started (and `startContinuation` already resumed
+    /// successfully), there is no one left awaiting a throw, so this reports the failure as a
+    /// `.failed` terminal event instead.
+    private func handlePumpFailure(_ error: Error, sessionID: UUID) {
+        guard currentSessionID == sessionID, !didStopExplicitly else {
+            resumeStart(throwing: error)
+            return
         }
+        let hadStarted = started
+        tearDownPlayback()
+        currentSessionID = nil
+        if hadStarted {
+            onEvent?(.failed(sessionID: sessionID))
+        }
+        resumeStart(throwing: error)
+    }
+
+    private func resumeStart() {
+        guard let continuation = startContinuation else { return }
+        startContinuation = nil
+        continuation.resume()
+    }
+
+    private func resumeStart(throwing error: Error) {
+        guard let continuation = startContinuation else { return }
+        startContinuation = nil
+        continuation.resume(throwing: error)
     }
 
     func stop() {
@@ -185,7 +245,9 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
         tearDownPlayback()
         currentSessionID = nil
         onEvent?(.cancelled(sessionID: sessionID))
-        resumeCompletionIfNeeded()
+        // A stop before playback ever started still lets `startPlayback` return normally, exactly
+        // like a stop mid-playback lets it return normally rather than throw.
+        resumeStart()
     }
 
     func pause() {
@@ -277,8 +339,9 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
     }
 
     /// Flushes any buffers accumulated during the prebuffer window, starts the engine and player
-    /// node, and emits `.started` exactly once.
-    private func startPlayback(sessionID: UUID) throws {
+    /// node, and emits `.started` exactly once - which is also the one moment `startPlayback`'s
+    /// pending `startContinuation`, if any, resolves successfully.
+    private func beginScheduledPlayback(sessionID: UUID) throws {
         guard let engine, let playerNode else { return }
 
         for buffer in pendingBuffers {
@@ -291,6 +354,7 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
         started = true
         onEvent?(.started(sessionID: sessionID))
         startLevelTimer(sessionID: sessionID)
+        resumeStart()
     }
 
     private func schedule(_ buffer: AVAudioPCMBuffer, sessionID: UUID) {
@@ -315,16 +379,12 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
         tearDownPlayback()
         currentSessionID = nil
         onEvent?(.finished(sessionID: sessionID))
-        resumeCompletionIfNeeded()
-    }
-
-    private func resumeCompletionIfNeeded() {
-        completionContinuation?.resume()
-        completionContinuation = nil
     }
 
     private func tearDownPlayback() {
         stopLevelTimer()
+        pumpTask?.cancel()
+        pumpTask = nil
         playerNode?.stop()
         engine?.stop()
         engine = nil

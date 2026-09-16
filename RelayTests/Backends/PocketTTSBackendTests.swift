@@ -439,7 +439,7 @@ private final class FakePlayer: StreamingAudioPlaying {
     private(set) var pauseCallCount = 0
     private(set) var resumeCallCount = 0
 
-    func play(_ frames: AsyncThrowingStream<[Float], Error>, sampleRate: Double, sessionID: UUID) async throws {
+    func startPlayback(_ frames: AsyncThrowingStream<[Float], Error>, sampleRate: Double, sessionID: UUID) async throws {
         var received: [[Float]] = []
         for try await frame in frames {
             received.append(frame)

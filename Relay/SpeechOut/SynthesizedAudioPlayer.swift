@@ -6,7 +6,12 @@ import Foundation
 @MainActor
 protocol SynthesizedAudioPlaying: AnyObject {
     var onEvent: (@MainActor (TTSPlaybackEvent) -> Void)? { get set }
-    func play(_ wav: Data, sessionID: UUID) async throws
+    /// Decodes and starts playing `wav`, then RETURNS as soon as playback has started - never
+    /// waiting for it to finish. `.scheduled` and `.started` are emitted synchronously before
+    /// this returns; the terminal event (`.finished`/`.cancelled`) is always reported later,
+    /// asynchronously, through `onEvent`. Throws (emitting no event at all) only if playback
+    /// could not be started in the first place, e.g. malformed `wav` data.
+    func startPlayback(_ wav: Data, sessionID: UUID) async throws
     func stop()
     func pause()
     func resume()
@@ -55,18 +60,13 @@ final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
     /// fires both on natural completion and, harmlessly, after an explicit stop) knows not to
     /// also emit `.finished` for a session `stop()` already emitted `.cancelled` for.
     private var didStopExplicitly = false
-    /// Resumed once playback reaches a terminal state (finished or stopped), so `play(_:sessionID:)`
-    /// does not return until then - matching `AppleTTSBackend`, whose `speak` only returns once
-    /// the utterance finishes, which keeps the router's `activeBackend` handoff and `.finished`
-    /// ordering correct.
-    private var completionContinuation: CheckedContinuation<Void, Never>?
     /// Drives `.level` events for the in-flight session. Walks `levelEnvelope(from:windowSeconds:)`
     /// on a `MainActor` timer instead of a realtime audio tap - allocating (the `Task { @MainActor
     /// ... }` the old tap made per callback) on the audio render thread caused periodic dropouts
     /// ("pulsing", noise breaks between words).
     private var levelTask: Task<Void, Never>?
 
-    func play(_ wav: Data, sessionID: UUID) async throws {
+    func startPlayback(_ wav: Data, sessionID: UUID) async throws {
         // Still decode to PCM - not for playback, only so `levelEnvelope` has samples to walk.
         let buffer = try Self.decode(wav)
 
@@ -90,13 +90,13 @@ final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
 
         onEvent?(.scheduled(sessionID: sessionID))
 
+        // `AVAudioPlayer.play()` itself starts playback and returns immediately - there is no
+        // further async step to wait on, so `.started` is emitted right here and this function
+        // returns. The terminal event (`.finished`/`.cancelled`) always arrives later, either
+        // through `handleCompletion` (the delegate's finish callback) or `stop()`.
         player.play()
         onEvent?(.started(sessionID: sessionID))
         startLevelTimer(envelope: envelope, sessionID: sessionID)
-
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            completionContinuation = continuation
-        }
     }
 
     func stop() {
@@ -105,7 +105,6 @@ final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
         tearDownPlayback()
         currentSessionID = nil
         onEvent?(.cancelled(sessionID: sessionID))
-        resumeCompletionIfNeeded()
     }
 
     func pause() {
@@ -117,16 +116,10 @@ final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
     }
 
     private func handleCompletion(sessionID: UUID) {
-        defer { resumeCompletionIfNeeded() }
         guard currentSessionID == sessionID, !didStopExplicitly else { return }
         tearDownPlayback()
         currentSessionID = nil
         onEvent?(.finished(sessionID: sessionID))
-    }
-
-    private func resumeCompletionIfNeeded() {
-        completionContinuation?.resume()
-        completionContinuation = nil
     }
 
     private func tearDownPlayback() {

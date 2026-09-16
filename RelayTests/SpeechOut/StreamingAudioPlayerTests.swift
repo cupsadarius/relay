@@ -37,17 +37,30 @@ final class StreamingAudioPlayerTests: XCTestCase {
 
     // MARK: - Audio-producing: requires a working audio output device
 
-    func testPlayEmitsScheduledThenStartedThenFinishedForTheGivenSession() async throws {
+    /// `startPlayback` must return as soon as playback has started - never waiting for it to
+    /// finish. `.finished` always arrives later, asynchronously, through `onEvent`, once the rest
+    /// of the (short, 3-frame) stream has been drained and played back in the background.
+    func testStartPlaybackEmitsScheduledThenStartedAndReturnsBeforeFinishedArrivesLater() async throws {
         try requireAudioOutput()
         let player = StreamingAudioPlayer()
         let events = EventBox()
         player.onEvent = { events.append($0) }
         let sessionID = UUID()
 
-        try await player.play(Self.makeFrameStream(frameCount: 3), sampleRate: 24_000, sessionID: sessionID)
+        try await player.startPlayback(Self.makeFrameStream(frameCount: 3), sampleRate: 24_000, sessionID: sessionID)
 
-        let recorded = events.values
-        XCTAssertEqual(recorded.filter { !$0.isLevel }, [
+        // startPlayback has already returned here. This short stream never crosses the prebuffer
+        // threshold, so `.started` fires via the stream-end fallback - by the time it returns,
+        // only .scheduled/.started have been observed, never .finished.
+        XCTAssertEqual(events.values.filter { !$0.isLevel }, [
+            .scheduled(sessionID: sessionID),
+            .started(sessionID: sessionID),
+        ])
+
+        try await waitUntil { events.values.contains(.finished(sessionID: sessionID)) }
+
+        let recorded = events.values.filter { !$0.isLevel }
+        XCTAssertEqual(recorded, [
             .scheduled(sessionID: sessionID),
             .started(sessionID: sessionID),
             .finished(sessionID: sessionID),
@@ -57,11 +70,12 @@ final class StreamingAudioPlayerTests: XCTestCase {
 
     /// The other real-engine tests in this file use short streams (a handful of 80ms frames) that
     /// never accumulate the ~0.6s prebuffer threshold, so `.started` fires via the stream-end
-    /// fallback in `play(_:sampleRate:sessionID:)` instead of the `bufferedSeconds >=
+    /// fallback in `startPlayback(_:sampleRate:sessionID:)` instead of the `bufferedSeconds >=
     /// prebufferSeconds` branch. This test feeds enough frames (20 * 80ms = 1.6s, well past the
     /// 0.6s threshold) with no inter-frame delay that the threshold is guaranteed to be crossed
     /// while the source stream is still being drained, exercising the prebuffer-flush path in
-    /// `startPlayback` instead.
+    /// `beginScheduledPlayback` instead - and proving `startPlayback` returns right there, before
+    /// the rest of the (still-draining) stream has finished playing back.
     func testPlayStartsViaThePrebufferThresholdWhenEnoughAudioArrivesBeforeStreamEnd() async throws {
         try requireAudioOutput()
         let player = StreamingAudioPlayer()
@@ -69,7 +83,14 @@ final class StreamingAudioPlayerTests: XCTestCase {
         player.onEvent = { events.append($0) }
         let sessionID = UUID()
 
-        try await player.play(Self.makeFrameStream(frameCount: 20), sampleRate: 24_000, sessionID: sessionID)
+        try await player.startPlayback(Self.makeFrameStream(frameCount: 20), sampleRate: 24_000, sessionID: sessionID)
+
+        XCTAssertEqual(events.values.filter { !$0.isLevel }, [
+            .scheduled(sessionID: sessionID),
+            .started(sessionID: sessionID),
+        ])
+
+        try await waitUntil { events.values.contains(.finished(sessionID: sessionID)) }
 
         let recorded = events.values.filter { !$0.isLevel }
         XCTAssertEqual(recorded, [
@@ -87,19 +108,18 @@ final class StreamingAudioPlayerTests: XCTestCase {
         player.onEvent = { events.append($0) }
         let sessionID = UUID()
 
-        // Enough frames, trickled in slowly, that there's time to call stop() before the source
-        // finishes and before all scheduled audio has played back.
-        let playTask = Task {
-            try await player.play(
-                Self.makeFrameStream(frameCount: 200, delayNanoseconds: 20_000_000),
-                sampleRate: 24_000,
-                sessionID: sessionID
-            )
-        }
-        try await waitUntil { events.values.contains(.started(sessionID: sessionID)) }
+        // Enough frames, trickled in slowly, that there's still audio in flight once
+        // startPlayback returns (right after .started fires via the prebuffer threshold) - so
+        // there's time to call stop() before the source finishes and before all scheduled audio
+        // has played back.
+        try await player.startPlayback(
+            Self.makeFrameStream(frameCount: 200, delayNanoseconds: 20_000_000),
+            sampleRate: 24_000,
+            sessionID: sessionID
+        )
+        XCTAssertTrue(events.values.contains(.started(sessionID: sessionID)))
 
         player.stop()
-        try await playTask.value
 
         let recorded = events.values.filter { !$0.isLevel }
         XCTAssertEqual(recorded, [
