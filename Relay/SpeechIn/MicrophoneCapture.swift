@@ -11,6 +11,19 @@ protocol MicrophoneCapturing: Sendable {
     func cancel() async
 }
 
+/// SPIKE: an optional extra capability a `MicrophoneCapturing` implementation can provide — a tap
+/// on the same raw 16 kHz mono sample batches `MicrophoneCapture` already accumulates internally,
+/// for best-effort live features (e.g. interim transcription) layered on top of dictation without
+/// disturbing the existing accumulate+level path. Deliberately separate from `MicrophoneCapturing`
+/// itself so existing fakes/tests aren't required to implement it; callers that want it probe for
+/// it with `as? any MicrophoneSampleStreaming`.
+protocol MicrophoneSampleStreaming: Sendable {
+    /// Replaces the current observer (if any). Must be called before `start(onLevel:)` for the
+    /// observer to see any samples from that recording session — samples are only ever forwarded
+    /// to whichever observer was set when that particular `start(onLevel:)` call began.
+    func setSampleObserver(_ observer: (@Sendable ([Float]) -> Void)?) async
+}
+
 /// Reduces a batch of raw audio samples to a single normalized loudness value for the activity
 /// overlay's level meter. Never exposes the samples themselves.
 enum MicrophoneLevelMeter {
@@ -45,7 +58,8 @@ enum MicrophoneCaptureError: Error, Equatable, Sendable, LocalizedError {
     }
 }
 
-actor MicrophoneCapture: MicrophoneCapturing {
+actor MicrophoneCapture: MicrophoneCapturing, MicrophoneSampleStreaming {
+
     private enum State {
         case idle
         case starting(UUID)
@@ -59,6 +73,12 @@ actor MicrophoneCapture: MicrophoneCapturing {
     private let source: any AudioCaptureSourcing
     private let accumulator = AudioSampleAccumulator()
     private var state: State = .idle
+    /// SPIKE (`MicrophoneSampleStreaming`): set by `setSampleObserver` before recording starts;
+    /// read once into a local at the top of `start(onLevel:)` and captured by that call's own
+    /// sample-batch closure, so a later `setSampleObserver` call mid-recording never changes who
+    /// an already-running session's samples are forwarded to.
+    private var sampleObserver: (@Sendable ([Float]) -> Void)?
+
     /// Set by `cancel()` while `.starting`; checked by `start()`'s own post-`source.start()`
     /// switch so the call that actually knows `source.start()` has returned is the one that
     /// tears the real source down — never `cancel()` itself, which would otherwise race a
@@ -87,11 +107,16 @@ actor MicrophoneCapture: MicrophoneCapturing {
         }
 
         accumulator.reset()
+        // Captured once, here, on the actor: see `sampleObserver`'s doc comment for why this must
+        // happen before `source.start()` rather than reading `sampleObserver` from inside the
+        // (non-isolated, `@Sendable`) closure below.
+        let sampleTap = sampleObserver
         do {
             try await source.start(
                 onSamples: { [accumulator] samples in
                     accumulator.append(samples)
                     onLevel(MicrophoneLevelMeter.normalized(samples: samples))
+                    sampleTap?(samples)
                 },
                 onTerminalError: { [weak self] error in
                     await self?.sourceTerminated(error, session: session)
@@ -190,7 +215,14 @@ actor MicrophoneCapture: MicrophoneCapturing {
         for waiter in waiters { waiter.resume() }
     }
 
+    // SPIKE (MicrophoneSampleStreaming conformance): see sampleObserver doc comment for the
+    // ordering guarantee this relies on.
+    func setSampleObserver(_ observer: (@Sendable ([Float]) -> Void)?) async {
+        sampleObserver = observer
+    }
+
     private func sourceTerminated(_ error: Error, session: UUID) {
+
         switch state {
         case let .starting(activeSession):
             guard activeSession == session else { return }

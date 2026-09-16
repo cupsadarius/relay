@@ -924,6 +924,10 @@ private final class RecordingActivityOverlay: DictationActivityPublishing {
         levels.append(level)
     }
 
+    func updateInterimText(_ text: String, sessionID: UUID) {
+    }
+
+
     func setBackendName(_ name: String, sessionID: UUID) {
         events.append(.backendName(sessionID, name))
     }

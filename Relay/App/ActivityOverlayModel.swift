@@ -12,8 +12,8 @@ enum ActivityOverlayErrorCategory: Equatable, Sendable {
 
 enum ActivityOverlayState: Equatable, Sendable {
     case hidden
-    case listening(sessionID: UUID, startedAt: Date, level: Float)
-    case processing(sessionID: UUID, startedAt: Date)
+    case listening(sessionID: UUID, startedAt: Date, level: Float, interimText: String = "")
+    case processing(sessionID: UUID, startedAt: Date, interimText: String = "")
     case preparingSpeech(sessionID: UUID, startedAt: Date)
     case speaking(sessionID: UUID, startedAt: Date, level: Float?)
     case error(sessionID: UUID, category: ActivityOverlayErrorCategory, message: String)
@@ -22,8 +22,8 @@ enum ActivityOverlayState: Equatable, Sendable {
         switch self {
         case .hidden:
             nil
-        case let .listening(sessionID, _, _),
-             let .processing(sessionID, _),
+        case let .listening(sessionID, _, _, _),
+             let .processing(sessionID, _, _),
              let .preparingSpeech(sessionID, _),
              let .speaking(sessionID, _, _),
              let .error(sessionID, _, _):
@@ -37,7 +37,7 @@ enum ActivityOverlayState: Equatable, Sendable {
 
     var action: ActivityOverlayAction? {
         switch self {
-        case let .listening(sessionID, _, _), let .processing(sessionID, _):
+        case let .listening(sessionID, _, _, _), let .processing(sessionID, _, _):
             .cancelDictation(sessionID: sessionID)
         case let .preparingSpeech(sessionID, _), let .speaking(sessionID, _, _):
             .stopSpeech(sessionID: sessionID)
@@ -100,15 +100,26 @@ final class ActivityOverlayModel {
     }
 
     func updateLevel(_ level: Float, sessionID: UUID) {
-        guard case let .listening(activeSessionID, startedAt, _) = state,
+        guard case let .listening(activeSessionID, startedAt, _, interimText) = state,
               activeSessionID == sessionID else { return }
-        setState(.listening(sessionID: sessionID, startedAt: startedAt, level: min(max(level, 0), 1)))
+        setState(
+            .listening(
+                sessionID: sessionID, startedAt: startedAt, level: min(max(level, 0), 1), interimText: interimText))
+    }
+
+    /// SPIKE: pushes a live, best-effort transcription update (see StreamingTranscriber) into the
+    /// pill while still listening. A no-op once the session has moved past listening (e.g. into
+    /// processing) so a late update racing the stop of dictation cannot resurrect stale text.
+    func updateInterimText(_ text: String, sessionID: UUID) {
+        guard case let .listening(activeSessionID, startedAt, level, _) = state,
+              activeSessionID == sessionID else { return }
+        setState(.listening(sessionID: sessionID, startedAt: startedAt, level: level, interimText: text))
     }
 
     func process(sessionID: UUID) {
-        guard case let .listening(activeSessionID, startedAt, _) = state,
+        guard case let .listening(activeSessionID, startedAt, _, interimText) = state,
               activeSessionID == sessionID else { return }
-        setState(.processing(sessionID: sessionID, startedAt: startedAt))
+        setState(.processing(sessionID: sessionID, startedAt: startedAt, interimText: interimText))
     }
 
     /// Shows the amber "Processing" pill immediately for user-requested speech, before synthesis

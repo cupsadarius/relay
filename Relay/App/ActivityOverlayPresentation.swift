@@ -64,22 +64,24 @@ struct ActivityOverlayPresentation: Equatable {
         switch state {
         case .hidden:
             return nil
-        case let .listening(sessionID, startedAt, level):
+        case let .listening(sessionID, startedAt, level, interimText):
             return .init(
                 kind: .listening(level: level), accent: .red, layout: layout, cornerRadius: cornerRadius, size: size,
                 title: interactive ? "Listening" : nil,
-                subtitle: interactive ? (backendName ?? "Microphone") : nil,
+                subtitle: interactive
+                    ? Self.subtitle(interimText: interimText, fallback: backendName ?? "Microphone") : nil,
                 startedAt: startedAt,
                 action: interactive ? .cancelDictation(sessionID: sessionID) : nil,
                 actionAccessibilityLabel: interactive ? "Cancel dictation" : nil,
                 animatesWaveform: !reduceMotion, usesScaleTransition: scaleTransition,
                 speakingLevel: nil
             )
-        case let .processing(sessionID, startedAt):
+        case let .processing(sessionID, startedAt, interimText):
             return .init(
                 kind: .processing, accent: .amber, layout: layout, cornerRadius: cornerRadius, size: size,
                 title: interactive ? "Processing" : nil,
-                subtitle: interactive ? (backendName ?? "Transcribing") : nil,
+                subtitle: interactive
+                    ? Self.subtitle(interimText: interimText, fallback: backendName ?? "Transcribing") : nil,
                 startedAt: startedAt,
                 action: interactive ? .cancelDictation(sessionID: sessionID) : nil,
                 actionAccessibilityLabel: interactive ? "Cancel dictation" : nil,
@@ -164,6 +166,21 @@ struct ActivityOverlayPresentation: Equatable {
     private static func uniformMultiplier(for level: Float) -> CGFloat {
         let clampedLevel = CGFloat(min(max(level, 0), 1))
         return Self.waveformMinScale + clampedLevel * (1 - Self.waveformMinScale)
+    }
+
+    /// SPIKE: picks the Listening/Processing subtitle — the live interim transcription when one is
+    /// available, the usual backend-name placeholder otherwise. Truncated to a fixed character
+    /// budget so a long run-on sentence never grows the pill: the interactive layout is a fixed
+    /// size and the subtitle Text already has `lineLimit(1)`, so anything longer would just clip
+    /// mid-character rather than resize anything, but capping the string here keeps the value
+    /// itself well-formed for anyone reading `ActivityOverlayState` directly (diagnostics, tests).
+    private static let interimTextCharacterBudget = 60
+
+    private static func subtitle(interimText: String, fallback: String) -> String {
+        guard !interimText.isEmpty else { return fallback }
+        guard interimText.count > interimTextCharacterBudget else { return interimText }
+        let cutoff = interimText.index(interimText.startIndex, offsetBy: interimTextCharacterBudget)
+        return interimText[..<cutoff] + "…"
     }
 
     private static func errorDisplayCopy(for category: ActivityOverlayErrorCategory) -> String {
