@@ -67,7 +67,9 @@ final class DictationCoordinator: DictationCoordinating {
     /// fallback to a different backend during transcription can be detected and re-announced.
     private var announcedBackendName: String?
     /// SPIKE: live, best-effort interim transcription for the pill (see StreamingTranscriber).
-    /// Created fresh per session in `start()`, torn down in `stopStreamingTranscription()`.
+    /// Created fresh per session in `start()`, torn down in `stopStreamingTranscription()` (joining
+    /// teardown: cancel/start's failure path) or `abandonStreamingTranscription()` (non-joining
+    /// teardown: `finish()`, which must never wait on it).
     private var streamingTranscriber: StreamingTranscriber?
     /// Read once per `start()` to decide whether to spin up a `StreamingTranscriber` at all.
     /// Defaults to always-on so every existing test and call site that doesn't care about the
@@ -75,7 +77,7 @@ final class DictationCoordinator: DictationCoordinating {
     private let liveTranscriptionEnabled: () -> Bool
     /// Drains `sampleAppendStream` one batch at a time, in arrival order, into
     /// `streamingTranscriber`. Created fresh per session in `beginStreamingTranscription`, torn
-    /// down in `stopStreamingTranscription`.
+    /// down in `stopStreamingTranscription` or `abandonStreamingTranscription` (see those methods).
     private var sampleAppendTask: Task<Void, Never>?
     /// Lets the microphone's (non-async, arbitrary-context) sample callback enqueue a batch
     /// without racing other batches: `yield` is synchronous and thread-safe, so every batch lands
@@ -179,7 +181,12 @@ final class DictationCoordinator: DictationCoordinating {
         guard case let .recording(session) = state else { return }
         state = .finishing(session)
         activity.process(sessionID: session)
-        await stopStreamingTranscription()
+        // NON-JOINING on purpose: the final transcript below must never wait on disposable interim
+        // work. See `abandonStreamingTranscription()`'s doc comment for why this is safe -- the
+        // audio the final transcript is built from comes from `microphone.stop()`'s own,
+        // independent accumulator, not from anything `stopStreamingTranscription()` would have
+        // flushed.
+        abandonStreamingTranscription()
 
         let task = Task { [weak self] in
             guard let self else { return }
@@ -277,6 +284,12 @@ final class DictationCoordinator: DictationCoordinating {
     /// SPIKE: tears down this session's `StreamingTranscriber` (if any) and detaches it from the
     /// microphone's sample observer, so a stale observer never forwards a later session's samples
     /// to an actor nobody is reading interim text from anymore.
+    ///
+    /// JOINING: awaits both the sample-drain task and `transcriber.stop()`, so this can block on
+    /// an in-flight interim `transcribe(...)` call (see `StreamingTranscriber.stop()`'s doc
+    /// comment). That's acceptable for callers doing a clean, non-time-critical teardown (`cancel`
+    /// and `start()`'s own failure path), but `finish()` must NOT use this -- see
+    /// `abandonStreamingTranscription()` below.
     private func stopStreamingTranscription() async {
         guard let transcriber = streamingTranscriber else { return }
         streamingTranscriber = nil
@@ -288,6 +301,43 @@ final class DictationCoordinator: DictationCoordinating {
         await sampleAppendTask?.value
         sampleAppendTask = nil
         await transcriber.stop()
+    }
+
+    /// SPIKE: `finish()`'s non-joining counterpart to `stopStreamingTranscription()` above. Detaches
+    /// this session's `StreamingTranscriber` from the coordinator and lets it tear itself down in
+    /// the background, WITHOUT awaiting any of it -- so this method itself never suspends, and
+    /// `finish()` can proceed straight to building the final-transcription pipeline immediately.
+    ///
+    /// Safe to do because the final transcript never depends on anything this would otherwise
+    /// await: the sample-drain task only ever feeds `streamingTranscriber`'s own interim buffer
+    /// (capped to the rolling `maxWindowSamples` window), never the audio the final transcript is
+    /// built from -- that comes from `microphone.stop()`'s separate, full, uncapped accumulator in
+    /// `runProcessingPipeline`. So nothing here needs to finish before the final pipeline starts;
+    /// detaching the sample observer just stops feeding a transcriber that's about to be abandoned,
+    /// and it's fire-and-forget for the same reason nothing downstream needs to observe it landing.
+    ///
+    /// The interim actor's in-flight `transcribe(...)` call (if any) is left running to completion
+    /// in the background by `StreamingTranscriber.abandon()` -- seeing it through, rather than
+    /// somehow force-killing it, is what keeps the shared FluidAudio Parakeet actor consistent for
+    /// the final transcribe that follows. If that shared actor can only run one call at a time,
+    /// the final transcribe may still have to wait for the actor to become AVAILABLE again, but it
+    /// never waits on the abandoned call's RESULT: `abandon()`'s cancellation makes
+    /// `StreamingTranscriber.tick()` discard that result once it does arrive (see its
+    /// `Task.isCancelled` check), and independently, this session's `onInterimText` closure is
+    /// itself guarded on `isRecording(session)` in `beginStreamingTranscription` -- by the time
+    /// any stale interim result could arrive, `state` has already moved past `.recording`, so it's
+    /// dropped there too. Either guard alone is enough for a late interim result to never reach
+    /// the overlay, let alone overwrite the authoritative final text.
+    private func abandonStreamingTranscription() {
+        guard let transcriber = streamingTranscriber else { return }
+        streamingTranscriber = nil
+        if let streaming = microphone as? any MicrophoneSampleStreaming {
+            Task { await streaming.setSampleObserver(nil) }
+        }
+        sampleAppendContinuation?.finish()
+        sampleAppendContinuation = nil
+        sampleAppendTask = nil
+        Task { await transcriber.abandon() }
     }
 
     private func runProcessingPipeline(session: UUID) async {
