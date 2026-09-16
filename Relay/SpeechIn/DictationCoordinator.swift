@@ -46,14 +46,6 @@ final class DictationCoordinator: DictationCoordinating {
     private let stopSpeech: () -> Void
     private let activity: any DictationActivityPublishing
     private let diagnostics: DiagnosticsRecorder?
-    /// Reads the frontmost app immediately before microphone capture starts, so it can be
-    /// recorded as supporting evidence of a recent voice interaction. Best-effort only: `start()`
-    /// never lets a failure or delay here affect dictation itself.
-    private let frontmostApps: any FrontmostAppMonitoring
-    /// Memory-only record of the most recent voice interaction's frontmost app. Supporting
-    /// evidence only — no resolver consumes it yet, and it must never independently produce a
-    /// `focused(high)` result.
-    private let recentInteractions: RecentInteractionTracker
     private var status: (String) -> Void
     private var state: State = .idle
     private var finishRequested = false
@@ -96,8 +88,6 @@ final class DictationCoordinator: DictationCoordinating {
         status: @escaping (String) -> Void,
         activity: any DictationActivityPublishing,
         diagnostics: DiagnosticsRecorder? = nil,
-        frontmostApps: any FrontmostAppMonitoring = FrontmostAppMonitor(),
-        recentInteractions: RecentInteractionTracker = RecentInteractionTracker(),
         liveTranscriptionEnabled: @escaping () -> Bool = { true }
     ) {
         self.microphone = microphone
@@ -108,8 +98,6 @@ final class DictationCoordinator: DictationCoordinating {
         self.status = status
         self.activity = activity
         self.diagnostics = diagnostics
-        self.frontmostApps = frontmostApps
-        self.recentInteractions = recentInteractions
         self.liveTranscriptionEnabled = liveTranscriptionEnabled
     }
 
@@ -122,11 +110,6 @@ final class DictationCoordinator: DictationCoordinating {
         state = .starting(session)
         activity.begin(sessionID: session)
         stopSpeech()
-        // Best-effort: recording the frontmost app is supporting evidence only. A `nil` result is
-        // simply skipped, and nothing here can block, delay, or fail dictation itself.
-        if let frontmostApplication = await frontmostApps.current() {
-            await recentInteractions.record(frontmostApplication: frontmostApplication)
-        }
         // SPIKE: must be wired up before microphone.start(onLevel:) below - see
         // MicrophoneSampleStreaming doc comment for why. Best-effort: if microphone does not
         // implement the (optional) sample-streaming capability, dictation proceeds exactly as

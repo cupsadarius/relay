@@ -17,15 +17,13 @@ final class SettingsBox {
 
 /// Session-intelligence services: the ephemeral in-memory agent-session registry, the
 /// frontmost-app monitor, the process inspector (used both for focus resolution and for pruning
-/// dead-process sessions), the recent-interaction tracker, and the resulting
-/// `FocusResolutionService`. Resolver order is fixed: Herdr (exact pane evidence) -> tmux (exact
-/// pane evidence, only when a tmux executable exists) -> generic terminal (conservative
-/// process-ancestry fallback).
+/// dead-process sessions), and the resulting `FocusResolutionService`. Resolver order is fixed:
+/// Herdr (exact pane evidence) -> tmux (exact pane evidence, only when a tmux executable exists)
+/// -> generic terminal (conservative process-ancestry fallback).
 struct SessionServices {
     let registry: AgentSessionRegistry
     let frontmostApps: any FrontmostAppMonitoring
     let processInspector: ProcessInspector
-    let recentInteractions: RecentInteractionTracker
     let focusResolution: any SessionFocusResolving
 }
 
@@ -166,13 +164,12 @@ final class RelayRuntime {
             parakeetBackend.id: parakeetBackend,
         ]
 
-        // Phase 3 session-intelligence dependency graph. Every subsystem that needs
-        // frontmost-app or recent-interaction evidence shares these SAME instances (passed into
-        // `dictation` below) rather than constructing its own, so they all observe one
-        // consistent view of focus state. Resolver order is fixed: Herdr (exact pane evidence) ->
-        // tmux (exact pane evidence) -> generic terminal (conservative process-ancestry
-        // fallback). tmux support is entirely optional: when no tmux executable is found,
-        // `TmuxFocusResolver` is simply never added to the list.
+        // Phase 3 session-intelligence dependency graph. Every subsystem that needs frontmost-app
+        // evidence shares these SAME instances rather than constructing its own, so they all
+        // observe one consistent view of focus state. Resolver order is fixed: Herdr (exact pane
+        // evidence) -> tmux (exact pane evidence) -> generic terminal (conservative
+        // process-ancestry fallback). tmux support is entirely optional: when no tmux executable
+        // is found, `TmuxFocusResolver` is simply never added to the list.
         let sessionRegistry = AgentSessionRegistry()
         // One shared, in-memory diagnostics log for the integration pipeline, independent of
         // `os_log`. Passed into the receiver, manager, and auto-read coordinator below so their
@@ -180,7 +177,6 @@ final class RelayRuntime {
         let integrationDiagnosticsLog = IntegrationDiagnosticsLog()
         let processInspector = ProcessInspector()
         let frontmostApps = FrontmostAppMonitor()
-        let recentInteractionTracker = RecentInteractionTracker()
         let tmuxRunner = TmuxExecutableLocator().locate().map { TmuxClient(executable: $0) }
         let herdrClient = HerdrSocketClient()
         let agentProcessContext = AgentProcessContextCapture(processInspector: processInspector)
@@ -238,8 +234,6 @@ final class RelayRuntime {
             status: { _ in },
             activity: overlayModel,
             diagnostics: diagnostics,
-            frontmostApps: frontmostApps,
-            recentInteractions: recentInteractionTracker,
             liveTranscriptionEnabled: { @MainActor in settingsBox.value.liveTranscriptionEnabled }
         )
         let hookEnvelopeReceiver = HookEnvelopeReceiver(diagnostics: integrationDiagnosticsLog)
@@ -282,7 +276,6 @@ final class RelayRuntime {
                 registry: sessionRegistry,
                 frontmostApps: frontmostApps,
                 processInspector: processInspector,
-                recentInteractions: recentInteractionTracker,
                 focusResolution: focusResolution
             ),
             speechOut: SpeechOutputServices(
