@@ -150,6 +150,7 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(speech.requests.count, 1)
         XCTAssertEqual(speech.requests.first?.mode, .userRequested)
         XCTAssertEqual(speech.requests.first?.sessionID, "claude-code:session-a")
+        XCTAssertEqual(speech.replayCount, 0)
         withExtendedLifetime(model) {}
     }
 
@@ -204,6 +205,7 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(speech.requests.count, 1)
         XCTAssertEqual(speech.requests.first?.sessionID, "claude-code:global-latest")
         XCTAssertEqual(speech.requests.first?.mode, .userRequested)
+        XCTAssertEqual(speech.replayCount, 0)
         withExtendedLifetime(model) {}
     }
 
@@ -275,6 +277,64 @@ final class AppModelTests: XCTestCase {
             sessionRegistry: registry,
             focusResolution: StubSessionFocusResolver(focusedSessionID: nil),
             frontmostApps: StubFrontmostAppMonitor(pid: 4242)
+        )
+
+        hotkeys.send(.replayLast, .pressed)
+        await waitUntil { speech.replayCount > 0 }
+
+        XCTAssertEqual(speech.replayCount, 1)
+        XCTAssertTrue(speech.requests.isEmpty)
+        withExtendedLifetime(model) {}
+    }
+
+    /// Hardens against a latent trap: tier 2 gates on `integrationManager.latestResponse != nil`
+    /// but actually speaks via `IntegrationManager.speakLatest()`, which reads its own internal
+    /// `LatestAgentResponseStore`. Today those two can't diverge, but if a future change ever
+    /// clears the store independently of `latestResponse`, the gate would read true while
+    /// `speakLatest()` finds nothing to speak. Simulated here by driving `latestResponse` to
+    /// non-nil through the real consume loop, then clearing the backing store out from under it —
+    /// `replayLast()` must fall through to tier 3 rather than speaking nothing.
+    func testReplayLastFallsBackToTierThreeWhenGlobalLatestGateIsTrueButStoreHasNothingToSpeak() async {
+        let registry = AgentSessionRegistry()
+        _ = await registry.upsert(
+            response: makeAgentResponseEvent(providerSessionID: "session-a", text: "Reply A"),
+            processAncestry: [4242],
+            tty: nil
+        )
+        let speech = FakeSpeechCoordinator()
+        let store = LatestAgentResponseStore()
+        let latest = makeAgentResponseEvent(providerSessionID: "global-latest", text: "Global reply")
+        var continuation: AsyncStream<HookEnvelope>.Continuation!
+        let events = AsyncStream<HookEnvelope> { continuation = $0 }
+        let drivenManager = IntegrationManager(
+            events: events,
+            integrations: [StubIntegration(provider: .claudeCode, event: latest)],
+            store: store,
+            speechCoordinator: speech
+        )
+        drivenManager.start()
+        continuation.yield(HookEnvelope(
+            schemaVersion: 1,
+            provider: .claudeCode,
+            rawPayload: "{}",
+            parentPID: 100,
+            environment: [:],
+            capturedAt: latest.capturedAt
+        ))
+        await waitUntil { drivenManager.latestResponse != nil }
+        drivenManager.stop()
+        // Force the divergence: `latestResponse` still reports a global latest exists, but the
+        // store backing `speakLatest()` has since been cleared out from under it.
+        await store.clear()
+
+        let hotkeys = FakeHotkeyManager()
+        let model = makeModel(
+            speech: speech,
+            hotkeys: hotkeys,
+            sessionRegistry: registry,
+            focusResolution: StubSessionFocusResolver(focusedSessionID: nil),
+            frontmostApps: StubFrontmostAppMonitor(pid: 4242),
+            integrationManager: drivenManager
         )
 
         hotkeys.send(.replayLast, .pressed)

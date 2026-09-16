@@ -651,8 +651,8 @@ final class AppModel {
 
         if let frontmostPID = await frontmostApps.current()?.pid,
            sessions.contains(where: { $0.processAncestry.contains(frontmostPID) }),
-           integrationManager.latestResponse != nil {
-            await speakGlobalLatestReply()
+           integrationManager.latestResponse != nil,
+           await speakGlobalLatestReply() {
             return
         }
 
@@ -678,17 +678,26 @@ final class AppModel {
         }
     }
 
-    /// Tier 2: speaks the global latest agent reply via `IntegrationManager.speakLatest`. Only
-    /// ever called after confirming a global latest reply is available.
-    private func speakGlobalLatestReply() async {
+    /// Tier 2: speaks the global latest agent reply via `IntegrationManager.speakLatest`. Called
+    /// after confirming (via `integrationManager.latestResponse`) that a global latest reply
+    /// looks available — but that check and `speakLatest()`'s own internal store read are two
+    /// separate reads of related-but-distinct state, so this still handles `speakLatest()`
+    /// reporting nothing to speak: it makes no diagnostics/statusText noise and returns `false`,
+    /// letting `replayLast()`'s caller fall through to tier 3 instead of silently speaking
+    /// nothing. Returns `true` for both an actual speak and a thrown speech failure — either way
+    /// tier 2 has "handled" the request and `replayLast()` must not also fall through to tier 3
+    /// (no double-speaking).
+    private func speakGlobalLatestReply() async -> Bool {
         do {
-            try await integrationManager.speakLatest()
+            guard try await integrationManager.speakLatest() else { return false }
             diagnostics.record(.ttsSubmitted)
             statusText = "Replaying latest agent reply"
             integrationDiagnosticsLog.append(stage: "replay-last", outcome: "global-latest", detail: "")
+            return true
         } catch {
             diagnostics.record(.ttsFailed)
             statusText = error.localizedDescription
+            return true
         }
     }
 

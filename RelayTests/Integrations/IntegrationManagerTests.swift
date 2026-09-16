@@ -371,8 +371,9 @@ final class IntegrationManagerTests: XCTestCase {
             speechCoordinator: speech
         )
 
-        try await manager.speakLatest()
+        let spoke = try await manager.speakLatest()
 
+        XCTAssertTrue(spoke)
         let expectedText = RulesSpeechPreprocessor().prepare(text: rawText, mode: .automatic)
         XCTAssertEqual(speech.requests.count, 1)
         let request = try XCTUnwrap(speech.requests.first)
@@ -414,8 +415,9 @@ final class IntegrationManagerTests: XCTestCase {
             speechCoordinator: speech
         )
 
-        try await manager.speakLatest()
+        let spoke = try await manager.speakLatest()
 
+        XCTAssertFalse(spoke)
         XCTAssertTrue(speech.requests.isEmpty)
     }
 

@@ -151,8 +151,16 @@ final class IntegrationManager {
 
     /// Reads the ephemeral latest response (if any) and submits it for speech as a
     /// user-requested request. Never invoked automatically.
-    func speakLatest() async throws {
-        guard let event = await store.get() else { return }
+    ///
+    /// Returns `true` if it actually spoke, `false` if there was nothing stored to speak. Callers
+    /// that need to distinguish "spoke nothing" from "spoke, then failed" (so they can fall
+    /// through to a further fallback instead of silently doing nothing) should check this;
+    /// `@discardableResult` so existing callers that only care about the thrown error need no
+    /// changes.
+    @discardableResult
+    func speakLatest() async throws -> Bool {
+        guard let event = await store.get() else { return false }
         try await speakResponse(event)
+        return true
     }
 }
