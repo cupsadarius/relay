@@ -172,6 +172,53 @@ final class MicrophoneCaptureStateTests: XCTestCase {
         XCTAssertEqual(audio.samples, [0.3])
     }
 
+    func testStopReportsCaptureDiagnosticsWithFrameCountAndInputSampleRate() async throws {
+        let source = FakeAudioSource(inputSampleRate: 48_000)
+        let recorder = DiagnosticsRecorderSpy()
+        let fixedDate = Date(timeIntervalSince1970: 1_000)
+        let capture = MicrophoneCapture(
+            permission: FakeMicrophonePermission(granted: true),
+            source: source,
+            onCaptureDiagnostics: { diagnostics in await recorder.record(diagnostics) },
+            now: { fixedDate }
+        )
+
+        try await capture.start(onLevel: { _ in })
+        await source.emit([0.25, -0.5, 0.1])
+        let audio = try await capture.stop()
+
+        XCTAssertEqual(audio.samples, [0.25, -0.5, 0.1])
+        let recorded = await recorder.recorded
+        XCTAssertEqual(
+            recorded,
+            [MicrophoneCaptureDiagnostics(inputSampleRate: 48_000, frameCount: 3, capturedAt: fixedDate)]
+        )
+    }
+
+    /// The case a stale post-rebuild microphone grant produces, and the one the Security
+    /// settings tab most wants surfaced: capture diagnostics must still be reported (with
+    /// `frameCount == 0`) even though `stop()` goes on to throw `noUsableAudio`.
+    func testStopWithNoSamplesReportsZeroFrameDiagnosticsBeforeThrowingNoUsableAudio() async throws {
+        let source = FakeAudioSource(inputSampleRate: 44_100)
+        let recorder = DiagnosticsRecorderSpy()
+        let capture = MicrophoneCapture(
+            permission: FakeMicrophonePermission(granted: true),
+            source: source,
+            onCaptureDiagnostics: { diagnostics in await recorder.record(diagnostics) }
+        )
+
+        try await capture.start(onLevel: { _ in })
+
+        await XCTAssertThrowsErrorAsync(try await capture.stop()) { error in
+            XCTAssertEqual(error as? SpeechBackendError, .noUsableAudio)
+        }
+
+        let recorded = await recorder.recorded
+        XCTAssertEqual(recorded.count, 1)
+        XCTAssertEqual(recorded.first?.frameCount, 0)
+        XCTAssertEqual(recorded.first?.inputSampleRate, 44_100)
+    }
+
     func testStartThenStopReturnsMono16KAudioAndReturnsToIdle() async throws {
         let source = FakeAudioSource()
         let capture = MicrophoneCapture(
@@ -365,7 +412,7 @@ final class MicrophoneCaptureStateTests: XCTestCase {
     }
 }
 
-private actor FakeAudioSource: AudioCaptureSourcing {
+private actor FakeAudioSource: AudioCaptureSourcing, AudioInputFormatReporting {
     private var sink: (@Sendable ([Float]) -> Void)?
     private var terminalErrorSink: (@Sendable (Error) async -> Void)?
     private var startError: Error?
@@ -374,6 +421,7 @@ private actor FakeAudioSource: AudioCaptureSourcing {
     private let blockStart: Bool
     private let blockStop: Bool
     private let samplesDuringStop: [Float]
+    private let inputSampleRate: Double
     private var startWaiter: CheckedContinuation<Void, Never>?
     private var stopWaiter: CheckedContinuation<Void, Never>?
     private var startEnteredWaiter: CheckedContinuation<Void, Never>?
@@ -389,7 +437,8 @@ private actor FakeAudioSource: AudioCaptureSourcing {
         stopError: Error? = nil,
         blockStart: Bool = false,
         blockStop: Bool = false,
-        samplesDuringStop: [Float] = []
+        samplesDuringStop: [Float] = [],
+        inputSampleRate: Double = 44_100
     ) {
         self.startError = startError
         self.terminalErrorDuringStart = terminalErrorDuringStart
@@ -397,7 +446,10 @@ private actor FakeAudioSource: AudioCaptureSourcing {
         self.blockStart = blockStart
         self.blockStop = blockStop
         self.samplesDuringStop = samplesDuringStop
+        self.inputSampleRate = inputSampleRate
     }
+
+    nonisolated func currentInputSampleRate() -> Double { inputSampleRate }
 
     func start(
         onSamples: @escaping @Sendable ([Float]) -> Void,
@@ -485,6 +537,14 @@ private final class LevelRecorder: @unchecked Sendable {
 
     var levels: [Float] {
         lock.withLock { values }
+    }
+}
+
+private actor DiagnosticsRecorderSpy {
+    private(set) var recorded: [MicrophoneCaptureDiagnostics] = []
+
+    func record(_ diagnostics: MicrophoneCaptureDiagnostics) {
+        recorded.append(diagnostics)
     }
 }
 

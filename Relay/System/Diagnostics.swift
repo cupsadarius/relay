@@ -116,6 +116,10 @@ final class DiagnosticsRecorder {
     private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "diagnostics")
     private(set) var buffer: DiagnosticsBuffer
     private(set) var counters = DiagnosticsCounters()
+    /// The most recent microphone capture's privacy-safe metadata (input sample rate, frame
+    /// count, timestamp) — never audio samples, transcript text, or file paths. `nil` until the
+    /// first dictation capture attempt completes (successfully or with `noUsableAudio`).
+    private(set) var lastMicrophoneCaptureDiagnostics: MicrophoneCaptureDiagnostics?
     var entries: [DiagnosticEntry] { buffer.entries }
     init(capacity: Int = 250) { buffer = DiagnosticsBuffer(capacity: capacity) }
     func record(_ event: DiagnosticsEvent) {
@@ -125,6 +129,12 @@ final class DiagnosticsRecorder {
     }
     func clear() { buffer.clear(); counters = .init() }
     var copyText: String { entries.map { $0.copyLine() }.joined(separator: "\n") }
+    /// Records the metadata-only diagnostics from one `MicrophoneCapture.stop()` attempt. Never
+    /// logs it verbatim (unlike `record(_:)` above) — it's counts/rate/timestamp only, which is
+    /// fine to hold for display, but there's no need to also duplicate it into `os_log`.
+    func recordMicrophoneCapture(_ diagnostics: MicrophoneCaptureDiagnostics) {
+        lastMicrophoneCaptureDiagnostics = diagnostics
+    }
 }
 
 extension HotkeyPhase { var title: String { self == .pressed ? "pressed" : "released" } }

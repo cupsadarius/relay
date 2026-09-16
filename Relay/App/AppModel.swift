@@ -49,6 +49,11 @@ final class AppModel {
     private(set) var eventTapStatus: HotkeyRegistrationStatus = .unavailable("Not checked")
     var diagnosticsEntries: [DiagnosticEntry] { diagnostics.entries.reversed() }
     var diagnosticsCounters: DiagnosticsCounters { diagnostics.counters }
+    /// The most recent dictation capture attempt's privacy-safe metadata (input sample rate,
+    /// frame count, timestamp) — never audio samples, transcript text, or file paths. Surfaced by
+    /// the Security & Permissions settings tab so a stale post-rebuild microphone grant (zero
+    /// frames captured despite the OS showing the toggle on) is visible rather than silent.
+    var lastMicrophoneCaptureDiagnostics: MicrophoneCaptureDiagnostics? { diagnostics.lastMicrophoneCaptureDiagnostics }
     var sttBackends: [STTBackendStatus] = []
     var speechBackendMessage: String?
     var ttsBackends: [TTSBackendStatus] = []
@@ -208,7 +213,9 @@ final class AppModel {
         )
 
         let dictation = DictationCoordinator(
-            microphone: MicrophoneCapture(),
+            microphone: MicrophoneCapture(onCaptureDiagnostics: { @MainActor (diagnosticsRecord: MicrophoneCaptureDiagnostics) in
+                diagnostics.recordMicrophoneCapture(diagnosticsRecord)
+            }),
             sttRouter: STTRouter(
                 backends: sttRegistry,
                 backendOrder: {
@@ -557,6 +564,16 @@ final class AppModel {
 
     func openPrivacySettings(_ pane: PrivacySettingsPane) {
         privacySettingsOpener.open(pane)
+    }
+
+    /// Opens System Settings directly to Privacy & Security -> Microphone — the one-click fix for
+    /// a stale microphone grant after a dev-signed rebuild: macOS keeps the toggle ON for the
+    /// bundle id but delivers zero audio frames to the re-signed binary until the grant is
+    /// toggled off and back on. Routes through the same injectable `privacySettingsOpener` seam
+    /// as `openPrivacySettings(_:)` (backed by `NSWorkspace.shared.open(_:)` in production), so
+    /// it's testable without touching real System Settings.
+    func openMicrophoneSettings() {
+        privacySettingsOpener.open(.microphone)
     }
 
     func recheckDiagnostics() {

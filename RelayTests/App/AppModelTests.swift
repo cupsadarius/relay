@@ -722,6 +722,38 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(opener.opened, [.microphone, .accessibility, .inputMonitoring])
     }
 
+    /// "Open Microphone Settings" (Security tab) must call the injectable opener seam exactly
+    /// once per click — never a real `NSWorkspace` in tests.
+    func testOpenMicrophoneSettingsDelegatesToInjectedOpenerExactlyOnce() {
+        let opener = FakePrivacySettingsOpener()
+        let model = makeModel(opener: opener)
+
+        model.openMicrophoneSettings()
+
+        XCTAssertEqual(opener.opened, [.microphone])
+    }
+
+    func testLastMicrophoneCaptureDiagnosticsIsNilBeforeAnyCapture() {
+        let model = makeModel()
+
+        XCTAssertNil(model.lastMicrophoneCaptureDiagnostics)
+    }
+
+    /// `AppModel.lastMicrophoneCaptureDiagnostics` is a passthrough onto
+    /// `DiagnosticsRecorder.lastMicrophoneCaptureDiagnostics`; verifies the wiring end to end
+    /// (the actual population from a real capture is covered at the `MicrophoneCapture` level in
+    /// `MicrophoneCaptureStateTests`, and the zero-frame path there is the one this tab most needs
+    /// to make visible).
+    func testLastMicrophoneCaptureDiagnosticsReflectsRecorderState() {
+        let diagnosticsRecorder = DiagnosticsRecorder(capacity: 10)
+        let model = makeModel(diagnostics: diagnosticsRecorder)
+        let record = MicrophoneCaptureDiagnostics(inputSampleRate: 48_000, frameCount: 0, capturedAt: Date(timeIntervalSince1970: 1))
+
+        diagnosticsRecorder.recordMicrophoneCapture(record)
+
+        XCTAssertEqual(model.lastMicrophoneCaptureDiagnostics, record)
+    }
+
     func testLaunchAtLoginEnabledReflectsServiceInitialStatusWhenEnabled() {
         let loginItem = FakeLoginItemController(enabled: true)
         let model = makeModel(loginItem: loginItem)

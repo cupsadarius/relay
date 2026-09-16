@@ -44,6 +44,24 @@ protocol AudioCaptureSourcing: Sendable {
     func stop() async throws
 }
 
+/// Optional extra capability an `AudioCaptureSourcing` implementation can provide: the real input
+/// device's sample rate (Hz), captured before any resampling to the fixed 16 kHz pipeline rate.
+/// Deliberately separate from `AudioCaptureSourcing` itself so existing fakes/tests aren't
+/// required to implement it; `MicrophoneCapture` probes for it with `as? any AudioInputFormatReporting`.
+protocol AudioInputFormatReporting: Sendable {
+    func currentInputSampleRate() -> Double
+}
+
+/// Privacy-safe metadata about one microphone capture attempt: counts, rate, and a timestamp
+/// only — NEVER audio samples, transcript text, or file paths. Reported once per `stop()` call,
+/// including the zero-frame case that goes on to throw `SpeechBackendError.noUsableAudio` (a
+/// stale post-rebuild microphone grant), since that's the case worth surfacing most.
+struct MicrophoneCaptureDiagnostics: Equatable, Sendable {
+    let inputSampleRate: Double
+    let frameCount: Int
+    let capturedAt: Date
+}
+
 enum MicrophoneCaptureError: Error, Equatable, Sendable, LocalizedError {
     case alreadyRecording
     case notRecording
@@ -87,13 +105,28 @@ actor MicrophoneCapture: MicrophoneCapturing, MicrophoneSampleStreaming {
     /// Resumed once the actor reaches `idle`; lets `cancel()` wait out an in-flight
     /// `start()`/`stop()` instead of returning while the real source is still winding down.
     private var idleWaiters: [CheckedContinuation<Void, Never>] = []
+    /// Reports privacy-safe capture diagnostics once per `stop()` call. `@MainActor` closures
+    /// (like the production one `AppModel` builds to forward into `DiagnosticsRecorder`) convert
+    /// implicitly to this plain `@Sendable async` type — the hop happens at the call site (see
+    /// `AppModel`'s own `autoReadEnabled` closure for the same pattern).
+    private let onCaptureDiagnostics: (@Sendable (MicrophoneCaptureDiagnostics) async -> Void)?
+    private let now: @Sendable () -> Date
+    /// The real input device's sample rate for the in-progress/most recent recording, captured
+    /// from `source` (via the optional `AudioInputFormatReporting` capability) once `start()`
+    /// actually begins recording. Stays `0` when `source` doesn't implement that capability (e.g.
+    /// every existing test fake that doesn't opt in), so `stop()` simply reports `0` in that case.
+    private var lastInputSampleRate: Double = 0
 
     init(
         permission: any MicrophonePermissionAuthorizing = SystemMicrophonePermissionAuthorizer(),
-        source: any AudioCaptureSourcing = AVAudioEngineSource()
+        source: any AudioCaptureSourcing = AVAudioEngineSource(),
+        onCaptureDiagnostics: (@Sendable (MicrophoneCaptureDiagnostics) async -> Void)? = nil,
+        now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.permission = permission
         self.source = source
+        self.onCaptureDiagnostics = onCaptureDiagnostics
+        self.now = now
     }
 
     func start(onLevel: @escaping @Sendable (Float) -> Void) async throws {
@@ -125,6 +158,7 @@ actor MicrophoneCapture: MicrophoneCapturing, MicrophoneSampleStreaming {
             switch state {
             case .starting(session) where !startCancelRequested:
                 state = .recording(session)
+                lastInputSampleRate = (source as? any AudioInputFormatReporting)?.currentInputSampleRate() ?? 0
             case let .failedStarting(failedSession, error) where failedSession == session:
                 transitionToIdle()
                 throw error
@@ -169,6 +203,14 @@ actor MicrophoneCapture: MicrophoneCapturing, MicrophoneSampleStreaming {
             try await source.stop()
             transitionToIdle()
             let samples = accumulator.take()
+            // Reported EVEN on the zero-frame path below (before the throw): that's the stale
+            // post-rebuild microphone grant case the Security settings tab most wants visible.
+            // Metadata only — counts, rate, timestamp — never the samples themselves.
+            await onCaptureDiagnostics?(MicrophoneCaptureDiagnostics(
+                inputSampleRate: lastInputSampleRate,
+                frameCount: samples.count,
+                capturedAt: now()
+            ))
             guard !samples.isEmpty else { throw SpeechBackendError.noUsableAudio }
             return AudioInput(samples: samples, sampleRate: 16_000)
         } catch {
@@ -280,11 +322,19 @@ private final class AudioSampleAccumulator: @unchecked Sendable {
     }
 }
 
-private final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendable {
+private final class AVAudioEngineSource: AudioCaptureSourcing, AudioInputFormatReporting, @unchecked Sendable {
     private let lock = NSLock()
     private let engine = AVAudioEngine()
     private var isCapturing = false
     private var captureError: Error?
+    /// The real input device's sample rate (Hz), captured from `inputFormat` in `start()` before
+    /// any resampling to the fixed 16 kHz pipeline rate. Read by `MicrophoneCapture` for
+    /// privacy-safe capture diagnostics — never any raw audio.
+    private var inputSampleRate: Double = 0
+
+    func currentInputSampleRate() -> Double {
+        lock.withLock { inputSampleRate }
+    }
 
     func start(
         onSamples: @escaping @Sendable ([Float]) -> Void,
@@ -306,6 +356,7 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendab
                 throw MicrophoneCaptureError.unavailable("The current input format is unsupported.")
             }
 
+            inputSampleRate = inputFormat.sampleRate
             captureError = nil
             input.installTap(onBus: 0, bufferSize: 4_096, format: inputFormat) { [weak self] buffer, _ in
                 self?.convert(
