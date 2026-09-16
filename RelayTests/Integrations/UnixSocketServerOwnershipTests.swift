@@ -9,22 +9,42 @@ import XCTest
 /// in-process `UnixSocketServer` instances) can never both believe they own
 /// the same socket path.
 final class UnixSocketServerOwnershipTests: XCTestCase {
-    /// A short, unique socket path under `/tmp`, not `NSTemporaryDirectory()`
-    /// — the per-process temp directory on macOS is already long enough that
-    /// adding a lockfile sibling in the same directory risks tipping AF_UNIX's
-    /// ~104-byte `sun_path` limit.
-    private func shortSocketPath() -> String {
+    /// A short, unique socket path under a freshly created per-test directory
+    /// `/tmp/relay-test-<uuid8>/relay.sock` — not `NSTemporaryDirectory()`
+    /// (the per-process temp directory on macOS is already long enough that
+    /// adding a lockfile sibling risks tipping AF_UNIX's ~104-byte `sun_path`
+    /// limit) and not a bare path directly under `/tmp` shared by every test
+    /// (every `UnixSocketServer.start()` also opens `<socketDir>/relay.lock`,
+    /// so sharing a directory would mean sharing that lockfile too, and two
+    /// concurrent test-suite runs — e.g. parallel CI — would contend on it
+    /// and could spuriously fail the flock-guard tests). Giving each test its
+    /// own directory makes its lockfile unique as well, while still letting
+    /// a single test start two servers against the *same* (per-test) path to
+    /// exercise the flock guard.
+    private func uniqueSocketPath() -> String {
         let suffix = UUID().uuidString.prefix(8)
-        return "/tmp/relay-test-\(suffix).sock"
+        let directory = "/tmp/relay-test-\(suffix)"
+        try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        testDirectories.append(directory)
+        return directory + "/relay.sock"
     }
 
     private var serversToStop: [UnixSocketServer] = []
+    private var testDirectories: [String] = []
 
     override func tearDown() {
+        // Stop servers first so every `relay.lock` flock is released before
+        // its directory (lockfile, socket file, and all) is swept away.
         for server in serversToStop {
             server.stop()
         }
         serversToStop.removeAll()
+
+        for directory in testDirectories {
+            try? FileManager.default.removeItem(atPath: directory)
+        }
+        testDirectories.removeAll()
+
         super.tearDown()
     }
 
@@ -35,7 +55,7 @@ final class UnixSocketServerOwnershipTests: XCTestCase {
     /// `UnixSocketServer.start()` on the same path is refused, it can only be
     /// because the probe connect reached this live listener.
     func testProbeDetectsLiveListenerAndRefusesToUnlink() async throws {
-        let path = shortSocketPath()
+        let path = uniqueSocketPath()
 
         let listenerFD = socket(AF_UNIX, SOCK_STREAM, 0)
         XCTAssertGreaterThanOrEqual(listenerFD, 0)
@@ -72,7 +92,7 @@ final class UnixSocketServerOwnershipTests: XCTestCase {
     }
 
     func testStaleSocketAfterCrashIsRecovered() throws {
-        let path = shortSocketPath()
+        let path = uniqueSocketPath()
 
         // Leave behind a stale (bound but never listened-on, then closed)
         // socket file, simulating a crash that skipped `stop()`.
@@ -103,7 +123,7 @@ final class UnixSocketServerOwnershipTests: XCTestCase {
     }
 
     func testForeignNonSocketPathNeverDeleted() throws {
-        let path = shortSocketPath()
+        let path = uniqueSocketPath()
         FileManager.default.createFile(atPath: path, contents: Data("not a socket".utf8))
         defer { try? FileManager.default.removeItem(atPath: path) }
 
@@ -117,7 +137,7 @@ final class UnixSocketServerOwnershipTests: XCTestCase {
     }
 
     func testSecondInstanceCannotStartWhileFirstListens() throws {
-        let path = shortSocketPath()
+        let path = uniqueSocketPath()
 
         let serverA = UnixSocketServer()
         try serverA.start(path: path) { _ in }
