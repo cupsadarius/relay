@@ -407,9 +407,17 @@ final class AppModel {
     }
 
     private func updateSettings(_ update: (inout AppSettings) -> Void) {
+        let previousHotkeys = settings.hotkeys
         update(&settings)
         settingsState.value = settings
-        registerHotkeys()
+        // Only a change to the hotkey DEFINITIONS needs to rebuild `HotkeyMatcher` (which
+        // `registerHotkeys()` does via `hotkeyManager.register`). Rebuilding it on every settings
+        // write — voice, rate, backend order, auto-read, etc. — discarded any in-flight
+        // chord/double-tap gesture state for no reason; the event tap itself is unaffected either
+        // way (already idempotently guarded inside `GlobalHotkeyManager.register`).
+        if settings.hotkeys != previousHotkeys {
+            registerHotkeys()
+        }
         do {
             try settingsStore.save(settings)
         } catch {

@@ -592,7 +592,10 @@ final class AppModelTests: XCTestCase {
         while dictation.events != ["start", "finish", "start"] { await Task.yield() }
     }
 
-    func testToggleAutoReadPersistsAndReregistersImmediately() {
+    /// `autoReadEnabled` is not a hotkey definition, so toggling it must persist immediately
+    /// without rebuilding the hotkey matcher (see `AppModelHotkeySideEffectTests` for the
+    /// general rule this is one instance of).
+    func testToggleAutoReadPersistsWithoutReregisteringHotkeys() {
         let store = FakeSettingsStore(settings: .defaults)
         let hotkeys = FakeHotkeyManager()
         let model = makeModel(store: store, hotkeys: hotkeys)
@@ -601,8 +604,7 @@ final class AppModelTests: XCTestCase {
 
         XCTAssertFalse(model.settings.autoReadEnabled)
         XCTAssertEqual(store.saved.map(\.autoReadEnabled), [false])
-        XCTAssertEqual(hotkeys.registrations.count, 2)
-        XCTAssertEqual(hotkeys.registrations.last?.autoReadEnabled, false)
+        XCTAssertEqual(hotkeys.registrations.count, 1, "toggling auto-read must not rebuild the hotkey matcher")
     }
 
     /// `toggleAutoRead()` is the shared method behind both the `toggleAutoRead` hotkey (tested
