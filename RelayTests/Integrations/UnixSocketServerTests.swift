@@ -362,10 +362,10 @@ final class UnixSocketServerTests: XCTestCase {
 
         let server = UnixSocketServer()
         try server.start(path: path) { line in
-            if line.contains("schemaVersion") {
-                receivedFollowUpLine.fulfill()
+            if line.contains("incomple") {
+                receivedPartialLine.fulfill()   // inverted guard: trips only if the partial is wrongly delivered
             } else {
-                receivedPartialLine.fulfill()
+                receivedFollowUpLine.fulfill()
             }
         }
         defer { server.stop() }
