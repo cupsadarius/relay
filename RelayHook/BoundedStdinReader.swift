@@ -20,8 +20,15 @@ enum BoundedStdinReader {
         while buffer.count <= maxBytes {
             let remaining = maxBytes + 1 - buffer.count
             let toRead = min(chunkSize, remaining)
-            let chunk = handle.readData(ofLength: toRead)
-            if chunk.isEmpty { break } // EOF
+            // `read(upToCount:)` is the throwing Swift API; `readData(ofLength:)`
+            // can raise an uncatchable Objective-C exception on an underlying
+            // I/O error, which would crash RelayHook with a non-zero exit and
+            // violate the "never make the calling agent less reliable"
+            // invariant. Treat a thrown error the same as EOF: stop and
+            // return what has been read so far.
+            guard let chunk = try? handle.read(upToCount: toRead), !chunk.isEmpty else {
+                break // EOF or read error.
+            }
             buffer.append(chunk)
         }
 
