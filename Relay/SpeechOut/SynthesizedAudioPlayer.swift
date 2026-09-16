@@ -25,6 +25,63 @@ enum SynthesizedAudioPlayerError: Error, Equatable, Sendable {
     case bufferAllocationFailed
 }
 
+/// The three terminal outcomes `complete(_:sessionID:)` can fold a session into. Exists purely to
+/// give `complete(_:sessionID:)` a single typed entry point for every terminal path.
+private enum TerminalOutcome: Equatable {
+    case finished
+    case cancelled
+    case failed
+}
+
+/// Seam over the subset of `AVAudioPlayer`'s surface `SynthesizedAudioPlayer` needs, so `play()`'s
+/// `Bool` result and the finish delegate's `successfully` flag can be exercised in tests without a
+/// real audio output device. `RealAudioPlayer` below is the only production implementation.
+@MainActor
+protocol AVAudioPlayerLike: AnyObject {
+    /// Invoked once playback finishes, is interrupted, or fails to decode/play further - mirrors
+    /// `AVAudioPlayerDelegate.audioPlayerDidFinishPlaying(_:successfully:)`'s `successfully` flag.
+    /// Always invoked on the main actor.
+    var onFinish: (@MainActor (_ successfully: Bool) -> Void)? { get set }
+    /// Starts playback; returns `false` if it could not be started (mirrors
+    /// `AVAudioPlayer.play()`).
+    @discardableResult
+    func play() -> Bool
+    func stop()
+    func pause()
+}
+
+/// Wraps a real `AVAudioPlayer`, bridging its `AVAudioPlayerDelegate` finish callback (which
+/// AVFoundation may invoke off the main actor) onto `onFinish`, on the main actor - the only
+/// production `AVAudioPlayerLike`. `SynthesizedAudioPlayer` itself never touches `AVAudioPlayer`
+/// or `AVAudioPlayerDelegate` directly.
+@MainActor
+private final class RealAudioPlayer: NSObject, AVAudioPlayerLike {
+    var onFinish: (@MainActor (Bool) -> Void)?
+
+    private let player: AVAudioPlayer
+    /// Bridges `AVAudioPlayerDelegate`'s completion callback back onto the main actor, without
+    /// making `RealAudioPlayer` itself nonisolated. Held for the player's lifetime since
+    /// `AVAudioPlayer.delegate` is weak.
+    private var delegateShim: PlayerDelegateShim?
+
+    init(data: Data) throws {
+        player = try AVAudioPlayer(data: data)
+        super.init()
+        let shim = PlayerDelegateShim { [weak self] successfully in
+            Task { @MainActor [weak self] in
+                self?.onFinish?(successfully)
+            }
+        }
+        player.delegate = shim
+        delegateShim = shim
+        player.prepareToPlay()
+    }
+
+    func play() -> Bool { player.play() }
+    func stop() { player.stop() }
+    func pause() { player.pause() }
+}
+
 /// Plays a complete WAV `Data` value (as returned by Kokoro's `synthesize`) through
 /// `AVAudioPlayer` and emits the same `TTSPlaybackEvent` lifecycle `AppleTTSBackend` emits via
 /// `AVSpeechSynthesizer`, plus `.level` from a precomputed envelope walked by a `MainActor` timer
@@ -50,15 +107,18 @@ final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
 
     var onEvent: (@MainActor (TTSPlaybackEvent) -> Void)?
 
-    private var audioPlayer: AVAudioPlayer?
-    /// Bridges `AVAudioPlayerDelegate`'s completion callback (which AVFoundation may invoke off
-    /// the main actor) back onto the main actor, without making `SynthesizedAudioPlayer` itself
-    /// nonisolated. Held for the lifetime of `audioPlayer` since `AVAudioPlayer.delegate` is weak.
-    private var delegateShim: PlayerDelegateShim?
+    /// Builds the player for a `startPlayback` call. Defaults to wrapping a real `AVAudioPlayer`
+    /// via `RealAudioPlayer`; overridden in tests with a fake `AVAudioPlayerLike` so `play()`'s
+    /// `Bool` result and the finish delegate's `successfully` flag can be exercised deterministically,
+    /// without a real audio output device.
+    private let makePlayer: @MainActor (Data) throws -> AVAudioPlayerLike
+
+    private var audioPlayer: AVAudioPlayerLike?
     private var currentSessionID: UUID?
-    /// Set by `stop()` before tearing playback down, so the delegate's finish callback (which
-    /// fires both on natural completion and, harmlessly, after an explicit stop) knows not to
-    /// also emit `.finished` for a session `stop()` already emitted `.cancelled` for.
+    /// Set by `stop()` before tearing playback down, so a finish callback that fires both on
+    /// natural completion and, harmlessly, after an explicit stop (or any other stale late
+    /// callback) knows not to also emit a terminal event for a session `stop()` already emitted
+    /// `.cancelled` for. Consulted by `complete(_:sessionID:)` for every non-`.cancelled` outcome.
     private var didStopExplicitly = false
     /// Drives `.level` events for the in-flight session. Walks `levelEnvelope(from:windowSeconds:)`
     /// on a `MainActor` timer instead of a realtime audio tap - allocating (the `Task { @MainActor
@@ -66,35 +126,43 @@ final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
     /// ("pulsing", noise breaks between words).
     private var levelTask: Task<Void, Never>?
 
+    init(makePlayer: @escaping @MainActor (Data) throws -> AVAudioPlayerLike = { try RealAudioPlayer(data: $0) }) {
+        self.makePlayer = makePlayer
+    }
+
     func startPlayback(_ wav: Data, sessionID: UUID) async throws {
         // Still decode to PCM - not for playback, only so `levelEnvelope` has samples to walk.
+        // A decode failure (or a failure constructing the player itself, below) throws here,
+        // before any state is set and before `.scheduled` is emitted - this session was never
+        // accepted, so no terminal event applies, mirroring `StreamingAudioPlayer`'s pre-start
+        // throw contract for a source that fails before playback ever starts.
         let buffer = try Self.decode(wav)
 
         tearDownPlayback()
 
         let envelope = Self.levelEnvelope(from: buffer, windowSeconds: Self.levelWindowSeconds)
 
-        let player = try AVAudioPlayer(data: wav)
-        let shim = PlayerDelegateShim { [weak self] in
-            Task { @MainActor [weak self] in
-                self?.handleCompletion(sessionID: sessionID)
-            }
+        let player = try makePlayer(wav)
+        player.onFinish = { [weak self] successfully in
+            self?.handleCompletion(sessionID: sessionID, successfully: successfully)
         }
-        player.delegate = shim
-        player.prepareToPlay()
 
         audioPlayer = player
-        delegateShim = shim
         currentSessionID = sessionID
         didStopExplicitly = false
 
         onEvent?(.scheduled(sessionID: sessionID))
 
         // `AVAudioPlayer.play()` itself starts playback and returns immediately - there is no
-        // further async step to wait on, so `.started` is emitted right here and this function
-        // returns. The terminal event (`.finished`/`.cancelled`) always arrives later, either
-        // through `handleCompletion` (the delegate's finish callback) or `stop()`.
-        player.play()
+        // further async step to wait on. If it reports it could not start, the session is
+        // complete (as a failure) right here - `.started` must never be emitted for it. Otherwise
+        // `.started` is emitted right here and this function returns; the terminal event
+        // (`.finished`/`.cancelled`/`.failed`) always arrives later, either through
+        // `handleCompletion` (the finish callback) or `stop()`.
+        guard player.play() else {
+            complete(.failed, sessionID: sessionID)
+            return
+        }
         onEvent?(.started(sessionID: sessionID))
         startLevelTimer(envelope: envelope, sessionID: sessionID)
     }
@@ -102,9 +170,7 @@ final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
     func stop() {
         guard let sessionID = currentSessionID else { return }
         didStopExplicitly = true
-        tearDownPlayback()
-        currentSessionID = nil
-        onEvent?(.cancelled(sessionID: sessionID))
+        complete(.cancelled, sessionID: sessionID)
     }
 
     func pause() {
@@ -112,22 +178,35 @@ final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
     }
 
     func resume() {
-        audioPlayer?.play()
+        _ = audioPlayer?.play()
     }
 
-    private func handleCompletion(sessionID: UUID) {
-        guard currentSessionID == sessionID, !didStopExplicitly else { return }
+    private func handleCompletion(sessionID: UUID, successfully: Bool) {
+        complete(successfully ? .finished : .failed, sessionID: sessionID)
+    }
+
+    /// Single funnel for every terminal path (`stop()`'s cancellation, the finish callback's
+    /// success/failure, and a failed `play()`): applies the stale-callback guard, tears down
+    /// playback, and emits the terminal event exactly once. `currentSessionID` is cleared as part
+    /// of that teardown, so a second call for the same session - e.g. a duplicate or late finish
+    /// callback racing a `stop()` - fails the first guard and is a no-op.
+    private func complete(_ outcome: TerminalOutcome, sessionID: UUID) {
+        guard currentSessionID == sessionID else { return }
+        guard outcome == .cancelled || !didStopExplicitly else { return }
         tearDownPlayback()
         currentSessionID = nil
-        onEvent?(.finished(sessionID: sessionID))
+        switch outcome {
+        case .finished: onEvent?(.finished(sessionID: sessionID))
+        case .cancelled: onEvent?(.cancelled(sessionID: sessionID))
+        case .failed: onEvent?(.failed(sessionID: sessionID))
+        }
     }
 
     private func tearDownPlayback() {
         stopLevelTimer()
-        audioPlayer?.delegate = nil
+        audioPlayer?.onFinish = nil
         audioPlayer?.stop()
         audioPlayer = nil
-        delegateShim = nil
     }
 
     /// Starts a `MainActor` loop that walks `envelope` at `levelWindowSeconds` cadence, emitting
@@ -214,17 +293,18 @@ final class SynthesizedAudioPlayer: SynthesizedAudioPlaying {
 /// Bridges `AVAudioPlayerDelegate`'s completion callback onto the main actor. `AVAudioPlayer`'s
 /// delegate is a plain `NSObjectProtocol` callback that AVFoundation does not guarantee arrives
 /// on the main actor, so this is its own `nonisolated` object rather than a method directly on
-/// `SynthesizedAudioPlayer` (which is `@MainActor`-isolated and could not conform to the
-/// nonisolated delegate protocol otherwise). It carries only a `Sendable` closure that hops back
-/// to `SynthesizedAudioPlayer` via `Task { @MainActor ... }`, so no audio work happens here.
+/// `RealAudioPlayer` (which is `@MainActor`-isolated and could not conform to the nonisolated
+/// delegate protocol otherwise). It carries only a `Sendable` closure - passed the delegate
+/// callback's `successfully` flag unchanged - that hops back to `RealAudioPlayer` via
+/// `Task { @MainActor ... }`, so no audio work happens here.
 private final class PlayerDelegateShim: NSObject, AVAudioPlayerDelegate, @unchecked Sendable {
-    private let onFinish: @Sendable () -> Void
+    private let onFinish: @Sendable (Bool) -> Void
 
-    init(onFinish: @escaping @Sendable () -> Void) {
+    init(onFinish: @escaping @Sendable (Bool) -> Void) {
         self.onFinish = onFinish
     }
 
-    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully _: Bool) {
-        onFinish()
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        onFinish(flag)
     }
 }

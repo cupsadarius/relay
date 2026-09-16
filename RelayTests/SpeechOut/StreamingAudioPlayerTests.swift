@@ -238,6 +238,45 @@ final class StreamingAudioPlayerTests: XCTestCase {
         XCTAssertTrue(events.values.contains(.started(sessionID: sessionB)), "B must still start normally, unaffected by A")
     }
 
+    /// Regression/confirmation for the exactly-one-terminal invariant's OTHER `handlePumpFailure`
+    /// branch (the post-start one is `testPostStartFailureEmitsFailedEventInsteadOfThrowingOrFinishing`
+    /// above): a source that fails before playback ever starts (never crosses the prebuffer
+    /// threshold or reaches stream end) must make `startPlayback` throw directly, with NO
+    /// `.failed`/`.started` event ever emitted - there is nothing else left to report a terminal
+    /// event through, mirroring `SynthesizedAudioPlayer`'s decode-failure contract. `engine.start()`
+    /// throwing inside `beginScheduledPlayback` (reached from `pump`'s own do/catch once the
+    /// source stream ends or crosses the prebuffer threshold) is caught by this exact same
+    /// `handlePumpFailure` call, with `started` still `false` at that point - so this test
+    /// exercises the identical single completion point an `engine.start()` throw would hit. A
+    /// dedicated test that forces `AVAudioEngine.start()` itself to throw isn't included: nothing
+    /// short of removing the host's audio output can make a real `AVAudioEngine.start()` fail
+    /// deterministically, which is exactly why these tests are gated behind
+    /// `RELAY_TEST_REAL_AUDIO_ENGINE` in the first place.
+    func testPreStartSourceFailureThrowsWithoutEmittingTerminalEvent() async throws {
+        try requireAudioOutput()
+        let player = StreamingAudioPlayer()
+        let events = EventBox()
+        player.onEvent = { events.append($0) }
+        let sessionID = UUID()
+        struct ImmediateFailure: Error {}
+
+        let stream = AsyncThrowingStream<[Float], Error> { continuation in
+            continuation.finish(throwing: ImmediateFailure())
+        }
+
+        do {
+            try await player.startPlayback(stream, sampleRate: 24_000, sessionID: sessionID)
+            XCTFail("Expected the immediate source failure to propagate")
+        } catch is ImmediateFailure {
+            // Expected.
+        }
+
+        let recorded = events.values.filter { !$0.isLevel }
+        XCTAssertEqual(recorded, [.scheduled(sessionID: sessionID)])
+        XCTAssertFalse(recorded.contains(.failed(sessionID: sessionID)))
+        XCTAssertFalse(recorded.contains(.started(sessionID: sessionID)))
+    }
+
     func testStopWithNoActivePlaybackIsANoOp() {
         let player = StreamingAudioPlayer()
         let events = EventBox()
