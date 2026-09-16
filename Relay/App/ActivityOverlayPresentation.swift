@@ -261,6 +261,12 @@ enum InterimLayout {
     static let maxVisibleLines = 4
     /// The existing fixed interactive-pill height for a single line of subtitle text.
     static let baseHeight: CGFloat = 62
+    /// Extra headroom (points) folded into every wrapped-text height calculation, covering the
+    /// gap between this module's character-count line-wrap estimate and SwiftUI's real
+    /// word-boundary wrapping (a line that's almost full but ends mid-word wraps earlier than the
+    /// raw character math predicts) — biases toward slightly-too-tall rather than a clipped last
+    /// line.
+    static let wrapSlack: CGFloat = 6
 
     /// The pill width for the given interim text: grows from `baseWidth` towards `maxWidth` to
     /// fit it on one line, capping out at `maxWidth` once wrapping is unavoidable.
@@ -270,21 +276,36 @@ enum InterimLayout {
         return min(max(neededWidth, baseWidth), maxWidth)
     }
 
-    /// Estimated number of wrapped lines the text needs at the given pill width.
+    /// Estimated number of wrapped lines the text needs at the given pill width. Reserves one
+    /// extra `averageCharacterWidth` of margin before computing characters-per-line, biasing the
+    /// estimate towards slightly more lines rather than fewer — SwiftUI wraps on word boundaries,
+    /// so a nearly-full line can wrap earlier than a pure character count predicts, and
+    /// overestimating the line count is the safe direction (extra headroom, not a clipped line).
     static func lineCount(for text: String, width: CGFloat) -> Int {
         guard !text.isEmpty else { return 1 }
-        let availableWidth = max(width - chromeWidth, averageCharacterWidth)
+        let availableWidth = max(width - chromeWidth - averageCharacterWidth, averageCharacterWidth)
         let charactersPerLine = max(1, Int(availableWidth / averageCharacterWidth))
         let lines = Int((Double(text.count) / Double(charactersPerLine)).rounded(.up))
         return max(1, lines)
     }
 
-    /// Pill height for the given (unclamped) wrapped line count: grows one `lineHeight` per line
-    /// beyond the first, capped at `maxVisibleLines` — beyond that the view scrolls instead of the
-    /// pill growing further.
+    /// Height of the wrapped-text area alone for a given (1...`maxVisibleLines`-clamped) visible
+    /// line count. This is the single source of truth for how tall wrapped interim text needs:
+    /// the view's `ScrollView` frame (once scrolling kicks in) uses this directly, and
+    /// `height(forLineCount:)` below derives the pill's total height from it too, so the two can
+    /// never independently drift out of agreement and gap or clip the last line.
+    static func textAreaHeight(visibleLines: Int) -> CGFloat {
+        let clamped = min(max(visibleLines, 1), maxVisibleLines)
+        return CGFloat(clamped) * lineHeight + wrapSlack
+    }
+
+    /// Pill height for the given (unclamped) wrapped line count: single-line text keeps the
+    /// original fixed `baseHeight`, and anything beyond one line adds exactly the growth in
+    /// `textAreaHeight` over its single-line value — capped at `maxVisibleLines`, beyond which
+    /// the view scrolls instead of the pill growing further.
     static func height(forLineCount lineCount: Int) -> CGFloat {
         let visibleLines = min(max(lineCount, 1), maxVisibleLines)
         guard visibleLines > 1 else { return baseHeight }
-        return baseHeight + CGFloat(visibleLines - 1) * lineHeight
+        return baseHeight + (textAreaHeight(visibleLines: visibleLines) - textAreaHeight(visibleLines: 1))
     }
 }

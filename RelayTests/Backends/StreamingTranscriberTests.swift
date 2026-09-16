@@ -3,6 +3,10 @@ import XCTest
 
 @MainActor
 final class StreamingTranscriberTests: XCTestCase {
+    func testDefaultTickIntervalIsTheTunedFourHundredFiftyMilliseconds() {
+        XCTAssertEqual(StreamingTranscriber.defaultTickInterval, .milliseconds(450))
+    }
+
     func testTickLoopCallsTranscribeRepeatedlyAtTheConfiguredIntervalAndForwardsResultText() async throws {
         let recorder = CallRecorder()
         let transcriber = StreamingTranscriber(

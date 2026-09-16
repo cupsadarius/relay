@@ -23,8 +23,9 @@ import os
 // path.
 //
 // Current approach: periodic growing-window re-transcribe.
-// Every tickInterval (about 1s), snapshot however much audio has arrived so far and re-run the
-// exact same accurate batch transcription used for the final result (transcribe, injected by the
+// Every tickInterval (about 450ms, see defaultTickInterval), snapshot however much audio has
+// arrived so far and re-run the exact same accurate batch transcription used for the final
+// result (transcribe, injected by the
 // caller, in practice STTRouter.transcribe, so this reuses whichever backend and model is already
 // loaded for the session rather than loading a second copy of anything). Each call is
 // independent and stateless (AsrManager's plain batch transcribe resets decoder state per call,
@@ -38,6 +39,12 @@ import os
 // window instead. This cap applies to interim display only: the authoritative final transcript is
 // produced separately, from MicrophoneCapture's own full, uncapped accumulator.
 actor StreamingTranscriber {
+    /// The re-transcribe cadence: a single, easy-to-tune constant. Lower feels more responsive
+    /// (interim text catches up to speech sooner) at the cost of more CPU spent re-transcribing
+    /// the growing buffer roughly twice as often; 1s felt laggy in live testing, 450ms reads as
+    /// prompt without needing a shorter STT call per tick to keep up.
+    static let defaultTickInterval: Duration = .milliseconds(450)
+
     private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "streaming-transcriber")
     // How often the tick loop re-transcribes. Injectable (default about 1s) so tests can drive a
     // fast loop instead of waiting on real wall-clock time.
@@ -59,7 +66,7 @@ actor StreamingTranscriber {
     private var tickTask: Task<Void, Never>?
 
     init(
-        tickInterval: Duration = .seconds(1),
+        tickInterval: Duration = StreamingTranscriber.defaultTickInterval,
         maxWindowSamples: Int = 15 * 16_000,
         transcribe: @escaping @MainActor (AudioInput) async throws -> Transcript,
         onInterimText: @escaping @Sendable (String) -> Void

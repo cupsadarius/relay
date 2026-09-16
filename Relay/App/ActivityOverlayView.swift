@@ -134,7 +134,7 @@ private struct InterimTextView: View {
                 ScrollView(.vertical, showsIndicators: false) {
                     textContent
                 }
-                .frame(height: CGFloat(visibleLineCount) * InterimLayout.lineHeight, alignment: .bottom)
+                .frame(height: InterimLayout.textAreaHeight(visibleLines: visibleLineCount), alignment: .bottom)
                 .onChange(of: text) {
                     withAnimation(Self.scrollAnimation) {
                         proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)

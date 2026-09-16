@@ -111,6 +111,21 @@ final class ActivityOverlayPresentationTests: XCTestCase {
         XCTAssertGreaterThan(longLines, shortLines)
     }
 
+    func testPillHeightAndTextAreaHeightAlwaysAgreeSoTheLastLineNeverGapsOrClips() {
+        for lineCount in 1...(InterimLayout.maxVisibleLines + 3) {
+            let pillHeight = InterimLayout.height(forLineCount: lineCount)
+            let clampedVisibleLines = min(max(lineCount, 1), InterimLayout.maxVisibleLines)
+            let textAreaHeight = InterimLayout.textAreaHeight(visibleLines: clampedVisibleLines)
+            let singleLineTextAreaHeight = InterimLayout.textAreaHeight(visibleLines: 1)
+            let impliedChromeHeight = InterimLayout.baseHeight - singleLineTextAreaHeight
+
+            // The pill always has exactly enough room for its chrome plus the full text area -
+            // never more (a gap) and never less (a clip), for any line count from 1 up through
+            // and beyond the point scrolling kicks in.
+            XCTAssertEqual(pillHeight, impliedChromeHeight + textAreaHeight, accuracy: 0.001)
+        }
+    }
+
     func testInterimLayoutHeightCapsAtMaxVisibleLines() {
         let height = InterimLayout.height(forLineCount: InterimLayout.maxVisibleLines + 10)
         let cappedHeight = InterimLayout.height(forLineCount: InterimLayout.maxVisibleLines)
