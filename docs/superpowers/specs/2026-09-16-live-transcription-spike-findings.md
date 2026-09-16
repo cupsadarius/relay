@@ -1,7 +1,11 @@
 # Live Transcription Spike - Findings
 
 **Date:** 2026-09-16
-**Status:** Spike complete, revised after a live test found the first approach broken
+**Status:** Spike complete, revised after a live test found the first approach broken.
+Sections 6-7 were further updated after a subsequent productionization + polish pass that shipped
+`transcribeForInterim`, the 450ms cadence, prefix-stable text diffing, animated resize/scroll, and
+the interim-quiescence-before-final fix described there; the rest of this document (sections 1-5,
+8-11) still describes the spike as originally built and is left as historical record.
 
 ## 1. Goal
 
@@ -127,39 +131,89 @@ MicrophoneCapture's own separate, uncapped accumulator, untouched by any of this
   StreamingTranscriber entirely in the whole existing test suite, regardless of what
   StreamingTranscriber's internals do. There was nothing timer-driven under test to update.
 
-## 6. Interim vs. final reconciliation
+## 6. Interim vs. final reconciliation (updated for the shipped production design)
 
-Unchanged in spirit from before, and simpler now: interim text is purely a
-DictationActivityPublishing/pill concern; it never touches Transcript,
-RulesTranscriptProcessor, or TextInserting. The batch path (microphone.stop, then
-sttRouter.transcribe, then processor.process, then textInserter.insert) is completely
-unmodified. stopStreamingTranscription() runs at the start of finish(), before the batch
-pipeline's own Task is even created, cancelling the tick loop so no further interim call can
-start; the two paths never race over what gets inserted, only over what the pill displays a
-moment earlier. Because interim ticks now call the same sttRouter.transcribe the final call
-uses, and STTRouter's cachedCandidateOrder field is consumed by whichever transcribe() call
-happens to run next, an interim tick landing between the final backend-availability lookup and
-the final transcribe call would consume that one-shot cache first; this is a minor, accepted
-spike wrinkle (worst case, the final call re-probes backend availability instead of reusing a
-cached selection) rather than a correctness problem -- see section 7.
+This section described a spike-era wrinkle that no longer exists; it is rewritten here to match
+what actually shipped after the productionization pass.
 
-## 7. Latency and quality feel
+Interim text is still purely a DictationActivityPublishing/pill concern; it never touches
+Transcript, RulesTranscriptProcessor, or TextInserting. The batch path (microphone.stop, then
+sttRouter.transcribe, then processor.process, then textInserter.insert) is unmodified.
 
-Not verified with a live microphone by this agent (see section 10: sandboxed agent, no audio
-input; the coordinator ran the live test that found attempt 1 broken and will verify attempt 2).
-By construction:
+**No more cache sharing.** STTRouter now has two separate transcription entry points instead of
+one. `transcribe(audio:options:)` is the router's normal, authoritative call: it still resumes the
+selection cached by an immediately preceding `preferredBackendDisplayName()` lookup and clears
+that cache afterward, exactly as before. `transcribeForInterim(audio:options:)` is new: it always
+walks a fresh `backendOrder()` and never reads or writes `cachedCandidateOrder`. Interim ticks call
+`transcribeForInterim`; DictationCoordinator's final call still calls `transcribe`. The two can no
+longer interfere with each other's backend selection no matter how they interleave --
+`STTRouterTests.testInterimTranscribeCallsDoNotConsumeOrDisturbTheCachedSelectionForTheFinalCall`
+proves several interim calls between a lookup and the final call never disturb which backend the
+final call resumes with.
 
-- First interim update should land roughly 1 second (tickInterval) after speech starts, using
-  whatever audio has accumulated in that first second.
-- Updates continue roughly every 1 second afterward, each one a fresh, complete re-transcription
-  of the growing (capped) buffer -- so later updates should read as increasingly complete and
-  accurate sentences, not accumulating small chunk-boundary errors the way attempt 1 did.
-- A tick is skipped (not queued) if the previous tick is still transcribing, so on a slower machine
-  or with a slower backend, updates may arrive somewhat less often than exactly once per second,
-  but never overlap or race.
-- Minor architectural wrinkle carried over from reusing STTRouter directly for interim: repeated
-  availability polling of every configured backend once per tick, and the cachedCandidateOrder
-  interaction noted in section 6. Neither breaks anything; both are spike-acceptable.
+**No more interim-vs-final contention on a shared backend actor.** The spike's
+`stopStreamingTranscription()` cancelled the tick loop task but never awaited it, so a slow
+interim call already in flight on a shared backend actor (in practice, FluidAudio's Parakeet
+`AsrManager`) could still be running when the final `sttRouter.transcribe` call started on the
+same actor -- the final result would then queue behind up to ~15s of interim audio instead of
+running immediately. `StreamingTranscriber.stop()` is now `async` and awaits its tick-loop task's
+`.value` before returning: cancelling the loop only stops *future* ticks, so awaiting the task is
+what actually blocks until any in-flight `transcribe(...)` call genuinely finishes.
+`stopStreamingTranscription()` (called at the start of `finish()`/`cancel(sessionID:)`, before the
+batch pipeline's own task is created) now fully quiesces the interim path before the final call
+ever starts. Proven by `DictationCoordinatorTests.testFinalTranscribeDoesNotStartUntilTheInFlightInterimCallCompletesAfterStop`,
+which uses a gated fake backend to show the final call literally cannot begin until the blocked
+interim call is released.
+
+**Sample delivery is now strictly ordered.** Each microphone sample batch used to spawn its own
+unstructured `Task { await transcriber.appendSamples(...) }`, whose relative scheduling order
+across separate Tasks the Swift runtime does not guarantee. Batches now flow through a single
+`AsyncStream<[Float]>`: the sample observer's `yield` call is synchronous, so it preserves arrival
+order by construction, and one long-lived background task drains the stream into the transcriber
+one batch at a time.
+
+**Settings-gated.** All of the above only runs when `AppSettings.liveTranscriptionEnabled` is
+`true` (the default). When it's off, `beginStreamingTranscription` returns immediately -- no
+`StreamingTranscriber`, no sample observer, no `transcribeForInterim` calls at all.
+
+## 7. Latency and quality feel (updated for the shipped production design)
+
+Live testing after the spike (by the person driving this work, not this agent -- see section 10)
+found the original ~1s cadence laggy, and found each tick's full-string replacement made the pill
+read as rewriting rather than extending. Both were addressed in the productionization pass:
+
+- **Cadence lowered to 450ms.** Extracted into `StreamingTranscriber.defaultTickInterval`, a single
+  named constant, specifically so it stays easy to tune again. This is close to double the
+  re-transcribe rate's CPU cost versus the original 1s spike (see section 8), traded for
+  noticeably more responsive-feeling interim text. The skip-if-in-flight debounce is unchanged: a
+  tick is still skipped outright (not queued) if the previous tick's transcription hasn't finished,
+  so updates can arrive somewhat less often than every 450ms on a slower backend, but never overlap.
+- **Interim text no longer reads as a full rewrite each tick.** A new pure helper, `InterimTextDiff`,
+  computes the longest common prefix between the previous and current interim string (trimmed back
+  to the last completed word, so a word mid-revision never flickers between "stable" and "changed").
+  The view renders the stable prefix and the changed tail as one concatenated `Text` -- wrapping
+  still flows as a single paragraph -- with `.contentTransition(.opacity)` giving only the tail a
+  subtle crossfade. Since the stable prefix's string value is usually unchanged tick to tick,
+  SwiftUI's own view diffing leaves it alone; only the genuinely new tail re-renders.
+- **The pill's resize and auto-scroll are animated instead of snapping.** The NSPanel's frame
+  change (`ActivityOverlayPanelHost.setFrame`) now animates via `NSAnimationContext` once the panel
+  is already positioned (the very first placement still snaps in, matching the existing
+  scale/opacity entrance transition), and the SwiftUI content frame animates in lockstep. The pill's
+  bottom-edge/horizontal-center anchor survives the animation because `ActivityOverlayPlacement`
+  keeps both invariants linear in the panel rect, and linearly interpolating between two anchored
+  frames stays anchored at every intermediate frame -- proven analytically and by
+  `ActivityOverlayWindowControllerTests.testGrowingInterimTextRecentersHorizontallyAndAnchorsTheSameBottomEdgeAsThePanelGrowsTaller`.
+  Auto-scroll to the newest text now eases in via `withAnimation` instead of jumping.
+- **The pill height math no longer risks gapping or clipping the last visible line.** The pill's
+  total height and the `ScrollView`'s frame height (once scrolling kicks in past
+  `InterimLayout.maxVisibleLines`) used to be two independently-computed formulas that could drift
+  apart. Both now derive from one `InterimLayout.textAreaHeight(visibleLines:)` function, plus a
+  small fixed slack constant biasing the character-count wrap estimate toward slightly too tall
+  rather than clipped, since SwiftUI wraps on word boundaries and a nearly-full line can wrap
+  earlier than pure character math predicts.
+- Not independently re-verified with a live microphone by this agent in this pass either (same
+  sandboxing constraint as section 10) -- the coordinator will rebuild and the user will retest the
+  450ms cadence, the animations, and the text-diffing feel before this merges to main.
 
 ## 8. CPU and memory cost
 
@@ -177,12 +231,15 @@ measuring before shipping this beyond a spike (see section 9).
    especially on lower-power Macs; consider a longer tick interval, a shorter window cap, or
    throttling ticks once the buffer is long, if it turns out to be too hot.
 2. A settings toggle plus graceful degradation UX. This spike is always-on with no user control.
+   **Done in the productionization pass:** `AppSettings.liveTranscriptionEnabled` (default on),
+   surfaced as a toggle in a new General settings tab, gates the whole feature off cleanly.
 3. Give interim ticks their own backend-selection path (or otherwise avoid sharing
    cachedCandidateOrder with the final call) so the two are fully independent rather than
    incidentally interacting through STTRouter's one-shot cache field (section 6).
+   **Done:** see the rewritten section 6 above.
 4. Unit tests for StreamingTranscriber's tick loop, debounce, and windowing/cap logic (none were
    added here; spike scope, per the brief, and the type has no dependents in the existing test
-   suite to update).
+   suite to update). **Done:** `RelayTests/Backends/StreamingTranscriberTests.swift`.
 5. An end-to-end manual or automated verification with a real microphone, run inside this
    environment rather than only by a human tester -- this agent's environment has no audio input
    device (see section 10).
