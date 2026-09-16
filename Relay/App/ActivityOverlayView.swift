@@ -67,7 +67,13 @@ struct ActivityOverlayView: View {
                         .foregroundStyle(.white)
                         .lineLimit(1)
                 }
-                if let subtitle = presentation.subtitle {
+                if let interimText = presentation.interimText {
+                    InterimTextView(
+                        text: interimText,
+                        visibleLineCount: presentation.interimVisibleLineCount,
+                        needsScroll: presentation.interimNeedsScroll
+                    )
+                } else if let subtitle = presentation.subtitle {
                     Text(subtitle)
                         .font(.system(size: 10))
                         .foregroundStyle(OverlayPalette.subtitleText)
@@ -91,6 +97,52 @@ struct ActivityOverlayView: View {
             }
         }
         .padding(.horizontal, 15)
+    }
+}
+
+/// Renders the Listening pill's live interim transcription: wraps across multiple lines instead
+/// of truncating, and once the text grows past `visibleLineCount` lines, switches to a bounded,
+/// vertically scrolling container that stays pinned to the newest (bottom) text as it updates -
+/// so the pill's on-screen height never exceeds what `ActivityOverlayPresentation` computed for
+/// it, regardless of how long the dictation runs.
+private struct InterimTextView: View {
+    let text: String
+    let visibleLineCount: Int
+    let needsScroll: Bool
+    private static let bottomAnchorID = "interim-text-bottom"
+
+    var body: some View {
+        if needsScroll {
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    textContent
+                }
+                .frame(height: CGFloat(visibleLineCount) * InterimLayout.lineHeight, alignment: .bottom)
+                .onChange(of: text) {
+                    proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                }
+                .onAppear {
+                    proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                }
+            }
+        } else {
+            textLabel
+        }
+    }
+
+    private var textContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            textLabel
+            Color.clear.frame(width: 1, height: 1).id(Self.bottomAnchorID)
+        }
+    }
+
+    private var textLabel: some View {
+        Text(text)
+            .font(.system(size: 10))
+            .foregroundStyle(OverlayPalette.subtitleText)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

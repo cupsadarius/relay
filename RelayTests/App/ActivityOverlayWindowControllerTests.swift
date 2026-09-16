@@ -40,6 +40,41 @@ final class ActivityOverlayWindowControllerTests: XCTestCase {
         XCTAssertEqual(host.frames.map(\.origin), [expectedFrame.origin])
     }
 
+    func testGrowingInterimTextRecentersHorizontallyAndAnchorsTheSameBottomEdgeAsThePanelGrowsTaller() {
+        let host = FakeOverlayPanelHost()
+        let presenter = makeController(model: ActivityOverlayModel(), host: host, screens: FakeOverlayScreens())
+        let id = UUID()
+
+        presenter.update(
+            state: .listening(sessionID: id, startedAt: .now, level: 0, interimText: ""),
+            style: .interactive
+        )
+        let longText = String(repeating: "word ", count: 200)
+        presenter.update(
+            state: .listening(sessionID: id, startedAt: .now, level: 0, interimText: longText),
+            style: .interactive
+        )
+
+        XCTAssertEqual(host.frames.count, 2)
+        let baseFrame = host.frames[0]
+        let grownFrame = host.frames[1]
+
+        // The panel grows to fit the wrapped interim text - never smaller than the base capsule.
+        XCTAssertGreaterThan(grownFrame.size.height, baseFrame.size.height)
+        XCTAssertGreaterThanOrEqual(grownFrame.size.width, baseFrame.size.width)
+
+        // Anchored to the same bottom edge of the visible frame regardless of height: the pill
+        // grows upward, away from the screen edge, rather than jumping or drifting off it.
+        XCTAssertEqual(baseFrame.origin.y, grownFrame.origin.y, accuracy: 0.01)
+
+        // Recentered horizontally around the same screen midpoint as the pill grows wider.
+        let visibleFrame = ActivityOverlayScreen.left.visibleFrame
+        let baseMidX = baseFrame.origin.x + baseFrame.size.width / 2
+        let grownMidX = grownFrame.origin.x + grownFrame.size.width / 2
+        XCTAssertEqual(baseMidX, visibleFrame.midX, accuracy: 0.01)
+        XCTAssertEqual(grownMidX, visibleFrame.midX, accuracy: 0.01)
+    }
+
     func testOffAndHiddenNeverCreatePanel() {
         let host = FakeOverlayPanelHost()
         let presenter = makeController(model: ActivityOverlayModel(), host: host, screens: FakeOverlayScreens())

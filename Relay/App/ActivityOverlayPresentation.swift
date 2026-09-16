@@ -35,6 +35,42 @@ struct ActivityOverlayPresentation: Equatable {
     let animatesWaveform: Bool
     let usesScaleTransition: Bool
     let speakingLevel: Float?
+    /// The live interim transcription text for the Listening pill, wrapped/scrolled by the view
+    /// rather than truncated. `nil` for every other state and for Listening with no interim text
+    /// yet - Processing and every non-listening state deliberately never carry this, so they keep
+    /// their compact, fixed-size look regardless of how long dictation ran.
+    let interimText: String?
+    /// How many lines of `interimText` should be visible at once, capped at
+    /// `InterimLayout.maxVisibleLines`. `1` when there is no interim text.
+    let interimVisibleLineCount: Int
+    /// Whether the wrapped interim text overflows `interimVisibleLineCount` and needs a
+    /// scrollable container pinned to the newest (bottom) line rather than a fully-grown one.
+    let interimNeedsScroll: Bool
+
+    init(
+        kind: Kind, accent: Accent, layout: Layout, cornerRadius: CGFloat, size: CGSize,
+        title: String?, subtitle: String?, startedAt: Date?, action: ActivityOverlayAction?,
+        actionAccessibilityLabel: String?, animatesWaveform: Bool, usesScaleTransition: Bool,
+        speakingLevel: Float?, interimText: String? = nil, interimVisibleLineCount: Int = 1,
+        interimNeedsScroll: Bool = false
+    ) {
+        self.kind = kind
+        self.accent = accent
+        self.layout = layout
+        self.cornerRadius = cornerRadius
+        self.size = size
+        self.title = title
+        self.subtitle = subtitle
+        self.startedAt = startedAt
+        self.action = action
+        self.actionAccessibilityLabel = actionAccessibilityLabel
+        self.animatesWaveform = animatesWaveform
+        self.usesScaleTransition = usesScaleTransition
+        self.speakingLevel = speakingLevel
+        self.interimText = interimText
+        self.interimVisibleLineCount = interimVisibleLineCount
+        self.interimNeedsScroll = interimNeedsScroll
+    }
 
     /// Rest-state bar heights (points) for the 7-bar waveform, shared by both styles.
     static let waveformRestHeights: [CGFloat] = [8, 15, 23, 11, 23, 15, 8]
@@ -65,23 +101,40 @@ struct ActivityOverlayPresentation: Equatable {
         case .hidden:
             return nil
         case let .listening(sessionID, startedAt, level, interimText):
+            let hasInterimText = interactive && !interimText.isEmpty
+            let listeningSize: CGSize
+            let lineCount: Int
+            let needsScroll: Bool
+            if hasInterimText {
+                let width = InterimLayout.width(for: interimText)
+                let wrappedLines = InterimLayout.lineCount(for: interimText, width: width)
+                lineCount = min(wrappedLines, InterimLayout.maxVisibleLines)
+                needsScroll = wrappedLines > InterimLayout.maxVisibleLines
+                listeningSize = CGSize(width: width, height: InterimLayout.height(forLineCount: wrappedLines))
+            } else {
+                listeningSize = size
+                lineCount = 1
+                needsScroll = false
+            }
             return .init(
-                kind: .listening(level: level), accent: .red, layout: layout, cornerRadius: cornerRadius, size: size,
+                kind: .listening(level: level), accent: .red, layout: layout, cornerRadius: cornerRadius,
+                size: listeningSize,
                 title: interactive ? "Listening" : nil,
-                subtitle: interactive
-                    ? Self.subtitle(interimText: interimText, fallback: backendName ?? "Microphone") : nil,
+                subtitle: interactive && !hasInterimText ? (backendName ?? "Microphone") : nil,
                 startedAt: startedAt,
                 action: interactive ? .cancelDictation(sessionID: sessionID) : nil,
                 actionAccessibilityLabel: interactive ? "Cancel dictation" : nil,
                 animatesWaveform: !reduceMotion, usesScaleTransition: scaleTransition,
-                speakingLevel: nil
+                speakingLevel: nil,
+                interimText: hasInterimText ? interimText : nil,
+                interimVisibleLineCount: lineCount,
+                interimNeedsScroll: needsScroll
             )
-        case let .processing(sessionID, startedAt, interimText):
+        case let .processing(sessionID, startedAt):
             return .init(
                 kind: .processing, accent: .amber, layout: layout, cornerRadius: cornerRadius, size: size,
                 title: interactive ? "Processing" : nil,
-                subtitle: interactive
-                    ? Self.subtitle(interimText: interimText, fallback: backendName ?? "Transcribing") : nil,
+                subtitle: interactive ? (backendName ?? "Transcribing") : nil,
                 startedAt: startedAt,
                 action: interactive ? .cancelDictation(sessionID: sessionID) : nil,
                 actionAccessibilityLabel: interactive ? "Cancel dictation" : nil,
@@ -168,21 +221,6 @@ struct ActivityOverlayPresentation: Equatable {
         return Self.waveformMinScale + clampedLevel * (1 - Self.waveformMinScale)
     }
 
-    /// SPIKE: picks the Listening/Processing subtitle — the live interim transcription when one is
-    /// available, the usual backend-name placeholder otherwise. Truncated to a fixed character
-    /// budget so a long run-on sentence never grows the pill: the interactive layout is a fixed
-    /// size and the subtitle Text already has `lineLimit(1)`, so anything longer would just clip
-    /// mid-character rather than resize anything, but capping the string here keeps the value
-    /// itself well-formed for anyone reading `ActivityOverlayState` directly (diagnostics, tests).
-    private static let interimTextCharacterBudget = 60
-
-    private static func subtitle(interimText: String, fallback: String) -> String {
-        guard !interimText.isEmpty else { return fallback }
-        guard interimText.count > interimTextCharacterBudget else { return interimText }
-        let cutoff = interimText.index(interimText.startIndex, offsetBy: interimTextCharacterBudget)
-        return interimText[..<cutoff] + "…"
-    }
-
     private static func errorDisplayCopy(for category: ActivityOverlayErrorCategory) -> String {
         switch category {
         case .microphone: "Microphone unavailable"
@@ -198,5 +236,55 @@ struct ActivityOverlayPresentation: Equatable {
     static func elapsedTime(since start: Date, now: Date) -> String {
         let seconds = max(0, Int(now.timeIntervalSince(start)))
         return String(format: "%02d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+/// Pure sizing math for the Listening pill's interim text: grows the pill's width up to a cap,
+/// estimates how many lines that text wraps to at that width, and grows height up to a cap beyond
+/// which the view scrolls instead. A character-count approximation rather than real AppKit/
+/// SwiftUI text measurement, so this stays a plain, fast, host-free unit under test; any small
+/// mismatch against actual on-screen wrapping is absorbed by the view's bounded ScrollView.
+enum InterimLayout {
+    /// The existing fixed interactive-pill width, used whenever there is no interim text yet.
+    static let baseWidth: CGFloat = 282
+    /// The interactive pill never grows wider than this — beyond it, text wraps instead.
+    static let maxWidth: CGFloat = 420
+    /// Roughly how much of the pill's width is chrome (icon, padding, time readout) rather than
+    /// available for text.
+    static let chromeWidth: CGFloat = 92
+    /// A rough average glyph width (points) for the pill's subtitle font, used only to estimate
+    /// wrapping — not for precise layout.
+    static let averageCharacterWidth: CGFloat = 6.4
+    /// Approximate line height (points) for the subtitle font.
+    static let lineHeight: CGFloat = 15
+    /// Beyond this many visible lines, the pill stops growing taller and scrolls instead.
+    static let maxVisibleLines = 4
+    /// The existing fixed interactive-pill height for a single line of subtitle text.
+    static let baseHeight: CGFloat = 62
+
+    /// The pill width for the given interim text: grows from `baseWidth` towards `maxWidth` to
+    /// fit it on one line, capping out at `maxWidth` once wrapping is unavoidable.
+    static func width(for text: String) -> CGFloat {
+        guard !text.isEmpty else { return baseWidth }
+        let neededWidth = CGFloat(text.count) * averageCharacterWidth + chromeWidth
+        return min(max(neededWidth, baseWidth), maxWidth)
+    }
+
+    /// Estimated number of wrapped lines the text needs at the given pill width.
+    static func lineCount(for text: String, width: CGFloat) -> Int {
+        guard !text.isEmpty else { return 1 }
+        let availableWidth = max(width - chromeWidth, averageCharacterWidth)
+        let charactersPerLine = max(1, Int(availableWidth / averageCharacterWidth))
+        let lines = Int((Double(text.count) / Double(charactersPerLine)).rounded(.up))
+        return max(1, lines)
+    }
+
+    /// Pill height for the given (unclamped) wrapped line count: grows one `lineHeight` per line
+    /// beyond the first, capped at `maxVisibleLines` — beyond that the view scrolls instead of the
+    /// pill growing further.
+    static func height(forLineCount lineCount: Int) -> CGFloat {
+        let visibleLines = min(max(lineCount, 1), maxVisibleLines)
+        guard visibleLines > 1 else { return baseHeight }
+        return baseHeight + CGFloat(visibleLines - 1) * lineHeight
     }
 }

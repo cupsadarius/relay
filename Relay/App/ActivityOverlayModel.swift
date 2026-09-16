@@ -13,7 +13,7 @@ enum ActivityOverlayErrorCategory: Equatable, Sendable {
 enum ActivityOverlayState: Equatable, Sendable {
     case hidden
     case listening(sessionID: UUID, startedAt: Date, level: Float, interimText: String = "")
-    case processing(sessionID: UUID, startedAt: Date, interimText: String = "")
+    case processing(sessionID: UUID, startedAt: Date)
     case preparingSpeech(sessionID: UUID, startedAt: Date)
     case speaking(sessionID: UUID, startedAt: Date, level: Float?)
     case error(sessionID: UUID, category: ActivityOverlayErrorCategory, message: String)
@@ -23,7 +23,7 @@ enum ActivityOverlayState: Equatable, Sendable {
         case .hidden:
             nil
         case let .listening(sessionID, _, _, _),
-             let .processing(sessionID, _, _),
+             let .processing(sessionID, _),
              let .preparingSpeech(sessionID, _),
              let .speaking(sessionID, _, _),
              let .error(sessionID, _, _):
@@ -37,7 +37,7 @@ enum ActivityOverlayState: Equatable, Sendable {
 
     var action: ActivityOverlayAction? {
         switch self {
-        case let .listening(sessionID, _, _, _), let .processing(sessionID, _, _):
+        case let .listening(sessionID, _, _, _), let .processing(sessionID, _):
             .cancelDictation(sessionID: sessionID)
         case let .preparingSpeech(sessionID, _), let .speaking(sessionID, _, _):
             .stopSpeech(sessionID: sessionID)
@@ -117,9 +117,9 @@ final class ActivityOverlayModel {
     }
 
     func process(sessionID: UUID) {
-        guard case let .listening(activeSessionID, startedAt, _, interimText) = state,
+        guard case let .listening(activeSessionID, startedAt, _, _) = state,
               activeSessionID == sessionID else { return }
-        setState(.processing(sessionID: sessionID, startedAt: startedAt, interimText: interimText))
+        setState(.processing(sessionID: sessionID, startedAt: startedAt))
     }
 
     /// Shows the amber "Processing" pill immediately for user-requested speech, before synthesis

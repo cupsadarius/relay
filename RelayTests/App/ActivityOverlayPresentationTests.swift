@@ -24,6 +24,100 @@ final class ActivityOverlayPresentationTests: XCTestCase {
         XCTAssertEqual(value?.size, CGSize(width: 282, height: 62))
     }
 
+    func testListeningWithShortInterimTextStaysAtBaseSizeWithNoScroll() {
+        let id = UUID()
+        let value = ActivityOverlayPresentation.make(
+            state: .listening(sessionID: id, startedAt: .distantPast, level: 0.4, interimText: "hello there"),
+            style: .interactive,
+            reduceMotion: false
+        )
+
+        XCTAssertEqual(value?.interimText, "hello there")
+        XCTAssertNil(value?.subtitle)
+        XCTAssertEqual(value?.interimVisibleLineCount, 1)
+        XCTAssertFalse(value?.interimNeedsScroll ?? true)
+        XCTAssertEqual(value?.size, CGSize(width: 282, height: 62))
+    }
+
+    func testListeningWithLongInterimTextGrowsWidthUpToTheCap() {
+        let id = UUID()
+        let longText = String(repeating: "word ", count: 30)
+        let value = ActivityOverlayPresentation.make(
+            state: .listening(sessionID: id, startedAt: .distantPast, level: 0.4, interimText: longText),
+            style: .interactive,
+            reduceMotion: false
+        )
+
+        XCTAssertEqual(value?.size.width, InterimLayout.maxWidth)
+        XCTAssertGreaterThan(value?.size.height ?? 0, 62)
+    }
+
+    func testListeningWithVeryLongInterimTextCapsHeightAndNeedsScroll() {
+        let id = UUID()
+        let veryLongText = String(repeating: "word ", count: 200)
+        let value = ActivityOverlayPresentation.make(
+            state: .listening(sessionID: id, startedAt: .distantPast, level: 0.4, interimText: veryLongText),
+            style: .interactive,
+            reduceMotion: false
+        )
+
+        XCTAssertEqual(value?.interimVisibleLineCount, InterimLayout.maxVisibleLines)
+        XCTAssertTrue(value?.interimNeedsScroll ?? false)
+        XCTAssertEqual(
+            value?.size.height,
+            InterimLayout.baseHeight + CGFloat(InterimLayout.maxVisibleLines - 1) * InterimLayout.lineHeight
+        )
+    }
+
+    func testListeningInMinimalStyleIgnoresInterimTextEntirely() {
+        let id = UUID()
+        let value = ActivityOverlayPresentation.make(
+            state: .listening(sessionID: id, startedAt: .distantPast, level: 0.4, interimText: "some interim text"),
+            style: .minimal,
+            reduceMotion: false
+        )
+
+        XCTAssertNil(value?.interimText)
+        XCTAssertEqual(value?.size, CGSize(width: 154, height: 40))
+    }
+
+    func testProcessingNeverExposesInterimTextAndStaysCompact() {
+        let value = ActivityOverlayPresentation.make(
+            state: .processing(sessionID: UUID(), startedAt: .now),
+            style: .interactive,
+            reduceMotion: false
+        )
+
+        XCTAssertNil(value?.interimText)
+        XCTAssertEqual(value?.subtitle, "Transcribing")
+        XCTAssertEqual(value?.size, CGSize(width: 282, height: 62))
+    }
+
+    func testInterimLayoutWidthGrowsWithTextLengthUpToTheCap() {
+        XCTAssertEqual(InterimLayout.width(for: ""), InterimLayout.baseWidth)
+        XCTAssertEqual(InterimLayout.width(for: "hi"), InterimLayout.baseWidth)
+        XCTAssertEqual(InterimLayout.width(for: String(repeating: "x", count: 500)), InterimLayout.maxWidth)
+    }
+
+    func testInterimLayoutLineCountIsOneForTextThatFitsOnOneLine() {
+        XCTAssertEqual(InterimLayout.lineCount(for: "", width: InterimLayout.baseWidth), 1)
+        XCTAssertEqual(InterimLayout.lineCount(for: "short", width: InterimLayout.baseWidth), 1)
+    }
+
+    func testInterimLayoutLineCountGrowsForLongerTextAtAFixedWidth() {
+        let shortLines = InterimLayout.lineCount(for: String(repeating: "x", count: 20), width: InterimLayout.maxWidth)
+        let longLines = InterimLayout.lineCount(for: String(repeating: "x", count: 400), width: InterimLayout.maxWidth)
+
+        XCTAssertGreaterThan(longLines, shortLines)
+    }
+
+    func testInterimLayoutHeightCapsAtMaxVisibleLines() {
+        let height = InterimLayout.height(forLineCount: InterimLayout.maxVisibleLines + 10)
+        let cappedHeight = InterimLayout.height(forLineCount: InterimLayout.maxVisibleLines)
+
+        XCTAssertEqual(height, cappedHeight)
+    }
+
     func testMinimalHasNoTextOrControl() {
         let value = ActivityOverlayPresentation.make(
             state: .processing(sessionID: UUID(), startedAt: .now),
