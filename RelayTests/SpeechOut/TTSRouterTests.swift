@@ -160,10 +160,10 @@ final class TTSRouterTests: XCTestCase {
     }
 
     /// Regression test: a STREAMING backend's `speak(...)` does not return
-    /// until playback finishes, so while it is in flight the router has only
-    /// set `routingBackend`/`routingSessionID` (not `activeBackend`/
-    /// `activeSessionID`, which are assigned after `speak` returns). Stop
-    /// must still be able to reach the in-flight backend.
+    /// until playback finishes, so while it is in flight the router must
+    /// already have `active` set (assigned before `speak` is called, not
+    /// after it returns) - stop must still be able to reach the in-flight
+    /// backend.
     func testStopWithSessionIDStopsInFlightStreamingBackend() async throws {
         let backend = FakeTTSBackend(id: "pocket")
         backend.suspendUntilStopped = true
@@ -347,6 +347,98 @@ final class TTSRouterTests: XCTestCase {
 
         XCTAssertEqual(receivedBackends.count, 1)
         XCTAssertNil(receivedBackends[0])
+    }
+
+    /// Regression test for the historical bug: `pause()`/`resume()` used to
+    /// target only `activeBackend`, which was assigned after `speak(...)`
+    /// returned - a no-op for backends whose `speak(...)` didn't return
+    /// until playback finished. Verifies transport controls now reach
+    /// whichever backend is currently playing, for every backend.
+    func testPauseResumeTargetCurrentPlaybackForEveryBackend() async throws {
+        for id in ["apple", "kokoro", "pocket"] {
+            let backend = FakeTTSBackend(id: id)
+            let router = makeRouter([backend])
+
+            try await router.speak(text: "hello", options: .init(), sessionID: UUID())
+            router.pause()
+            router.resume()
+
+            XCTAssertEqual(backend.pauseCount, 1, "pause() should reach \(id)")
+            XCTAssertEqual(backend.resumeCount, 1, "resume() should reach \(id)")
+        }
+    }
+
+    func testStopTargetsCurrentPlayback() async throws {
+        for id in ["apple", "kokoro", "pocket"] {
+            let backend = FakeTTSBackend(id: id)
+            let router = makeRouter([backend])
+
+            try await router.speak(text: "hello", options: .init(), sessionID: UUID())
+            router.stop()
+
+            XCTAssertEqual(backend.stopCount, 1, "stop() should reach \(id)")
+        }
+    }
+
+    func testOneSessionEmitsExactlyOneTerminal() async throws {
+        let backend = FakeTTSBackend(id: "apple")
+        let router = makeRouter([backend])
+        var terminalEvents: [TTSPlaybackEvent] = []
+        router.setPlaybackEventHandler { event, _ in
+            switch event {
+            case .finished, .cancelled, .failed:
+                terminalEvents.append(event)
+            case .scheduled, .started, .level:
+                break
+            }
+        }
+        let sessionID = UUID()
+
+        try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
+        backend.emit(.started(sessionID: sessionID))
+        backend.emit(.finished(sessionID: sessionID))
+        // A stray duplicate/late terminal event for the same session must
+        // not be forwarded again once the router has already cleared it.
+        backend.emit(.finished(sessionID: sessionID))
+
+        XCTAssertEqual(terminalEvents, [.finished(sessionID: sessionID)])
+    }
+
+    /// Regression guard for the event-drop bug: if `active` were assigned
+    /// only after `speak(...)` returns, the `.scheduled`/`.started` events
+    /// emitted synchronously *during* `speak(...)` would be filtered out by
+    /// `forward` for every backend.
+    func testScheduledAndStartedAreForwardedForEveryBackend() async throws {
+        for id in ["apple", "kokoro", "pocket"] {
+            let backend = FakeTTSBackend(id: id)
+            let router = makeRouter([backend])
+            var events: [TTSPlaybackEvent] = []
+            router.setPlaybackEventHandler { event, _ in events.append(event) }
+            let sessionID = UUID()
+            backend.duringSpeak = { sessionID in
+                backend.emit(.scheduled(sessionID: sessionID))
+                backend.emit(.started(sessionID: sessionID))
+            }
+
+            try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
+
+            XCTAssertEqual(
+                events,
+                [.scheduled(sessionID: sessionID), .started(sessionID: sessionID)],
+                "scheduled/started should be forwarded for \(id)"
+            )
+        }
+    }
+
+    func testStaleStopBySessionIDIsIgnored() async throws {
+        let backend = FakeTTSBackend(id: "apple")
+        let router = makeRouter([backend])
+        try await router.speak(text: "hello", options: .init(), sessionID: UUID())
+
+        let didStop = router.stop(sessionID: UUID())
+
+        XCTAssertFalse(didStop)
+        XCTAssertEqual(backend.stopCount, 0)
     }
 
     private func makeRouter(_ backends: [FakeTTSBackend]) -> TTSRouter {
