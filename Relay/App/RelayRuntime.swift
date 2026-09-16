@@ -127,10 +127,10 @@ final class RelayRuntime {
     /// construct fakes and pass them directly to `AppModel`'s fakes-injecting initializer
     /// instead.
     static func makeProduction() -> RelayRuntime {
-        let settingsStore = SettingsStore()
+        let diagnostics = DiagnosticsRecorder()
+        let settingsStore = SettingsStore(diagnostics: diagnostics)
         let settings = settingsStore.load()
         let settingsBox = SettingsBox(settings)
-        let diagnostics = DiagnosticsRecorder()
         let overlayModel = ActivityOverlayModel()
 
         let appleTTS = AppleTTSBackend()
