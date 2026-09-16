@@ -14,9 +14,10 @@ protocol StreamingAudioPlaying: AnyObject {
     /// this returns; `.started` is emitted once buffered audio actually begins playing, which may
     /// require awaiting real prebuffering time. The terminal event (`.finished`/`.cancelled`/
     /// `.failed`) is always reported later, asynchronously, through `onEvent` - draining the rest
-    /// of `frames` continues in the background after this returns. Throws (emitting no event at
-    /// all) only if playback never started, e.g. the engine could not be configured or the source
-    /// stream failed before any audio played.
+    /// of `frames` continues in the background after this returns. Throws (emitting no TERMINAL
+    /// event - `.scheduled` is still emitted synchronously before the throw can occur) only if
+    /// playback never started, e.g. the engine could not be configured or the source stream
+    /// failed before any audio played.
     func startPlayback(_ frames: AsyncThrowingStream<[Float], Error>, sampleRate: Double, sessionID: UUID) async throws
     func stop()
     func pause()
@@ -209,13 +210,19 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
     /// A `frames` failure (including `CancellationError`) or an engine-start failure encountered
     /// by `pump`. Before playback ever started, this resolves the still-pending `startContinuation`
     /// by throwing - the same shape `speak()`'s callers already map to a fallback-worthy error, and
-    /// no event is emitted (mirroring `SynthesizedAudioPlayer`, where a decode failure emits none
-    /// either). Once playback had already started (and `startContinuation` already resumed
-    /// successfully), there is no one left awaiting a throw, so this reports the failure as a
-    /// `.failed` terminal event instead.
+    /// no terminal event is emitted (mirroring `SynthesizedAudioPlayer`, where a decode failure
+    /// emits none either). Once playback had already started (and `startContinuation` already
+    /// resumed successfully), there is no one left awaiting a throw, so this reports the failure
+    /// as a `.failed` terminal event instead.
     private func handlePumpFailure(_ error: Error, sessionID: UUID) {
         guard currentSessionID == sessionID, !didStopExplicitly else {
-            resumeStart(throwing: error)
+            // Superseded (a newer `startPlayback` already tore this session down and installed
+            // its own `startContinuation`) or already stopped (`stop()` already resolved THIS
+            // session's continuation). Either way, this session's own continuation was already
+            // resolved elsewhere - any continuation pending now belongs to a NEWER session, so it
+            // must never be touched here. Resuming it with this (stale) session's error would
+            // spuriously fail/throw for the newer session while its own pump keeps running
+            // orphaned.
             return
         }
         let hadStarted = started
