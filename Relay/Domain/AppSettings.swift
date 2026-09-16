@@ -17,10 +17,12 @@ struct AppSettings: Codable, Equatable, Sendable {
     var activityOverlayStyle: ActivityOverlayStyle
     var kokoroVoice: String?
     var pocketVoice: String?
+    var liveTranscriptionEnabled: Bool
 
     private enum CodingKeys: String, CodingKey {
         case dictationMode, hotkeys, sttBackendOrder, ttsBackendOrder
         case ttsVoiceIdentifier, ttsRate, autoReadEnabled, activityOverlayStyle, kokoroVoice, pocketVoice
+        case liveTranscriptionEnabled
     }
 
     init(from decoder: Decoder) throws {
@@ -38,6 +40,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         ) ?? .interactive
         kokoroVoice = try values.decodeIfPresent(String.self, forKey: .kokoroVoice)
         pocketVoice = try values.decodeIfPresent(String.self, forKey: .pocketVoice)
+        liveTranscriptionEnabled = try values.decodeIfPresent(Bool.self, forKey: .liveTranscriptionEnabled) ?? true
     }
 
     init(
@@ -50,7 +53,8 @@ struct AppSettings: Codable, Equatable, Sendable {
         autoReadEnabled: Bool,
         activityOverlayStyle: ActivityOverlayStyle,
         kokoroVoice: String? = nil,
-        pocketVoice: String? = nil
+        pocketVoice: String? = nil,
+        liveTranscriptionEnabled: Bool = true
     ) {
         self.dictationMode = dictationMode
         self.hotkeys = hotkeys
@@ -62,6 +66,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         self.activityOverlayStyle = activityOverlayStyle
         self.kokoroVoice = kokoroVoice
         self.pocketVoice = pocketVoice
+        self.liveTranscriptionEnabled = liveTranscriptionEnabled
     }
 
     static let defaults = AppSettings(
@@ -78,6 +83,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         ttsVoiceIdentifier: nil,
         ttsRate: 0.5,
         autoReadEnabled: true,
-        activityOverlayStyle: .interactive
+        activityOverlayStyle: .interactive,
+        liveTranscriptionEnabled: true
     )
 }

@@ -205,6 +205,44 @@ final class STTRouterTests: XCTestCase {
         XCTAssertEqual(transcript, Transcript(text: "first", backendID: "first"))
     }
 
+    func testInterimTranscribeCallsDoNotConsumeOrDisturbTheCachedSelectionForTheFinalCall() async throws {
+        let first = FakeSTTBackend(id: "first")
+        first.availabilityValue = .unavailable("offline")
+        let second = FakeSTTBackend(id: "second")
+        let router = makeRouter([first, second])
+
+        let name = await router.preferredBackendDisplayName()
+        XCTAssertEqual(name, "second")
+        XCTAssertEqual(first.availabilityCallCount, 1)
+
+        // Each interim tick does its own fresh full walk (by design, so it never touches the
+        // cache), so it re-checks "first" every time - that's expected. What matters is that
+        // none of these calls consume or clear the cache the lookup above populated.
+        for _ in 0..<3 {
+            let interim = try await router.transcribeForInterim(audio: audio, options: .init())
+            XCTAssertEqual(interim, Transcript(text: "second", backendID: "second"))
+        }
+        XCTAssertEqual(first.availabilityCallCount, 4)
+
+        let final = try await router.transcribe(audio: audio, options: .init())
+
+        XCTAssertEqual(final, Transcript(text: "second", backendID: "second"))
+        XCTAssertEqual(first.availabilityCallCount, 4)
+    }
+
+    func testTranscribeForInterimAlwaysWalksTheFullCurrentBackendOrder() async throws {
+        let first = FakeSTTBackend(id: "first")
+        first.availabilityValue = .unavailable("offline")
+        let second = FakeSTTBackend(id: "second")
+        let router = makeRouter([first, second])
+
+        let interim = try await router.transcribeForInterim(audio: audio, options: .init())
+
+        XCTAssertEqual(interim, Transcript(text: "second", backendID: "second"))
+        XCTAssertEqual(first.availabilityCallCount, 1)
+        XCTAssertEqual(second.availabilityCallCount, 1)
+    }
+
     func testTranscribeWithoutAPrecedingLookupPerformsItsOwnFullWalk() async throws {
         let first = FakeSTTBackend(id: "first")
         first.availabilityValue = .unavailable("offline")

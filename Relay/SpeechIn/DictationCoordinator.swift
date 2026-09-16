@@ -69,6 +69,10 @@ final class DictationCoordinator: DictationCoordinating {
     /// SPIKE: live, best-effort interim transcription for the pill (see StreamingTranscriber).
     /// Created fresh per session in `start()`, torn down in `stopStreamingTranscription()`.
     private var streamingTranscriber: StreamingTranscriber?
+    /// Read once per `start()` to decide whether to spin up a `StreamingTranscriber` at all.
+    /// Defaults to always-on so every existing test and call site that doesn't care about the
+    /// setting keeps behaving exactly as before.
+    private let liveTranscriptionEnabled: () -> Bool
 
     init(
         microphone: any MicrophoneCapturing,
@@ -80,7 +84,8 @@ final class DictationCoordinator: DictationCoordinating {
         activity: any DictationActivityPublishing,
         diagnostics: DiagnosticsRecorder? = nil,
         frontmostApps: any FrontmostAppMonitoring = FrontmostAppMonitor(),
-        recentInteractions: RecentInteractionTracker = RecentInteractionTracker()
+        recentInteractions: RecentInteractionTracker = RecentInteractionTracker(),
+        liveTranscriptionEnabled: @escaping () -> Bool = { true }
     ) {
         self.microphone = microphone
         self.sttRouter = sttRouter
@@ -92,7 +97,9 @@ final class DictationCoordinator: DictationCoordinating {
         self.diagnostics = diagnostics
         self.frontmostApps = frontmostApps
         self.recentInteractions = recentInteractions
+        self.liveTranscriptionEnabled = liveTranscriptionEnabled
     }
+
 
     func setStatusHandler(_ handler: @escaping (String) -> Void) { status = handler }
 
@@ -222,6 +229,9 @@ final class DictationCoordinator: DictationCoordinating {
     /// `MicrophoneSampleStreaming` capability), and starts its periodic re-transcribe loop. Must
     /// run before `microphone.start(onLevel:)` — see that protocol's doc comment.
     private func beginStreamingTranscription(session: UUID) async {
+        // Settings-gated: when live transcription is off this is a full no-op below - no timer,
+        // no interim transcribes, no sample observer - so dictation behaves exactly as before.
+        guard liveTranscriptionEnabled() else { return }
         // No point starting an interim session when there is no way to feed it samples. This also
         // keeps every test fake that does not implement MicrophoneSampleStreaming (i.e. all of
         // them, deliberately) from ever touching sttRouter for anything beyond the final batch call.
@@ -229,7 +239,7 @@ final class DictationCoordinator: DictationCoordinating {
 
         let transcriber = StreamingTranscriber(
             transcribe: { [sttRouter] audio in
-                try await sttRouter.transcribe(audio: audio, options: .init())
+                try await sttRouter.transcribeForInterim(audio: audio, options: .init())
             },
             onInterimText: { [weak self] text in
                 Task { @MainActor [weak self] in
