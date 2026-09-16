@@ -127,6 +127,27 @@ final class ActivityOverlayModelTests: XCTestCase {
         XCTAssertTrue(model.state.isHidden)
     }
 
+    func testCancellingClearsInterimTextSoTheNextSessionStartsCompact() {
+        let model = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let first = UUID()
+        model.begin(sessionID: first)
+        model.listen(sessionID: first)
+        model.updateInterimText("a fairly long run of interim text from the first session", sessionID: first)
+
+        model.cancel(sessionID: first)
+
+        let second = UUID()
+        model.begin(sessionID: second)
+        model.listen(sessionID: second)
+
+        guard case let .listening(sessionID, _, _, interimText) = model.state else {
+            XCTFail("Expected .listening")
+            return
+        }
+        XCTAssertEqual(sessionID, second)
+        XCTAssertEqual(interimText, "")
+    }
+
     func testUpdateSpeakingLevelSetsLevelWhileSpeakingForMatchingSession() {
         let model = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let session = UUID()

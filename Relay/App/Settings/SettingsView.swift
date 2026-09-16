@@ -5,6 +5,8 @@ struct SettingsView: View {
 
     var body: some View {
         TabView {
+            GeneralSettingsView(model: model)
+                .tabItem { Label("General", systemImage: "gearshape") }
             KeybindsSettingsView(model: model)
                 .tabItem { Label("Keybinds", systemImage: "keyboard") }
             DictationSettingsView(model: model)

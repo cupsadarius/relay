@@ -1,0 +1,40 @@
+import SwiftUI
+
+struct GeneralSettingsView: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        Form {
+            Section("Live Transcription") {
+                Toggle("Live transcription in the pill", isOn: liveTranscriptionBinding)
+                Text("Show interim text while you speak. Re-transcribes about twice a second (uses more CPU).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Activity Overlay") {
+                Picker("Style", selection: activityOverlayStyleBinding) {
+                    Text("Off").tag(ActivityOverlayStyle.off)
+                    Text("Minimal").tag(ActivityOverlayStyle.minimal)
+                    Text("Interactive").tag(ActivityOverlayStyle.interactive)
+                }
+                .pickerStyle(.segmented)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var liveTranscriptionBinding: Binding<Bool> {
+        Binding(
+            get: { model.settings.liveTranscriptionEnabled },
+            set: { model.setLiveTranscriptionEnabled($0) }
+        )
+    }
+
+    private var activityOverlayStyleBinding: Binding<ActivityOverlayStyle> {
+        Binding(
+            get: { model.settings.activityOverlayStyle },
+            set: { model.setActivityOverlayStyle($0) }
+        )
+    }
+}

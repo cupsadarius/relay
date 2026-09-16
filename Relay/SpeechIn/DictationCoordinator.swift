@@ -8,6 +8,8 @@ protocol DictationActivityPublishing: AnyObject {
     func begin(sessionID: UUID)
     func listen(sessionID: UUID, startedAt: Date)
     func updateLevel(_ level: Float, sessionID: UUID)
+    /// SPIKE: live, best-effort transcription text (see StreamingTranscriber). Display-only.
+    func updateInterimText(_ text: String, sessionID: UUID)
     func setBackendName(_ name: String, sessionID: UUID)
     func process(sessionID: UUID)
     func complete(sessionID: UUID)
@@ -64,6 +66,24 @@ final class DictationCoordinator: DictationCoordinating {
     /// The STT backend display name announced to the overlay when listening began, so a later
     /// fallback to a different backend during transcription can be detected and re-announced.
     private var announcedBackendName: String?
+    /// SPIKE: live, best-effort interim transcription for the pill (see StreamingTranscriber).
+    /// Created fresh per session in `start()`, torn down in `stopStreamingTranscription()`.
+    private var streamingTranscriber: StreamingTranscriber?
+    /// Read once per `start()` to decide whether to spin up a `StreamingTranscriber` at all.
+    /// Defaults to always-on so every existing test and call site that doesn't care about the
+    /// setting keeps behaving exactly as before.
+    private let liveTranscriptionEnabled: () -> Bool
+    /// Drains `sampleAppendStream` one batch at a time, in arrival order, into
+    /// `streamingTranscriber`. Created fresh per session in `beginStreamingTranscription`, torn
+    /// down in `stopStreamingTranscription`.
+    private var sampleAppendTask: Task<Void, Never>?
+    /// Lets the microphone's (non-async, arbitrary-context) sample callback enqueue a batch
+    /// without racing other batches: `yield` is synchronous and thread-safe, so every batch lands
+    /// in the stream in the exact order the microphone produced it, and `sampleAppendTask`'s
+    /// single `for await` loop appends them to the actor one at a time in that same order -
+    /// unlike spawning a new unstructured `Task` per batch, whose relative scheduling order the
+    /// runtime does not guarantee.
+    private var sampleAppendContinuation: AsyncStream<[Float]>.Continuation?
 
     init(
         microphone: any MicrophoneCapturing,
@@ -75,7 +95,8 @@ final class DictationCoordinator: DictationCoordinating {
         activity: any DictationActivityPublishing,
         diagnostics: DiagnosticsRecorder? = nil,
         frontmostApps: any FrontmostAppMonitoring = FrontmostAppMonitor(),
-        recentInteractions: RecentInteractionTracker = RecentInteractionTracker()
+        recentInteractions: RecentInteractionTracker = RecentInteractionTracker(),
+        liveTranscriptionEnabled: @escaping () -> Bool = { true }
     ) {
         self.microphone = microphone
         self.sttRouter = sttRouter
@@ -87,7 +108,9 @@ final class DictationCoordinator: DictationCoordinating {
         self.diagnostics = diagnostics
         self.frontmostApps = frontmostApps
         self.recentInteractions = recentInteractions
+        self.liveTranscriptionEnabled = liveTranscriptionEnabled
     }
+
 
     func setStatusHandler(_ handler: @escaping (String) -> Void) { status = handler }
 
@@ -102,6 +125,11 @@ final class DictationCoordinator: DictationCoordinating {
         if let frontmostApplication = await frontmostApps.current() {
             await recentInteractions.record(frontmostApplication: frontmostApplication)
         }
+        // SPIKE: must be wired up before microphone.start(onLevel:) below - see
+        // MicrophoneSampleStreaming doc comment for why. Best-effort: if microphone does not
+        // implement the (optional) sample-streaming capability, dictation proceeds exactly as
+        // before, just without a live interim transcript.
+        await beginStreamingTranscription(session: session)
         do {
             try await microphone.start(onLevel: { [weak self] level in
                 // Each level batch hops to the main actor via its own `Task`, so relative
@@ -116,6 +144,7 @@ final class DictationCoordinator: DictationCoordinating {
             guard isStarting(session) else { return }
             state = .idle
             finishRequested = false
+            await stopStreamingTranscription()
             diagnostics?.record(.dictation(.failed(.microphoneCapture)))
             activity.fail(sessionID: session, category: .microphone, message: "Microphone error.")
             status("Could not start dictation: \(actionableMessage(for: error))")
@@ -150,6 +179,7 @@ final class DictationCoordinator: DictationCoordinating {
         guard case let .recording(session) = state else { return }
         state = .finishing(session)
         activity.process(sessionID: session)
+        await stopStreamingTranscription()
 
         let task = Task { [weak self] in
             guard let self else { return }
@@ -184,6 +214,7 @@ final class DictationCoordinator: DictationCoordinating {
         // a `start()` admitted mid-teardown (which the `.cancelling` state above already blocks)
         // can never race this cancel out from under the overlay's own session guard.
         activity.cancel(sessionID: sessionID)
+        await stopStreamingTranscription()
         await microphone.cancel()
         state = .idle
         status("Ready")
@@ -202,6 +233,61 @@ final class DictationCoordinator: DictationCoordinating {
     private func isFinishing(_ session: UUID) -> Bool {
         if case let .finishing(id) = state { return id == session }
         return false
+    }
+
+    /// SPIKE: creates a fresh `StreamingTranscriber` for this session, wires it up as the
+    /// microphone's sample observer (if the concrete `microphone` supports the optional
+    /// `MicrophoneSampleStreaming` capability), and starts its periodic re-transcribe loop. Must
+    /// run before `microphone.start(onLevel:)` — see that protocol's doc comment.
+    private func beginStreamingTranscription(session: UUID) async {
+        // Settings-gated: when live transcription is off this is a full no-op below - no timer,
+        // no interim transcribes, no sample observer - so dictation behaves exactly as before.
+        guard liveTranscriptionEnabled() else { return }
+        // No point starting an interim session when there is no way to feed it samples. This also
+        // keeps every test fake that does not implement MicrophoneSampleStreaming (i.e. all of
+        // them, deliberately) from ever touching sttRouter for anything beyond the final batch call.
+        guard let streaming = microphone as? any MicrophoneSampleStreaming else { return }
+
+        let transcriber = StreamingTranscriber(
+            transcribe: { [sttRouter] audio in
+                try await sttRouter.transcribeForInterim(audio: audio, options: .init())
+            },
+            onInterimText: { [weak self] text in
+                Task { @MainActor [weak self] in
+                    guard let self, self.isRecording(session) else { return }
+                    self.activity.updateInterimText(text, sessionID: session)
+                }
+            }
+        )
+        streamingTranscriber = transcriber
+
+        let (sampleStream, sampleContinuation) = AsyncStream.makeStream(of: [Float].self)
+        sampleAppendContinuation = sampleContinuation
+        sampleAppendTask = Task {
+            for await samples in sampleStream {
+                await transcriber.appendSamples(samples)
+            }
+        }
+        await streaming.setSampleObserver { samples in
+            sampleContinuation.yield(samples)
+        }
+        await transcriber.start()
+    }
+
+    /// SPIKE: tears down this session's `StreamingTranscriber` (if any) and detaches it from the
+    /// microphone's sample observer, so a stale observer never forwards a later session's samples
+    /// to an actor nobody is reading interim text from anymore.
+    private func stopStreamingTranscription() async {
+        guard let transcriber = streamingTranscriber else { return }
+        streamingTranscriber = nil
+        if let streaming = microphone as? any MicrophoneSampleStreaming {
+            await streaming.setSampleObserver(nil)
+        }
+        sampleAppendContinuation?.finish()
+        sampleAppendContinuation = nil
+        await sampleAppendTask?.value
+        sampleAppendTask = nil
+        await transcriber.stop()
     }
 
     private func runProcessingPipeline(session: UUID) async {

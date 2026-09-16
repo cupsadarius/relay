@@ -7,6 +7,7 @@ final class SettingsViewsSmokeTests: XCTestCase {
     func testAllSettingsTabViewsConstruct() {
         let model = AppModel()
         _ = SettingsView(model: model)
+        _ = GeneralSettingsView(model: model)
         _ = KeybindsSettingsView(model: model)
         _ = DictationSettingsView(model: model)
         _ = TTSSettingsView(model: model)

@@ -217,9 +217,11 @@ final class AppModel {
             activity: overlayModel,
             diagnostics: diagnostics,
             frontmostApps: frontmostApps,
-            recentInteractions: recentInteractionTracker
+            recentInteractions: recentInteractionTracker,
+            liveTranscriptionEnabled: { @MainActor in state.value.liveTranscriptionEnabled }
         )
         let hookEnvelopeReceiver = HookEnvelopeReceiver(diagnostics: integrationDiagnosticsLog)
+
         let integrationManager = IntegrationManager(
             events: hookEnvelopeReceiver.events,
             integrations: [ClaudeCodeIntegration(), CodexIntegration()],
@@ -459,6 +461,11 @@ final class AppModel {
         updateSettings { $0.activityOverlayStyle = style }
         overlayPresenter.update(state: overlayModel.state, style: style)
     }
+
+    func setLiveTranscriptionEnabled(_ enabled: Bool) {
+        updateSettings { $0.liveTranscriptionEnabled = enabled }
+    }
+
 
     private func bindOverlayPresenter() {
         overlayModel.setStateHandler { [weak self] state in

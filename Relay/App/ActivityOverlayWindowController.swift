@@ -40,7 +40,7 @@ protocol ActivityOverlayPanelHosting: AnyObject {
         style: ActivityOverlayStyle,
         onAction: @escaping @MainActor (ActivityOverlayAction) async -> Void
     )
-    func setFrame(origin: CGPoint, size: CGSize)
+    func setFrame(origin: CGPoint, size: CGSize, animated: Bool)
     func setIgnoresMouseEvents(_ ignores: Bool)
     func orderFront() throws
     func orderOut()
@@ -187,7 +187,15 @@ final class ActivityOverlayWindowController: ActivityOverlayPresenting {
     private func applyFrame(capsuleSize: CGSize, visibleFrame: CGRect) {
         let frame = ActivityOverlayPlacement.panelFrame(capsuleSize: capsuleSize, visibleFrame: visibleFrame)
         guard lastPanelOrigin != frame.origin || lastPanelSize != frame.size else { return }
-        host.setFrame(origin: frame.origin, size: frame.size)
+        // Animate resizes once the panel is already positioned; the very first placement (no
+        // previous frame recorded yet) snaps directly into place instead of animating in from a
+        // meaningless prior frame - the SwiftUI scale/opacity transition already covers that
+        // first appearance. `panelFrame` keeps the panel's bottom edge and horizontal center
+        // fixed for any capsule size, and linear interpolation between two frames that both
+        // satisfy a linear invariant (fixed midX, fixed minY) preserves that invariant at every
+        // intermediate frame too, so an animated resize never drifts off that anchor mid-flight.
+        let animated = lastPanelOrigin != nil
+        host.setFrame(origin: frame.origin, size: frame.size, animated: animated)
         lastPanelOrigin = frame.origin
         lastPanelSize = frame.size
     }

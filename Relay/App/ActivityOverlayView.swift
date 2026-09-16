@@ -26,6 +26,7 @@ struct ActivityOverlayView: View {
             }
         }
         .frame(width: presentation.size.width, height: presentation.size.height)
+        .animation(.easeInOut(duration: 0.18), value: presentation.size)
         .background {
             RoundedRectangle(cornerRadius: presentation.cornerRadius, style: .continuous)
                 .fill(.ultraThinMaterial)
@@ -67,7 +68,13 @@ struct ActivityOverlayView: View {
                         .foregroundStyle(.white)
                         .lineLimit(1)
                 }
-                if let subtitle = presentation.subtitle {
+                if let interimText = presentation.interimText {
+                    InterimTextView(
+                        text: interimText,
+                        visibleLineCount: presentation.interimVisibleLineCount,
+                        needsScroll: presentation.interimNeedsScroll
+                    )
+                } else if let subtitle = presentation.subtitle {
                     Text(subtitle)
                         .font(.system(size: 10))
                         .foregroundStyle(OverlayPalette.subtitleText)
@@ -91,6 +98,76 @@ struct ActivityOverlayView: View {
             }
         }
         .padding(.horizontal, 15)
+    }
+}
+
+/// Renders the Listening pill's live interim transcription: wraps across multiple lines instead
+/// of truncating, and once the text grows past `visibleLineCount` lines, switches to a bounded,
+/// vertically scrolling container that stays pinned to the newest (bottom) text as it updates -
+/// so the pill's on-screen height never exceeds what `ActivityOverlayPresentation` computed for
+/// it, regardless of how long the dictation runs.
+private struct InterimTextView: View {
+    let text: String
+    let visibleLineCount: Int
+    let needsScroll: Bool
+    /// The stable-prefix/changed-tail split against the previous render of `text`, recomputed by
+    /// `onChange` before `text` itself updates so the diff always compares against what was
+    /// actually on screen a moment ago (see `InterimTextDiff`).
+    @State private var diff = InterimTextDiff.Result(stablePrefix: "", changedTail: "")
+    private static let bottomAnchorID = "interim-text-bottom"
+    private static let scrollAnimation = Animation.easeOut(duration: 0.2)
+
+    var body: some View {
+        content
+            .onAppear { diff = InterimTextDiff.diff(previous: "", current: text) }
+            .onChange(of: text) { oldValue, newValue in
+                withAnimation(.easeInOut(duration: 0.12)) {
+                    diff = InterimTextDiff.diff(previous: oldValue, current: newValue)
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if needsScroll {
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    textContent
+                }
+                .frame(height: InterimLayout.textAreaHeight(visibleLines: visibleLineCount), alignment: .bottom)
+                .onChange(of: text) {
+                    withAnimation(Self.scrollAnimation) {
+                        proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                    }
+                }
+                .onAppear {
+                    proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                }
+            }
+        } else {
+            textLabel
+        }
+    }
+
+    private var textContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            textLabel
+            Color.clear.frame(width: 1, height: 1).id(Self.bottomAnchorID)
+        }
+    }
+
+    /// Renders the stable prefix and changed tail as one concatenated `Text` so wrapping still
+    /// flows as a single paragraph. Since `diff.stablePrefix` only changes when text is actually
+    /// revised (not every tick), SwiftUI's view diffing leaves that run alone across most
+    /// updates; `.contentTransition(.opacity)` gives the tail a subtle crossfade rather than a
+    /// hard cut when it does change, without ever changing this view's own identity.
+    private var textLabel: some View {
+        (Text(diff.stablePrefix) + Text(diff.changedTail))
+            .font(.system(size: 10))
+            .foregroundStyle(OverlayPalette.subtitleText)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .contentTransition(.opacity)
     }
 }
 

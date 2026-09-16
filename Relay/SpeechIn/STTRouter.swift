@@ -1,8 +1,5 @@
 @MainActor
 final class STTRouter {
-    /// The outcome of classifying one backend's `availability()` result, shared by
-    /// `preferredBackendDisplayName()` and `transcribe`'s selection loop so the two can never
-    /// disagree about which availability states are skip-worthy vs. terminal for the whole router.
     private enum SelectionStep {
         case use
         case terminal(SpeechBackendError)
@@ -11,12 +8,6 @@ final class STTRouter {
 
     private let backends: [String: any SpeechToTextBackend]
     private let backendOrder: () -> [String]
-    /// The tail of the most recent `backendOrder()` walk, starting at the backend
-    /// `preferredBackendDisplayName()` last found `.available`. Lets a `transcribe()` call that
-    /// immediately follows skip re-probing the backends already ruled out by that lookup, instead
-    /// re-checking only from where it left off. Consumed (and cleared) by the very next
-    /// `transcribe()` call, whether or not it was actually able to use it, so a cached selection
-    /// never outlives a single lookup-then-transcribe pairing.
     private var cachedCandidateOrder: [String]?
 
     init(
@@ -27,16 +18,10 @@ final class STTRouter {
         self.backendOrder = backendOrder
     }
 
-    /// The display name of the configured backend with the given ID, if any. Used to look up the
-    /// backend that actually produced a given `Transcript` via its `backendID`.
     func displayName(forBackendID id: String) -> String? {
         backends[id]?.displayName
     }
 
-    /// The display name of the first configured backend that is currently `.available`,
-    /// mirroring `transcribe`'s own selection order. `nil` if none are available, including when
-    /// a backend reports `.permissionDenied` — a terminal condition for the whole router, exactly
-    /// as in `transcribe`, so no backend after it is ever considered.
     func preferredBackendDisplayName() async -> String? {
         let order = backendOrder()
         for (index, id) in order.enumerated() {
@@ -57,9 +42,17 @@ final class STTRouter {
     }
 
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
-        var lastError: SpeechBackendError = .unavailable("No STT backend is available")
         let order = cachedCandidateOrder ?? backendOrder()
         cachedCandidateOrder = nil
+        return try await transcribe(audio: audio, options: options, order: order)
+    }
+
+    func transcribeForInterim(audio: AudioInput, options: STTOptions) async throws -> Transcript {
+        try await transcribe(audio: audio, options: options, order: backendOrder())
+    }
+
+    private func transcribe(audio: AudioInput, options: STTOptions, order: [String]) async throws -> Transcript {
+        var lastError: SpeechBackendError = .unavailable("No STT backend is available")
 
         for id in order {
             guard let backend = backends[id] else { continue }
