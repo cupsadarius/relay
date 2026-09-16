@@ -100,7 +100,10 @@ final class AppModelTests: XCTestCase {
         hotkeys.send(.replayLast, .released)
         hotkeys.send(.stopSpeech, .pressed)
         hotkeys.send(.replayLast, .pressed)
-        await Task.yield()
+        // `replayLast()` now hops through `sessionRegistry` (a real actor) before falling back to
+        // `speechCoordinator.replayLast()`, so a single `Task.yield()` is no longer guaranteed to
+        // let it finish; poll instead.
+        await waitUntil { speech.replayCount > 0 }
 
         XCTAssertEqual(speech.stopCount, 1)
         XCTAssertEqual(speech.replayCount, 1)
@@ -112,8 +115,187 @@ final class AppModelTests: XCTestCase {
         let hotkeys = FakeHotkeyManager()
         let model = makeModel(speech: speech, hotkeys: hotkeys)
         hotkeys.send(.replayLast, .pressed)
-        await Task.yield()
+        // See `testStopAndReplayOnlyActWhenPressed` for why this polls rather than yielding once.
+        await waitUntil { model.diagnosticsEntries.first?.event == .ttsFailed }
         XCTAssertEqual(model.diagnosticsEntries.first?.event, .ttsFailed)
+    }
+
+    // MARK: - Session-aware Replay Last
+
+    func testReplayLastWithFocusedHighConfidenceSessionSpeaksThatSessionsLatestReply() async {
+        let registry = AgentSessionRegistry()
+        let sessionA = await registry.upsert(
+            response: makeAgentResponseEvent(providerSessionID: "session-a", text: "Reply A"),
+            processAncestry: [],
+            tty: nil
+        )
+        _ = await registry.upsert(
+            response: makeAgentResponseEvent(providerSessionID: "session-b", text: "Reply B"),
+            processAncestry: [],
+            tty: nil
+        )
+        let speech = FakeSpeechCoordinator()
+        let hotkeys = FakeHotkeyManager()
+        let model = makeModel(
+            speech: speech,
+            hotkeys: hotkeys,
+            sessionRegistry: registry,
+            focusResolution: StubSessionFocusResolver(focusedSessionID: sessionA.id),
+            frontmostApps: StubFrontmostAppMonitor(pid: nil)
+        )
+
+        hotkeys.send(.replayLast, .pressed)
+        await waitUntil { !speech.requests.isEmpty }
+
+        XCTAssertEqual(speech.requests.count, 1)
+        XCTAssertEqual(speech.requests.first?.mode, .userRequested)
+        XCTAssertEqual(speech.requests.first?.sessionID, "claude-code:session-a")
+        withExtendedLifetime(model) {}
+    }
+
+    func testReplayLastWithAmbiguousFocusButFrontmostHostsASessionSpeaksGlobalLatest() async {
+        let registry = AgentSessionRegistry()
+        _ = await registry.upsert(
+            response: makeAgentResponseEvent(providerSessionID: "session-a", text: "Reply A"),
+            processAncestry: [4242],
+            tty: nil
+        )
+        let speech = FakeSpeechCoordinator()
+        let store = LatestAgentResponseStore()
+        let latest = makeAgentResponseEvent(providerSessionID: "global-latest", text: "Global reply")
+        await store.set(latest)
+        // Drive one accepted event through a stub integration so `latestResponse` (the MainActor
+        // property `AppModel.replayLast()` reads to decide whether a global latest is available)
+        // reflects the same event just seeded into `store`, exactly as the real socket pipeline
+        // keeps the two in sync.
+        var continuation: AsyncStream<HookEnvelope>.Continuation!
+        let events = AsyncStream<HookEnvelope> { continuation = $0 }
+        let drivenManager = IntegrationManager(
+            events: events,
+            integrations: [StubIntegration(provider: .claudeCode, event: latest)],
+            store: store,
+            speechCoordinator: speech
+        )
+        drivenManager.start()
+        continuation.yield(HookEnvelope(
+            schemaVersion: 1,
+            provider: .claudeCode,
+            rawPayload: "{}",
+            parentPID: 100,
+            environment: [:],
+            capturedAt: latest.capturedAt
+        ))
+        await waitUntil { drivenManager.latestResponse != nil }
+        drivenManager.stop()
+
+        let hotkeys = FakeHotkeyManager()
+        let model = makeModel(
+            speech: speech,
+            hotkeys: hotkeys,
+            sessionRegistry: registry,
+            focusResolution: StubSessionFocusResolver(focusedSessionID: nil),
+            frontmostApps: StubFrontmostAppMonitor(pid: 4242),
+            integrationManager: drivenManager
+        )
+
+        hotkeys.send(.replayLast, .pressed)
+        await waitUntil { !speech.requests.isEmpty }
+
+        XCTAssertEqual(speech.requests.count, 1)
+        XCTAssertEqual(speech.requests.first?.sessionID, "claude-code:global-latest")
+        XCTAssertEqual(speech.requests.first?.mode, .userRequested)
+        withExtendedLifetime(model) {}
+    }
+
+    func testReplayLastFallsBackToLastSpokenWhenFrontmostHostsNoSession() async {
+        let registry = AgentSessionRegistry()
+        _ = await registry.upsert(
+            response: makeAgentResponseEvent(providerSessionID: "session-a", text: "Reply A"),
+            processAncestry: [4242],
+            tty: nil
+        )
+        let speech = FakeSpeechCoordinator()
+        let hotkeys = FakeHotkeyManager()
+        let model = makeModel(
+            speech: speech,
+            hotkeys: hotkeys,
+            sessionRegistry: registry,
+            focusResolution: StubSessionFocusResolver(focusedSessionID: nil),
+            frontmostApps: StubFrontmostAppMonitor(pid: 9999)
+        )
+
+        hotkeys.send(.replayLast, .pressed)
+        await waitUntil { speech.replayCount > 0 }
+
+        XCTAssertEqual(speech.replayCount, 1)
+        XCTAssertTrue(speech.requests.isEmpty)
+        withExtendedLifetime(model) {}
+    }
+
+    func testReplayLastFallsBackToLastSpokenWhenNoFrontmostApplication() async {
+        let registry = AgentSessionRegistry()
+        _ = await registry.upsert(
+            response: makeAgentResponseEvent(providerSessionID: "session-a", text: "Reply A"),
+            processAncestry: [4242],
+            tty: nil
+        )
+        let speech = FakeSpeechCoordinator()
+        let hotkeys = FakeHotkeyManager()
+        let model = makeModel(
+            speech: speech,
+            hotkeys: hotkeys,
+            sessionRegistry: registry,
+            focusResolution: StubSessionFocusResolver(focusedSessionID: nil),
+            frontmostApps: StubFrontmostAppMonitor(pid: nil)
+        )
+
+        hotkeys.send(.replayLast, .pressed)
+        await waitUntil { speech.replayCount > 0 }
+
+        XCTAssertEqual(speech.replayCount, 1)
+        XCTAssertTrue(speech.requests.isEmpty)
+        withExtendedLifetime(model) {}
+    }
+
+    func testReplayLastFallsBackToLastSpokenWhenGlobalStoreIsEmptyEvenIfFrontmostHostsASession() async {
+        let registry = AgentSessionRegistry()
+        _ = await registry.upsert(
+            response: makeAgentResponseEvent(providerSessionID: "session-a", text: "Reply A"),
+            processAncestry: [4242],
+            tty: nil
+        )
+        let speech = FakeSpeechCoordinator()
+        let hotkeys = FakeHotkeyManager()
+        // `integrationManager` left nil: `makeModel`'s underlying `AppModel` init builds a fresh
+        // `IntegrationManager` around an empty, never-fed `AsyncStream`, so `latestResponse` stays
+        // `nil` — exactly the "empty global store" case.
+        let model = makeModel(
+            speech: speech,
+            hotkeys: hotkeys,
+            sessionRegistry: registry,
+            focusResolution: StubSessionFocusResolver(focusedSessionID: nil),
+            frontmostApps: StubFrontmostAppMonitor(pid: 4242)
+        )
+
+        hotkeys.send(.replayLast, .pressed)
+        await waitUntil { speech.replayCount > 0 }
+
+        XCTAssertEqual(speech.replayCount, 1)
+        XCTAssertTrue(speech.requests.isEmpty)
+        withExtendedLifetime(model) {}
+    }
+
+    private func makeAgentResponseEvent(
+        provider: AgentProvider = .claudeCode,
+        providerSessionID: String,
+        text: String,
+        parentPID: Int32 = 900
+    ) -> AgentResponseEvent {
+        .init(
+            id: UUID(), provider: provider, providerSessionID: providerSessionID, turnID: nil,
+            text: text, cwd: "/tmp/repo", transcriptPath: nil,
+            parentPID: parentPID, environment: [:], capturedAt: Date()
+        )
     }
 
     func testRealAppModelRegistersAKokoroDownloaderButNoAppleDownloader() {
@@ -896,7 +1078,11 @@ final class AppModelTests: XCTestCase {
         overlayPresenter: (any ActivityOverlayPresenting)? = nil,
         sttRegistry: [String: any SpeechToTextBackend] = [:],
         speechModelDownloaders: [String: any SpeechModelDownloading] = [:],
-        diagnostics: DiagnosticsRecorder? = nil
+        diagnostics: DiagnosticsRecorder? = nil,
+        sessionRegistry: AgentSessionRegistry? = nil,
+        focusResolution: (any SessionFocusResolving)? = nil,
+        frontmostApps: (any FrontmostAppMonitoring)? = nil,
+        integrationManager: IntegrationManager? = nil
     ) -> AppModel {
         AppModel(
             settingsStore: store ?? FakeSettingsStore(settings: .defaults),
@@ -912,7 +1098,15 @@ final class AppModelTests: XCTestCase {
             overlayModel: overlayModel ?? ActivityOverlayModel(),
             overlayPresenter: overlayPresenter ?? NoOpActivityOverlayPresenter(),
             sttRegistry: sttRegistry,
-            speechModelDownloaders: speechModelDownloaders
+            speechModelDownloaders: speechModelDownloaders,
+            integrationManager: integrationManager,
+            sessionRegistry: sessionRegistry ?? AgentSessionRegistry(),
+            focusResolution: focusResolution ?? FocusResolutionService(
+                registry: AgentSessionRegistry(),
+                frontmostApps: FrontmostAppMonitor(),
+                resolvers: []
+            ),
+            frontmostApps: frontmostApps ?? FrontmostAppMonitor()
         )
     }
 }
@@ -1128,6 +1322,37 @@ private final class FakeSpeechCoordinator: SpeechCoordinating {
     func stop() { stopCount += 1 }
     func stop(sessionID: UUID) { stoppedSessionIDs.append(sessionID) }
     func replayLast() async throws { replayCount += 1; if let replayError { throw replayError } }
+}
+
+/// Reports `focusedSessionID` (when set) as confidently `.focused`; every other session, and
+/// every session when `focusedSessionID` is `nil`, resolves as `.unknown`/low-confidence —
+/// exactly what `AppModel.replayLast()`'s tier-1 loop treats as "not this one".
+private struct StubSessionFocusResolver: SessionFocusResolving {
+    let focusedSessionID: AgentSessionID?
+    func resolve(session: AgentSession) async -> FocusDecision {
+        guard let focusedSessionID, session.id == focusedSessionID else {
+            return .unknown(resolverID: "stub", reason: "not the stubbed focused session")
+        }
+        return .focused(resolverID: "stub", reason: "stubbed focused session")
+    }
+}
+
+/// Reports a fixed frontmost pid (or no frontmost application at all when `pid` is `nil`).
+private struct StubFrontmostAppMonitor: FrontmostAppMonitoring {
+    let pid: Int32?
+    func current() async -> FrontmostApplication? {
+        guard let pid else { return nil }
+        return FrontmostApplication(pid: pid, bundleIdentifier: "com.test.terminal", localizedName: "TestTerminal")
+    }
+}
+
+/// Always decodes any envelope for `provider` into a fixed `event`, regardless of `rawPayload`.
+/// Used only to drive `IntegrationManager.latestResponse` to a known value through the real
+/// consume loop, mirroring how the production socket pipeline keeps it in sync with the store.
+private struct StubIntegration: RelayIntegration {
+    let provider: AgentProvider
+    let event: AgentResponseEvent
+    func decode(_ envelope: HookEnvelope) throws -> AgentResponseEvent { event }
 }
 
 @MainActor

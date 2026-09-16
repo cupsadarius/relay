@@ -126,11 +126,11 @@ final class IntegrationManager {
         status[provider] = nil
     }
 
-    /// Reads the ephemeral latest response (if any) and submits it for speech as a
-    /// user-requested request. Never invoked automatically.
-    func speakLatest() async throws {
-        guard let event = await store.get() else { return }
-
+    /// Builds a `.userRequested` speech request for `event` (preprocessed the same way as any
+    /// other agent response) and submits it. Shared by `speakLatest()` and by
+    /// `AppModel.replayLast()`'s focused-session tier, so both paths build the request
+    /// identically. Never invoked automatically; only ever reached from an explicit user action.
+    func speakResponse(_ event: AgentResponseEvent) async throws {
         let prepared = preprocessor.prepare(text: event.text, mode: .automatic)
         let source: SpeechSource
         switch event.provider {
@@ -147,5 +147,12 @@ final class IntegrationManager {
             sessionID: "\(event.provider.rawValue):\(event.providerSessionID)"
         )
         try await speechCoordinator.speak(request)
+    }
+
+    /// Reads the ephemeral latest response (if any) and submits it for speech as a
+    /// user-requested request. Never invoked automatically.
+    func speakLatest() async throws {
+        guard let event = await store.get() else { return }
+        try await speakResponse(event)
     }
 }

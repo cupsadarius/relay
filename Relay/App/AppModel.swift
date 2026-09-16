@@ -72,6 +72,14 @@ final class AppModel {
     /// production `convenience init()`. Exposed read-only for compact diagnostics
     /// (`agentSessionSummaries()`) — never for response text or live focus resolution.
     @ObservationIgnored private let sessionRegistry: AgentSessionRegistry
+    /// Shared focus-resolution service consulted by `replayLast()` to find a confidently-focused
+    /// agent session. The SAME instance shared with the production `AgentAutoReadCoordinator`
+    /// graph built in the production `convenience init()` — never a second instance.
+    @ObservationIgnored private let focusResolution: any SessionFocusResolving
+    /// Shared frontmost-application monitor consulted by `replayLast()`'s tier-2 check (does the
+    /// frontmost app host at least one agent session). The SAME instance shared with the
+    /// production dictation/auto-read graph built in the production `convenience init()`.
+    @ObservationIgnored private let frontmostApps: any FrontmostAppMonitoring
     /// Shared in-memory diagnostics log for the integration pipeline (socket receive -> envelope
     /// decode -> adapter decode -> registry upsert -> focus gate), independent of `os_log`. The
     /// SAME instance is passed into `hookEnvelopeReceiver`, `integrationManager`, and the
@@ -240,6 +248,8 @@ final class AppModel {
             claudeCodeInstaller: ClaudeCodeInstaller(),
             codexInstaller: CodexInstaller(),
             sessionRegistry: sessionRegistry,
+            focusResolution: focusResolution,
+            frontmostApps: frontmostApps,
             integrationDiagnosticsLog: integrationDiagnosticsLog
         )
         dictation.setStatusHandler { [weak self] in self?.statusText = $0 }
@@ -267,6 +277,12 @@ final class AppModel {
         claudeCodeInstaller: ClaudeCodeInstaller = ClaudeCodeInstaller(),
         codexInstaller: CodexInstaller = CodexInstaller(),
         sessionRegistry: AgentSessionRegistry = AgentSessionRegistry(),
+        focusResolution: any SessionFocusResolving = FocusResolutionService(
+            registry: AgentSessionRegistry(),
+            frontmostApps: FrontmostAppMonitor(),
+            resolvers: []
+        ),
+        frontmostApps: any FrontmostAppMonitoring = FrontmostAppMonitor(),
         integrationDiagnosticsLog: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog()
     ) {
         let settings = settingsStore.load()
@@ -296,6 +312,8 @@ final class AppModel {
         self.claudeCodeInstaller = claudeCodeInstaller
         self.codexInstaller = codexInstaller
         self.sessionRegistry = sessionRegistry
+        self.focusResolution = focusResolution
+        self.frontmostApps = frontmostApps
         self.integrationDiagnosticsLog = integrationDiagnosticsLog
         activationObserver = nil
         dictationTask = nil
@@ -335,6 +353,8 @@ final class AppModel {
         claudeCodeInstaller: ClaudeCodeInstaller,
         codexInstaller: CodexInstaller,
         sessionRegistry: AgentSessionRegistry,
+        focusResolution: any SessionFocusResolving,
+        frontmostApps: any FrontmostAppMonitoring,
         integrationDiagnosticsLog: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog()
     ) {
         self.settingsStore = settingsStore
@@ -358,6 +378,8 @@ final class AppModel {
         self.claudeCodeInstaller = claudeCodeInstaller
         self.codexInstaller = codexInstaller
         self.sessionRegistry = sessionRegistry
+        self.focusResolution = focusResolution
+        self.frontmostApps = frontmostApps
         self.integrationDiagnosticsLog = integrationDiagnosticsLog
         activationObserver = nil
         dictationTask = nil
@@ -603,11 +625,81 @@ final class AppModel {
         }
     }
 
+    /// Session-aware "Replay Last", tried in strict priority order:
+    ///
+    /// 1. **Focused agent session** — if some tracked agent session (Claude Code/Codex) is
+    ///    confidently focused (`.focused` + `.high`), speak THAT session's last agent reply.
+    /// 2. **Terminal focused but session ambiguous** — else, if the frontmost app hosts at least
+    ///    one tracked agent session (by process ancestry) and a global latest agent reply exists,
+    ///    speak that global latest.
+    /// 3. **Non-agent context (e.g. Chrome) / nothing hosts a session** — fall back to replaying
+    ///    the last spoken/selected text, exactly like the pre-existing behavior.
+    ///
+    /// All three tiers speak as an explicit user action (`.userRequested`), always audible
+    /// regardless of the auto-read toggle. Iterating every tracked session's focus resolution is
+    /// fine here: the session count is tiny, and the underlying `ps`/`lsof` calls are
+    /// deadlock-hardened.
     private func replayLast() async {
+        let sessions = await sessionRegistry.sessions()
+
+        for session in sessions {
+            let decision = await focusResolution.resolve(session: session)
+            guard decision.state == .focused, decision.confidence == .high else { continue }
+            await speakFocusedSessionReply(session)
+            return
+        }
+
+        if let frontmostPID = await frontmostApps.current()?.pid,
+           sessions.contains(where: { $0.processAncestry.contains(frontmostPID) }),
+           integrationManager.latestResponse != nil {
+            await speakGlobalLatestReply()
+            return
+        }
+
+        await speakLastSpokenText()
+    }
+
+    /// Tier 1: speaks `session`'s own last agent reply via `IntegrationManager.speakResponse`, so
+    /// the request is built identically to `speakLatest()` (same preprocessing, source, and
+    /// sessionID derivation).
+    private func speakFocusedSessionReply(_ session: AgentSession) async {
+        do {
+            try await integrationManager.speakResponse(session.latestResponse)
+            diagnostics.record(.ttsSubmitted)
+            statusText = "Replaying focused session's last reply"
+            integrationDiagnosticsLog.append(
+                stage: "replay-last",
+                outcome: "focused-session",
+                detail: "provider=\(session.id.provider.rawValue)"
+            )
+        } catch {
+            diagnostics.record(.ttsFailed)
+            statusText = error.localizedDescription
+        }
+    }
+
+    /// Tier 2: speaks the global latest agent reply via `IntegrationManager.speakLatest`. Only
+    /// ever called after confirming a global latest reply is available.
+    private func speakGlobalLatestReply() async {
+        do {
+            try await integrationManager.speakLatest()
+            diagnostics.record(.ttsSubmitted)
+            statusText = "Replaying latest agent reply"
+            integrationDiagnosticsLog.append(stage: "replay-last", outcome: "global-latest", detail: "")
+        } catch {
+            diagnostics.record(.ttsFailed)
+            statusText = error.localizedDescription
+        }
+    }
+
+    /// Tier 3: the original `SpeechCoordinator.replayLast()` behavior — re-speaks the last
+    /// spoken/selected text, regardless of source.
+    private func speakLastSpokenText() async {
         do {
             try await speechCoordinator.replayLast()
             diagnostics.record(.ttsReplayed)
             statusText = "Replaying last speech"
+            integrationDiagnosticsLog.append(stage: "replay-last", outcome: "last-spoken", detail: "")
         } catch {
             diagnostics.record(.ttsFailed)
             statusText = error.localizedDescription
