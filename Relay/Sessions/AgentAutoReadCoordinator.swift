@@ -104,12 +104,8 @@ actor AgentAutoReadCoordinator {
 
         // Prune stale sessions before every focus decision so a dead agent's session (or one gone
         // quiet past the TTL) never keeps generic-terminal focus ambiguous. One snapshot per
-        // cycle, closed over by `isAlive`, rather than a `ps` invocation per candidate pid. A
-        // failed snapshot fails safe: skip pruning this cycle instead of risking a false "dead"
-        // verdict on a session that's actually still running.
-        if let snapshot = try? processInspector.snapshot() {
-            await registry.prune(isAlive: { pid in snapshot.record(pid: pid) != nil })
-        }
+        // cycle (see `pruneDeadSessions`), rather than a `ps` invocation per candidate pid.
+        await pruneDeadSessions(in: registry, using: processInspector)
 
         let sessions = await registry.sessions()
         let focused = await focus.focusedSession(among: sessions)

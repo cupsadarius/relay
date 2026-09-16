@@ -113,6 +113,10 @@ final class AppModel {
     /// frontmost app host at least one agent session). The SAME instance shared with the
     /// production dictation/auto-read graph built in the production `convenience init()`.
     @ObservationIgnored private let frontmostApps: any FrontmostAppMonitoring
+    /// Shared process inspector consulted by `replayLast()` to prune dead-process sessions from
+    /// `sessionRegistry` before resolving focus. The SAME instance shared with the production
+    /// `AgentAutoReadCoordinator`/resolver graph built in the production `convenience init()`.
+    @ObservationIgnored private let processInspector: ProcessInspector
     /// Shared in-memory diagnostics log for the integration pipeline (socket receive -> envelope
     /// decode -> adapter decode -> registry upsert -> focus gate), independent of `os_log`. The
     /// SAME instance is passed into `hookEnvelopeReceiver`, `integrationManager`, and the
@@ -289,6 +293,7 @@ final class AppModel {
             sessionRegistry: sessionRegistry,
             focusResolution: focusResolution,
             frontmostApps: frontmostApps,
+            processInspector: processInspector,
             integrationDiagnosticsLog: integrationDiagnosticsLog
         )
         dictation.setStatusHandler { [weak self] in self?.statusText = $0 }
@@ -323,6 +328,7 @@ final class AppModel {
             resolvers: []
         ),
         frontmostApps: any FrontmostAppMonitoring = FrontmostAppMonitor(),
+        processInspector: ProcessInspector = ProcessInspector(),
         integrationDiagnosticsLog: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog()
     ) {
         let settings = settingsStore.load()
@@ -355,6 +361,7 @@ final class AppModel {
         self.sessionRegistry = sessionRegistry
         self.focusResolution = focusResolution
         self.frontmostApps = frontmostApps
+        self.processInspector = processInspector
         self.integrationDiagnosticsLog = integrationDiagnosticsLog
         activationObserver = nil
         dictationTask = nil
@@ -398,6 +405,7 @@ final class AppModel {
         sessionRegistry: AgentSessionRegistry,
         focusResolution: any SessionFocusResolving,
         frontmostApps: any FrontmostAppMonitoring,
+        processInspector: ProcessInspector,
         integrationDiagnosticsLog: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog()
     ) {
         self.settingsStore = settingsStore
@@ -424,6 +432,7 @@ final class AppModel {
         self.sessionRegistry = sessionRegistry
         self.focusResolution = focusResolution
         self.frontmostApps = frontmostApps
+        self.processInspector = processInspector
         self.integrationDiagnosticsLog = integrationDiagnosticsLog
         activationObserver = nil
         dictationTask = nil
@@ -714,6 +723,10 @@ final class AppModel {
     /// fine here: the session count is tiny, and the underlying `ps`/`lsof` calls are
     /// deadlock-hardened.
     private func replayLast() async {
+        // Prune stale sessions before this tier-1/tier-2 read, same as
+        // `AgentAutoReadCoordinator`: a dead-process session (or one gone quiet past the TTL)
+        // must not be offered to focus resolution or treated as hosting the frontmost terminal.
+        await pruneDeadSessions(in: sessionRegistry, using: processInspector)
         let sessions = await sessionRegistry.sessions()
 
         for session in sessions {

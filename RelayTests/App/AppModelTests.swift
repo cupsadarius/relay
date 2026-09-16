@@ -260,6 +260,38 @@ final class AppModelTests: XCTestCase {
         withExtendedLifetime(model) {}
     }
 
+    /// `replayLast()` must prune dead-process sessions from `sessionRegistry` before its tier-1
+    /// focus loop runs, exactly like `AgentAutoReadCoordinator` does before its own focus
+    /// decision — otherwise a dead agent's stale session could still be offered to (and spoken
+    /// by) the manual replay path. The stub focus resolver would report this session confidently
+    /// focused if it survived pruning; injecting a process inspector that reports every pid dead
+    /// proves it's gone before that resolver is ever consulted, falling through to tier 3.
+    func testReplayLastSkipsDeadProcessSessionBeforeFocusResolution() async {
+        let registry = AgentSessionRegistry()
+        let deadSession = await registry.upsert(
+            response: makeAgentResponseEvent(providerSessionID: "dead-session", text: "Reply from a dead process"),
+            processAncestry: [1_234_567],
+            tty: nil
+        )
+        let speech = FakeSpeechCoordinator()
+        let hotkeys = FakeHotkeyManager()
+        let model = makeModel(
+            speech: speech,
+            hotkeys: hotkeys,
+            sessionRegistry: registry,
+            focusResolution: StubSessionFocusResolver(focusedSessionID: deadSession.id),
+            frontmostApps: StubFrontmostAppMonitor(pid: nil),
+            processInspector: ProcessInspector(runner: AllProcessesDeadRunner())
+        )
+
+        hotkeys.send(.replayLast, .pressed)
+        await waitUntil { speech.replayCount > 0 }
+
+        XCTAssertEqual(speech.replayCount, 1)
+        XCTAssertTrue(speech.requests.isEmpty, "the dead session must not be spoken via tier 1")
+        withExtendedLifetime(model) {}
+    }
+
     func testReplayLastWithAmbiguousFocusButFrontmostHostsASessionSpeaksGlobalLatest() async {
         let registry = AgentSessionRegistry()
         _ = await registry.upsert(
@@ -1328,7 +1360,8 @@ final class AppModelTests: XCTestCase {
         sessionRegistry: AgentSessionRegistry? = nil,
         focusResolution: (any SessionFocusResolving)? = nil,
         frontmostApps: (any FrontmostAppMonitoring)? = nil,
-        integrationManager: IntegrationManager? = nil
+        integrationManager: IntegrationManager? = nil,
+        processInspector: ProcessInspector? = nil
     ) -> AppModel {
         AppModel(
             settingsStore: store ?? FakeSettingsStore(settings: .defaults),
@@ -1353,7 +1386,13 @@ final class AppModelTests: XCTestCase {
                 frontmostApps: FrontmostAppMonitor(),
                 resolvers: []
             ),
-            frontmostApps: frontmostApps ?? FrontmostAppMonitor()
+            frontmostApps: frontmostApps ?? FrontmostAppMonitor(),
+            // A real `ProcessInspector()` default would shell out to `/bin/ps` and, finding no
+            // live process at this file's fabricated pids (e.g. 4242), prune `replayLast()`'s
+            // fixture sessions before focus resolution ever runs. Default to a fake reporting
+            // every fabricated pid alive; tests that specifically exercise pruning inject their
+            // own.
+            processInspector: processInspector ?? ProcessInspector(runner: AlwaysAliveProcessRunner())
         )
     }
 }
@@ -1609,6 +1648,24 @@ private struct StubFrontmostAppMonitor: FrontmostAppMonitoring {
     func current() async -> FrontmostApplication? {
         guard let pid else { return nil }
         return FrontmostApplication(pid: pid, bundleIdentifier: "com.test.terminal", localizedName: "TestTerminal")
+    }
+}
+
+/// Reports every pid in a wide synthetic range as alive, standing in for a live process table so
+/// this file's fabricated pids (e.g. `processAncestry: [4242]`) are never treated as dead by
+/// `AppModel.replayLast()`'s prune-before-focus step.
+private final class AlwaysAliveProcessRunner: ProcessRunning, @unchecked Sendable {
+    func run(executable: URL, arguments: [String], timeout: TimeInterval, maxOutputBytes: Int) throws -> ProcessResult {
+        let lines = (1...10_000).map { "\($0) 1 ttys001 fake" }.joined(separator: "\n")
+        return ProcessResult(stdout: Data(lines.utf8), terminationStatus: 0)
+    }
+}
+
+/// Reports an empty process table, so every pid looks dead — used to exercise
+/// `AppModel.replayLast()`'s prune-before-focus step.
+private final class AllProcessesDeadRunner: ProcessRunning, @unchecked Sendable {
+    func run(executable: URL, arguments: [String], timeout: TimeInterval, maxOutputBytes: Int) throws -> ProcessResult {
+        ProcessResult(stdout: Data(), terminationStatus: 0)
     }
 }
 
