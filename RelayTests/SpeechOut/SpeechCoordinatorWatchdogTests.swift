@@ -88,6 +88,52 @@ final class SpeechCoordinatorWatchdogTests: XCTestCase {
         XCTAssertEqual(backend.spoken.map(\.text), ["wedged", "after"])
     }
 
+    /// Regression test: on some backends (`StreamingAudioPlayer`/`PocketTTS`), `stop()` emits its
+    /// terminal event SYNCHRONOUSLY and reentrantly, from inside `stop()` itself, before it
+    /// returns - unlike AppleTTS, whose delegate callback arrives later, asynchronously. If the
+    /// watchdog called `router.stop()` before retiring its own session tracking, that reentrant
+    /// `.cancelled` would race ahead of the watchdog's own `.failed` report: it clears the
+    /// overlay's active session (silently no-oping the subsequent `overlay.fail(...)`) and
+    /// dequeues the next automatic request itself (so the watchdog's own drain would double it).
+    /// The user-visible outcome must be `.failed`, not a silently-swallowed `.cancelled`, on every
+    /// backend regardless of whether its `stop()` reports synchronously or asynchronously.
+    func testWatchdogSurfacesFailedWhenBackendStopEmitsSynchronousTerminal() async throws {
+        let backend = FakeTTSBackend(id: "apple")
+        let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let coordinator = makeCoordinator(backend: backend, overlay: overlay)
+
+        try await coordinator.speak(request(text: "wedged", mode: .automatic))
+        let wedged = backend.lastSessionID!
+        backend.emit(.started(sessionID: wedged))
+        // Queue a second automatic request behind the wedged one, to prove the watchdog's own
+        // drain fires exactly once even with a reentrant terminal in the mix.
+        try await coordinator.speak(request(text: "queued", mode: .automatic))
+
+        // Simulate a synchronous-terminal backend: stop() reentrantly emits `.cancelled` for the
+        // session being stopped, before returning.
+        backend.onStop = { backend.emit(.cancelled(sessionID: wedged)) }
+
+        // Wait for exactly one watchdog cycle: long enough for "wedged"'s timer to fire and the
+        // queue to drain, but short of the freshly-dequeued "queued" session's OWN watchdog (it
+        // never receives a terminal event here either, so it must not be allowed to also expire
+        // within this wait - that would be a second, unrelated recovery muddying the assertions).
+        try await Task.sleep(nanoseconds: UInt64(watchdogTimeout * 1.5 * 1_000_000_000))
+        await pumpMainActor()
+
+        // Exactly one stop, exactly one dequeue ("queued" reached the backend - proof isSpeaking
+        // was actually cleared to false by the watchdog rather than left wedged).
+        XCTAssertEqual(backend.stopCount, 1)
+        XCTAssertEqual(backend.spoken.map(\.text), ["wedged", "queued"])
+
+        // The user-visible outcome is the watchdog's own `.failed`, not the reentrant backend's
+        // `.cancelled` racing ahead of it and clearing the overlay first.
+        guard case let .error(sessionID, category, _) = overlay.state else {
+            return XCTFail("Expected overlay to end on .failed, got \(overlay.state)")
+        }
+        XCTAssertEqual(sessionID, wedged)
+        XCTAssertEqual(category, .speechPlayback)
+    }
+
     private func makeCoordinator(
         backend: FakeTTSBackend,
         overlay: ActivityOverlayModel? = nil,

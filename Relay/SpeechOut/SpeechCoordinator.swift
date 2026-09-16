@@ -67,6 +67,15 @@ final class SpeechCoordinator: SpeechCoordinating {
     /// terminal event (or an explicit `stop`) retires that session, so it never fires after a
     /// legitimate finish; replaced (not merely cancelled) whenever a new session starts.
     private var watchdogTask: Task<Void, Never>?
+    /// Set to a session ID only for the duration of `handleWatchdogExpiry(sessionID:)`'s call to
+    /// `router.stop()`, and `nil` otherwise. Some backends (`StreamingAudioPlayer`/`PocketTTS`)
+    /// emit their terminal event SYNCHRONOUSLY and reentrantly from inside `stop()`, before it
+    /// returns; `handle(_:backend:)` ignores any event for this session while it's set, so that
+    /// reentrant terminal can't race the watchdog's own `.failed` overlay update or double-drain
+    /// the queue. (AppleTTS's delegate callback is asynchronous, so this window has already
+    /// closed by the time its terminal event arrives — this exists purely for the synchronous
+    /// case.)
+    private var watchdogRetiringSessionID: UUID?
     /// Automatic-mode sessions that have not yet been shown in the overlay.
     /// Showing them only once playback actually starts (or fails) avoids
     /// hiding the capsule for whatever is still speaking when an automatic
@@ -201,7 +210,7 @@ final class SpeechCoordinator: SpeechCoordinating {
         watchdogTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
             guard !Task.isCancelled else { return }
-            await self?.handleWatchdogExpiry(sessionID: sessionID)
+            self?.handleWatchdogExpiry(sessionID: sessionID)
         }
     }
 
@@ -216,17 +225,34 @@ final class SpeechCoordinator: SpeechCoordinating {
     /// Fires when a session's watchdog timer elapses with no terminal event observed. Guards that
     /// `sessionID` is still the in-flight session - a terminal may have raced in and already
     /// retired it (which also cancels this timer, but cancellation and expiry can still land in
-    /// the same MainActor turn) - before treating it as abandoned: stops the backend, reports a
-    /// privacy-safe failure (mirroring the `.failed` handling in `handle(_:backend:)`), and drains
-    /// the queue via `finishInFlightSession(_:)`.
+    /// the same MainActor turn) - before treating it as abandoned.
+    ///
+    /// Retires this session's own tracking BEFORE calling `router.stop()`, rather than going
+    /// through `finishInFlightSession(_:)` afterwards: a synchronous-terminal backend
+    /// (`StreamingAudioPlayer`/`PocketTTS`) emits `.cancelled` reentrantly from inside `stop()`,
+    /// and `watchdogRetiringSessionID` makes `handle(_:backend:)` ignore it for that call's
+    /// duration. Without both of these, that reentrant `.cancelled` would race ahead of this
+    /// method's own `.failed` report — clearing the overlay's `activeSessionID` (so the
+    /// subsequent `overlay.fail(...)` below silently no-ops) and dequeuing the next request itself
+    /// (so the drain at the end here would double it). Retiring first and suppressing the
+    /// reentrant event makes both of those impossible, on every backend regardless of whether its
+    /// `stop()` reports synchronously or asynchronously.
     private func handleWatchdogExpiry(sessionID: UUID) {
         guard sessionID == currentSessionID else { return }
+        cancelWatchdog()
+        currentSessionID = nil
+        inFlightStartedAt = nil
+        isSpeaking = false
+
+        watchdogRetiringSessionID = sessionID
         router.stop()
+        watchdogRetiringSessionID = nil
+
         if pendingAutomaticSessions.remove(sessionID) != nil {
             overlay.begin(sessionID: sessionID)
         }
         overlay.fail(sessionID: sessionID, category: .speechPlayback, message: "Speech playback failed.")
-        finishInFlightSession(sessionID)
+        drainQueueIfNeeded()
     }
 
     /// Hands `request` to the router right now. Only ever called when nothing else is in flight
@@ -264,6 +290,13 @@ final class SpeechCoordinator: SpeechCoordinating {
         currentSessionID = nil
         inFlightStartedAt = nil
         isSpeaking = false
+        drainQueueIfNeeded()
+    }
+
+    /// Starts the next queued automatic request, if any. Shared by `finishInFlightSession(_:)`
+    /// (the normal terminal-event path) and `handleWatchdogExpiry(sessionID:)` (which retires its
+    /// session itself and so calls this directly, rather than through `finishInFlightSession(_:)`).
+    private func drainQueueIfNeeded() {
         guard !pendingAutomaticQueue.isEmpty else { return }
         let next = pendingAutomaticQueue.removeFirst()
         Task { [weak self] in
@@ -272,6 +305,10 @@ final class SpeechCoordinator: SpeechCoordinating {
     }
 
     private func handle(_ event: TTSPlaybackEvent, backend: (any TextToSpeechBackend)?) {
+        // A watchdog-driven `router.stop()` is in progress for this exact session: ignore
+        // whatever it synchronously, reentrantly emits. See `watchdogRetiringSessionID`'s doc
+        // comment.
+        guard event.sessionID != watchdogRetiringSessionID else { return }
         switch event {
         case .scheduled:
             break
