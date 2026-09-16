@@ -74,22 +74,16 @@ private func parseProvider(from arguments: [String]) -> WireAgentProvider? {
 
 // MARK: - stdin
 
-private func readStandardInputToEOF() -> Data {
-    let handle = FileHandle.standardInput
-    if #available(macOS 10.15.4, *) {
-        return (try? handle.readToEnd()) ?? Data()
-    } else {
-        return handle.readDataToEndOfFile()
-    }
-}
-
 // MARK: - main
 
 func runRelayHook() {
     let provider = parseProvider(from: Array(CommandLine.arguments.dropFirst()))
     debugLog("provider=\(provider?.rawValue ?? "unknown")")
 
-    let inputData = readStandardInputToEOF()
+    // Bounded chunked read: never buffers more than `maxInputBytes + 1`
+    // bytes, so an oversized or endless stdin stream cannot exhaust memory
+    // before the size check below runs.
+    let inputData = BoundedStdinReader.read(from: .standardInput, maxBytes: maxInputBytes)
     debugLog("stdinBytes=\(inputData.count)")
 
     guard let provider else {
@@ -126,17 +120,15 @@ func runRelayHook() {
 
     do {
         let data = try JSONEncoder().encode(envelope)
-        guard let line = String(data: data, encoding: .utf8) else {
-            debugLog("skip=envelope-encoding-not-utf8")
-            finish()
-        }
         let client = HookTransportClient(socketPath: HookTransportClient.defaultSocketPath)
-        try client.send(line: line)
-        debugLog("send=success")
+        // Delivery is best-effort and bounded by a short total deadline
+        // (connect + write). Relay may not be running, the socket may not
+        // exist, or the peer may be hung — none of that may ever block or
+        // steer the calling coding agent.
+        let delivered = client.send(data)
+        debugLog(delivered ? "send=success" : "send=failed")
     } catch {
-        // Relay may not be running, or the socket may not exist yet. This is
-        // expected and must never block or steer the calling agent.
-        debugLog("send=failed")
+        debugLog("skip=envelope-encoding-failed")
     }
 
     finish()
