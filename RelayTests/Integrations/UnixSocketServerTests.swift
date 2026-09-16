@@ -347,4 +347,39 @@ final class UnixSocketServerTests: XCTestCase {
         try await UnixSocketTestClient.send("not json at all\n", to: path)
         await fulfillment(of: [received], timeout: 1)
     }
+
+    func testClientDisconnectMidWriteDiscardsThePartialLineAndServerStaysHealthy() async throws {
+        // A peer can vanish (crash, killed, network drop) partway through a
+        // line, well under the size cap and with no trailing newline. The
+        // server must treat the resulting EOF like `closeConnection` for any
+        // other reason: drop the unterminated partial bytes without ever
+        // invoking `onLine` for them, and keep accepting/serving later
+        // clients rather than wedging on the half-written connection.
+        let path = temporarySocketPath()
+        let receivedPartialLine = expectation(description: "partial line delivered")
+        receivedPartialLine.isInverted = true
+        let receivedFollowUpLine = expectation(description: "later client still served")
+
+        let server = UnixSocketServer()
+        try server.start(path: path) { line in
+            if line.contains("incomple") {
+                receivedPartialLine.fulfill()   // inverted guard: trips only if the partial is wrongly delivered
+            } else {
+                receivedFollowUpLine.fulfill()
+            }
+        }
+        defer { server.stop() }
+
+        // No trailing newline: `send` still closes the connection once the
+        // bytes are flushed to the kernel, modeling a peer that disconnects
+        // mid-message rather than one that simply pauses.
+        try await UnixSocketTestClient.send(#"{"schemaVersion":1,"incomple"#, to: path)
+
+        await fulfillment(of: [receivedPartialLine], timeout: 0.3)
+
+        // The listener must still be healthy for a subsequent, complete
+        // connection — the aborted peer must not have wedged anything.
+        try await UnixSocketTestClient.send(#"{"schemaVersion":1}"# + "\n", to: path)
+        await fulfillment(of: [receivedFollowUpLine], timeout: 1)
+    }
 }

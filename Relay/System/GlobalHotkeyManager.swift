@@ -191,8 +191,31 @@ final class GlobalHotkeyManager: HotkeyManaging {
     private var runLoopSource: CFRunLoopSource?
     private var matcher = HotkeyMatcher(definitions: [:])
     private var handler: (@MainActor (HotkeyAction, HotkeyPhase) -> Void)?
+    /// Creates the underlying Mach port `register()` treats as "the event tap". Defaults to the
+    /// real `CGEvent.tapCreate` call. Injectable only so tests can verify `register()`'s
+    /// `eventTap != nil` guard (never recreating the tap on subsequent calls) with a factory that
+    /// succeeds deterministically, instead of depending on this machine's Accessibility
+    /// permission at test time.
+    private let tapFactory: @MainActor (CGEventMask, UnsafeMutableRawPointer) -> CFMachPort?
 
-    init(diagnostics: DiagnosticsRecorder? = nil) { self.diagnostics = diagnostics }
+    init(
+        diagnostics: DiagnosticsRecorder? = nil,
+        tapFactory: @escaping @MainActor (CGEventMask, UnsafeMutableRawPointer) -> CFMachPort? = GlobalHotkeyManager.createRealTap
+    ) {
+        self.diagnostics = diagnostics
+        self.tapFactory = tapFactory
+    }
+
+    private static func createRealTap(mask: CGEventMask, userInfo: UnsafeMutableRawPointer) -> CFMachPort? {
+        CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .listenOnly,
+            eventsOfInterest: mask,
+            callback: eventTapCallback,
+            userInfo: userInfo
+        )
+    }
 
     deinit {
         if let runLoopSource {
@@ -221,14 +244,7 @@ final class GlobalHotkeyManager: HotkeyManaging {
             | CGEventMask(1 << CGEventType.flagsChanged.rawValue)
         let pointer = Unmanaged.passUnretained(self).toOpaque()
 
-        guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .listenOnly,
-            eventsOfInterest: mask,
-            callback: Self.eventTapCallback,
-            userInfo: pointer
-        ) else {
+        guard let tap = tapFactory(mask, pointer) else {
             diagnostics?.record(.eventTapUnavailable)
             return .unavailable(Self.permissionFailureMessage)
         }

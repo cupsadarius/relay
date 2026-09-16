@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # Wave 2 (Option A) raised Relay's deployment target to macOS 26.0
+    # (see `deploymentTarget.macOS` in project.yml). Building that target
+    # requires the macOS 26 SDK, which only ships with Xcode 26 — a
+    # macOS 15 runner image (Xcode 16 / macOS 15 SDK) cannot build it at
+    # all, so gating merges on that runner would be a broken, always-green
+    # (or always-failing) gate rather than a real check. If GitHub has not
+    # yet promoted `macos-26` to a generally-available runner image in this
+    # org/repo, substitute the newest available macOS runner label whose
+    # Xcode version bundles the macOS 26 SDK (check
+    # https://github.com/actions/runner-images for current availability)
+    # rather than falling back to macos-15.
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select newest Xcode
+        # Ensures the macOS 26 SDK toolchain is active even if the runner
+        # image ships multiple Xcode versions side by side.
+        run: sudo xcode-select -s /Applications/Xcode_26.app || true
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Build & Test
+        run: set -o pipefail && xcodebuild test -scheme Relay -destination 'platform=macOS' | tail -80

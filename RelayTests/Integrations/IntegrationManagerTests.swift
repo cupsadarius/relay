@@ -232,6 +232,52 @@ final class IntegrationManagerTests: XCTestCase {
         XCTAssertEqual(stored, secondEvent)
     }
 
+    // MARK: - Single source of truth (gate cannot diverge from content)
+
+    /// Hardens the actual bug (not just the latent-trap simulation in `AppModelTests`): the gate
+    /// (`latestResponse`) and the spoken content (`store.get()`) must trace back to the SAME
+    /// state, so anything that mutates `store` — not only the manager's own consume loop — has to
+    /// be reflected in the gate too. Before the fix, `latestResponse` is written only from inside
+    /// `recordActive()`, which nothing but the manager's own decode path ever calls, so a direct
+    /// `store.set`/`store.clear` (exactly what a future caller, or another part of the app, might
+    /// legitimately do) leaves the gate stale: `waitUntil` below times out because
+    /// `manager.latestResponse` never becomes non-nil, and — after seeding it back to catch up —
+    /// never goes back to `nil` either. After the fix, `latestResponse` is a projection of `store`
+    /// itself, so both mutations are picked up regardless of who made them.
+    func testGateCannotDivergeFromStoreAcrossDirectMutation() async {
+        let store = LatestAgentResponseStore()
+        let events = AsyncStream<HookEnvelope> { _ in }
+        let manager = IntegrationManager(
+            events: events,
+            integrations: [],
+            store: store,
+            speechCoordinator: FakeSpeechCoordinator()
+        )
+        manager.start()
+        defer { manager.stop() }
+
+        let latest = event(provider: .claudeCode, providerSessionID: "direct-set")
+        await store.set(latest)
+        await waitUntil { manager.latestResponse != nil }
+
+        XCTAssertEqual(
+            manager.latestResponse, latest,
+            "the gate must reflect every store mutation, not just ones routed through the manager's own consume loop"
+        )
+        let stored = await store.get()
+        XCTAssertEqual(stored, latest)
+
+        await store.clear()
+        await waitUntil { manager.latestResponse == nil }
+
+        XCTAssertNil(
+            manager.latestResponse,
+            "the gate must go false the moment the store is cleared, regardless of who cleared it"
+        )
+        let clearedContent = await store.get()
+        XCTAssertNil(clearedContent)
+    }
+
     // MARK: - onResponse callback
 
     /// Phase 3 moves the auto-read decision out of this manager entirely: it now only publishes

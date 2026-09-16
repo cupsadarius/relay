@@ -14,6 +14,11 @@ enum DiagnosticsEvent: Equatable, Sendable {
     case speechModelDownloadStarted(backendID: String)
     case speechModelDownloadFinished(backendID: String)
     case speechModelDownloadFailed(backendID: String)
+    /// Settings failed to decode even after per-field resilience (the saved blob wasn't a
+    /// decodable settings object at all — e.g. not JSON, or not a JSON object). Carries only the
+    /// byte count of the blob that failed: never its contents, never the raw decode error, which
+    /// could otherwise echo fragments of the corrupt bytes back into a log.
+    case settingsDecodeFailed(byteCount: Int)
 
     private static func speechBackendDisplayName(_ backendID: String) -> String {
         switch backendID {
@@ -49,6 +54,8 @@ enum DiagnosticsEvent: Equatable, Sendable {
             "\(Self.speechBackendDisplayName(backendID)) model download finished"
         case let .speechModelDownloadFailed(backendID):
             "\(Self.speechBackendDisplayName(backendID)) model download failed"
+        case let .settingsDecodeFailed(byteCount):
+            "Settings failed to decode (\(byteCount) bytes); restored defaults, blob preserved for recovery"
         }
     }
 }

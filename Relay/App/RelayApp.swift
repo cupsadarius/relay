@@ -26,7 +26,7 @@ struct RelayApp: App {
 /// `~/.codex` config.
 @MainActor
 final class RelayAppDelegate: NSObject, NSApplicationDelegate {
-    let model = AppModel()
+    let model = AppModel(runtime: .makeProduction())
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         model.startIntegrations()

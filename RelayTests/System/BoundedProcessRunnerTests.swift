@@ -30,4 +30,20 @@ final class BoundedProcessRunnerTests: XCTestCase {
         XCTAssertEqual(result.terminationStatus, 0)
         XCTAssertEqual(String(decoding: result.stdout, as: UTF8.self), "done\n")
     }
+    func testMissingExecutableThrowsLaunchFailedInsteadOfCrashing() {
+        // `Process.run()` throws synchronously when the executable path
+        // doesn't exist (or isn't executable). The runner must map that into
+        // its own `.launchFailed` case rather than letting the underlying
+        // NSError propagate or crashing the process.
+        XCTAssertThrowsError(
+            try runner.run(
+                executable: URL(fileURLWithPath: "/nonexistent/definitely-not-a-binary-\(UUID().uuidString)"),
+                arguments: [],
+                timeout: 5,
+                maxOutputBytes: 1024
+            )
+        ) { error in
+            XCTAssertEqual(error as? BoundedProcessError, .launchFailed)
+        }
+    }
 }
