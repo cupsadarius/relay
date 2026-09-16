@@ -152,6 +152,18 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertTrue(AppSettings.defaults.autoReadEnabled)
     }
 
+    /// Now that the minimum macOS is 26, Apple Speech is a zero-download baseline and must
+    /// remain the sole default STT backend.
+    func testDefaultSTTOrderIsAppleSpeech() {
+        XCTAssertEqual(AppSettings.defaults.sttBackendOrder, ["apple-speech"])
+    }
+
+    /// Apple TTS must stay present in the default order as a reliable fallback, regardless of
+    /// its exact position.
+    func testDefaultTTSOrderContainsAppleTTSFallback() {
+        XCTAssertTrue(AppSettings.defaults.ttsBackendOrder.contains("apple-tts"))
+    }
+
     @MainActor
     func testSettingsStoreReturnsDefaultsWhenNoSettingsAreSaved() {
         let defaults = makeUserDefaults()
