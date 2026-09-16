@@ -28,11 +28,35 @@ final class SpeechCoordinator: SpeechCoordinating {
     /// first so a long silent backlog can never build up behind whatever is currently playing.
     private static let queueCap = 8
 
+    /// How long a single in-flight session may sit "speaking" with no terminal playback event
+    /// before the queue gives up on it and treats it as abandoned. This is deliberately generous
+    /// — far longer than any legitimate utterance — because it exists only as a defense-in-depth
+    /// self-heal, not a normal control-flow path.
+    ///
+    /// Why this exists: `isSpeaking` is otherwise only ever cleared by a terminal
+    /// `.finished`/`.cancelled`/`.failed` event reaching `handle(_:)`. Tracing every real
+    /// playback path (`AppleTTSBackend` via `AVSpeechSynthesizerDelegate`'s didFinish/didCancel,
+    /// `SynthesizedAudioPlayer` via `AVAudioPlayerDelegate`'s didFinishPlaying,
+    /// `StreamingAudioPlayer` via `AVAudioPlayerNode` buffer-completion callbacks, and
+    /// `TTSRouter.speak(...)`'s synchronous `.failed` emission on a start failure) shows each one
+    /// *should* always deliver exactly one terminal event per session. But that guarantee rests on
+    /// AVFoundation delegate/completion contracts under conditions this codebase can't fully
+    /// exercise from tests (a mid-playback decode error, an audio route change interrupting
+    /// `AVAudioEngine`, or a rare OS bug) — if any of those ever silently drops a terminal event,
+    /// `isSpeaking` would otherwise stay `true` forever and every future `.automatic` response
+    /// would queue silently, permanently killing auto-read until a manual Stop. This bound makes
+    /// that failure mode self-heal instead.
+    private static let staleInFlightTimeout: TimeInterval = 300
+
     private let router: TTSRouter
     private let options: () -> TTSOptions
     private let overlay: ActivityOverlayModel
+    private let now: () -> Date
     private var lastRequest: SpeechRequest?
     private var currentSessionID: UUID?
+    /// When the currently in-flight session was handed to the router. `nil` whenever nothing is
+    /// in flight. Used only by the `staleInFlightTimeout` self-heal check.
+    private var inFlightStartedAt: Date?
     /// Automatic-mode sessions that have not yet been shown in the overlay.
     /// Showing them only once playback actually starts (or fails) avoids
     /// hiding the capsule for whatever is still speaking when an automatic
@@ -47,10 +71,16 @@ final class SpeechCoordinator: SpeechCoordinating {
     /// `queueCap`, dropping the oldest entry first.
     private var pendingAutomaticQueue: [SpeechRequest] = []
 
-    init(router: TTSRouter, options: @escaping () -> TTSOptions, overlay: ActivityOverlayModel) {
+    init(
+        router: TTSRouter,
+        options: @escaping () -> TTSOptions,
+        overlay: ActivityOverlayModel,
+        now: @escaping () -> Date = Date.init
+    ) {
         self.router = router
         self.options = options
         self.overlay = overlay
+        self.now = now
         router.setPlaybackEventHandler { [weak self] event, backend in
             self?.handle(event, backend: backend)
         }
@@ -63,9 +93,16 @@ final class SpeechCoordinator: SpeechCoordinating {
             router.stop()
             try await start(request)
         case .automatic:
-            guard !isSpeaking else {
-                enqueue(request)
-                return
+            if isSpeaking {
+                if isInFlightSessionStale() {
+                    // Self-heal: the in-flight session's backend apparently dropped its terminal
+                    // event. Give up on tracking it any further and take over immediately, rather
+                    // than queueing behind a session that will never finish.
+                    isSpeaking = false
+                } else {
+                    enqueue(request)
+                    return
+                }
             }
             try await start(request)
         }
@@ -81,6 +118,7 @@ final class SpeechCoordinator: SpeechCoordinating {
             overlay.cancel(sessionID: overlaySessionID)
         }
         currentSessionID = nil
+        inFlightStartedAt = nil
         pendingAutomaticSessions.removeAll()
         isSpeaking = false
     }
@@ -94,6 +132,7 @@ final class SpeechCoordinator: SpeechCoordinating {
         overlay.cancel(sessionID: sessionID)
         if currentSessionID == sessionID {
             currentSessionID = nil
+            inFlightStartedAt = nil
         }
         pendingAutomaticSessions.remove(sessionID)
         isSpeaking = false
@@ -106,6 +145,7 @@ final class SpeechCoordinator: SpeechCoordinating {
         router.stop()
         let sessionID = UUID()
         currentSessionID = sessionID
+        inFlightStartedAt = now()
         isSpeaking = true
         overlay.begin(sessionID: sessionID)
         overlay.prepareSpeaking(sessionID: sessionID)
@@ -122,12 +162,20 @@ final class SpeechCoordinator: SpeechCoordinating {
         }
     }
 
+    /// Whether the currently in-flight session has been "speaking" with no terminal event for at
+    /// least `staleInFlightTimeout`. See that constant's doc comment for why this exists.
+    private func isInFlightSessionStale() -> Bool {
+        guard let inFlightStartedAt else { return false }
+        return now().timeIntervalSince(inFlightStartedAt) >= Self.staleInFlightTimeout
+    }
+
     /// Hands `request` to the router right now. Only ever called when nothing else is in flight
     /// (either because nothing was playing, or because the caller just force-stopped whatever
     /// was).
     private func start(_ request: SpeechRequest) async throws {
         let sessionID = UUID()
         currentSessionID = sessionID
+        inFlightStartedAt = now()
         isSpeaking = true
 
         switch request.mode {
@@ -144,8 +192,15 @@ final class SpeechCoordinator: SpeechCoordinating {
 
     /// Called for every terminal playback event belonging to the session currently in flight.
     /// Clears the busy flag and, if anything is queued, starts the next automatic request.
+    ///
+    /// Clears `currentSessionID` (not just `isSpeaking`) so a second terminal event for the same
+    /// session — a duplicate `.finished`, or `.cancelled` followed by a late `.finished` — finds
+    /// `sessionID == currentSessionID` false and is a no-op, instead of dequeuing and starting a
+    /// second automatic request on top of the one the first terminal event already started.
     private func finishInFlightSession(_ sessionID: UUID) {
         guard sessionID == currentSessionID else { return }
+        currentSessionID = nil
+        inFlightStartedAt = nil
         isSpeaking = false
         guard !pendingAutomaticQueue.isEmpty else { return }
         let next = pendingAutomaticQueue.removeFirst()

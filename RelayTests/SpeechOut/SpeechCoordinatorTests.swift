@@ -170,12 +170,18 @@ final class SpeechCoordinatorTests: XCTestCase {
         let coordinator = makeCoordinator(backend: backend, options: { options })
 
         try await coordinator.speak(request(text: "remember me", mode: .automatic))
+        // Let the busy flag clear so the next automatic call actually reaches the backend
+        // (and its induced failure) instead of merely enqueuing behind this one.
+        backend.emit(.finished(sessionID: backend.lastSessionID!))
+
         backend.error = SpeechBackendError.invalidInput
         try? await coordinator.speak(request(text: "do not remember", mode: .automatic))
         backend.error = nil
         options = TTSOptions(voiceIdentifier: "new-voice", rate: 0.7)
         try await coordinator.replayLast()
 
+        // The failed "do not remember" attempt must never overwrite lastRequest: replay still
+        // targets "remember me".
         XCTAssertEqual(backend.spoken.map(\.text), ["remember me", "remember me"])
         XCTAssertEqual(backend.spoken.last?.options, options)
         XCTAssertEqual(backend.stopCount, 1)
@@ -409,17 +415,103 @@ final class SpeechCoordinatorTests: XCTestCase {
         XCTAssertTrue(overlay.state.isHidden)
     }
 
+    func testDuplicateTerminalEventForSameSessionDequeuesOnlyOnce() async throws {
+        let backend = FakeTTSBackend(id: "apple")
+        let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let coordinator = makeCoordinator(backend: backend, overlay: overlay)
+
+        try await coordinator.speak(request(text: "first", mode: .automatic))
+        let first = backend.lastSessionID!
+        backend.emit(.started(sessionID: first))
+        try await coordinator.speak(request(text: "queued-a", mode: .automatic))
+        try await coordinator.speak(request(text: "queued-b", mode: .automatic))
+
+        // Two terminal events for the same session - a duplicate `.finished`, or a `.cancelled`
+        // followed by a late `.finished` - must dequeue the next automatic request only once.
+        backend.emit(.finished(sessionID: first))
+        backend.emit(.finished(sessionID: first))
+        await pumpMainActor()
+
+        XCTAssertEqual(backend.spoken.map(\.text), ["first", "queued-a"])
+    }
+
+    func testCancelledThenLateFinishForSameSessionDequeuesOnlyOnce() async throws {
+        let backend = FakeTTSBackend(id: "apple")
+        let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let coordinator = makeCoordinator(backend: backend, overlay: overlay)
+
+        try await coordinator.speak(request(text: "first", mode: .automatic))
+        let first = backend.lastSessionID!
+        backend.emit(.started(sessionID: first))
+        try await coordinator.speak(request(text: "queued-a", mode: .automatic))
+        try await coordinator.speak(request(text: "queued-b", mode: .automatic))
+
+        backend.emit(.cancelled(sessionID: first))
+        backend.emit(.finished(sessionID: first)) // late, stale terminal for the same session
+        await pumpMainActor()
+
+        XCTAssertEqual(backend.spoken.map(\.text), ["first", "queued-a"])
+    }
+
+    func testStartFailureOnADequeuedRequestResetsBusyStateAndKeepsDraining() async throws {
+        let backend = FakeTTSBackend(id: "apple")
+        let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let coordinator = makeCoordinator(backend: backend, overlay: overlay)
+
+        try await coordinator.speak(request(text: "first", mode: .automatic))
+        let first = backend.lastSessionID!
+        backend.emit(.started(sessionID: first))
+        try await coordinator.speak(request(text: "queued", mode: .automatic))
+
+        // "first" finishes, "queued" is dequeued, and its start immediately fails. TTSRouter
+        // emits `.failed` synchronously before throwing, so this must still reset the busy flag.
+        backend.error = SpeechBackendError.invalidInput
+        backend.emit(.finished(sessionID: first))
+        await pumpMainActor()
+        backend.error = nil
+
+        // A fresh automatic request must start immediately rather than queueing behind a call
+        // that already failed and will never produce a terminal event of its own.
+        try await coordinator.speak(request(text: "after-failure", mode: .automatic))
+
+        XCTAssertEqual(backend.spoken.map(\.text), ["first", "after-failure"])
+    }
+
+    func testStuckInFlightSessionSelfHealsAfterStaleTimeout() async throws {
+        let backend = FakeTTSBackend(id: "apple")
+        let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        var clock = Date(timeIntervalSince1970: 0)
+        let coordinator = makeCoordinator(backend: backend, overlay: overlay, now: { clock })
+
+        try await coordinator.speak(request(text: "wedged", mode: .automatic))
+        backend.emit(.started(sessionID: backend.lastSessionID!))
+        // No terminal event ever arrives for "wedged" - simulating a backend that dropped it.
+
+        clock = clock.addingTimeInterval(60)
+        try await coordinator.speak(request(text: "too-soon", mode: .automatic))
+        // Still within the generous bound: enqueued, not dispatched.
+        XCTAssertEqual(backend.spoken.map(\.text), ["wedged"])
+
+        clock = clock.addingTimeInterval(300)
+        try await coordinator.speak(request(text: "self-heal", mode: .automatic))
+
+        // Past the stale bound: the wedged session is abandoned and this request starts
+        // immediately, ahead of "too-soon" (still queued behind it).
+        XCTAssertEqual(backend.spoken.map(\.text), ["wedged", "self-heal"])
+    }
+
     private func makeCoordinator(
         backend: FakeTTSBackend,
         overlay: ActivityOverlayModel? = nil,
-        options: @escaping () -> TTSOptions = { .init() }
+        options: @escaping () -> TTSOptions = { .init() },
+        now: @escaping () -> Date = Date.init
     ) -> SpeechCoordinator {
         let overlay = overlay ?? ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let router = TTSRouter(
             backends: [backend.id: backend],
             backendOrder: { [backend.id] }
         )
-        return SpeechCoordinator(router: router, options: options, overlay: overlay)
+        return SpeechCoordinator(router: router, options: options, overlay: overlay, now: now)
     }
 
     private func request(text: String, mode: SpeechMode) -> SpeechRequest {
