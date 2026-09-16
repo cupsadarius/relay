@@ -1,6 +1,16 @@
 import Observation
 @preconcurrency import AppKit
 import AVFoundation
+import os
+
+/// Thrown by `AppModel.installBundledHelperIfPresent` when, after attempting to refresh the
+/// bundled `RelayHook` helper at its stable Application Support path, there is still no valid
+/// (present and executable) helper there. Caught by `installIntegration`, which surfaces it as
+/// `.configurationError` instead of proceeding to write the agent config — a config pointed at
+/// a stable path with nothing runnable behind it would silently never fire.
+enum HelperInstallVerificationError: Error, Sendable {
+    case stableHelperUnavailable
+}
 
 @MainActor
 @Observable
@@ -100,6 +110,18 @@ final class AppModel {
     @ObservationIgnored private let integrationManager: IntegrationManager
     @ObservationIgnored private let claudeCodeInstaller: ClaudeCodeInstaller
     @ObservationIgnored private let codexInstaller: CodexInstaller
+    /// Copies the bundled `RelayHook` helper to its stable Application Support location
+    /// before each `installIntegration` call, so the stable path the installers reference
+    /// always exists. Injectable so tests never touch the real `~/Library/Application
+    /// Support`.
+    @ObservationIgnored private let helperInstaller: HelperInstaller
+    /// The bundled helper's location inside the running app bundle — the SOURCE
+    /// `helperInstaller` copies from. Injectable so tests can point it at a path that never
+    /// exists (the default is a no-op guard: see `installBundledHelperIfPresent`).
+    @ObservationIgnored private let bundledHelperURL: URL
+    /// Structural-only logging for `installBundledHelperIfPresent` (no paths, no file
+    /// contents — see that method's doc comment for what gets logged and when).
+    @ObservationIgnored private let installerLogger = Logger(subsystem: "dev.relaymac.Relay", category: "integrations")
     /// Ephemeral, memory-only registry of agent sessions observed from hook events. Shared with
     /// the production `AgentAutoReadCoordinator`/`FocusResolutionService` graph built in the
     /// production `convenience init()`. Exposed read-only for compact diagnostics
@@ -113,6 +135,10 @@ final class AppModel {
     /// frontmost app host at least one agent session). The SAME instance shared with the
     /// production dictation/auto-read graph built in the production `convenience init()`.
     @ObservationIgnored private let frontmostApps: any FrontmostAppMonitoring
+    /// Shared process inspector consulted by `replayLast()` to prune dead-process sessions from
+    /// `sessionRegistry` before resolving focus. The SAME instance shared with the production
+    /// `AgentAutoReadCoordinator`/resolver graph built in the production `convenience init()`.
+    @ObservationIgnored private let processInspector: ProcessInspector
     /// Shared in-memory diagnostics log for the integration pipeline (socket receive -> envelope
     /// decode -> adapter decode -> registry upsert -> focus gate), independent of `os_log`. The
     /// SAME instance is passed into `hookEnvelopeReceiver`, `integrationManager`, and the
@@ -209,7 +235,8 @@ final class AppModel {
             // coordinator's plain `@Sendable () async -> Bool` parameter type; the hop happens at
             // the call site, not by widening that parameter.
             autoReadEnabled: { @MainActor in state.value.autoReadEnabled },
-            diagnostics: integrationDiagnosticsLog
+            diagnostics: integrationDiagnosticsLog,
+            processInspector: processInspector
         )
 
         let dictation = DictationCoordinator(
@@ -288,6 +315,7 @@ final class AppModel {
             sessionRegistry: sessionRegistry,
             focusResolution: focusResolution,
             frontmostApps: frontmostApps,
+            processInspector: processInspector,
             integrationDiagnosticsLog: integrationDiagnosticsLog
         )
         dictation.setStatusHandler { [weak self] in self?.statusText = $0 }
@@ -315,6 +343,8 @@ final class AppModel {
         integrationManager: IntegrationManager? = nil,
         claudeCodeInstaller: ClaudeCodeInstaller = ClaudeCodeInstaller(),
         codexInstaller: CodexInstaller = CodexInstaller(),
+        helperInstaller: HelperInstaller = HelperInstaller(),
+        bundledHelperURL: URL = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/RelayHook"),
         sessionRegistry: AgentSessionRegistry = AgentSessionRegistry(),
         focusResolution: any SessionFocusResolving = FocusResolutionService(
             registry: AgentSessionRegistry(),
@@ -322,6 +352,7 @@ final class AppModel {
             resolvers: []
         ),
         frontmostApps: any FrontmostAppMonitoring = FrontmostAppMonitor(),
+        processInspector: ProcessInspector = ProcessInspector(),
         integrationDiagnosticsLog: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog()
     ) {
         let settings = settingsStore.load()
@@ -351,9 +382,12 @@ final class AppModel {
         )
         self.claudeCodeInstaller = claudeCodeInstaller
         self.codexInstaller = codexInstaller
+        self.helperInstaller = helperInstaller
+        self.bundledHelperURL = bundledHelperURL
         self.sessionRegistry = sessionRegistry
         self.focusResolution = focusResolution
         self.frontmostApps = frontmostApps
+        self.processInspector = processInspector
         self.integrationDiagnosticsLog = integrationDiagnosticsLog
         activationObserver = nil
         dictationTask = nil
@@ -394,9 +428,12 @@ final class AppModel {
         integrationManager: IntegrationManager,
         claudeCodeInstaller: ClaudeCodeInstaller,
         codexInstaller: CodexInstaller,
+        helperInstaller: HelperInstaller = HelperInstaller(),
+        bundledHelperURL: URL = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/RelayHook"),
         sessionRegistry: AgentSessionRegistry,
         focusResolution: any SessionFocusResolving,
         frontmostApps: any FrontmostAppMonitoring,
+        processInspector: ProcessInspector,
         integrationDiagnosticsLog: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog()
     ) {
         self.settingsStore = settingsStore
@@ -420,9 +457,12 @@ final class AppModel {
         self.integrationManager = integrationManager
         self.claudeCodeInstaller = claudeCodeInstaller
         self.codexInstaller = codexInstaller
+        self.helperInstaller = helperInstaller
+        self.bundledHelperURL = bundledHelperURL
         self.sessionRegistry = sessionRegistry
         self.focusResolution = focusResolution
         self.frontmostApps = frontmostApps
+        self.processInspector = processInspector
         self.integrationDiagnosticsLog = integrationDiagnosticsLog
         activationObserver = nil
         dictationTask = nil
@@ -713,6 +753,10 @@ final class AppModel {
     /// fine here: the session count is tiny, and the underlying `ps`/`lsof` calls are
     /// deadlock-hardened.
     private func replayLast() async {
+        // Prune stale sessions before this tier-1/tier-2 read, same as
+        // `AgentAutoReadCoordinator`: a dead-process session (or one gone quiet past the TTL)
+        // must not be offered to focus resolution or treated as hosting the frontmost terminal.
+        await pruneDeadSessions(in: sessionRegistry, using: processInspector)
         let sessions = await sessionRegistry.sessions()
 
         for session in sessions {
@@ -856,10 +900,15 @@ final class AppModel {
     }
 
     /// Installs the Relay `Stop` hook for `provider`, then refreshes its status. An installer
-    /// failure is caught and surfaced as `.configurationError`; it never crashes the app, and
-    /// never logs the underlying error verbatim.
+    /// failure — including the bundled helper not being reachable at its stable path (see
+    /// `installBundledHelperIfPresent`) — is caught and surfaced as `.configurationError`
+    /// BEFORE the per-provider installer writes the agent config; it never crashes the app,
+    /// and never logs the underlying error verbatim. This ordering matters: the config must
+    /// never point at a stable path with nothing runnable there, which would silently never
+    /// fire while `status()` still reports "installed".
     func installIntegration(_ provider: AgentProvider) {
         do {
+            try installBundledHelperIfPresent()
             switch provider {
             case .claudeCode: try claudeCodeInstaller.install()
             case .codex: try codexInstaller.install()
@@ -867,6 +916,46 @@ final class AppModel {
             checkIntegration(provider)
         } catch {
             installerStatuses[provider] = Self.configurationErrorStatus(for: provider, error: error)
+        }
+    }
+
+    /// Refreshes the stable-path copy of the bundled `RelayHook` helper (see
+    /// `HelperInstaller`) before a per-provider installer runs, so the path it is about to
+    /// write into the agent's config always resolves to a real, executable file — even right
+    /// after a rebuild that produced a new bundled helper.
+    ///
+    /// Guarded on `bundledHelperURL` actually existing: in unit tests (and any host process
+    /// that isn't the real, built app bundle) it normally doesn't, so this is a silent no-op
+    /// there rather than a hard dependency on a real app bundle being present.
+    ///
+    /// When a bundled helper DOES exist, the copy is attempted and the destination is then
+    /// re-verified with `FileManager.isExecutableFile`. A copy failure is NOT always fatal: if
+    /// a valid helper from an earlier install is already sitting at the stable path,
+    /// `installBundledHelper` never touches it on failure (see that type's doc comment), so
+    /// the existing, still-working install is left alone — logged structurally, not surfaced.
+    /// It's only fatal when, after the attempt, there is NO valid helper at the stable path at
+    /// all: writing the agent config next would then point at a path nothing can ever run
+    /// from, so this throws instead, aborting `installIntegration` before that write happens.
+    private func installBundledHelperIfPresent() throws {
+        guard FileManager.default.fileExists(atPath: bundledHelperURL.path) else { return }
+
+        let fileManager = FileManager.default
+        let installedHelperPath = helperInstaller.installedHelperURL.path
+        let hadValidStableHelperBefore = fileManager.isExecutableFile(atPath: installedHelperPath)
+
+        do {
+            try helperInstaller.installBundledHelper(from: bundledHelperURL)
+        } catch {
+            if hadValidStableHelperBefore {
+                installerLogger.log("bundled RelayHook helper refresh failed; a previously installed helper is still present")
+            } else {
+                installerLogger.log("bundled RelayHook helper refresh failed")
+            }
+        }
+
+        guard fileManager.isExecutableFile(atPath: installedHelperPath) else {
+            installerLogger.log("stable RelayHook helper unavailable after refresh; aborting hook install")
+            throw HelperInstallVerificationError.stableHelperUnavailable
         }
     }
 

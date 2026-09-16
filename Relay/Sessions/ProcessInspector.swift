@@ -56,72 +56,31 @@ struct ProcessInspector: Sendable {
     private let executableURL: URL
     private let arguments: [String]
     private let timeout: TimeInterval
+    private let runner: ProcessRunning
 
     init(
         executableURL: URL = URL(fileURLWithPath: "/bin/ps"),
         arguments: [String] = ["-axo", "pid=,ppid=,tty=,comm="],
-        timeout: TimeInterval = ProcessInspector.timeout
+        timeout: TimeInterval = ProcessInspector.timeout,
+        runner: ProcessRunning = BoundedProcessRunner()
     ) {
         self.executableURL = executableURL
         self.arguments = arguments
         self.timeout = timeout
+        self.runner = runner
     }
 
     func snapshot() throws -> ProcessSnapshot {
-        let process = Process()
-        let stdoutPipe = Pipe()
-        process.executableURL = executableURL
-        process.arguments = arguments
-        process.standardOutput = stdoutPipe
-        // Redirect stderr to /dev/null rather than a Pipe: an unread Pipe fills its 64KB kernel
-        // buffer and blocks the child on write, which is exactly the deadlock class this fix
-        // exists to eliminate. We don't care about ps's stderr, so there's nothing to drain.
-        process.standardError = FileHandle.nullDevice
-
-        try process.run()
-
-        // Drain stdout on a background thread and signal completion via a semaphore that we wait
-        // on with a deadline. This is the key ordering fix: we must read the pipe to EOF *before*
-        // (or concurrently with) `waitUntilExit()`, because `ps` blocks writing to a full pipe and
-        // `waitUntilExit()` blocks waiting for `ps` to exit — reading only after `waitUntilExit()`
-        // returns is a guaranteed deadlock once output exceeds the pipe's kernel buffer (64KB).
-        // Reading on a background thread (rather than just reordering to a synchronous
-        // `readDataToEndOfFile()` before `waitUntilExit()`) additionally lets us bound the whole
-        // operation with a timeout, so a hung/slow `ps` can never wedge the caller forever.
-        let readSemaphore = DispatchSemaphore(value: 0)
-        let dataBox = LockedBox<Data>(Data())
-        let readQueue = DispatchQueue(label: "ProcessInspector.stdoutDrain")
-        readQueue.async {
-            let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-            dataBox.value = data
-            readSemaphore.signal()
-        }
-
-        let deadline = DispatchTime.now() + timeout
-        guard readSemaphore.wait(timeout: deadline) == .success else {
-            // Timed out: ps is hung or unreasonably slow. Ask it to terminate and give up rather
-            // than blocking the caller forever. We deliberately do not wait (again) for exit here —
-            // the caller treats a thrown error as "no context available" and degrades gracefully.
-            process.terminate()
+        let result: ProcessResult
+        do {
+            result = try runner.run(executable: executableURL, arguments: arguments, timeout: timeout, maxOutputBytes: 4 * 1024 * 1024)
+        } catch BoundedProcessError.timedOut {
             throw ProcessInspectionError.timedOut
+        } catch {
+            throw ProcessInspectionError.psFailed
         }
-
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else { throw ProcessInspectionError.psFailed }
-        return try ProcessSnapshot.parse(String(decoding: dataBox.value, as: UTF8.self))
-    }
-}
-
-/// Minimal `NSLock`-protected box used to hand the drained pipe data back from the background read
-/// thread to `snapshot()` once the read semaphore has signaled. `Data` itself is `Sendable`, but the
-/// box avoids relying on unsynchronized capture across the explicit `DispatchQueue.async` boundary.
-private final class LockedBox<T>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var _value: T
-    init(_ value: T) { _value = value }
-    var value: T {
-        get { lock.lock(); defer { lock.unlock() }; return _value }
-        set { lock.lock(); defer { lock.unlock() }; _value = newValue }
+        guard result.terminationStatus == 0 else { throw ProcessInspectionError.psFailed }
+        return try ProcessSnapshot.parse(String(decoding: result.stdout, as: UTF8.self))
     }
 }
 

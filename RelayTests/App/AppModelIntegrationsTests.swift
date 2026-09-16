@@ -45,9 +45,27 @@ final class AppModelIntegrationsTests: XCTestCase {
         )
     }
 
+    /// A `HelperInstaller` rooted under this test's own temp directory — never the real
+    /// `~/Library/Application Support`. Paired by default with `nonexistentBundledHelperURL`
+    /// below, so by default it is never actually invoked (matching the production default's
+    /// behavior when no app bundle is present, e.g. in a test host).
+    private func makeHelperInstaller() -> HelperInstaller {
+        HelperInstaller(baseDirectory: tempDirectory.appendingPathComponent("appsupport", isDirectory: true))
+    }
+
+    /// A path that never exists, standing in for the production default (`Bundle.main` inside
+    /// a test host normally has no `Contents/Helpers/RelayHook`) — `installBundledHelperIfPresent`
+    /// no-ops whenever this doesn't exist.
+    private var nonexistentBundledHelperURL: URL {
+        tempDirectory.appendingPathComponent("no-such-bundle", isDirectory: true)
+            .appendingPathComponent("RelayHook")
+    }
+
     private func makeModel(
         claudeCodeInstaller: ClaudeCodeInstaller? = nil,
         codexInstaller: CodexInstaller? = nil,
+        helperInstaller: HelperInstaller? = nil,
+        bundledHelperURL: URL? = nil,
         integrationManager: IntegrationManager? = nil,
         hookEnvelopeReceiver: HookEnvelopeReceiver = HookEnvelopeReceiver()
     ) -> AppModel {
@@ -60,7 +78,9 @@ final class AppModelIntegrationsTests: XCTestCase {
             hookEnvelopeReceiver: hookEnvelopeReceiver,
             integrationManager: integrationManager,
             claudeCodeInstaller: claudeCodeInstaller ?? makeClaudeInstaller(),
-            codexInstaller: codexInstaller ?? makeCodexInstaller()
+            codexInstaller: codexInstaller ?? makeCodexInstaller(),
+            helperInstaller: helperInstaller ?? makeHelperInstaller(),
+            bundledHelperURL: bundledHelperURL ?? nonexistentBundledHelperURL
         )
     }
 
@@ -119,6 +139,76 @@ final class AppModelIntegrationsTests: XCTestCase {
         guard case .configurationError = model.integrationStatus(for: .claudeCode) else {
             return XCTFail("expected .configurationError, got \(model.integrationStatus(for: .claudeCode))")
         }
+    }
+
+    // MARK: - installIntegration aborts (never reports "installed") when the bundled helper
+    // cannot be made available at its stable path
+
+    /// A bundled helper that DOES exist, but whose stable-path `bin` directory cannot be
+    /// created because its parent has no write permission, so `HelperInstaller.
+    /// installBundledHelper` throws and leaves nothing behind. `installIntegration` must
+    /// surface this as a failure and must NOT go on to write the agent config — a config
+    /// pointing at a stable path with nothing runnable there would silently never fire while
+    /// `status()` still reported "installed".
+    func testInstallSurfacesFailureAndDoesNotWriteConfigWhenBundledHelperCannotReachStablePath() throws {
+        let bundleDirectory = tempDirectory.appendingPathComponent("bundle", isDirectory: true)
+        try FileManager.default.createDirectory(at: bundleDirectory, withIntermediateDirectories: true)
+        let bundledHelperURL = bundleDirectory.appendingPathComponent("RelayHook")
+        try "#!/bin/sh\necho hi\n".data(using: .utf8)!.write(to: bundledHelperURL)
+
+        let unwritableBase = tempDirectory.appendingPathComponent("unwritable-appsupport", isDirectory: true)
+        try FileManager.default.createDirectory(at: unwritableBase, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: unwritableBase.path)
+        defer {
+            // Restore write permission before `tearDown` tries to remove `tempDirectory`.
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: unwritableBase.path)
+        }
+
+        let model = makeModel(
+            helperInstaller: HelperInstaller(baseDirectory: unwritableBase),
+            bundledHelperURL: bundledHelperURL
+        )
+
+        model.installIntegration(.claudeCode)
+
+        guard case .configurationError = model.integrationStatus(for: .claudeCode) else {
+            return XCTFail("expected .configurationError, got \(model.integrationStatus(for: .claudeCode))")
+        }
+        // The per-provider installer must never have run: no settings.json was written.
+        let settingsURL = tempDirectory.appendingPathComponent("claude", isDirectory: true)
+            .appendingPathComponent("settings.json")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: settingsURL.path))
+    }
+
+    /// The mirror-image case: a helper already installed at the stable path from an earlier,
+    /// successful install is left alone (and install still succeeds) even when THIS
+    /// particular refresh copy fails — an already-working install must not start failing over
+    /// a transient refresh problem.
+    func testInstallSucceedsWhenRefreshFailsButAPreviouslyInstalledHelperIsStillPresent() throws {
+        let bundleDirectory = tempDirectory.appendingPathComponent("bundle", isDirectory: true)
+        try FileManager.default.createDirectory(at: bundleDirectory, withIntermediateDirectories: true)
+        let bundledHelperURL = bundleDirectory.appendingPathComponent("RelayHook")
+        try "#!/bin/sh\necho hi\n".data(using: .utf8)!.write(to: bundledHelperURL)
+
+        let appSupportBase = tempDirectory.appendingPathComponent("appsupport", isDirectory: true)
+        let helperInstaller = HelperInstaller(baseDirectory: appSupportBase)
+        // Simulate a prior successful install.
+        try helperInstaller.installBundledHelper(from: bundledHelperURL)
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: helperInstaller.installedHelperURL.path))
+
+        // Now make the `bin` directory (which already exists from the prior install) read-only,
+        // so a subsequent refresh copy fails, while the previously installed helper stays put.
+        let binDirectory = helperInstaller.installedHelperURL.deletingLastPathComponent()
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: binDirectory.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binDirectory.path)
+        }
+
+        let model = makeModel(helperInstaller: helperInstaller, bundledHelperURL: bundledHelperURL)
+
+        model.installIntegration(.claudeCode)
+
+        XCTAssertEqual(model.integrationStatus(for: .claudeCode), .installedAwaitingFirstEvent)
     }
 
     // MARK: - Codex install/uninstall/check, including its two special-case messages
@@ -469,7 +559,11 @@ private func makeAutoReadWiringHarness(focus: FocusDecision, autoRead: Bool) -> 
         transcriptPath: nil,
         parentPID: 100,
         environment: [:],
-        capturedAt: Date(timeIntervalSince1970: 1_700_001_000)
+        // Real wall-clock time, not a fixed historical timestamp: `AgentAutoReadCoordinator`
+        // prunes sessions past its default inactivity TTL against `Date()`, and a fixed past
+        // date would make this session look stale (and get pruned before focus resolution) no
+        // matter how recently the test actually runs.
+        capturedAt: Date()
     )
     let integration = AlwaysSucceedIntegration(provider: .claudeCode, event: event)
     let registry = AgentSessionRegistry()
@@ -480,7 +574,12 @@ private func makeAutoReadWiringHarness(focus: FocusDecision, autoRead: Bool) -> 
         focus: StubWiringSessionFocusResolver(decision: focus),
         preprocess: { $0 },
         speech: speech,
-        autoReadEnabled: { autoRead }
+        autoReadEnabled: { autoRead },
+        // A real `ProcessInspector()` default would shell out to `/bin/ps` and, finding no live
+        // process at the fabricated pid 100, prune the session before focus resolution ever runs
+        // — this fake keeps liveness a non-factor for a test that's only exercising the
+        // onResponse -> coordinator wiring shape.
+        processInspector: ProcessInspector(runner: AlwaysAliveProcessRunner())
     )
     var continuation: AsyncStream<HookEnvelope>.Continuation!
     let events = AsyncStream<HookEnvelope> { continuation = $0 }
@@ -501,6 +600,15 @@ private struct StubWiringSessionFocusResolver: SessionFocusResolving {
 private struct StubWiringProcessContextCapture: AgentProcessContextCapturing {
     func capture(parentPID: Int32) async -> AgentProcessContext {
         .init(ancestry: [parentPID], tty: nil)
+    }
+}
+
+/// Reports every pid in a wide synthetic range as alive, so this file's fabricated pids are never
+/// treated as dead by `AgentAutoReadCoordinator`'s prune-before-focus step.
+private final class AlwaysAliveProcessRunner: ProcessRunning, @unchecked Sendable {
+    func run(executable: URL, arguments: [String], timeout: TimeInterval, maxOutputBytes: Int) throws -> ProcessResult {
+        let lines = (1...2_000).map { "\($0) 1 ttys001 fake" }.joined(separator: "\n")
+        return ProcessResult(stdout: Data(lines.utf8), terminationStatus: 0)
     }
 }
 

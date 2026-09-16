@@ -192,12 +192,13 @@ final class ClaudeCodeInstallerTests: XCTestCase {
         XCTAssertEqual(bytesBefore, bytesAfter)
     }
 
-    func testInstallDoesNotDuplicateWhenRelayEntryWasInstalledFromDifferentPath() throws {
+    func testInstallMigratesStaleBundlePathEntryToStablePath() throws {
         try writeRawSettings(#"""
         {
           "hooks": {
             "Stop": [
-              { "hooks": [ { "type": "command", "command": "\"/old/location/RelayHook\" --provider claude-code" } ] }
+              { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] },
+              { "hooks": [ { "type": "command", "command": "\"/old/App.app/Contents/Helpers/RelayHook\" --provider claude-code" } ] }
             ]
           }
         }
@@ -207,8 +208,24 @@ final class ClaudeCodeInstallerTests: XCTestCase {
 
         let settings = try readSettings()
         let groups = stopGroups(settings)
-        XCTAssertEqual(groups.count, 1)
-        XCTAssertEqual(commandStrings(groups), ["\"/old/location/RelayHook\" --provider claude-code"])
+        // Exactly one Relay entry remains, rewritten to the stable helper path; the
+        // unrelated entry is left completely untouched.
+        XCTAssertEqual(groups.count, 2)
+        let commands = Set(commandStrings(groups))
+        XCTAssertEqual(commands, ["/usr/local/bin/notify-stop.sh", "\"\(helperPath)\" --provider claude-code"])
+        let relayCommands = commandStrings(groups).filter { ClaudeCodeInstaller.isRelayOwnedCommand($0) }
+        XCTAssertEqual(relayCommands.count, 1)
+    }
+
+    func testInstallIsNoOpWhenRelayEntryAlreadyMatchesStablePath() throws {
+        let installer = makeInstaller()
+        try installer.install()
+        let bytesBefore = try Data(contentsOf: settingsURL)
+
+        try installer.install()
+
+        let bytesAfter = try Data(contentsOf: settingsURL)
+        XCTAssertEqual(bytesBefore, bytesAfter)
     }
 
     // MARK: - Uninstall

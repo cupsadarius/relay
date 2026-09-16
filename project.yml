@@ -16,6 +16,10 @@ targets:
         excludes:
           - Relay.xcodeproj
           - "**/*.xcworkspace"
+      - path: RelayHook/HookTransportClient.swift
+        group: RelayHook
+      - path: RelayHook/BoundedStdinReader.swift
+        group: RelayHook
     dependencies:
       - package: FluidAudio
         product: FluidAudio

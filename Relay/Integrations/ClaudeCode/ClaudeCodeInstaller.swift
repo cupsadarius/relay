@@ -52,11 +52,12 @@ struct ClaudeCodeInstaller {
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude", isDirectory: true)
     }
 
-    /// The bundled helper's expected location inside the running app bundle.
+    /// The stable, app-bundle-independent location `HelperInstaller` copies the bundled
+    /// `RelayHook` helper to. Using this (rather than a path inside `Bundle.main.bundleURL`,
+    /// which changes across rebuilds/relocations/DerivedData resets) means an installed hook
+    /// command keeps working no matter what happens to the app bundle that installed it.
     static func defaultHelperPath() -> String {
-        Bundle.main.bundleURL
-            .appendingPathComponent("Contents/Helpers/RelayHook")
-            .path
+        HelperInstaller.stableHelperURL().path
     }
 
     /// True when `command` is a Relay-owned Claude Code hook command: it ends
@@ -77,28 +78,64 @@ struct ClaudeCodeInstaller {
         "\"\(helperPath)\" \(Self.commandSuffix)"
     }
 
-    /// Ensures the Relay `Stop` hook is present in `settings.json`.
+    /// Ensures the Relay `Stop` hook is present in `settings.json`, pointed at this
+    /// installer's current `helperPath`.
     ///
     /// - No file exists: creates one containing only the Relay hook.
     /// - Unrelated `Stop` hook group(s) exist: appends a new Relay group;
     ///   existing groups are never deleted or rewritten.
-    /// - The Relay hook is already present: no-op (idempotent, no duplicate).
+    /// - A Relay-owned entry already exists (recognized by `isRelayOwnedCommand`, regardless
+    ///   of its absolute path) but its command differs from `relayCommand` — e.g. it still
+    ///   points at a stale, previous-app-bundle path: it is REWRITTEN in place to
+    ///   `relayCommand`. This repairs an install left behind by a rebuilt or relocated app
+    ///   bundle. Only the Relay-owned entry's `command` value is ever changed.
+    /// - A Relay-owned entry already exists and already equals `relayCommand`: no-op
+    ///   (idempotent, no duplicate).
     func install() throws {
         var settings = try readSettings()
         var hooks = try Self.validatedHooks(from: settings)
         var stopGroups = try Self.validatedStopGroups(from: hooks)
 
-        let alreadyPresent = stopGroups.contains { group in
-            Self.commandStrings(in: group).contains { Self.isRelayOwnedCommand($0) }
-        }
+        let migrated = Self.migratingRelayCommand(in: stopGroups, to: relayCommand)
+        stopGroups = migrated.stopGroups
 
-        if !alreadyPresent {
+        if !migrated.foundRelayEntry {
             stopGroups.append(["hooks": [["type": "command", "command": relayCommand]]])
         }
 
         hooks["Stop"] = stopGroups
         settings["hooks"] = hooks
         try writeSettings(settings)
+    }
+
+    /// Rewrites the `command` of any Relay-owned hook entry within `stopGroups` to
+    /// `relayCommand`, leaving every other entry (Relay-owned or not) byte-for-byte
+    /// untouched. Returns the (possibly modified) groups plus whether a Relay-owned entry
+    /// was found at all, so the caller knows whether to append a new one.
+    private static func migratingRelayCommand(
+        in stopGroups: [[String: Any]],
+        to relayCommand: String
+    ) -> (stopGroups: [[String: Any]], foundRelayEntry: Bool) {
+        var foundRelayEntry = false
+        let updatedGroups = stopGroups.map { group -> [String: Any] in
+            guard let hookEntries = group["hooks"] as? [[String: Any]] else { return group }
+
+            let updatedEntries = hookEntries.map { entry -> [String: Any] in
+                guard entry["type"] as? String == "command",
+                      let command = entry["command"] as? String,
+                      isRelayOwnedCommand(command) else { return entry }
+                foundRelayEntry = true
+                guard command != relayCommand else { return entry }
+                var updatedEntry = entry
+                updatedEntry["command"] = relayCommand
+                return updatedEntry
+            }
+
+            var updatedGroup = group
+            updatedGroup["hooks"] = updatedEntries
+            return updatedGroup
+        }
+        return (updatedGroups, foundRelayEntry)
     }
 
     /// Removes only the Relay-owned `Stop` command hook entry. Every other

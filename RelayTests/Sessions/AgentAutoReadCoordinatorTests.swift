@@ -154,6 +154,35 @@ final class AgentAutoReadCoordinatorTests: XCTestCase {
         XCTAssertEqual(entries[silentIndex!].detail, "reason=not-focused-not-last-active")
     }
 
+    // MARK: - Pruning
+
+    /// A session whose root process has since died must be pruned before the focus resolver ever
+    /// sees it — proven here by inspecting exactly what `focusedSession(among:)` was called with,
+    /// not merely the eventual registry contents.
+    func testDeadSessionIsPrunedBeforeFocusResolution() async {
+        let speech = RecordingSpeechSink()
+        let focus = MutableStubFocusResolver()
+        let runner = MutableAliveProcessRunner(alivePIDs: [111, 222])
+        let harness = makeCoordinatorHarness(
+            focus: focus,
+            speech: speech,
+            autoRead: true,
+            processInspector: ProcessInspector(runner: runner)
+        )
+
+        await harness.coordinator.handle(makeAutoReadEvent(providerSessionID: "dead", text: "stale", parentPID: 111))
+        runner.alivePIDs = [222] // pid 111's process has since exited
+        await harness.coordinator.handle(makeAutoReadEvent(providerSessionID: "alive", text: "fresh", parentPID: 222))
+
+        let deadID = AgentSessionID(provider: .claudeCode, providerSessionID: "dead")
+        let aliveID = AgentSessionID(provider: .claudeCode, providerSessionID: "alive")
+        XCTAssertEqual(focus.lastAmongIDs, [aliveID], "dead session must not be offered to the focus resolver")
+        XCTAssertFalse(focus.lastAmongIDs.contains(deadID))
+
+        let remaining = await harness.registry.sessions()
+        XCTAssertEqual(remaining.map(\.id), [aliveID])
+    }
+
     func testDifferentSessionFocusedDiagnosticsEntryRecordsBothIDs() async throws {
         let speech = RecordingSpeechSink()
         let diagnostics = IntegrationDiagnosticsLog()
@@ -176,6 +205,9 @@ final class AgentAutoReadCoordinatorTests: XCTestCase {
 
 private final class MutableStubFocusResolver: SessionFocusResolving, @unchecked Sendable {
     var focusedSessionID: AgentSessionID?
+    /// The ids `focusedSession(among:)` was most recently called with, so tests can prove pruning
+    /// happened before this resolver ever saw a candidate list.
+    private(set) var lastAmongIDs: [AgentSessionID] = []
 
     func resolve(session: AgentSession) async -> FocusDecision {
         session.id == focusedSessionID
@@ -184,8 +216,30 @@ private final class MutableStubFocusResolver: SessionFocusResolving, @unchecked 
     }
 
     func focusedSession(among sessions: [AgentSession]) async -> AgentSession? {
+        lastAmongIDs = sessions.map(\.id)
         guard let focusedSessionID else { return nil }
         return sessions.first { $0.id == focusedSessionID }
+    }
+}
+
+/// Reports every pid in a wide synthetic range as alive, standing in for a live process table so
+/// existing coordinator tests (which use small fabricated pids for `processAncestry`) aren't
+/// treated as dead now that `AgentAutoReadCoordinator` prunes before every focus decision.
+private final class AlwaysAliveProcessRunner: ProcessRunning, @unchecked Sendable {
+    func run(executable: URL, arguments: [String], timeout: TimeInterval, maxOutputBytes: Int) throws -> ProcessResult {
+        let lines = (1...2_000).map { "\($0) 1 ttys001 fake" }.joined(separator: "\n")
+        return ProcessResult(stdout: Data(lines.utf8), terminationStatus: 0)
+    }
+}
+
+/// Reports only `alivePIDs` as alive; mutable so a single test can simulate a process exiting
+/// between two `handle(_:)` calls.
+private final class MutableAliveProcessRunner: ProcessRunning, @unchecked Sendable {
+    var alivePIDs: Set<Int32>
+    init(alivePIDs: Set<Int32>) { self.alivePIDs = alivePIDs }
+    func run(executable: URL, arguments: [String], timeout: TimeInterval, maxOutputBytes: Int) throws -> ProcessResult {
+        let lines = alivePIDs.map { "\($0) 1 ttys001 fake" }.joined(separator: "\n")
+        return ProcessResult(stdout: Data(lines.utf8), terminationStatus: 0)
     }
 }
 
@@ -214,7 +268,8 @@ private func makeCoordinatorHarness(
     focus: MutableStubFocusResolver,
     speech: RecordingSpeechSink,
     autoRead: Bool,
-    diagnostics: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog()
+    diagnostics: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog(),
+    processInspector: ProcessInspector = ProcessInspector(runner: AlwaysAliveProcessRunner())
 ) -> AutoReadHarness {
     let registry = AgentSessionRegistry()
     let coordinator = AgentAutoReadCoordinator(
@@ -224,7 +279,8 @@ private func makeCoordinatorHarness(
         preprocess: { $0.replacingOccurrences(of: "**", with: "") },
         speech: speech,
         autoReadEnabled: { autoRead },
-        diagnostics: diagnostics
+        diagnostics: diagnostics,
+        processInspector: processInspector
     )
     return .init(coordinator: coordinator, registry: registry)
 }
@@ -234,15 +290,16 @@ private func makeCoordinator(
     focus: MutableStubFocusResolver,
     speech: RecordingSpeechSink,
     autoRead: Bool,
-    diagnostics: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog()
+    diagnostics: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog(),
+    processInspector: ProcessInspector = ProcessInspector(runner: AlwaysAliveProcessRunner())
 ) -> AgentAutoReadCoordinator {
-    makeCoordinatorHarness(focus: focus, speech: speech, autoRead: autoRead, diagnostics: diagnostics).coordinator
+    makeCoordinatorHarness(focus: focus, speech: speech, autoRead: autoRead, diagnostics: diagnostics, processInspector: processInspector).coordinator
 }
 
-private func makeAutoReadEvent(providerSessionID: String = "a", text: String) -> AgentResponseEvent {
+private func makeAutoReadEvent(providerSessionID: String = "a", text: String, parentPID: Int32 = 900) -> AgentResponseEvent {
     .init(
         id: UUID(), provider: .claudeCode, providerSessionID: providerSessionID, turnID: nil,
         text: text, cwd: "/tmp/repo", transcriptPath: nil,
-        parentPID: 900, environment: [:], capturedAt: Date()
+        parentPID: parentPID, environment: [:], capturedAt: Date()
     )
 }
