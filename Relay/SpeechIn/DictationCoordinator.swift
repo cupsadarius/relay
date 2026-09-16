@@ -73,6 +73,17 @@ final class DictationCoordinator: DictationCoordinating {
     /// Defaults to always-on so every existing test and call site that doesn't care about the
     /// setting keeps behaving exactly as before.
     private let liveTranscriptionEnabled: () -> Bool
+    /// Drains `sampleAppendStream` one batch at a time, in arrival order, into
+    /// `streamingTranscriber`. Created fresh per session in `beginStreamingTranscription`, torn
+    /// down in `stopStreamingTranscription`.
+    private var sampleAppendTask: Task<Void, Never>?
+    /// Lets the microphone's (non-async, arbitrary-context) sample callback enqueue a batch
+    /// without racing other batches: `yield` is synchronous and thread-safe, so every batch lands
+    /// in the stream in the exact order the microphone produced it, and `sampleAppendTask`'s
+    /// single `for await` loop appends them to the actor one at a time in that same order -
+    /// unlike spawning a new unstructured `Task` per batch, whose relative scheduling order the
+    /// runtime does not guarantee.
+    private var sampleAppendContinuation: AsyncStream<[Float]>.Continuation?
 
     init(
         microphone: any MicrophoneCapturing,
@@ -249,8 +260,16 @@ final class DictationCoordinator: DictationCoordinating {
             }
         )
         streamingTranscriber = transcriber
+
+        let (sampleStream, sampleContinuation) = AsyncStream.makeStream(of: [Float].self)
+        sampleAppendContinuation = sampleContinuation
+        sampleAppendTask = Task {
+            for await samples in sampleStream {
+                await transcriber.appendSamples(samples)
+            }
+        }
         await streaming.setSampleObserver { samples in
-            Task { await transcriber.appendSamples(samples) }
+            sampleContinuation.yield(samples)
         }
         await transcriber.start()
     }
@@ -264,6 +283,10 @@ final class DictationCoordinator: DictationCoordinating {
         if let streaming = microphone as? any MicrophoneSampleStreaming {
             await streaming.setSampleObserver(nil)
         }
+        sampleAppendContinuation?.finish()
+        sampleAppendContinuation = nil
+        await sampleAppendTask?.value
+        sampleAppendTask = nil
         await transcriber.stop()
     }
 

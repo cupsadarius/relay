@@ -108,8 +108,19 @@ actor StreamingTranscriber {
     // Stops the tick loop and clears buffered audio. Interim text is display-only, so this
     // deliberately does not return anything -- the authoritative transcript comes from a
     // separate call to the batch path instead.
-    func stop() {
+    //
+    // ASYNC AND AWAITS THE LOOP TASK ON PURPOSE: cancelling tickTask only stops FUTURE ticks --
+    // it cannot interrupt a transcribe(...) call already in flight, since that call has no idea
+    // it should observe Swift's cooperative cancellation (in practice, on the shared FluidAudio
+    // Parakeet actor). Without awaiting here, the caller (DictationCoordinator, tearing down for
+    // the final authoritative transcribe) could start that final call on the very same actor
+    // while a stale interim call for up to 15s of audio is still running on it, delaying the
+    // final result behind it. Awaiting tickTask's value blocks until the loop task's current
+    // iteration -- including any transcribe(...) call it's mid-await on -- actually returns,
+    // guaranteeing the shared actor is free before this method does.
+    func stop() async {
         tickTask?.cancel()
+        await tickTask?.value
         tickTask = nil
         samples.removeAll(keepingCapacity: true)
         isTranscribing = false

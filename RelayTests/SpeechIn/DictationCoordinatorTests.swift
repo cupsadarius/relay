@@ -609,6 +609,41 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(overlay.events.last, .failed(session, .insertion))
     }
 
+    func testRapidSampleBatchesAreAppendedToTheInterimWindowInArrivalOrder() async {
+        let events = EventLog()
+        let microphone = SampleStreamingFakeMicrophone(events: events)
+        let recordingBackend = AudioRecordingBackend()
+        let sttRouter = STTRouter(backends: [recordingBackend.id: recordingBackend], backendOrder: { [recordingBackend.id] })
+        let overlay = RecordingActivityOverlay(trace: events)
+        let coordinator = DictationCoordinator(
+            microphone: microphone,
+            sttRouter: sttRouter,
+            processor: RulesTranscriptProcessor(),
+            textInserter: FakeTextInserter(events: events),
+            stopSpeech: {},
+            status: { _ in },
+            activity: overlay,
+            liveTranscriptionEnabled: { true }
+        )
+
+        await coordinator.start()
+
+        let batchCount = 50
+        var expected: [Float] = []
+        for index in 0..<batchCount {
+            let batch: [Float] = [Float(index)]
+            expected.append(contentsOf: batch)
+            await microphone.emitSamples(batch)
+        }
+
+        await waitUntil { await recordingBackend.callCount >= 1 }
+
+        let recordedSamples = await recordingBackend.lastSamples
+        XCTAssertEqual(recordedSamples, expected)
+
+        await coordinator.cancel(sessionID: overlay.sessionID!)
+    }
+
     func testLiveTranscriptionDisabledNeverStartsAStreamingTranscriberOrProducesInterimUpdates() async {
         let events = EventLog()
         let microphone = SampleStreamingFakeMicrophone(events: events)
@@ -658,6 +693,46 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(observerSetCount, 1)
 
         await coordinator.cancel(sessionID: overlay.sessionID!)
+    }
+
+    func testFinalTranscribeDoesNotStartUntilTheInFlightInterimCallCompletesAfterStop() async {
+        let events = EventLog()
+        let microphone = SampleStreamingFakeMicrophone(events: events)
+        let recorder = GatedRecordingBackend()
+        let backend = GatedFakeBackend(recorder: recorder)
+        let sttRouter = STTRouter(backends: [backend.id: backend], backendOrder: { [backend.id] })
+        let overlay = RecordingActivityOverlay(trace: events)
+        let coordinator = DictationCoordinator(
+            microphone: microphone,
+            sttRouter: sttRouter,
+            processor: RulesTranscriptProcessor(),
+            textInserter: FakeTextInserter(events: events),
+            stopSpeech: {},
+            status: { _ in },
+            activity: overlay,
+            liveTranscriptionEnabled: { true }
+        )
+
+        await coordinator.start()
+        await microphone.emitSamples([0.1, 0.2, 0.3])
+
+        // Wait for the first (interim) tick to actually begin - it blocks on the gate until
+        // released below, standing in for a slow call on a shared backend actor.
+        await waitUntil { await recorder.callCount >= 1 }
+
+        let finishTask = Task { await coordinator.finish() }
+
+        // finish() should be blocked inside stopStreamingTranscription()/stop(), awaiting the
+        // in-flight interim call - so no second (final) call should have started yet.
+        try? await Task.sleep(for: .milliseconds(80))
+        let callCountWhileBlocked = await recorder.callCount
+        XCTAssertEqual(callCountWhileBlocked, 1)
+
+        await recorder.openGate()
+        await finishTask.value
+
+        let recordedEvents = await recorder.events
+        XCTAssertEqual(recordedEvents, [.started(1), .finished(1), .started(2), .finished(2)])
     }
 
     private func makeCoordinator(
@@ -780,6 +855,80 @@ private actor LevelCapturingMicrophone: MicrophoneCapturing {
     func cancel() async { onLevel = nil }
     func emitLevel(_ level: Float) {
         onLevel?(level)
+    }
+}
+
+@MainActor
+private final class AudioRecordingBackend: SpeechToTextBackend {
+    let id = "audio-recording"
+    let displayName = "Audio Recording"
+    let capabilities = STTCapabilities([])
+    private(set) var callCount = 0
+    private(set) var lastSamples: [Float] = []
+
+    func availability() async -> BackendAvailability { .available }
+    func prepare() async throws {}
+
+    func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
+        callCount += 1
+        lastSamples = audio.samples
+        return Transcript(text: "recorded", backendID: id)
+    }
+}
+
+private actor GatedRecordingBackend {
+    enum Event: Equatable {
+        case started(Int)
+        case finished(Int)
+    }
+
+    private(set) var events: [Event] = []
+    private(set) var callCount = 0
+    private var isGateOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func recordStart() -> Int {
+        callCount += 1
+        let id = callCount
+        events.append(.started(id))
+        return id
+    }
+
+    func recordFinish(_ id: Int) {
+        events.append(.finished(id))
+    }
+
+    func waitForGate() async {
+        if isGateOpen { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func openGate() {
+        isGateOpen = true
+        waiters.forEach { $0.resume() }
+        waiters.removeAll()
+    }
+}
+
+@MainActor
+private final class GatedFakeBackend: SpeechToTextBackend {
+    let id = "gated"
+    let displayName = "Gated"
+    let capabilities = STTCapabilities([])
+    private let recorder: GatedRecordingBackend
+
+    init(recorder: GatedRecordingBackend) {
+        self.recorder = recorder
+    }
+
+    func availability() async -> BackendAvailability { .available }
+    func prepare() async throws {}
+
+    func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
+        let callID = await recorder.recordStart()
+        await recorder.waitForGate()
+        await recorder.recordFinish(callID)
+        return Transcript(text: "call-\(callID)", backendID: id)
     }
 }
 
