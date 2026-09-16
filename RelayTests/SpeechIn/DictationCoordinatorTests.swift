@@ -695,7 +695,13 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.cancel(sessionID: overlay.sessionID!)
     }
 
-    func testFinalTranscribeDoesNotStartUntilTheInFlightInterimCallCompletesAfterStop() async {
+    /// Rewritten for the new contract (was `testFinalTranscribeDoesNotStartUntilTheInFlightInterimCallCompletesAfterStop`):
+    /// that version asserted the OLD, buggy behavior -- that `finish()` blocked inside
+    /// `stopStreamingTranscription()`/`stop()` until the in-flight interim call finished before
+    /// starting the final transcribe. The rule is now the opposite: final transcription must NEVER
+    /// wait on disposable interim work. This asserts the final call starts (and completes) while
+    /// the interim call is still gated open, i.e. still running.
+    func testFinalTranscriptionNotBlockedByInFlightInterim() async {
         let events = EventLog()
         let microphone = SampleStreamingFakeMicrophone(events: events)
         let recorder = GatedRecordingBackend()
@@ -717,22 +723,67 @@ final class DictationCoordinatorTests: XCTestCase {
         await microphone.emitSamples([0.1, 0.2, 0.3])
 
         // Wait for the first (interim) tick to actually begin - it blocks on the gate until
-        // released below, standing in for a slow call on a shared backend actor.
+        // released below, standing in for a slow call still executing on a shared backend actor.
         await waitUntil { await recorder.callCount >= 1 }
 
         let finishTask = Task { await coordinator.finish() }
 
-        // finish() should be blocked inside stopStreamingTranscription()/stop(), awaiting the
-        // in-flight interim call - so no second (final) call should have started yet.
-        try? await Task.sleep(for: .milliseconds(80))
-        let callCountWhileBlocked = await recorder.callCount
-        XCTAssertEqual(callCountWhileBlocked, 1)
+        // finish() must NOT wait on call #1's (the interim's) RESULT: call #2 (the final) should
+        // start immediately, landing while call #1 is still gated - i.e. still running.
+        await waitUntil { await recorder.callCount >= 2 }
+        let eventsWhileInterimStillRunning = await recorder.events
+        XCTAssertEqual(eventsWhileInterimStillRunning, [.started(1), .started(2)])
 
         await recorder.openGate()
         await finishTask.value
 
-        let recordedEvents = await recorder.events
-        XCTAssertEqual(recordedEvents, [.started(1), .finished(1), .started(2), .finished(2)])
+        let finishedCount = await recorder.events.filter {
+            if case .finished = $0 { return true }
+            return false
+        }.count
+        XCTAssertEqual(finishedCount, 2)
+    }
+
+    /// A stale interim result that only resolves after `finish()` has already completed must be
+    /// dropped, never overwriting the authoritative final text that was already inserted.
+    func testStaleInterimResultNeverOverwritesFinal() async {
+        let events = EventLog()
+        let microphone = SampleStreamingFakeMicrophone(events: events)
+        let gate = InterimStaleResultGate()
+        let backend = FirstCallGatedThenImmediateBackend(gate: gate, finalText: "final answer")
+        let sttRouter = STTRouter(backends: [backend.id: backend], backendOrder: { [backend.id] })
+        let inserter = FakeTextInserter(events: events)
+        let overlay = RecordingActivityOverlay(trace: events)
+        let coordinator = DictationCoordinator(
+            microphone: microphone,
+            sttRouter: sttRouter,
+            processor: RulesTranscriptProcessor(),
+            textInserter: inserter,
+            stopSpeech: {},
+            status: { _ in },
+            activity: overlay,
+            liveTranscriptionEnabled: { true }
+        )
+
+        await coordinator.start()
+        await microphone.emitSamples([0.1, 0.2, 0.3])
+        // Wait for the interim tick's call #1 to start - it stays gated (in flight) until opened
+        // below, well past the point `finish()` completes.
+        await waitUntil { backend.callCount >= 1 }
+
+        // The final call (#2) is not gated, so this completes and inserts without waiting for #1.
+        await coordinator.finish()
+
+        XCTAssertEqual(inserter.inserted, ["final answer"])
+        let interimTextsAfterFinish = overlay.interimTexts
+
+        // Only now let the stale interim call #1 resolve, long after the session ended.
+        await gate.open()
+        await Task.yield()
+        await Task.yield()
+
+        XCTAssertEqual(overlay.interimTexts, interimTextsAfterFinish)
+        XCTAssertEqual(inserter.inserted, ["final answer"])
     }
 
     private func makeCoordinator(
@@ -929,6 +980,54 @@ private final class GatedFakeBackend: SpeechToTextBackend {
         await recorder.waitForGate()
         await recorder.recordFinish(callID)
         return Transcript(text: "call-\(callID)", backendID: id)
+    }
+}
+
+private actor InterimStaleResultGate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func waitUntilOpened() async {
+        if isOpen { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        waiters.forEach { $0.resume() }
+        waiters.removeAll()
+    }
+}
+
+/// A backend whose first call (the interim tick) blocks on `gate` until explicitly released;
+/// every later call (the final transcribe) returns `finalText` immediately. Models an interim
+/// inference still running on a shared backend actor when `finish()` starts its own, separate,
+/// authoritative call against that same backend.
+@MainActor
+private final class FirstCallGatedThenImmediateBackend: SpeechToTextBackend {
+    let id = "first-call-gated"
+    let displayName = "First Call Gated"
+    let capabilities = STTCapabilities([])
+    private let gate: InterimStaleResultGate
+    private let finalText: String
+    private(set) var callCount = 0
+
+    init(gate: InterimStaleResultGate, finalText: String) {
+        self.gate = gate
+        self.finalText = finalText
+    }
+
+    func availability() async -> BackendAvailability { .available }
+    func prepare() async throws {}
+
+    func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
+        callCount += 1
+        let callID = callCount
+        if callID == 1 {
+            await gate.waitUntilOpened()
+            return Transcript(text: "stale interim text", backendID: id)
+        }
+        return Transcript(text: finalText, backendID: id)
     }
 }
 

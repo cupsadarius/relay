@@ -40,7 +40,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         ) ?? .interactive
         kokoroVoice = try values.decodeIfPresent(String.self, forKey: .kokoroVoice)
         pocketVoice = try values.decodeIfPresent(String.self, forKey: .pocketVoice)
-        liveTranscriptionEnabled = try values.decodeIfPresent(Bool.self, forKey: .liveTranscriptionEnabled) ?? true
+        liveTranscriptionEnabled = try values.decodeIfPresent(Bool.self, forKey: .liveTranscriptionEnabled) ?? false
     }
 
     init(
@@ -54,7 +54,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         activityOverlayStyle: ActivityOverlayStyle,
         kokoroVoice: String? = nil,
         pocketVoice: String? = nil,
-        liveTranscriptionEnabled: Bool = true
+        liveTranscriptionEnabled: Bool = false
     ) {
         self.dictationMode = dictationMode
         self.hotkeys = hotkeys
@@ -84,6 +84,6 @@ struct AppSettings: Codable, Equatable, Sendable {
         ttsRate: 0.5,
         autoReadEnabled: true,
         activityOverlayStyle: .interactive,
-        liveTranscriptionEnabled: true
+        liveTranscriptionEnabled: false
     )
 }

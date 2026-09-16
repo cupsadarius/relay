@@ -359,7 +359,7 @@ private final class FakePlayer: SynthesizedAudioPlaying {
     private(set) var pauseCallCount = 0
     private(set) var resumeCallCount = 0
 
-    func play(_ wav: Data, sessionID: UUID) async throws {
+    func startPlayback(_ wav: Data, sessionID: UUID) async throws {
         playCalls.append((wav, sessionID))
         if let playError {
             throw playError

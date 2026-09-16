@@ -162,7 +162,7 @@ private struct InterimTextView: View {
     /// updates; `.contentTransition(.opacity)` gives the tail a subtle crossfade rather than a
     /// hard cut when it does change, without ever changing this view's own identity.
     private var textLabel: some View {
-        (Text(diff.stablePrefix) + Text(diff.changedTail))
+        Text("\(Text(diff.stablePrefix))\(Text(diff.changedTail))")
             .font(.system(size: 10))
             .foregroundStyle(OverlayPalette.subtitleText)
             .multilineTextAlignment(.leading)

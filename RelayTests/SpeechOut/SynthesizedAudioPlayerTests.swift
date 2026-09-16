@@ -43,14 +43,14 @@ final class SynthesizedAudioPlayerTests: XCTestCase {
         XCTAssertTrue(envelope.allSatisfy { $0 > 0.99 }, "Expected near-one levels, got \(envelope)")
     }
 
-    func testPlayWithMalformedDataThrowsWithoutStartingPlayback() async {
+    func testStartPlaybackWithMalformedDataThrowsWithoutStartingPlayback() async {
         let player = SynthesizedAudioPlayer()
         var events: [TTSPlaybackEvent] = []
         player.onEvent = { events.append($0) }
         let sessionID = UUID()
 
         do {
-            try await player.play(Data([0x00, 0x01, 0x02, 0x03]), sessionID: sessionID)
+            try await player.startPlayback(Data([0x00, 0x01, 0x02, 0x03]), sessionID: sessionID)
             XCTFail("Expected a decode error")
         } catch {
             // Expected: any decode error. Mapped to a fallback-worthy SpeechBackendError and a
@@ -60,19 +60,140 @@ final class SynthesizedAudioPlayerTests: XCTestCase {
         XCTAssertTrue(events.isEmpty, "A decode failure must not emit any playback lifecycle event")
     }
 
+    // MARK: - Exactly-one-terminal-event: exercised via a fake `AVAudioPlayerLike`, never a real
+    // `AVAudioPlayer`, so these run unconditionally (no audio output device required).
+
+    /// `AVAudioPlayer.play()` returning `false` (it could not start) must fold the session
+    /// straight into `.failed` - never `.started`, and `startPlayback` must still resolve rather
+    /// than hang, since nothing else will ever signal this session's completion.
+    func testPlayReturningFalseEmitsFailedAndNotStarted() async throws {
+        let fake = FakeAudioPlayer()
+        fake.playReturnValue = false
+        let player = SynthesizedAudioPlayer(makePlayer: { _ in fake })
+        let events = EventBox()
+        player.onEvent = { events.append($0) }
+        let sessionID = UUID()
+
+        try await player.startPlayback(Self.makeWavData(), sessionID: sessionID)
+
+        XCTAssertEqual(events.values.filter { !$0.isLevel }, [
+            .scheduled(sessionID: sessionID),
+            .failed(sessionID: sessionID),
+        ])
+        XCTAssertFalse(events.values.contains(.started(sessionID: sessionID)))
+    }
+
+    /// The finish delegate's `successfully` flag must be honored: `false` means `.failed`, not
+    /// `.finished`.
+    func testDelegateSuccessfullyFalseEmitsFailed() async throws {
+        let fake = FakeAudioPlayer()
+        let player = SynthesizedAudioPlayer(makePlayer: { _ in fake })
+        let events = EventBox()
+        player.onEvent = { events.append($0) }
+        let sessionID = UUID()
+
+        try await player.startPlayback(Self.makeWavData(), sessionID: sessionID)
+        XCTAssertTrue(events.values.contains(.started(sessionID: sessionID)))
+
+        fake.onFinish?(false)
+
+        let recorded = events.values.filter { !$0.isLevel }
+        XCTAssertEqual(recorded, [
+            .scheduled(sessionID: sessionID),
+            .started(sessionID: sessionID),
+            .failed(sessionID: sessionID),
+        ])
+    }
+
+    /// `successfully == true` still maps to `.finished`, not `.failed` - the counterpart to the
+    /// test above, proving the flag is read both ways rather than just inverted or ignored.
+    func testDelegateSuccessfullyTrueEmitsFinished() async throws {
+        let fake = FakeAudioPlayer()
+        let player = SynthesizedAudioPlayer(makePlayer: { _ in fake })
+        let events = EventBox()
+        player.onEvent = { events.append($0) }
+        let sessionID = UUID()
+
+        try await player.startPlayback(Self.makeWavData(), sessionID: sessionID)
+        fake.onFinish?(true)
+
+        let recorded = events.values.filter { !$0.isLevel }
+        XCTAssertEqual(recorded, [
+            .scheduled(sessionID: sessionID),
+            .started(sessionID: sessionID),
+            .finished(sessionID: sessionID),
+        ])
+    }
+
+    /// A finish callback that fires after `stop()` already emitted `.cancelled` for that session
+    /// (real AVFoundation does this harmlessly) must be ignored entirely - no regression.
+    func testStaleLateCallbackAfterStopIsIgnored() async throws {
+        let fake = FakeAudioPlayer()
+        let player = SynthesizedAudioPlayer(makePlayer: { _ in fake })
+        let events = EventBox()
+        player.onEvent = { events.append($0) }
+        let sessionID = UUID()
+
+        try await player.startPlayback(Self.makeWavData(), sessionID: sessionID)
+        player.stop()
+        let countAfterStop = events.values.count
+
+        fake.onFinish?(true)
+        fake.onFinish?(false)
+
+        XCTAssertEqual(events.values.count, countAfterStop, "A stale late callback after stop() must emit nothing")
+        let recorded = events.values.filter { !$0.isLevel }
+        XCTAssertEqual(recorded, [
+            .scheduled(sessionID: sessionID),
+            .started(sessionID: sessionID),
+            .cancelled(sessionID: sessionID),
+        ])
+    }
+
+    /// No path - including a duplicate or racing finish callback - may ever emit a second
+    /// terminal event for an already-completed session.
+    func testExactlyOneTerminalPerSession() async throws {
+        let fake = FakeAudioPlayer()
+        let player = SynthesizedAudioPlayer(makePlayer: { _ in fake })
+        let events = EventBox()
+        player.onEvent = { events.append($0) }
+        let sessionID = UUID()
+
+        try await player.startPlayback(Self.makeWavData(), sessionID: sessionID)
+        fake.onFinish?(true)
+        // A duplicate/late callback racing the first, and one reporting a different outcome -
+        // neither may produce a second terminal event.
+        fake.onFinish?(true)
+        fake.onFinish?(false)
+
+        let terminals = events.values.filter { $0.isTerminal }
+        XCTAssertEqual(terminals, [.finished(sessionID: sessionID)])
+    }
+
     // MARK: - Audio-producing: requires a working audio output device
 
-    func testPlayEmitsScheduledThenStartedThenFinishedForTheGivenSession() async throws {
+    /// `startPlayback` must return as soon as playback has started - never waiting for it to
+    /// finish. `.finished` always arrives later, asynchronously, through `onEvent`.
+    func testStartPlaybackEmitsScheduledThenStartedAndReturnsBeforeFinishedArrivesLater() async throws {
         try requireAudioOutput()
         let player = SynthesizedAudioPlayer()
         let events = EventBox()
         player.onEvent = { events.append($0) }
         let sessionID = UUID()
 
-        try await player.play(Self.makeWavData(), sessionID: sessionID)
+        try await player.startPlayback(Self.makeWavData(), sessionID: sessionID)
 
-        let recorded = events.values
-        XCTAssertEqual(recorded.filter { !$0.isLevel }, [
+        // startPlayback has already returned here: only .scheduled/.started so far, never
+        // .finished - proving this call did not wait for playback to terminate.
+        XCTAssertEqual(events.values.filter { !$0.isLevel }, [
+            .scheduled(sessionID: sessionID),
+            .started(sessionID: sessionID),
+        ])
+
+        try await waitUntil { events.values.contains(.finished(sessionID: sessionID)) }
+
+        let recorded = events.values.filter { !$0.isLevel }
+        XCTAssertEqual(recorded, [
             .scheduled(sessionID: sessionID),
             .started(sessionID: sessionID),
             .finished(sessionID: sessionID),
@@ -87,12 +208,11 @@ final class SynthesizedAudioPlayerTests: XCTestCase {
         player.onEvent = { events.append($0) }
         let sessionID = UUID()
 
-        // A few seconds of audio so there's time to call stop() before natural completion.
-        let playTask = Task { try await player.play(Self.makeWavData(durationSeconds: 3), sessionID: sessionID) }
-        try await waitUntil { events.values.contains(.started(sessionID: sessionID)) }
+        // A few seconds of audio so playback is still in flight once startPlayback returns.
+        try await player.startPlayback(Self.makeWavData(durationSeconds: 3), sessionID: sessionID)
+        XCTAssertTrue(events.values.contains(.started(sessionID: sessionID)))
 
         player.stop()
-        try await playTask.value
 
         let recorded = events.values.filter { !$0.isLevel }
         XCTAssertEqual(recorded, [
@@ -220,6 +340,13 @@ private extension TTSPlaybackEvent {
         if case .level = self { return true }
         return false
     }
+
+    var isTerminal: Bool {
+        switch self {
+        case .finished, .cancelled, .failed: true
+        case .scheduled, .started, .level: false
+        }
+    }
 }
 
 /// Accumulates playback events from a `@MainActor`-isolated `onEvent` callback so a test can poll
@@ -228,4 +355,18 @@ private extension TTSPlaybackEvent {
 private final class EventBox {
     private(set) var values: [TTSPlaybackEvent] = []
     func append(_ event: TTSPlaybackEvent) { values.append(event) }
+}
+
+/// Fake `AVAudioPlayerLike` so `SynthesizedAudioPlayer`'s handling of `play()`'s `Bool` result and
+/// the finish callback's `successfully` flag can be tested deterministically, without a real
+/// `AVAudioPlayer` or audio output device.
+@MainActor
+private final class FakeAudioPlayer: AVAudioPlayerLike {
+    var onFinish: (@MainActor (Bool) -> Void)?
+    var playReturnValue = true
+    private(set) var stopCallCount = 0
+
+    func play() -> Bool { playReturnValue }
+    func stop() { stopCallCount += 1 }
+    func pause() {}
 }

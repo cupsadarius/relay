@@ -1,7 +1,7 @@
 name: Relay
 options:
   deploymentTarget:
-    macOS: "14.0"
+    macOS: "26.0"
   createIntermediateGroups: true
 packages:
   FluidAudio:

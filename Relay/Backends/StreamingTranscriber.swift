@@ -126,6 +126,28 @@ actor StreamingTranscriber {
         isTranscribing = false
     }
 
+    // Non-joining counterpart to `stop()`: cancels the tick loop WITHOUT awaiting it, so this
+    // returns immediately even while a `transcribe(...)` call is still in flight (in practice, on
+    // the shared FluidAudio Parakeet actor). Use this whenever the caller is about to start its
+    // own, authoritative work on that same shared actor and must not block behind this interim
+    // session's disposable result.
+    //
+    // What this does NOT guarantee: the in-flight call itself is not interrupted (Swift
+    // cancellation is cooperative, and `transcribe` -- an opaque, caller-injected closure -- has
+    // no obligation to observe it), so it keeps running until it finishes on its own. What this
+    // means for a caller that goes on to run its own transcribe call on the same shared actor: if
+    // that actor can only run one call at a time, the caller's call may still wait for the actor
+    // to become AVAILABLE (i.e. for this abandoned call to vacate the actor) -- but never for this
+    // call's RESULT. Once this abandoned call does finish, `tick()`'s own `Task.isCancelled` check
+    // (see below) discards its result before `onInterimText` ever runs, so it can't reach the
+    // caller at all, let alone overwrite anything authoritative it produced in the meantime.
+    func abandon() {
+        tickTask?.cancel()
+        tickTask = nil
+        samples.removeAll(keepingCapacity: true)
+        isTranscribing = false
+    }
+
     // One tick of the periodic re-transcribe. DEBOUNCE: if a previous tick's transcription is
     // still in flight, this tick is skipped outright rather than queuing -- there is deliberately
     // never more than one transcription in flight at a time.

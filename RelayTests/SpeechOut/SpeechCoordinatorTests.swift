@@ -184,7 +184,11 @@ final class SpeechCoordinatorTests: XCTestCase {
         // targets "remember me".
         XCTAssertEqual(backend.spoken.map(\.text), ["remember me", "remember me"])
         XCTAssertEqual(backend.spoken.last?.options, options)
-        XCTAssertEqual(backend.stopCount, 1)
+        // By the time replayLast() runs, nothing is actually playing: "remember me" already
+        // delivered its .finished terminal event (which clears the router's active playback),
+        // and "do not remember" failed before ever starting. replayLast()'s router.stop() is
+        // therefore a legitimate no-op here rather than reaching a stale backend.
+        XCTAssertEqual(backend.stopCount, 0)
     }
 
     func testReplayBeforeSuccessfulSpeechDoesNothing() async throws {

@@ -6,6 +6,37 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(AppSettings.defaults.activityOverlayStyle, .interactive)
     }
 
+    /// Live interim transcription must default OFF everywhere a default can originate: the
+    /// `static let defaults` value, the memberwise initializer's default parameter, and the
+    /// decode fallback used when loading settings saved before this field existed. It stays off
+    /// until interim inference is fully isolated from the final-transcription critical path.
+    func testDefaultLiveTranscriptionIsOff() throws {
+        XCTAssertFalse(AppSettings.defaults.liveTranscriptionEnabled)
+
+        XCTAssertFalse(
+            AppSettings(
+                dictationMode: .holdToTalk,
+                hotkeys: [:],
+                sttBackendOrder: [],
+                ttsBackendOrder: [],
+                ttsVoiceIdentifier: nil,
+                ttsRate: 0.5,
+                autoReadEnabled: true,
+                activityOverlayStyle: .interactive
+            ).liveTranscriptionEnabled
+        )
+
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(AppSettings.defaults)) as? [String: Any]
+        )
+        object.removeValue(forKey: "liveTranscriptionEnabled")
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+        XCTAssertFalse(decoded.liveTranscriptionEnabled)
+    }
+
     func testDecodingPreOverlaySettingsAddsInteractiveWithoutResettingOtherFields() throws {
         var saved = AppSettings.defaults
         saved.dictationMode = .toggle
@@ -119,6 +150,18 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertNil(AppSettings.defaults.ttsVoiceIdentifier)
         XCTAssertEqual(AppSettings.defaults.ttsRate, 0.5)
         XCTAssertTrue(AppSettings.defaults.autoReadEnabled)
+    }
+
+    /// Now that the minimum macOS is 26, Apple Speech is a zero-download baseline and must
+    /// remain the sole default STT backend.
+    func testDefaultSTTOrderIsAppleSpeech() {
+        XCTAssertEqual(AppSettings.defaults.sttBackendOrder, ["apple-speech"])
+    }
+
+    /// Apple TTS must stay present in the default order as a reliable fallback, regardless of
+    /// its exact position.
+    func testDefaultTTSOrderContainsAppleTTSFallback() {
+        XCTAssertTrue(AppSettings.defaults.ttsBackendOrder.contains("apple-tts"))
     }
 
     @MainActor
