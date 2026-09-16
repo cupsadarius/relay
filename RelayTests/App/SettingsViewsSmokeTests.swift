@@ -5,7 +5,7 @@ import SwiftUI
 final class SettingsViewsSmokeTests: XCTestCase {
     @MainActor
     func testAllSettingsTabViewsConstruct() {
-        let model = AppModel()
+        let model = AppModel(runtime: .makeProduction())
         _ = SettingsView(model: model)
         _ = GeneralSettingsView(model: model)
         _ = KeybindsSettingsView(model: model)
@@ -45,13 +45,13 @@ final class SettingsViewsSmokeTests: XCTestCase {
 
     /// The menu bar shows and toggles auto-read state alongside the agent-response controls;
     /// this only guards that the view still constructs with the button title reflecting
-    /// `model.settings.autoReadEnabled` in both states. `AppModel()` loads the real, persisted
-    /// settings store, so this reads whatever `autoReadEnabled` already is rather than assuming
+    /// `model.settings.autoReadEnabled` in both states. `AppModel(runtime:)` loads the real,
+    /// persisted settings store, so this reads whatever `autoReadEnabled` already is rather than assuming
     /// the shipped default, and restores it afterward so the on-disk value isn't left flipped
     /// for whichever run reuses this store next.
     @MainActor
     func testMenuBarContentViewConstructsInBothAutoReadStates() {
-        let model = AppModel()
+        let model = AppModel(runtime: .makeProduction())
         let initial = model.settings.autoReadEnabled
         _ = MenuBarContentView(model: model)
 

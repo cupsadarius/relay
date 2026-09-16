@@ -3,7 +3,7 @@ import XCTest
 
 final class ProjectSmokeTests: XCTestCase {
     func testAppModelStartsReady() async {
-        let model = await MainActor.run { AppModel() }
+        let model = await MainActor.run { AppModel(runtime: .makeProduction()) }
         let status = await MainActor.run { model.statusText }
         XCTAssertEqual(status, "Ready")
     }
@@ -19,7 +19,7 @@ final class ProjectSmokeTests: XCTestCase {
     /// file-level doc comment).
     @MainActor
     func testProductionAppModelGraphConstructsAndFunctionsEndToEnd() async {
-        let model = AppModel()
+        let model = AppModel(runtime: .makeProduction())
 
         // Settings/permissions/login-item services all constructed and readable.
         XCTAssertEqual(model.statusText, "Ready")

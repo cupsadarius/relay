@@ -15,14 +15,6 @@ enum HelperInstallVerificationError: Error, Sendable {
 @MainActor
 @Observable
 final class AppModel {
-    private final class SettingsState {
-        var value: AppSettings
-
-        init(_ value: AppSettings) {
-            self.value = value
-        }
-    }
-
     var statusText = "Ready"
     /// Menu-bar status that tracks live activity (same source as the overlay pill) and falls
     /// back to the last transient message when idle, so it never shows a stale "Speaking…"
@@ -97,7 +89,7 @@ final class AppModel {
     @ObservationIgnored private let speechCoordinator: any SpeechCoordinating
     @ObservationIgnored private let dictationCoordinator: (any DictationCoordinating)?
     @ObservationIgnored private let hotkeyManager: any HotkeyManaging
-    @ObservationIgnored private let settingsState: SettingsState
+    @ObservationIgnored private let settingsState: SettingsBox
     @ObservationIgnored private let permissionService: any GlobalPermissionAuthorizing
     @ObservationIgnored private let microphonePermissions: any MicrophonePermissionStatusProviding
     @ObservationIgnored private let privacySettingsOpener: any PrivacySettingsOpening
@@ -147,178 +139,43 @@ final class AppModel {
     /// Diagnostics window.
     @ObservationIgnored private let integrationDiagnosticsLog: IntegrationDiagnosticsLog
 
-    convenience init() {
-        let settingsStore = SettingsStore()
-        let settings = settingsStore.load()
-        let state = SettingsState(settings)
-        let diagnostics = DiagnosticsRecorder()
-        let overlayModel = ActivityOverlayModel()
-        let appleTTS = AppleTTSBackend()
-        let kokoroTTS = KokoroTTSBackend()
-        let pocketTTS = PocketTTSBackend()
-        let ttsRegistry: [String: any TextToSpeechBackend] = [
-            appleTTS.id: appleTTS,
-            kokoroTTS.id: kokoroTTS,
-            pocketTTS.id: pocketTTS,
-        ]
-        let router = TTSRouter(
-            backends: ttsRegistry,
-            backendOrder: { state.value.ttsBackendOrder }
-        )
-        let coordinator = SpeechCoordinator(
-            router: router,
-            options: {
-                TTSOptions(
-                    voiceIdentifier: state.value.ttsVoiceIdentifier,
-                    rate: state.value.ttsRate,
-                    kokoroVoice: state.value.kokoroVoice,
-                    pocketVoice: state.value.pocketVoice
-                )
-            },
-            overlay: overlayModel
-        )
-        let sttBackend = AppleSpeechBackend()
-        let parakeetBackend = ParakeetBackend()
-        let sttRegistry: [String: any SpeechToTextBackend] = [
-            sttBackend.id: sttBackend,
-            parakeetBackend.id: parakeetBackend,
-        ]
-
-        // Phase 3 session-intelligence dependency graph. Built here, as LOCALS, before
-        // `self.init` below — `self` does not exist yet, so nothing here may reference it (no
-        // `[weak self]`). Every subsystem that needs frontmost-app or recent-interaction evidence
-        // shares these SAME instances (passed into `dictation` below) rather than constructing
-        // its own, so they all observe one consistent view of focus state. Resolver order is
-        // fixed: Herdr (exact pane evidence) -> tmux (exact pane evidence) -> generic terminal
-        // (conservative process-ancestry fallback). tmux support is entirely optional: when no
-        // tmux executable is found, `TmuxFocusResolver` is simply never added to the list.
-        let sessionRegistry = AgentSessionRegistry()
-        // One shared, in-memory diagnostics log for the integration pipeline, independent of
-        // `os_log`. Passed into the receiver, manager, and auto-read coordinator below so their
-        // entries interleave in a single timeline, readable from the Diagnostics window.
-        let integrationDiagnosticsLog = IntegrationDiagnosticsLog()
-        let processInspector = ProcessInspector()
-        let frontmostApps = FrontmostAppMonitor()
-        let recentInteractionTracker = RecentInteractionTracker()
-        let tmuxRunner = TmuxExecutableLocator().locate().map { TmuxClient(executable: $0) }
-        let herdrClient = HerdrSocketClient()
-        let agentProcessContext = AgentProcessContextCapture(processInspector: processInspector)
-
-        var resolvers: [any FocusResolver] = []
-        resolvers.append(HerdrFocusResolver(
-            herdr: herdrClient,
-            hostOwnership: HerdrHostOwnershipChecker(processInspector: processInspector)
-        ))
-        if let tmuxRunner {
-            resolvers.append(TmuxFocusResolver(runner: tmuxRunner, processTrees: processInspector))
-        }
-        resolvers.append(GenericTerminalFocusResolver())
-
-        let focusResolution = FocusResolutionService(
-            registry: sessionRegistry,
-            frontmostApps: frontmostApps,
-            resolvers: resolvers
-        )
-        let autoReadCoordinator = AgentAutoReadCoordinator(
-            registry: sessionRegistry,
-            processContext: agentProcessContext,
-            focus: focusResolution,
-            preprocess: { RulesSpeechPreprocessor().prepare(text: $0, mode: .automatic) },
-            speech: coordinator,
-            // `@MainActor` here (not merely `@Sendable`): `state.value` is only ever WRITTEN on
-            // the MainActor (`updateSettings`), so every reader must also run there. This closure
-            // is invoked from `AgentAutoReadCoordinator`'s own actor isolation as `await
-            // autoReadEnabled()`; being `@MainActor`-isolated makes that call hop to the main
-            // actor to read `state.value`, landing in the same isolation domain as every write —
-            // rather than reading the mutable, heap-backed `AppSettings` struct across domains
-            // with no synchronization. A `@MainActor` closure converts implicitly to the
-            // coordinator's plain `@Sendable () async -> Bool` parameter type; the hop happens at
-            // the call site, not by widening that parameter.
-            autoReadEnabled: { @MainActor in state.value.autoReadEnabled },
-            diagnostics: integrationDiagnosticsLog,
-            processInspector: processInspector
-        )
-
-        let dictation = DictationCoordinator(
-            microphone: MicrophoneCapture(onCaptureDiagnostics: { @MainActor (diagnosticsRecord: MicrophoneCaptureDiagnostics) in
-                diagnostics.recordMicrophoneCapture(diagnosticsRecord)
-            }),
-            sttRouter: STTRouter(
-                backends: sttRegistry,
-                backendOrder: {
-                    let configured = state.value.sttBackendOrder.filter { sttRegistry[$0] != nil }
-                    return configured.isEmpty ? [sttBackend.id] : configured
-                }
-            ),
-            processor: RulesTranscriptProcessor(),
-            textInserter: TextInsertionService(),
-            stopSpeech: { coordinator.stop() },
-            status: { _ in },
-            activity: overlayModel,
-            diagnostics: diagnostics,
-            frontmostApps: frontmostApps,
-            recentInteractions: recentInteractionTracker,
-            liveTranscriptionEnabled: { @MainActor in state.value.liveTranscriptionEnabled }
-        )
-        let hookEnvelopeReceiver = HookEnvelopeReceiver(diagnostics: integrationDiagnosticsLog)
-
-        let integrationManager = IntegrationManager(
-            events: hookEnvelopeReceiver.events,
-            integrations: [ClaudeCodeIntegration(), CodexIntegration()],
-            speechCoordinator: coordinator,
-            diagnostics: integrationDiagnosticsLog,
-            onResponse: { event in await autoReadCoordinator.handle(event) }
-        )
-        let actionDispatcher: any ActivityOverlayControlling = ActivityOverlayActionDispatcher(dictation: dictation, speech: coordinator)
-        let overlayPresenter = ActivityOverlayWindowController(
-            model: overlayModel,
-            host: ActivityOverlayPanelHost(),
-            screens: SystemActivityOverlayScreens(),
-            diagnostics: diagnostics,
-            onAction: { [actionDispatcher] action in actionDispatcher.perform(action) }
-        )
-        let speechModelDownloaders: [String: any SpeechModelDownloading] = [
-            parakeetBackend.id: parakeetBackend,
-        ]
-        // Apple never registers a downloader, since it has no model to download.
-        let ttsModelDownloaders: [String: any SpeechModelDownloading] = [
-            kokoroTTS.id: kokoroTTS,
-            pocketTTS.id: pocketTTS,
-        ]
+    /// Builds the real production `AppModel` around `RelayRuntime`'s freshly constructed
+    /// dependency graph. `AppModel` itself never builds that graph — see `RelayRuntime
+    /// .makeProduction()` for where every subsystem in it is actually constructed.
+    convenience init(runtime: RelayRuntime) {
         self.init(
-            settingsStore: settingsStore,
-            selectionReader: SelectionReader(
-                accessibility: AccessibilityService(),
-                clipboard: ClipboardService()
-            ),
-            preprocessor: RulesSpeechPreprocessor(),
-            speechCoordinator: coordinator,
-            hotkeyManager: GlobalHotkeyManager(diagnostics: diagnostics),
-            loadedSettings: settings,
-            settingsState: state,
-            permissionService: PermissionService(),
-            diagnostics: diagnostics,
-            dictationCoordinator: dictation,
-            microphonePermissions: SystemMicrophonePermissionStatusProvider(),
-            privacySettingsOpener: SystemPrivacySettingsOpener(),
-            loginItemService: SystemLoginItemController(),
-            overlayModel: overlayModel,
-            overlayPresenter: overlayPresenter,
-            sttRegistry: sttRegistry,
-            speechModelDownloaders: speechModelDownloaders,
-            ttsRegistry: ttsRegistry,
-            ttsModelDownloaders: ttsModelDownloaders,
-            hookEnvelopeReceiver: hookEnvelopeReceiver,
-            integrationManager: integrationManager,
-            claudeCodeInstaller: ClaudeCodeInstaller(),
-            codexInstaller: CodexInstaller(),
-            sessionRegistry: sessionRegistry,
-            focusResolution: focusResolution,
-            frontmostApps: frontmostApps,
-            processInspector: processInspector,
-            integrationDiagnosticsLog: integrationDiagnosticsLog
+            settingsStore: runtime.settingsStore,
+            selectionReader: runtime.selectionReader,
+            preprocessor: runtime.preprocessor,
+            speechCoordinator: runtime.speechOut.speechCoordinator,
+            hotkeyManager: runtime.hotkeyManager,
+            loadedSettings: runtime.settings,
+            settingsState: runtime.settingsBox,
+            permissionService: runtime.permissionService,
+            diagnostics: runtime.diagnostics,
+            dictationCoordinator: runtime.speechIn.dictationCoordinator,
+            microphonePermissions: runtime.microphonePermissions,
+            privacySettingsOpener: runtime.privacySettingsOpener,
+            loginItemService: runtime.loginItemService,
+            overlayModel: runtime.speechOut.overlayModel,
+            overlayPresenter: runtime.speechOut.overlayPresenter,
+            sttRegistry: runtime.speechIn.sttRegistry,
+            speechModelDownloaders: runtime.speechIn.speechModelDownloaders,
+            ttsRegistry: runtime.speechOut.ttsRegistry,
+            ttsModelDownloaders: runtime.speechOut.ttsModelDownloaders,
+            hookEnvelopeReceiver: runtime.integrations.hookEnvelopeReceiver,
+            integrationManager: runtime.integrations.integrationManager,
+            claudeCodeInstaller: runtime.integrations.claudeCodeInstaller,
+            codexInstaller: runtime.integrations.codexInstaller,
+            helperInstaller: runtime.integrations.helperInstaller,
+            bundledHelperURL: runtime.integrations.bundledHelperURL,
+            sessionRegistry: runtime.sessions.registry,
+            focusResolution: runtime.sessions.focusResolution,
+            frontmostApps: runtime.sessions.frontmostApps,
+            processInspector: runtime.sessions.processInspector,
+            integrationDiagnosticsLog: runtime.integrationDiagnosticsLog
         )
-        dictation.setStatusHandler { [weak self] in self?.statusText = $0 }
+        runtime.speechIn.dictationCoordinator?.setStatusHandler { [weak self] in self?.statusText = $0 }
     }
 
     init(
@@ -395,7 +252,7 @@ final class AppModel {
         microphonePermissionGranted = microphonePermissions.isGranted()
         launchAtLoginEnabled = loginItemService.isEnabled
         self.settings = settings
-        let state = SettingsState(settings)
+        let state = SettingsBox(settings)
         settingsState = state
         registerHotkeys()
         observeAppActivation()
@@ -411,7 +268,7 @@ final class AppModel {
         speechCoordinator: any SpeechCoordinating,
         hotkeyManager: any HotkeyManaging,
         loadedSettings: AppSettings,
-        settingsState: SettingsState,
+        settingsState: SettingsBox,
         permissionService: any GlobalPermissionAuthorizing,
         diagnostics: DiagnosticsRecorder,
         dictationCoordinator: (any DictationCoordinating)?,

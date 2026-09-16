@@ -497,7 +497,7 @@ final class AppModelTests: XCTestCase {
     }
 
     func testRealAppModelRegistersAKokoroDownloaderButNoAppleDownloader() {
-        let model = AppModel()
+        let model = AppModel(runtime: .makeProduction())
 
         XCTAssertTrue(model.canDownloadTTSModel("kokoro"))
         XCTAssertTrue(model.canDownloadTTSModel("pocket-tts"))
