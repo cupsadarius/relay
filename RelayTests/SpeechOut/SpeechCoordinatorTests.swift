@@ -14,7 +14,7 @@ final class SpeechCoordinatorTests: XCTestCase {
         XCTAssertEqual(backend.spoken.map(\.text), ["first", "second"])
     }
 
-    func testAutomaticSpeechDoesNotReplaceActiveSpeech() async throws {
+    func testAutomaticSpeechEnqueuesBehindActivePlaybackAndStartsOnFinish() async throws {
         let backend = FakeTTSBackend(id: "apple")
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
@@ -27,19 +27,141 @@ final class SpeechCoordinatorTests: XCTestCase {
         }
 
         try await coordinator.speak(request(text: "second", mode: .automatic))
-        let second = backend.lastSessionID!
 
-        XCTAssertEqual(backend.stopCount, 0)
+        // The second automatic request must be enqueued, not dispatched, while the first plays.
+        XCTAssertEqual(backend.spoken.map(\.text), ["first"])
         // The overlay must keep showing the first session - queuing a second
         // automatic utterance behind it must not hide the capsule.
         guard case let .speaking(stillFirst, _, _) = overlay.state, stillFirst == first else {
             return XCTFail("Expected overlay to still show first session, got \(overlay.state)")
         }
 
+        backend.emit(.finished(sessionID: first))
+        await pumpMainActor()
+
+        XCTAssertEqual(backend.spoken.map(\.text), ["first", "second"])
+        let second = backend.lastSessionID!
+        XCTAssertNotEqual(second, first)
+
         backend.emit(.started(sessionID: second))
         guard case let .speaking(nowSecond, _, _) = overlay.state, nowSecond == second else {
             return XCTFail("Expected overlay to show second session, got \(overlay.state)")
         }
+    }
+
+    func testQueueCapDropsOldestBeyondEightPending() async throws {
+        let backend = FakeTTSBackend(id: "apple")
+        let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let coordinator = makeCoordinator(backend: backend, overlay: overlay)
+
+        try await coordinator.speak(request(text: "playing", mode: .automatic))
+        let playing = backend.lastSessionID!
+        backend.emit(.started(sessionID: playing))
+
+        for index in 1...9 {
+            try await coordinator.speak(request(text: "queued-\(index)", mode: .automatic))
+        }
+
+        backend.emit(.finished(sessionID: playing))
+        await pumpMainActor()
+
+        // 9 requests were enqueued behind a cap of 8; the oldest ("queued-1") must be dropped, so
+        // the next one dispatched is "queued-2".
+        XCTAssertEqual(backend.spoken.last?.text, "queued-2")
+    }
+
+    func testUserRequestedClearsQueuedAutomaticRequests() async throws {
+        let backend = FakeTTSBackend(id: "apple")
+        let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let coordinator = makeCoordinator(backend: backend, overlay: overlay)
+
+        try await coordinator.speak(request(text: "first", mode: .automatic))
+        let first = backend.lastSessionID!
+        backend.emit(.started(sessionID: first))
+        try await coordinator.speak(request(text: "queued", mode: .automatic))
+
+        try await coordinator.speak(request(text: "manual", mode: .userRequested))
+        XCTAssertEqual(backend.spoken.map(\.text), ["first", "manual"])
+
+        backend.emit(.finished(sessionID: backend.lastSessionID!))
+        await pumpMainActor()
+
+        // The queued automatic request was cleared by the userRequested interruption and must
+        // never play, even after the manual request finishes.
+        XCTAssertEqual(backend.spoken.map(\.text), ["first", "manual"])
+    }
+
+    func testStopClearsQueueAndResetsBusyState() async throws {
+        let backend = FakeTTSBackend(id: "apple")
+        let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let coordinator = makeCoordinator(backend: backend, overlay: overlay)
+
+        try await coordinator.speak(request(text: "first", mode: .automatic))
+        let first = backend.lastSessionID!
+        backend.emit(.started(sessionID: first))
+        try await coordinator.speak(request(text: "queued", mode: .automatic))
+
+        coordinator.stop()
+
+        try await coordinator.speak(request(text: "after-stop", mode: .automatic))
+
+        // "after-stop" starts immediately since stop() reset the busy flag, and "queued" must
+        // never play since stop() cleared it.
+        XCTAssertEqual(backend.spoken.map(\.text), ["first", "after-stop"])
+    }
+
+    func testStopSessionIDClearsQueueWhenItStopsTheCurrentSession() async throws {
+        let backend = FakeTTSBackend(id: "apple")
+        let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let coordinator = makeCoordinator(backend: backend, overlay: overlay)
+
+        try await coordinator.speak(request(text: "first", mode: .automatic))
+        let first = backend.lastSessionID!
+        backend.emit(.started(sessionID: first))
+        try await coordinator.speak(request(text: "queued", mode: .automatic))
+
+        coordinator.stop(sessionID: first)
+
+        try await coordinator.speak(request(text: "after-stop", mode: .automatic))
+
+        XCTAssertEqual(backend.spoken.map(\.text), ["first", "after-stop"])
+    }
+
+    func testReplayLastClearsQueuedAutomaticRequests() async throws {
+        let backend = FakeTTSBackend(id: "apple")
+        let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let coordinator = makeCoordinator(backend: backend, overlay: overlay)
+
+        try await coordinator.speak(request(text: "first", mode: .automatic))
+        let first = backend.lastSessionID!
+        backend.emit(.started(sessionID: first))
+        try await coordinator.speak(request(text: "queued", mode: .automatic))
+
+        try await coordinator.replayLast()
+        backend.emit(.finished(sessionID: backend.lastSessionID!))
+        await pumpMainActor()
+
+        // Replay is a manual action: it must clear the pending queue so "queued" never plays.
+        XCTAssertEqual(backend.spoken.map(\.text), ["first", "first"])
+    }
+
+    func testLastRequestReflectsStartedRequestNotMerelyQueued() async throws {
+        let backend = FakeTTSBackend(id: "apple")
+        let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let coordinator = makeCoordinator(backend: backend, overlay: overlay)
+
+        try await coordinator.speak(request(text: "first", mode: .automatic))
+        let first = backend.lastSessionID!
+        backend.emit(.started(sessionID: first))
+
+        try await coordinator.speak(request(text: "queued", mode: .automatic))
+        // "queued" was only enqueued (never started), so it must not have reached the backend.
+        XCTAssertEqual(backend.spoken.map(\.text), ["first"])
+
+        try await coordinator.replayLast()
+
+        // Replay must still target "first" - the actually-started request - not "queued".
+        XCTAssertEqual(backend.spoken.map(\.text), ["first", "first"])
     }
 
     func testReplayUsesLastSuccessfulRequestAndCurrentOptions() async throws {
@@ -302,5 +424,11 @@ final class SpeechCoordinatorTests: XCTestCase {
 
     private func request(text: String, mode: SpeechMode) -> SpeechRequest {
         SpeechRequest(text: text, source: .selection, mode: mode, sessionID: nil)
+    }
+
+    /// Lets any `Task` spawned from a synchronous playback-event callback (e.g. the speech
+    /// queue's dequeue-next-on-finish) actually run before assertions inspect its effects.
+    private func pumpMainActor() async {
+        for _ in 0..<5 { await Task.yield() }
     }
 }

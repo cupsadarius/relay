@@ -24,6 +24,10 @@ extension SpeechCoordinator: SpeechSubmitting, @unchecked Sendable {}
 
 @MainActor
 final class SpeechCoordinator: SpeechCoordinating {
+    /// Most-recent automatic requests are kept when the queue overflows; older ones are dropped
+    /// first so a long silent backlog can never build up behind whatever is currently playing.
+    private static let queueCap = 8
+
     private let router: TTSRouter
     private let options: () -> TTSOptions
     private let overlay: ActivityOverlayModel
@@ -34,6 +38,14 @@ final class SpeechCoordinator: SpeechCoordinating {
     /// hiding the capsule for whatever is still speaking when an automatic
     /// request is merely queued behind it.
     private var pendingAutomaticSessions: Set<UUID> = []
+    /// `true` from the moment a request is actually handed to the router until a terminal
+    /// playback event (`.finished`/`.cancelled`/`.failed`) is observed for it. While `true`, a
+    /// new `.automatic` request is enqueued rather than overlapping the one in flight.
+    private var isSpeaking = false
+    /// FIFO backlog of `.automatic` requests waiting for the current one to finish. Never holds
+    /// `.userRequested` requests — those interrupt immediately instead of queueing. Capped at
+    /// `queueCap`, dropping the oldest entry first.
+    private var pendingAutomaticQueue: [SpeechRequest] = []
 
     init(router: TTSRouter, options: @escaping () -> TTSOptions, overlay: ActivityOverlayModel) {
         self.router = router
@@ -45,12 +57,78 @@ final class SpeechCoordinator: SpeechCoordinating {
     }
 
     func speak(_ request: SpeechRequest) async throws {
-        if request.mode == .userRequested {
+        switch request.mode {
+        case .userRequested:
+            pendingAutomaticQueue.removeAll()
             router.stop()
+            try await start(request)
+        case .automatic:
+            guard !isSpeaking else {
+                enqueue(request)
+                return
+            }
+            try await start(request)
         }
+    }
 
+    func stop() {
+        pendingAutomaticQueue.removeAll()
+        router.stop()
+        if let currentSessionID {
+            overlay.cancel(sessionID: currentSessionID)
+        }
+        if let overlaySessionID = overlay.state.sessionID, overlaySessionID != currentSessionID {
+            overlay.cancel(sessionID: overlaySessionID)
+        }
+        currentSessionID = nil
+        pendingAutomaticSessions.removeAll()
+        isSpeaking = false
+    }
+
+    /// No-ops for a stale (already-replaced) session ID; otherwise stops the
+    /// router, hides only the matching overlay session, and clears any queued
+    /// automatic backlog.
+    func stop(sessionID: UUID) {
+        guard router.stop(sessionID: sessionID) else { return }
+        pendingAutomaticQueue.removeAll()
+        overlay.cancel(sessionID: sessionID)
+        if currentSessionID == sessionID {
+            currentSessionID = nil
+        }
+        pendingAutomaticSessions.remove(sessionID)
+        isSpeaking = false
+    }
+
+    func replayLast() async throws {
+        guard let lastRequest else { return }
+
+        pendingAutomaticQueue.removeAll()
+        router.stop()
         let sessionID = UUID()
         currentSessionID = sessionID
+        isSpeaking = true
+        overlay.begin(sessionID: sessionID)
+        overlay.prepareSpeaking(sessionID: sessionID)
+
+        try await router.speak(text: lastRequest.text, options: options(), sessionID: sessionID)
+    }
+
+    /// Appends `request` to the automatic backlog, dropping the oldest entry first if that would
+    /// exceed `queueCap`.
+    private func enqueue(_ request: SpeechRequest) {
+        pendingAutomaticQueue.append(request)
+        if pendingAutomaticQueue.count > Self.queueCap {
+            pendingAutomaticQueue.removeFirst(pendingAutomaticQueue.count - Self.queueCap)
+        }
+    }
+
+    /// Hands `request` to the router right now. Only ever called when nothing else is in flight
+    /// (either because nothing was playing, or because the caller just force-stopped whatever
+    /// was).
+    private func start(_ request: SpeechRequest) async throws {
+        let sessionID = UUID()
+        currentSessionID = sessionID
+        isSpeaking = true
 
         switch request.mode {
         case .userRequested:
@@ -64,39 +142,16 @@ final class SpeechCoordinator: SpeechCoordinating {
         lastRequest = request
     }
 
-    func stop() {
-        router.stop()
-        if let currentSessionID {
-            overlay.cancel(sessionID: currentSessionID)
+    /// Called for every terminal playback event belonging to the session currently in flight.
+    /// Clears the busy flag and, if anything is queued, starts the next automatic request.
+    private func finishInFlightSession(_ sessionID: UUID) {
+        guard sessionID == currentSessionID else { return }
+        isSpeaking = false
+        guard !pendingAutomaticQueue.isEmpty else { return }
+        let next = pendingAutomaticQueue.removeFirst()
+        Task { [weak self] in
+            try? await self?.speak(next)
         }
-        if let overlaySessionID = overlay.state.sessionID, overlaySessionID != currentSessionID {
-            overlay.cancel(sessionID: overlaySessionID)
-        }
-        currentSessionID = nil
-        pendingAutomaticSessions.removeAll()
-    }
-
-    /// No-ops for a stale (already-replaced) session ID; otherwise stops the
-    /// router and hides only the matching overlay session.
-    func stop(sessionID: UUID) {
-        guard router.stop(sessionID: sessionID) else { return }
-        overlay.cancel(sessionID: sessionID)
-        if currentSessionID == sessionID {
-            currentSessionID = nil
-        }
-        pendingAutomaticSessions.remove(sessionID)
-    }
-
-    func replayLast() async throws {
-        guard let lastRequest else { return }
-
-        router.stop()
-        let sessionID = UUID()
-        currentSessionID = sessionID
-        overlay.begin(sessionID: sessionID)
-        overlay.prepareSpeaking(sessionID: sessionID)
-
-        try await router.speak(text: lastRequest.text, options: options(), sessionID: sessionID)
     }
 
     private func handle(_ event: TTSPlaybackEvent, backend: (any TextToSpeechBackend)?) {
@@ -116,16 +171,21 @@ final class SpeechCoordinator: SpeechCoordinating {
         case let .finished(sessionID):
             // A pending automatic session that never started was never
             // shown in the overlay; nothing to complete.
-            guard pendingAutomaticSessions.remove(sessionID) == nil else { return }
-            overlay.complete(sessionID: sessionID)
+            if pendingAutomaticSessions.remove(sessionID) == nil {
+                overlay.complete(sessionID: sessionID)
+            }
+            finishInFlightSession(sessionID)
         case let .cancelled(sessionID):
-            guard pendingAutomaticSessions.remove(sessionID) == nil else { return }
-            overlay.cancel(sessionID: sessionID)
+            if pendingAutomaticSessions.remove(sessionID) == nil {
+                overlay.cancel(sessionID: sessionID)
+            }
+            finishInFlightSession(sessionID)
         case let .failed(sessionID):
             if pendingAutomaticSessions.remove(sessionID) != nil {
                 overlay.begin(sessionID: sessionID)
             }
             overlay.fail(sessionID: sessionID, category: .speechPlayback, message: "Speech playback failed.")
+            finishInFlightSession(sessionID)
         }
     }
 }
