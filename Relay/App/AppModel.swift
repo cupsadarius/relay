@@ -37,6 +37,11 @@ final class AppModel {
         }
     }
     private(set) var microphonePermissionGranted: Bool
+    /// Mirrors `loginItemService.isEnabled` (backed by `SMAppService.mainApp.status`), the OS's
+    /// own source of truth for login-item registration. Never persisted separately in
+    /// `AppSettings` — re-synced to the service on every write via `setLaunchAtLogin`, so it
+    /// can't drift from what's actually registered.
+    private(set) var launchAtLoginEnabled: Bool
     private(set) var settings: AppSettings
     private(set) var dictationPhase: HotkeyPhase?
     private(set) var hotkeyConflictMessage: String?
@@ -81,6 +86,7 @@ final class AppModel {
     @ObservationIgnored private let permissionService: any GlobalPermissionAuthorizing
     @ObservationIgnored private let microphonePermissions: any MicrophonePermissionStatusProviding
     @ObservationIgnored private let privacySettingsOpener: any PrivacySettingsOpening
+    @ObservationIgnored private let loginItemService: any LoginItemControlling
     @ObservationIgnored private let diagnostics: DiagnosticsRecorder
     @ObservationIgnored private let overlayPresenter: any ActivityOverlayPresenting
     @ObservationIgnored private var activationObserver: NSObjectProtocol?
@@ -261,6 +267,7 @@ final class AppModel {
             dictationCoordinator: dictation,
             microphonePermissions: SystemMicrophonePermissionStatusProvider(),
             privacySettingsOpener: SystemPrivacySettingsOpener(),
+            loginItemService: SystemLoginItemController(),
             overlayModel: overlayModel,
             overlayPresenter: overlayPresenter,
             sttRegistry: sttRegistry,
@@ -290,6 +297,7 @@ final class AppModel {
         dictationCoordinator: (any DictationCoordinating)? = nil,
         microphonePermissions: any MicrophonePermissionStatusProviding = SystemMicrophonePermissionStatusProvider(),
         privacySettingsOpener: any PrivacySettingsOpening = SystemPrivacySettingsOpener(),
+        loginItemService: any LoginItemControlling = SystemLoginItemController(),
         overlayModel: ActivityOverlayModel = ActivityOverlayModel(),
         overlayPresenter: any ActivityOverlayPresenting = NoOpActivityOverlayPresenter(),
         sttRegistry: [String: any SpeechToTextBackend] = [:],
@@ -319,6 +327,7 @@ final class AppModel {
         self.permissionService = permissionService
         self.microphonePermissions = microphonePermissions
         self.privacySettingsOpener = privacySettingsOpener
+        self.loginItemService = loginItemService
         self.diagnostics = diagnostics
         self.overlayModel = overlayModel
         self.overlayPresenter = overlayPresenter
@@ -343,6 +352,7 @@ final class AppModel {
         dictationTask = nil
         permissionSnapshot = permissionService.snapshot()
         microphonePermissionGranted = microphonePermissions.isGranted()
+        launchAtLoginEnabled = loginItemService.isEnabled
         self.settings = settings
         let state = SettingsState(settings)
         settingsState = state
@@ -366,6 +376,7 @@ final class AppModel {
         dictationCoordinator: (any DictationCoordinating)?,
         microphonePermissions: any MicrophonePermissionStatusProviding,
         privacySettingsOpener: any PrivacySettingsOpening,
+        loginItemService: any LoginItemControlling = SystemLoginItemController(),
         overlayModel: ActivityOverlayModel,
         overlayPresenter: any ActivityOverlayPresenting,
         sttRegistry: [String: any SpeechToTextBackend],
@@ -390,6 +401,7 @@ final class AppModel {
         self.permissionService = permissionService
         self.microphonePermissions = microphonePermissions
         self.privacySettingsOpener = privacySettingsOpener
+        self.loginItemService = loginItemService
         self.diagnostics = diagnostics
         self.overlayModel = overlayModel
         self.overlayPresenter = overlayPresenter
@@ -409,6 +421,7 @@ final class AppModel {
         dictationTask = nil
         permissionSnapshot = permissionService.snapshot()
         microphonePermissionGranted = microphonePermissions.isGranted()
+        launchAtLoginEnabled = loginItemService.isEnabled
         settings = loadedSettings
         self.settingsState = settingsState
         registerHotkeys()
@@ -464,6 +477,21 @@ final class AppModel {
 
     func setLiveTranscriptionEnabled(_ enabled: Bool) {
         updateSettings { $0.liveTranscriptionEnabled = enabled }
+    }
+
+    /// Registers/unregisters Relay as a login item via `loginItemService`
+    /// (`SMAppService.mainApp` in production). A dev build running outside `/Applications` can
+    /// legitimately fail to register; on failure this never crashes — it re-reads the service's
+    /// actual status (so `launchAtLoginEnabled` can't drift from what's really registered) and
+    /// surfaces a non-fatal status message instead.
+    func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            try loginItemService.setEnabled(enabled)
+            launchAtLoginEnabled = enabled
+        } catch {
+            launchAtLoginEnabled = loginItemService.isEnabled
+            statusText = "Could not change launch-at-login."
+        }
     }
 
 

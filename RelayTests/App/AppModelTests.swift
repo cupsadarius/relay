@@ -722,6 +722,51 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(opener.opened, [.microphone, .accessibility, .inputMonitoring])
     }
 
+    func testLaunchAtLoginEnabledReflectsServiceInitialStatusWhenEnabled() {
+        let loginItem = FakeLoginItemController(enabled: true)
+        let model = makeModel(loginItem: loginItem)
+
+        XCTAssertTrue(model.launchAtLoginEnabled)
+    }
+
+    func testLaunchAtLoginEnabledReflectsServiceInitialStatusWhenDisabled() {
+        let loginItem = FakeLoginItemController(enabled: false)
+        let model = makeModel(loginItem: loginItem)
+
+        XCTAssertFalse(model.launchAtLoginEnabled)
+    }
+
+    func testSetLaunchAtLoginOnRegistersAndUpdatesFlag() {
+        let loginItem = FakeLoginItemController(enabled: false)
+        let model = makeModel(loginItem: loginItem)
+
+        model.setLaunchAtLogin(true)
+
+        XCTAssertEqual(loginItem.setEnabledCalls, [true])
+        XCTAssertTrue(model.launchAtLoginEnabled)
+    }
+
+    func testSetLaunchAtLoginOffUnregistersAndUpdatesFlag() {
+        let loginItem = FakeLoginItemController(enabled: true)
+        let model = makeModel(loginItem: loginItem)
+
+        model.setLaunchAtLogin(false)
+
+        XCTAssertEqual(loginItem.setEnabledCalls, [false])
+        XCTAssertFalse(model.launchAtLoginEnabled)
+    }
+
+    func testSetLaunchAtLoginFailureLeavesFlagMatchingActualStatusAndSurfacesMessage() {
+        let loginItem = FakeLoginItemController(enabled: false, setEnabledError: TestError.loginItemFailed)
+        let model = makeModel(loginItem: loginItem)
+
+        model.setLaunchAtLogin(true)
+
+        XCTAssertEqual(loginItem.setEnabledCalls, [true])
+        XCTAssertFalse(model.launchAtLoginEnabled)
+        XCTAssertEqual(model.statusText, "Could not change launch-at-login.")
+    }
+
     func testSaveFailureStillAppliesHotkeyImmediatelyAndSurfacesError() {
         let store = FakeSettingsStore(settings: .defaults, saveError: TestError.saveFailed)
         let hotkeys = FakeHotkeyManager()
@@ -1242,6 +1287,7 @@ final class AppModelTests: XCTestCase {
         dictation: FakeDictationCoordinator? = nil,
         microphone: FakeMicrophonePermissionStatus? = nil,
         opener: FakePrivacySettingsOpener? = nil,
+        loginItem: FakeLoginItemController? = nil,
         overlayModel: ActivityOverlayModel? = nil,
         overlayPresenter: (any ActivityOverlayPresenting)? = nil,
         sttRegistry: [String: any SpeechToTextBackend] = [:],
@@ -1263,6 +1309,7 @@ final class AppModelTests: XCTestCase {
             dictationCoordinator: dictation,
             microphonePermissions: microphone ?? FakeMicrophonePermissionStatus(granted: true),
             privacySettingsOpener: opener ?? FakePrivacySettingsOpener(),
+            loginItemService: loginItem ?? FakeLoginItemController(enabled: false),
             overlayModel: overlayModel ?? ActivityOverlayModel(),
             overlayPresenter: overlayPresenter ?? NoOpActivityOverlayPresenter(),
             sttRegistry: sttRegistry,
@@ -1353,6 +1400,24 @@ private final class FakePrivacySettingsOpener: PrivacySettingsOpening {
 }
 
 @MainActor
+private final class FakeLoginItemController: LoginItemControlling {
+    private(set) var isEnabled: Bool
+    private(set) var setEnabledCalls: [Bool] = []
+    private let setEnabledError: Error?
+
+    init(enabled: Bool, setEnabledError: Error? = nil) {
+        isEnabled = enabled
+        self.setEnabledError = setEnabledError
+    }
+
+    func setEnabled(_ enabled: Bool) throws {
+        setEnabledCalls.append(enabled)
+        if let setEnabledError { throw setEnabledError }
+        isEnabled = enabled
+    }
+}
+
+@MainActor
 private final class FakeSettingsStore: SettingsStoring {
     let settings: AppSettings
     let saveError: Error?
@@ -1372,6 +1437,7 @@ private final class FakeSettingsStore: SettingsStoring {
 
 private enum TestError: Error {
     case saveFailed
+    case loginItemFailed
 }
 
 private actor FakeSTTBackend: SpeechToTextBackend {

@@ -20,6 +20,13 @@ struct GeneralSettingsView: View {
                 }
                 .pickerStyle(.segmented)
             }
+
+            Section("Startup") {
+                Toggle("Launch at login", isOn: launchAtLoginBinding)
+                Text("Start Relay automatically when you log in.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
     }
@@ -28,6 +35,13 @@ struct GeneralSettingsView: View {
         Binding(
             get: { model.settings.liveTranscriptionEnabled },
             set: { model.setLiveTranscriptionEnabled($0) }
+        )
+    }
+
+    private var launchAtLoginBinding: Binding<Bool> {
+        Binding(
+            get: { model.launchAtLoginEnabled },
+            set: { model.setLaunchAtLogin($0) }
         )
     }
 
