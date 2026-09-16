@@ -100,6 +100,15 @@ final class AppModel {
     @ObservationIgnored private let integrationManager: IntegrationManager
     @ObservationIgnored private let claudeCodeInstaller: ClaudeCodeInstaller
     @ObservationIgnored private let codexInstaller: CodexInstaller
+    /// Copies the bundled `RelayHook` helper to its stable Application Support location
+    /// before each `installIntegration` call, so the stable path the installers reference
+    /// always exists. Injectable so tests never touch the real `~/Library/Application
+    /// Support`.
+    @ObservationIgnored private let helperInstaller: HelperInstaller
+    /// The bundled helper's location inside the running app bundle — the SOURCE
+    /// `helperInstaller` copies from. Injectable so tests can point it at a path that never
+    /// exists (the default is a no-op guard: see `installBundledHelperIfPresent`).
+    @ObservationIgnored private let bundledHelperURL: URL
     /// Ephemeral, memory-only registry of agent sessions observed from hook events. Shared with
     /// the production `AgentAutoReadCoordinator`/`FocusResolutionService` graph built in the
     /// production `convenience init()`. Exposed read-only for compact diagnostics
@@ -321,6 +330,8 @@ final class AppModel {
         integrationManager: IntegrationManager? = nil,
         claudeCodeInstaller: ClaudeCodeInstaller = ClaudeCodeInstaller(),
         codexInstaller: CodexInstaller = CodexInstaller(),
+        helperInstaller: HelperInstaller = HelperInstaller(),
+        bundledHelperURL: URL = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/RelayHook"),
         sessionRegistry: AgentSessionRegistry = AgentSessionRegistry(),
         focusResolution: any SessionFocusResolving = FocusResolutionService(
             registry: AgentSessionRegistry(),
@@ -358,6 +369,8 @@ final class AppModel {
         )
         self.claudeCodeInstaller = claudeCodeInstaller
         self.codexInstaller = codexInstaller
+        self.helperInstaller = helperInstaller
+        self.bundledHelperURL = bundledHelperURL
         self.sessionRegistry = sessionRegistry
         self.focusResolution = focusResolution
         self.frontmostApps = frontmostApps
@@ -402,6 +415,8 @@ final class AppModel {
         integrationManager: IntegrationManager,
         claudeCodeInstaller: ClaudeCodeInstaller,
         codexInstaller: CodexInstaller,
+        helperInstaller: HelperInstaller = HelperInstaller(),
+        bundledHelperURL: URL = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/RelayHook"),
         sessionRegistry: AgentSessionRegistry,
         focusResolution: any SessionFocusResolving,
         frontmostApps: any FrontmostAppMonitoring,
@@ -429,6 +444,8 @@ final class AppModel {
         self.integrationManager = integrationManager
         self.claudeCodeInstaller = claudeCodeInstaller
         self.codexInstaller = codexInstaller
+        self.helperInstaller = helperInstaller
+        self.bundledHelperURL = bundledHelperURL
         self.sessionRegistry = sessionRegistry
         self.focusResolution = focusResolution
         self.frontmostApps = frontmostApps
@@ -873,6 +890,7 @@ final class AppModel {
     /// failure is caught and surfaced as `.configurationError`; it never crashes the app, and
     /// never logs the underlying error verbatim.
     func installIntegration(_ provider: AgentProvider) {
+        installBundledHelperIfPresent()
         do {
             switch provider {
             case .claudeCode: try claudeCodeInstaller.install()
@@ -882,6 +900,21 @@ final class AppModel {
         } catch {
             installerStatuses[provider] = Self.configurationErrorStatus(for: provider, error: error)
         }
+    }
+
+    /// Refreshes the stable-path copy of the bundled `RelayHook` helper (see
+    /// `HelperInstaller`) before a per-provider installer runs, so the path it is about to
+    /// write into the agent's config always resolves to a real, executable file — even right
+    /// after a rebuild that produced a new bundled helper.
+    ///
+    /// Guarded on `bundledHelperURL` actually existing: in unit tests (and any host process
+    /// that isn't the real, built app bundle) it normally doesn't, so this is a silent no-op
+    /// there rather than a hard dependency on a real app bundle being present. A copy failure
+    /// is swallowed rather than surfaced — this is a best-effort refresh, and the per-provider
+    /// installer that follows is what actually determines install success or failure.
+    private func installBundledHelperIfPresent() {
+        guard FileManager.default.fileExists(atPath: bundledHelperURL.path) else { return }
+        try? helperInstaller.installBundledHelper(from: bundledHelperURL)
     }
 
     /// Removes the Relay-owned `Stop` hook for `provider`, then refreshes its status. An
