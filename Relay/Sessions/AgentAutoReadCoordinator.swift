@@ -59,6 +59,10 @@ actor AgentAutoReadCoordinator {
     private let speech: any SpeechSubmitting & Sendable
     private let autoReadEnabled: @Sendable () async -> Bool
     private let diagnostics: IntegrationDiagnosticsLog
+    /// Used to take a single process-table snapshot per `handle(_:)` call, so dead-process
+    /// sessions can be pruned before every focus decision. A failed snapshot skips pruning for
+    /// that cycle rather than risking a false "dead" verdict on a live session.
+    private let processInspector: ProcessInspector
     /// The most-recently-active agent session: the last one found confidently focused, or the
     /// last one actually auto-spoken (whichever happened most recently). `nil` until the first
     /// time either of those occurs.
@@ -71,7 +75,8 @@ actor AgentAutoReadCoordinator {
         preprocess: @escaping @Sendable (String) -> String,
         speech: any SpeechSubmitting & Sendable,
         autoReadEnabled: @escaping @Sendable () async -> Bool,
-        diagnostics: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog()
+        diagnostics: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog(),
+        processInspector: ProcessInspector = ProcessInspector()
     ) {
         self.registry = registry
         self.processContext = processContext
@@ -80,6 +85,7 @@ actor AgentAutoReadCoordinator {
         self.speech = speech
         self.autoReadEnabled = autoReadEnabled
         self.diagnostics = diagnostics
+        self.processInspector = processInspector
     }
 
     func handle(_ event: AgentResponseEvent) async {
@@ -94,6 +100,15 @@ actor AgentAutoReadCoordinator {
         guard await autoReadEnabled() else {
             diagnostics.append(stage: "coordinator", outcome: "silent", detail: "auto-read-disabled")
             return
+        }
+
+        // Prune stale sessions before every focus decision so a dead agent's session (or one gone
+        // quiet past the TTL) never keeps generic-terminal focus ambiguous. One snapshot per
+        // cycle, closed over by `isAlive`, rather than a `ps` invocation per candidate pid. A
+        // failed snapshot fails safe: skip pruning this cycle instead of risking a false "dead"
+        // verdict on a session that's actually still running.
+        if let snapshot = try? processInspector.snapshot() {
+            await registry.prune(isAlive: { pid in snapshot.record(pid: pid) != nil })
         }
 
         let sessions = await registry.sessions()

@@ -209,7 +209,8 @@ final class AppModel {
             // coordinator's plain `@Sendable () async -> Bool` parameter type; the hop happens at
             // the call site, not by widening that parameter.
             autoReadEnabled: { @MainActor in state.value.autoReadEnabled },
-            diagnostics: integrationDiagnosticsLog
+            diagnostics: integrationDiagnosticsLog,
+            processInspector: processInspector
         )
 
         let dictation = DictationCoordinator(

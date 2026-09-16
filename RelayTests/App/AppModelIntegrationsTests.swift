@@ -469,7 +469,11 @@ private func makeAutoReadWiringHarness(focus: FocusDecision, autoRead: Bool) -> 
         transcriptPath: nil,
         parentPID: 100,
         environment: [:],
-        capturedAt: Date(timeIntervalSince1970: 1_700_001_000)
+        // Real wall-clock time, not a fixed historical timestamp: `AgentAutoReadCoordinator`
+        // prunes sessions past its default inactivity TTL against `Date()`, and a fixed past
+        // date would make this session look stale (and get pruned before focus resolution) no
+        // matter how recently the test actually runs.
+        capturedAt: Date()
     )
     let integration = AlwaysSucceedIntegration(provider: .claudeCode, event: event)
     let registry = AgentSessionRegistry()
@@ -480,7 +484,12 @@ private func makeAutoReadWiringHarness(focus: FocusDecision, autoRead: Bool) -> 
         focus: StubWiringSessionFocusResolver(decision: focus),
         preprocess: { $0 },
         speech: speech,
-        autoReadEnabled: { autoRead }
+        autoReadEnabled: { autoRead },
+        // A real `ProcessInspector()` default would shell out to `/bin/ps` and, finding no live
+        // process at the fabricated pid 100, prune the session before focus resolution ever runs
+        // — this fake keeps liveness a non-factor for a test that's only exercising the
+        // onResponse -> coordinator wiring shape.
+        processInspector: ProcessInspector(runner: AlwaysAliveProcessRunner())
     )
     var continuation: AsyncStream<HookEnvelope>.Continuation!
     let events = AsyncStream<HookEnvelope> { continuation = $0 }
@@ -501,6 +510,15 @@ private struct StubWiringSessionFocusResolver: SessionFocusResolving {
 private struct StubWiringProcessContextCapture: AgentProcessContextCapturing {
     func capture(parentPID: Int32) async -> AgentProcessContext {
         .init(ancestry: [parentPID], tty: nil)
+    }
+}
+
+/// Reports every pid in a wide synthetic range as alive, so this file's fabricated pids are never
+/// treated as dead by `AgentAutoReadCoordinator`'s prune-before-focus step.
+private final class AlwaysAliveProcessRunner: ProcessRunning, @unchecked Sendable {
+    func run(executable: URL, arguments: [String], timeout: TimeInterval, maxOutputBytes: Int) throws -> ProcessResult {
+        let lines = (1...2_000).map { "\($0) 1 ttys001 fake" }.joined(separator: "\n")
+        return ProcessResult(stdout: Data(lines.utf8), terminationStatus: 0)
     }
 }
 
