@@ -54,6 +54,77 @@ final class AppModelTests: XCTestCase {
         withExtendedLifetime(model) {}
     }
 
+    func testActivityStatusTextReflectsListeningOverlayState() {
+        let overlayModel = ActivityOverlayModel()
+        let model = makeModel(overlayModel: overlayModel)
+        let sessionID = UUID()
+
+        overlayModel.begin(sessionID: sessionID)
+        overlayModel.listen(sessionID: sessionID, startedAt: .now)
+
+        XCTAssertEqual(model.activityStatusText, "Listening…")
+        withExtendedLifetime(model) {}
+    }
+
+    func testActivityStatusTextReflectsProcessingOverlayState() {
+        let overlayModel = ActivityOverlayModel()
+        let model = makeModel(overlayModel: overlayModel)
+        let sessionID = UUID()
+
+        overlayModel.begin(sessionID: sessionID)
+        overlayModel.listen(sessionID: sessionID, startedAt: .now)
+        overlayModel.process(sessionID: sessionID)
+
+        XCTAssertEqual(model.activityStatusText, "Transcribing…")
+        withExtendedLifetime(model) {}
+    }
+
+    func testActivityStatusTextReflectsPreparingSpeechOverlayState() {
+        let overlayModel = ActivityOverlayModel()
+        let model = makeModel(overlayModel: overlayModel)
+        let sessionID = UUID()
+
+        overlayModel.begin(sessionID: sessionID)
+        overlayModel.prepareSpeaking(sessionID: sessionID)
+
+        XCTAssertEqual(model.activityStatusText, "Processing…")
+        withExtendedLifetime(model) {}
+    }
+
+    func testActivityStatusTextReflectsSpeakingOverlayState() {
+        let overlayModel = ActivityOverlayModel()
+        let model = makeModel(overlayModel: overlayModel)
+        let sessionID = UUID()
+
+        overlayModel.begin(sessionID: sessionID)
+        overlayModel.speak(sessionID: sessionID)
+
+        XCTAssertEqual(model.activityStatusText, "Speaking…")
+        withExtendedLifetime(model) {}
+    }
+
+    func testActivityStatusTextReflectsErrorOverlayStateMessage() {
+        let overlayModel = ActivityOverlayModel()
+        let model = makeModel(overlayModel: overlayModel)
+        let sessionID = UUID()
+
+        overlayModel.begin(sessionID: sessionID)
+        overlayModel.fail(sessionID: sessionID, category: .speechPlayback, message: "Could not play audio.")
+
+        XCTAssertEqual(model.activityStatusText, "Could not play audio.")
+        withExtendedLifetime(model) {}
+    }
+
+    func testActivityStatusTextFallsBackToStatusTextWhenOverlayIsHidden() {
+        let overlayModel = ActivityOverlayModel()
+        let model = makeModel(overlayModel: overlayModel)
+
+        model.statusText = "Sentinel status"
+
+        XCTAssertEqual(model.activityStatusText, "Sentinel status")
+        withExtendedLifetime(model) {}
+    }
+
     func testReadSelectionPressedPreprocessesAndSpeaksUserRequest() async {
         let selection = FakeSelectionReader(text: "Intro\n```swift\nsecret()\n```\nEnd")
         let speech = FakeSpeechCoordinator()

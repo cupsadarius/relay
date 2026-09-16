@@ -14,6 +14,28 @@ final class AppModel {
     }
 
     var statusText = "Ready"
+    /// Menu-bar status that tracks live activity (same source as the overlay pill) and falls
+    /// back to the last transient message when idle, so it never shows a stale "Speaking…"
+    /// after speech ends. Reads `overlayModel.state`, which is `@Observable`-tracked, so this
+    /// updates the menu live even though `overlayModel` itself is `@ObservationIgnored` on
+    /// `AppModel` (that annotation only suppresses tracking of reassigning the reference, not
+    /// of reading properties through it).
+    var activityStatusText: String {
+        switch overlayModel.state {
+        case .listening:
+            "Listening…"
+        case .processing:
+            "Transcribing…"
+        case .preparingSpeech:
+            "Processing…"
+        case .speaking:
+            "Speaking…"
+        case let .error(_, _, message):
+            message
+        case .hidden:
+            statusText
+        }
+    }
     private(set) var microphonePermissionGranted: Bool
     private(set) var settings: AppSettings
     private(set) var dictationPhase: HotkeyPhase?

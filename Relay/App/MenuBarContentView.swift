@@ -7,7 +7,7 @@ struct MenuBarContentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(model.statusText)
+            Text(model.activityStatusText)
             Divider()
             Button("Speak Latest Agent Response") {
                 Task { await model.speakLatestAgentResponse() }
