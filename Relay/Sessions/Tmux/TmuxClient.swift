@@ -12,6 +12,14 @@ protocol TmuxCommandRunning: Sendable {
 
 struct TmuxClient: TmuxCommandRunning {
     let executable: String
+    let runner: ProcessRunning
+    private let timeout: TimeInterval
+
+    init(executable: String, runner: ProcessRunning = BoundedProcessRunner(), timeout: TimeInterval = 3) {
+        self.executable = executable
+        self.runner = runner
+        self.timeout = timeout
+    }
 
     func listClients(socketPath: String) async throws -> [TmuxClientListing] {
         let output = try run(["-S", socketPath, "list-clients", "-F", "#{client_name}\\t#{client_pid}"])
@@ -28,16 +36,9 @@ struct TmuxClient: TmuxCommandRunning {
     }
 
     private func run(_ arguments: [String]) throws -> String {
-        let process = Process()
-        let stdout = Pipe()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.standardOutput = stdout
-        process.standardError = Pipe()
-        try process.run()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else { throw TmuxError.commandFailed }
-        return String(decoding: stdout.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        let result = try runner.run(executable: URL(fileURLWithPath: executable), arguments: arguments, timeout: timeout, maxOutputBytes: 256 * 1024)
+        guard result.terminationStatus == 0 else { throw TmuxError.commandFailed }
+        return String(decoding: result.stdout, as: UTF8.self)
     }
 }
 

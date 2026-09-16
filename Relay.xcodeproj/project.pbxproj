@@ -69,6 +69,7 @@
 		64FEF10D16E628C7A2F35DE5 /* TmuxFocusResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AD65EC395A1803AB1DFF385 /* TmuxFocusResolverTests.swift */; };
 		65405307F3C55D13C120FF93 /* CodexInstallerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C7DEC3103AB0B5579F971AA /* CodexInstallerTests.swift */; };
 		65B13E67B1253BF28C14D10E /* IntegrationStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F62FB2475A4963FC6149879 /* IntegrationStatus.swift */; };
+		65E6BDB0A2BC4B857456A1E9 /* BoundedProcessRunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3897DB8BC3EDE939835ACEDF /* BoundedProcessRunnerTests.swift */; };
 		688747C0AE6A4CF6537808F1 /* CodexHookPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C46EAD4AC1F68BEB21F494D /* CodexHookPayload.swift */; };
 		68E0C2672FCE792533B0AF90 /* LatestAgentResponseStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F106E671773D603A06BE65C /* LatestAgentResponseStore.swift */; };
 		6C55C510C67B13D5610DF133 /* StreamingAudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED7F4126C70AC7872DBFD520 /* StreamingAudioPlayer.swift */; };
@@ -87,6 +88,7 @@
 		8364B21972FCCAC67036630C /* BackendAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1230C06958285AB1CAE2418A /* BackendAvailability.swift */; };
 		83A8BA29AC759A450A261572 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 359767A5465051721E7F2076 /* Assets.xcassets */; };
 		84EEBCE5125549F18CE06C06 /* RelayIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFD159D40C20E2EB860D1629 /* RelayIntegration.swift */; };
+		86F3A49FF09100BA7BCB82CC /* BoundedProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63B10F2696AABEA7BC2126A /* BoundedProcessRunner.swift */; };
 		874B71D6563F1754868E4872 /* IntegrationManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88315C1ADD14F6767C42B75C /* IntegrationManagerTests.swift */; };
 		8883E0AF33FA7D86B73DA6E1 /* HerdrFocusResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29B1662107A24EA83ABA5EE5 /* HerdrFocusResolverTests.swift */; };
 		8C7FB013D71A83B74950862F /* GlobalHotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2499709E52B7C2AE389E0A68 /* GlobalHotkeyManager.swift */; };
@@ -152,6 +154,7 @@
 		EB5A44B3DB43C66A7A1B5D8E /* FrontmostAppMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBBA71BFC002BDCF446FAF0D /* FrontmostAppMonitor.swift */; };
 		ED473F93C25865ED39A16D6B /* ParakeetBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29EE80E2D79C7BCF9E1806A0 /* ParakeetBackend.swift */; };
 		EF566C8F2403D690427266AC /* IntegrationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E97532C0DC60BE1D2FE106E5 /* IntegrationManager.swift */; };
+		F128E9695B4C1179C7B5FDC6 /* TmuxClientBoundsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 011596DF76B7BD1E561353DC /* TmuxClientBoundsTests.swift */; };
 		F260AE45815C199D487A5528 /* HerdrSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB5D199978DF8AA74F0E5CDF /* HerdrSocketClient.swift */; };
 		F48AD940DAE6412EC677A8BB /* IntegrationsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4F6B57B98EE3D5605E724E8 /* IntegrationsSettingsView.swift */; };
 		F9565864D90DAB867000F0A0 /* RulesSpeechPreprocessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01700458AA3E57B79695FD7 /* RulesSpeechPreprocessor.swift */; };
@@ -179,6 +182,7 @@
 
 /* Begin PBXFileReference section */
 		0007CFDD668AB6C9B6207607 /* HookEnvelope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookEnvelope.swift; sourceTree = "<group>"; };
+		011596DF76B7BD1E561353DC /* TmuxClientBoundsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxClientBoundsTests.swift; sourceTree = "<group>"; };
 		032A9782E9C2C931DFB89322 /* ActivityOverlayPanelHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverlayPanelHost.swift; sourceTree = "<group>"; };
 		035CD1C6FBA0F8F91F652E6F /* WindowFocusCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowFocusCoordinatorTests.swift; sourceTree = "<group>"; };
 		0426F6B17538598D1ECA3EB8 /* ParakeetBackendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParakeetBackendTests.swift; sourceTree = "<group>"; };
@@ -219,6 +223,7 @@
 		359767A5465051721E7F2076 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		36BC1C589CC6F88B197B1EF0 /* HotkeyDefinition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyDefinition.swift; sourceTree = "<group>"; };
 		3772B7BC9E1856FB2551A9D4 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		3897DB8BC3EDE939835ACEDF /* BoundedProcessRunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoundedProcessRunnerTests.swift; sourceTree = "<group>"; };
 		3E5FC6AD7B609779FB7B0A48 /* SynthesizedAudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SynthesizedAudioPlayer.swift; sourceTree = "<group>"; };
 		3E764C660DC8753D838587C8 /* HerdrFocusResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HerdrFocusResolver.swift; sourceTree = "<group>"; };
 		3FEA7F12EBADD824A6D473D8 /* TextInsertionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextInsertionService.swift; sourceTree = "<group>"; };
@@ -285,6 +290,7 @@
 		B1FC20A718A0939B4DDA9CB0 /* FocusResolutionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusResolutionService.swift; sourceTree = "<group>"; };
 		B2640FB004F58617990C7498 /* Relay.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Relay.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B4C055D5BF893F187719EF44 /* ClaudeCodeIntegration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCodeIntegration.swift; sourceTree = "<group>"; };
+		B63B10F2696AABEA7BC2126A /* BoundedProcessRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoundedProcessRunner.swift; sourceTree = "<group>"; };
 		BABB516AF90FA95A49A1731E /* RelayTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RelayTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0CA3D0DDDC52D84DA732C34 /* HerdrHostOwnershipCheckerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HerdrHostOwnershipCheckerTests.swift; sourceTree = "<group>"; };
 		C1950E87F2DF1360304DC63A /* FluidAudioParakeetEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FluidAudioParakeetEngineTests.swift; sourceTree = "<group>"; };
@@ -379,6 +385,7 @@
 			isa = PBXGroup;
 			children = (
 				483B44390B4757DC9D7B7505 /* AccessibilityService.swift */,
+				B63B10F2696AABEA7BC2126A /* BoundedProcessRunner.swift */,
 				1BE24F398C26E7C916733EF1 /* ClipboardService.swift */,
 				2388EB91FEE36FAF3715B0FE /* Diagnostics.swift */,
 				2499709E52B7C2AE389E0A68 /* GlobalHotkeyManager.swift */,
@@ -415,6 +422,14 @@
 				B4C055D5BF893F187719EF44 /* ClaudeCodeIntegration.swift */,
 			);
 			path = ClaudeCode;
+			sourceTree = "<group>";
+		};
+		237C5A35DC1554EE6636311B /* Tmux */ = {
+			isa = PBXGroup;
+			children = (
+				011596DF76B7BD1E561353DC /* TmuxClientBoundsTests.swift */,
+			);
+			path = Tmux;
 			sourceTree = "<group>";
 		};
 		2C8BD930FB664754C860A180 /* Tmux */ = {
@@ -467,6 +482,7 @@
 			isa = PBXGroup;
 			children = (
 				6354F61BA4CE6CE9E6F5206D /* AccessibilityServiceTests.swift */,
+				3897DB8BC3EDE939835ACEDF /* BoundedProcessRunnerTests.swift */,
 				929A7ED797B49CEE115E1DA6 /* ClipboardServiceTests.swift */,
 				D52815C78FFC96732B4BC0DE /* DiagnosticsTests.swift */,
 				8CE61334B063F0337C2E6BB7 /* GlobalHotkeyManagerTests.swift */,
@@ -586,6 +602,7 @@
 				05610B86735D45923309417C /* ProcessInspectorTests.swift */,
 				4356D69F7A9BF90E006C2575 /* RecentInteractionTrackerTests.swift */,
 				0AD65EC395A1803AB1DFF385 /* TmuxFocusResolverTests.swift */,
+				237C5A35DC1554EE6636311B /* Tmux */,
 			);
 			path = Sessions;
 			sourceTree = "<group>";
@@ -883,6 +900,7 @@
 				18A0B28B851CB76A0406F54E /* AppSettingsTests.swift in Sources */,
 				B65DB48D76D9E762F4D8DF4C /* AppleSpeechBackendTests.swift in Sources */,
 				64C783F59CA61E2FF905B254 /* AppleTTSBackendTests.swift in Sources */,
+				65E6BDB0A2BC4B857456A1E9 /* BoundedProcessRunnerTests.swift in Sources */,
 				B631E9FA3300F54A251324C1 /* ClaudeCodeInstallerTests.swift in Sources */,
 				46E222475824FE8C2FD2B071 /* ClaudeCodeIntegrationTests.swift in Sources */,
 				912B483ECC93452865AC4A29 /* ClipboardServiceTests.swift in Sources */,
@@ -925,6 +943,7 @@
 				7C370FEEA779CE901DA9C8AF /* TTSBackendCatalogTests.swift in Sources */,
 				B6A7E723B9BA8FE5CCF0BFD6 /* TTSRouterTests.swift in Sources */,
 				CA5EDFFEEA88571D939A8E86 /* TextInsertionServiceTests.swift in Sources */,
+				F128E9695B4C1179C7B5FDC6 /* TmuxClientBoundsTests.swift in Sources */,
 				64FEF10D16E628C7A2F35DE5 /* TmuxFocusResolverTests.swift in Sources */,
 				416ACED506F9EC70C96DD843 /* UnixSocketServerTests.swift in Sources */,
 				59CEB26722FB7B5250A99741 /* WindowFocusCoordinatorTests.swift in Sources */,
@@ -961,6 +980,7 @@
 				B8D654E9189C297049AFAB10 /* AppleSpeechBackend.swift in Sources */,
 				312A67F8371459CA07993365 /* AppleTTSBackend.swift in Sources */,
 				8364B21972FCCAC67036630C /* BackendAvailability.swift in Sources */,
+				86F3A49FF09100BA7BCB82CC /* BoundedProcessRunner.swift in Sources */,
 				4E2407417E2D913F79A81544 /* ClaudeCodeHookPayload.swift in Sources */,
 				BD809807A2FCB7B2ECD2A9DA /* ClaudeCodeInstaller.swift in Sources */,
 				AC049B62E4684DDDE0ABB970 /* ClaudeCodeIntegration.swift in Sources */,
