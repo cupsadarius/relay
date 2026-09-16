@@ -418,6 +418,65 @@ final class IntegrationManagerTests: XCTestCase {
 
         XCTAssertTrue(speech.requests.isEmpty)
     }
+
+    // MARK: - Diagnostics
+
+    func testAcceptedEventRecordsEventAcceptedThenOnResponseReturned() async {
+        let claudeEvent = event(provider: .claudeCode, providerSessionID: "claude-diag-1")
+        let claude = SpyIntegration(provider: .claudeCode, result: .success(claudeEvent))
+        let diagnostics = IntegrationDiagnosticsLog()
+        var continuation: AsyncStream<HookEnvelope>.Continuation!
+        let events = AsyncStream<HookEnvelope> { continuation = $0 }
+        let manager = IntegrationManager(
+            events: events,
+            integrations: [claude],
+            speechCoordinator: FakeSpeechCoordinator(),
+            diagnostics: diagnostics
+        )
+        manager.start()
+        defer { manager.stop() }
+
+        continuation.yield(envelope(provider: .claudeCode))
+
+        await waitUntil { diagnostics.snapshot().contains { $0.outcome == "onResponse-returned" } }
+
+        let entries = diagnostics.snapshot()
+        let acceptedIndex = entries.firstIndex { $0.outcome == "event-accepted" }
+        let returnedIndex = entries.firstIndex { $0.outcome == "onResponse-returned" }
+        XCTAssertNotNil(acceptedIndex)
+        XCTAssertNotNil(returnedIndex)
+        if let acceptedIndex, let returnedIndex {
+            // Newest-first snapshot: onResponse-returned was recorded after event-accepted, so it
+            // appears at a lower index.
+            XCTAssertLessThan(returnedIndex, acceptedIndex)
+        }
+    }
+
+    func testAdapterRejectedPayloadRecordsDroppedDiagnosticsEntry() async {
+        let claude = SpyIntegration(provider: .claudeCode, result: .failure(TestError.malformed))
+        let diagnostics = IntegrationDiagnosticsLog()
+        var continuation: AsyncStream<HookEnvelope>.Continuation!
+        let events = AsyncStream<HookEnvelope> { continuation = $0 }
+        let manager = IntegrationManager(
+            events: events,
+            integrations: [claude],
+            speechCoordinator: FakeSpeechCoordinator(),
+            diagnostics: diagnostics
+        )
+        manager.start()
+        defer { manager.stop() }
+
+        continuation.yield(envelope(provider: .claudeCode, rawPayload: "not json"))
+
+        await waitUntil(timeout: 0.5) {
+            diagnostics.snapshot().contains { $0.outcome == "dropped" && $0.detail.contains("adapter-rejected") }
+        }
+
+        let dropped = diagnostics.snapshot().first { $0.outcome == "dropped" }
+        XCTAssertNotNil(dropped)
+        XCTAssertEqual(dropped?.stage, "manager")
+        XCTAssertTrue(dropped?.detail.contains("adapter-rejected") ?? false)
+    }
 }
 
 // MARK: - Test doubles

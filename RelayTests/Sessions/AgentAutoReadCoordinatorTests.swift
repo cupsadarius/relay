@@ -34,6 +34,65 @@ final class AgentAutoReadCoordinatorTests: XCTestCase {
         await coordinator.handle(makeAutoReadEvent(text: "done"))
         XCTAssertTrue(speech.requests.isEmpty)
     }
+
+    // MARK: - Diagnostics
+
+    func testFocusedHighConfidenceRecordsSpokeDiagnosticsEntry() async throws {
+        let speech = RecordingSpeechSink()
+        let diagnostics = IntegrationDiagnosticsLog()
+        let coordinator = makeCoordinator(
+            focus: .focused(resolverID: "tmux", reason: "exact pane"),
+            speech: speech,
+            autoRead: true,
+            diagnostics: diagnostics
+        )
+        await coordinator.handle(makeAutoReadEvent(text: "**Done.**"))
+
+        let entries = diagnostics.snapshot()
+        XCTAssertTrue(entries.contains { $0.stage == "coordinator" && $0.outcome == "spoke" })
+        XCTAssertTrue(entries.contains { $0.stage == "coordinator" && $0.outcome == "session-upserted" })
+    }
+
+    func testAutoReadDisabledRecordsSilentDiagnosticsEntry() async {
+        let speech = RecordingSpeechSink()
+        let diagnostics = IntegrationDiagnosticsLog()
+        let coordinator = makeCoordinator(
+            focus: .focused(resolverID: "tmux", reason: "exact pane"),
+            speech: speech,
+            autoRead: false,
+            diagnostics: diagnostics
+        )
+        await coordinator.handle(makeAutoReadEvent(text: "done"))
+
+        let silent = diagnostics.snapshot().first { $0.stage == "coordinator" && $0.outcome == "silent" }
+        XCTAssertNotNil(silent)
+        XCTAssertEqual(silent?.detail, "auto-read-disabled")
+    }
+
+    func testUnknownFocusRecordsFocusDecisionThenSilentDiagnosticsEntries() async {
+        let speech = RecordingSpeechSink()
+        let diagnostics = IntegrationDiagnosticsLog()
+        let coordinator = makeCoordinator(
+            focus: .unknown(resolverID: "generic", reason: "ambiguous"),
+            speech: speech,
+            autoRead: true,
+            diagnostics: diagnostics
+        )
+        await coordinator.handle(makeAutoReadEvent(text: "done"))
+
+        let entries = diagnostics.snapshot()
+        let focusDecisionIndex = entries.firstIndex { $0.outcome == "focus-decision" }
+        let silentIndex = entries.firstIndex { $0.outcome == "silent" }
+        XCTAssertNotNil(focusDecisionIndex)
+        XCTAssertNotNil(silentIndex)
+        if let focusDecisionIndex, let silentIndex {
+            // Newest-first snapshot: "silent" was recorded after "focus-decision", so it appears
+            // at a lower index.
+            XCTAssertLessThan(silentIndex, focusDecisionIndex)
+        }
+        XCTAssertTrue(entries[focusDecisionIndex!].detail.contains("state=unknown"))
+        XCTAssertTrue(entries[focusDecisionIndex!].detail.contains("confidence=low"))
+    }
 }
 
 private struct StubSessionFocusResolver: SessionFocusResolving {
@@ -65,7 +124,8 @@ private struct AutoReadHarness {
 private func makeCoordinatorHarness(
     focus: FocusDecision,
     speech: RecordingSpeechSink,
-    autoRead: Bool
+    autoRead: Bool,
+    diagnostics: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog()
 ) -> AutoReadHarness {
     let registry = AgentSessionRegistry()
     let coordinator = AgentAutoReadCoordinator(
@@ -74,7 +134,8 @@ private func makeCoordinatorHarness(
         focus: StubSessionFocusResolver(decision: focus),
         preprocess: { $0.replacingOccurrences(of: "**", with: "") },
         speech: speech,
-        autoReadEnabled: { autoRead }
+        autoReadEnabled: { autoRead },
+        diagnostics: diagnostics
     )
     return .init(coordinator: coordinator, registry: registry)
 }
@@ -83,9 +144,10 @@ private func makeCoordinatorHarness(
 private func makeCoordinator(
     focus: FocusDecision,
     speech: RecordingSpeechSink,
-    autoRead: Bool
+    autoRead: Bool,
+    diagnostics: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog()
 ) -> AgentAutoReadCoordinator {
-    makeCoordinatorHarness(focus: focus, speech: speech, autoRead: autoRead).coordinator
+    makeCoordinatorHarness(focus: focus, speech: speech, autoRead: autoRead, diagnostics: diagnostics).coordinator
 }
 
 private func makeAutoReadEvent(text: String) -> AgentResponseEvent {

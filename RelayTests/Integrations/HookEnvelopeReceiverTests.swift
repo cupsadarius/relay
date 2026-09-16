@@ -131,4 +131,68 @@ final class HookEnvelopeReceiverTests: XCTestCase {
         receiver.stop()
         await fulfillment(of: [finished], timeout: 1)
     }
+
+    // MARK: - Diagnostics
+
+    func testMalformedLineRecordsDroppedDiagnosticsEntryWithByteCount() async throws {
+        let path = temporarySocketPath()
+        let diagnostics = IntegrationDiagnosticsLog()
+        let receiver = HookEnvelopeReceiver(diagnostics: diagnostics)
+        try receiver.start(path: path)
+        defer { receiver.stop() }
+
+        let receivedValid = expectation(description: "received the valid envelope")
+        let consumer = Task {
+            for await _ in receiver.events {
+                receivedValid.fulfill()
+                break
+            }
+        }
+        defer { consumer.cancel() }
+
+        let malformedLine = "not valid json at all\n"
+        try await UnixSocketTestClient.send(malformedLine, to: path)
+        try await UnixSocketTestClient.send(validLine, to: path)
+        await fulfillment(of: [receivedValid], timeout: 1)
+
+        let entries = diagnostics.snapshot()
+        let dropped = entries.first { $0.outcome == "dropped" }
+        let expectedByteCount = malformedLine.trimmingCharacters(in: .newlines).utf8.count
+        XCTAssertNotNil(dropped)
+        XCTAssertEqual(dropped?.stage, "receiver")
+        XCTAssertTrue(dropped?.detail.contains("\(expectedByteCount)") ?? false)
+        XCTAssertTrue(dropped?.detail.contains("malformed-json") ?? false)
+    }
+
+    func testWellFormedEnvelopeRecordsLineReceivedThenEnvelopeDecoded() async throws {
+        let path = temporarySocketPath()
+        let diagnostics = IntegrationDiagnosticsLog()
+        let receiver = HookEnvelopeReceiver(diagnostics: diagnostics)
+        try receiver.start(path: path)
+        defer { receiver.stop() }
+
+        let received = expectation(description: "received envelope")
+        let consumer = Task {
+            for await _ in receiver.events {
+                received.fulfill()
+                break
+            }
+        }
+        defer { consumer.cancel() }
+
+        try await UnixSocketTestClient.send(validLine, to: path)
+        await fulfillment(of: [received], timeout: 1)
+
+        // newest-first snapshot: envelope-decoded should appear before (i.e. at a lower index
+        // than) line-received, since it was recorded after it.
+        let entries = diagnostics.snapshot()
+        let decodedIndex = entries.firstIndex { $0.outcome == "envelope-decoded" }
+        let receivedIndex = entries.firstIndex { $0.outcome == "line-received" }
+        XCTAssertNotNil(decodedIndex)
+        XCTAssertNotNil(receivedIndex)
+        if let decodedIndex, let receivedIndex {
+            XCTAssertLessThan(decodedIndex, receivedIndex)
+        }
+        XCTAssertTrue(entries.first { $0.outcome == "envelope-decoded" }?.detail.contains("provider=claude-code") ?? false)
+    }
 }

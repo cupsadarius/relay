@@ -33,6 +33,7 @@ final class IntegrationManager {
     /// semantics without this manager knowing anything about focus or sessions itself.
     @ObservationIgnored private let onResponse: @Sendable (AgentResponseEvent) async -> Void
     @ObservationIgnored nonisolated private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "integrations")
+    @ObservationIgnored nonisolated private let diagnostics: IntegrationDiagnosticsLog
     @ObservationIgnored private var consumeTask: Task<Void, Never>?
 
     init(
@@ -42,6 +43,7 @@ final class IntegrationManager {
         preprocessor: RulesSpeechPreprocessor = RulesSpeechPreprocessor(),
         speechCoordinator: any SpeechCoordinating,
         initialStatus: [AgentProvider: IntegrationStatus] = [:],
+        diagnostics: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog(),
         onResponse: @escaping @Sendable (AgentResponseEvent) async -> Void = { _ in }
     ) {
         self.events = events
@@ -50,6 +52,7 @@ final class IntegrationManager {
         self.preprocessor = preprocessor
         self.speechCoordinator = speechCoordinator
         self.status = initialStatus
+        self.diagnostics = diagnostics
         self.onResponse = onResponse
     }
 
@@ -76,6 +79,11 @@ final class IntegrationManager {
         for await envelope in events {
             guard let integration = integrations[envelope.provider] else {
                 logger.log("hook envelope dropped: no integration registered for this provider")
+                diagnostics.append(
+                    stage: "manager",
+                    outcome: "dropped",
+                    detail: "no-integration provider=\(envelope.provider.rawValue)"
+                )
                 continue
             }
 
@@ -84,8 +92,15 @@ final class IntegrationManager {
                 event = try integration.decode(envelope)
             } catch {
                 logger.log("hook envelope dropped: adapter rejected payload")
+                diagnostics.append(
+                    stage: "manager",
+                    outcome: "dropped",
+                    detail: "adapter-rejected provider=\(envelope.provider.rawValue)"
+                )
                 continue
             }
+
+            diagnostics.append(stage: "manager", outcome: "event-accepted", detail: "provider=\(envelope.provider.rawValue)")
 
             await store.set(event)
             await recordActive(event)
@@ -99,6 +114,7 @@ final class IntegrationManager {
         status[event.provider] = .active(lastEventAt: event.capturedAt)
 
         await onResponse(event)
+        diagnostics.append(stage: "manager", outcome: "onResponse-returned", detail: "provider=\(event.provider.rawValue)")
     }
 
     /// Clears any runtime status recorded for `provider`, removing its entry from `status`

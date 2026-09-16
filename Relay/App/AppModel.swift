@@ -72,6 +72,13 @@ final class AppModel {
     /// production `convenience init()`. Exposed read-only for compact diagnostics
     /// (`agentSessionSummaries()`) — never for response text or live focus resolution.
     @ObservationIgnored private let sessionRegistry: AgentSessionRegistry
+    /// Shared in-memory diagnostics log for the integration pipeline (socket receive -> envelope
+    /// decode -> adapter decode -> registry upsert -> focus gate), independent of `os_log`. The
+    /// SAME instance is passed into `hookEnvelopeReceiver`, `integrationManager`, and the
+    /// production `AgentAutoReadCoordinator` so their entries interleave in one timeline. Exposed
+    /// read-only via `integrationDiagnosticsEntries()`/`clearIntegrationDiagnostics()` for the
+    /// Diagnostics window.
+    @ObservationIgnored private let integrationDiagnosticsLog: IntegrationDiagnosticsLog
 
     convenience init() {
         let settingsStore = SettingsStore()
@@ -119,6 +126,10 @@ final class AppModel {
         // (conservative process-ancestry fallback). tmux support is entirely optional: when no
         // tmux executable is found, `TmuxFocusResolver` is simply never added to the list.
         let sessionRegistry = AgentSessionRegistry()
+        // One shared, in-memory diagnostics log for the integration pipeline, independent of
+        // `os_log`. Passed into the receiver, manager, and auto-read coordinator below so their
+        // entries interleave in a single timeline, readable from the Diagnostics window.
+        let integrationDiagnosticsLog = IntegrationDiagnosticsLog()
         let processInspector = ProcessInspector()
         let frontmostApps = FrontmostAppMonitor()
         let recentInteractionTracker = RecentInteractionTracker()
@@ -156,7 +167,8 @@ final class AppModel {
             // with no synchronization. A `@MainActor` closure converts implicitly to the
             // coordinator's plain `@Sendable () async -> Bool` parameter type; the hop happens at
             // the call site, not by widening that parameter.
-            autoReadEnabled: { @MainActor in state.value.autoReadEnabled }
+            autoReadEnabled: { @MainActor in state.value.autoReadEnabled },
+            diagnostics: integrationDiagnosticsLog
         )
 
         let dictation = DictationCoordinator(
@@ -177,11 +189,12 @@ final class AppModel {
             frontmostApps: frontmostApps,
             recentInteractions: recentInteractionTracker
         )
-        let hookEnvelopeReceiver = HookEnvelopeReceiver()
+        let hookEnvelopeReceiver = HookEnvelopeReceiver(diagnostics: integrationDiagnosticsLog)
         let integrationManager = IntegrationManager(
             events: hookEnvelopeReceiver.events,
             integrations: [ClaudeCodeIntegration(), CodexIntegration()],
             speechCoordinator: coordinator,
+            diagnostics: integrationDiagnosticsLog,
             onResponse: { event in await autoReadCoordinator.handle(event) }
         )
         let actionDispatcher: any ActivityOverlayControlling = ActivityOverlayActionDispatcher(dictation: dictation, speech: coordinator)
@@ -226,7 +239,8 @@ final class AppModel {
             integrationManager: integrationManager,
             claudeCodeInstaller: ClaudeCodeInstaller(),
             codexInstaller: CodexInstaller(),
-            sessionRegistry: sessionRegistry
+            sessionRegistry: sessionRegistry,
+            integrationDiagnosticsLog: integrationDiagnosticsLog
         )
         dictation.setStatusHandler { [weak self] in self?.statusText = $0 }
     }
@@ -252,7 +266,8 @@ final class AppModel {
         integrationManager: IntegrationManager? = nil,
         claudeCodeInstaller: ClaudeCodeInstaller = ClaudeCodeInstaller(),
         codexInstaller: CodexInstaller = CodexInstaller(),
-        sessionRegistry: AgentSessionRegistry = AgentSessionRegistry()
+        sessionRegistry: AgentSessionRegistry = AgentSessionRegistry(),
+        integrationDiagnosticsLog: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog()
     ) {
         let settings = settingsStore.load()
         self.settingsStore = settingsStore
@@ -275,11 +290,13 @@ final class AppModel {
         self.integrationManager = integrationManager ?? IntegrationManager(
             events: hookEnvelopeReceiver.events,
             integrations: [ClaudeCodeIntegration(), CodexIntegration()],
-            speechCoordinator: speechCoordinator
+            speechCoordinator: speechCoordinator,
+            diagnostics: integrationDiagnosticsLog
         )
         self.claudeCodeInstaller = claudeCodeInstaller
         self.codexInstaller = codexInstaller
         self.sessionRegistry = sessionRegistry
+        self.integrationDiagnosticsLog = integrationDiagnosticsLog
         activationObserver = nil
         dictationTask = nil
         permissionSnapshot = permissionService.snapshot()
@@ -317,7 +334,8 @@ final class AppModel {
         integrationManager: IntegrationManager,
         claudeCodeInstaller: ClaudeCodeInstaller,
         codexInstaller: CodexInstaller,
-        sessionRegistry: AgentSessionRegistry
+        sessionRegistry: AgentSessionRegistry,
+        integrationDiagnosticsLog: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog()
     ) {
         self.settingsStore = settingsStore
         self.selectionReader = selectionReader
@@ -340,6 +358,7 @@ final class AppModel {
         self.claudeCodeInstaller = claudeCodeInstaller
         self.codexInstaller = codexInstaller
         self.sessionRegistry = sessionRegistry
+        self.integrationDiagnosticsLog = integrationDiagnosticsLog
         activationObserver = nil
         dictationTask = nil
         permissionSnapshot = permissionService.snapshot()
@@ -470,6 +489,18 @@ final class AppModel {
     }
 
     func clearDiagnostics() { diagnostics.clear() }
+
+    /// Snapshot of the integration-pipeline diagnostics log, newest first. Purely structural
+    /// (stage/outcome/detail) — never response text, cwd, paths, environment, raw error text, or
+    /// `providerSessionID`. Purely for diagnostics display.
+    func integrationDiagnosticsEntries() -> [IntegrationDiagnosticsEntry] {
+        integrationDiagnosticsLog.snapshot()
+    }
+
+    /// Removes all recorded integration-pipeline diagnostics entries.
+    func clearIntegrationDiagnostics() {
+        integrationDiagnosticsLog.clear()
+    }
     var diagnosticsCopyText: String { diagnostics.copyText }
 
     private func observeAppActivation() {

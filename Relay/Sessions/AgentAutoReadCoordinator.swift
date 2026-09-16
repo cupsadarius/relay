@@ -47,6 +47,7 @@ actor AgentAutoReadCoordinator {
     /// specified — only the storage type here is widened to require the marker conformance too.
     private let speech: any SpeechSubmitting & Sendable
     private let autoReadEnabled: @Sendable () async -> Bool
+    private let diagnostics: IntegrationDiagnosticsLog
 
     init(
         registry: AgentSessionRegistry,
@@ -54,7 +55,8 @@ actor AgentAutoReadCoordinator {
         focus: any SessionFocusResolving,
         preprocess: @escaping @Sendable (String) -> String,
         speech: any SpeechSubmitting & Sendable,
-        autoReadEnabled: @escaping @Sendable () async -> Bool
+        autoReadEnabled: @escaping @Sendable () async -> Bool,
+        diagnostics: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog()
     ) {
         self.registry = registry
         self.processContext = processContext
@@ -62,6 +64,7 @@ actor AgentAutoReadCoordinator {
         self.preprocess = preprocess
         self.speech = speech
         self.autoReadEnabled = autoReadEnabled
+        self.diagnostics = diagnostics
     }
 
     func handle(_ event: AgentResponseEvent) async {
@@ -71,11 +74,24 @@ actor AgentAutoReadCoordinator {
             processAncestry: captured.ancestry,
             tty: captured.tty
         )
+        diagnostics.append(stage: "coordinator", outcome: "session-upserted", detail: "provider=\(event.provider.rawValue)")
 
-        guard await autoReadEnabled() else { return }
+        guard await autoReadEnabled() else {
+            diagnostics.append(stage: "coordinator", outcome: "silent", detail: "auto-read-disabled")
+            return
+        }
         let decision = await focus.resolve(session: session)
-        guard decision.state == .focused, decision.confidence == .high else { return }
+        diagnostics.append(
+            stage: "coordinator",
+            outcome: "focus-decision",
+            detail: "state=\(decision.state.rawValue) confidence=\(Self.confidenceLabel(decision.confidence))"
+        )
+        guard decision.state == .focused, decision.confidence == .high else {
+            diagnostics.append(stage: "coordinator", outcome: "silent", detail: "state/confidence not focused+high")
+            return
+        }
 
+        diagnostics.append(stage: "coordinator", outcome: "spoke", detail: "provider=\(event.provider.rawValue)")
         let source: SpeechSource = event.provider == .claudeCode ? .claudeCode : .codex
         let request = SpeechRequest(
             text: preprocess(event.text),
@@ -84,5 +100,15 @@ actor AgentAutoReadCoordinator {
             sessionID: "\(event.provider.rawValue):\(event.providerSessionID)"
         )
         try? await speech.speak(request)
+    }
+
+    /// Structural label recorded in `IntegrationDiagnosticsLog` entries. Never any raw score —
+    /// only this fixed, privacy-safe case name.
+    private static func confidenceLabel(_ confidence: FocusConfidence) -> String {
+        switch confidence {
+        case .low: "low"
+        case .medium: "medium"
+        case .high: "high"
+        }
     }
 }

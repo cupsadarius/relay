@@ -7,6 +7,16 @@ enum HookEnvelopeDropReason: Sendable {
     case invalidUTF8
     case malformedJSON
     case unsupportedSchemaVersion
+
+    /// Structural label recorded in `IntegrationDiagnosticsLog` entries. Never the underlying
+    /// parser error text — only this fixed, privacy-safe case name.
+    var diagnosticsLabel: String {
+        switch self {
+        case .invalidUTF8: "invalid-utf8"
+        case .malformedJSON: "malformed-json"
+        case .unsupportedSchemaVersion: "unsupported-schema-version"
+        }
+    }
 }
 
 /// Receives newline-delimited `HookEnvelope` JSON from a `UnixSocketServer`,
@@ -28,9 +38,14 @@ final class HookEnvelopeReceiver: @unchecked Sendable {
     private let decoder = JSONDecoder()
     private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "integrations")
     private let continuation: AsyncStream<HookEnvelope>.Continuation
+    private let diagnostics: IntegrationDiagnosticsLog
 
-    init(server: UnixSocketServer = UnixSocketServer()) {
+    init(
+        server: UnixSocketServer = UnixSocketServer(),
+        diagnostics: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog()
+    ) {
         self.server = server
+        self.diagnostics = diagnostics
 
         var capturedContinuation: AsyncStream<HookEnvelope>.Continuation?
         events = AsyncStream { continuation in
@@ -55,8 +70,11 @@ final class HookEnvelopeReceiver: @unchecked Sendable {
     }
 
     private func handle(line: String) {
+        let byteCount = line.utf8.count
+        diagnostics.append(stage: "receiver", outcome: "line-received", detail: "\(byteCount) bytes")
+
         guard let data = line.data(using: .utf8) else {
-            drop(.invalidUTF8, byteCount: line.utf8.count)
+            drop(.invalidUTF8, byteCount: byteCount)
             return
         }
 
@@ -73,6 +91,7 @@ final class HookEnvelopeReceiver: @unchecked Sendable {
             return
         }
 
+        diagnostics.append(stage: "receiver", outcome: "envelope-decoded", detail: "provider=\(envelope.provider.rawValue)")
         continuation.yield(envelope)
     }
 
@@ -85,5 +104,10 @@ final class HookEnvelopeReceiver: @unchecked Sendable {
         case .unsupportedSchemaVersion:
             logger.log("hook line dropped: unsupported schema version (\(byteCount, privacy: .public) bytes)")
         }
+        diagnostics.append(
+            stage: "receiver",
+            outcome: "dropped",
+            detail: "\(reason.diagnosticsLabel) (\(byteCount) bytes)"
+        )
     }
 }
