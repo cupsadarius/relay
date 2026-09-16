@@ -75,6 +75,26 @@ final class ActivityOverlayWindowControllerTests: XCTestCase {
         XCTAssertEqual(grownMidX, visibleFrame.midX, accuracy: 0.01)
     }
 
+    func testFirstPlacementIsNotAnimatedButLaterResizesAre() {
+        let host = FakeOverlayPanelHost()
+        let presenter = makeController(model: ActivityOverlayModel(), host: host, screens: FakeOverlayScreens())
+        let id = UUID()
+
+        presenter.update(
+            state: .listening(sessionID: id, startedAt: .now, level: 0, interimText: ""),
+            style: .interactive
+        )
+        let longText = String(repeating: "word ", count: 200)
+        presenter.update(
+            state: .listening(sessionID: id, startedAt: .now, level: 0, interimText: longText),
+            style: .interactive
+        )
+
+        XCTAssertEqual(host.frames.count, 2)
+        XCTAssertFalse(host.frames[0].animated)
+        XCTAssertTrue(host.frames[1].animated)
+    }
+
     func testOffAndHiddenNeverCreatePanel() {
         let host = FakeOverlayPanelHost()
         let presenter = makeController(model: ActivityOverlayModel(), host: host, screens: FakeOverlayScreens())
@@ -383,7 +403,7 @@ extension ActivityOverlayScreen {
 private final class FakeOverlayPanelHost: ActivityOverlayPanelHosting {
     private(set) var createCount = 0
     private(set) var setContentCount = 0
-    private(set) var frames: [(origin: CGPoint, size: CGSize)] = []
+    private(set) var frames: [(origin: CGPoint, size: CGSize, animated: Bool)] = []
     private(set) var ignoresMouseEventsValues: [Bool] = []
     private(set) var orderFrontCount = 0
     private(set) var orderOutCount = 0
@@ -403,8 +423,8 @@ private final class FakeOverlayPanelHost: ActivityOverlayPanelHosting {
         setContentCount += 1
     }
 
-    func setFrame(origin: CGPoint, size: CGSize) {
-        frames.append((origin, size))
+    func setFrame(origin: CGPoint, size: CGSize, animated: Bool) {
+        frames.append((origin, size, animated))
     }
 
     func setIgnoresMouseEvents(_ ignores: Bool) {

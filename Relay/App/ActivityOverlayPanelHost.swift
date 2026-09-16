@@ -53,6 +53,7 @@ private enum ActivityOverlayHostError: Error {
 /// Production `NSPanel` host for the activity capsule.
 @MainActor
 final class ActivityOverlayPanelHost: ActivityOverlayPanelHosting {
+    private static let resizeAnimationDuration: TimeInterval = 0.18
     private var panel: NonActivatingOverlayPanel?
 
     func createIfNeeded() throws {
@@ -89,8 +90,22 @@ final class ActivityOverlayPanelHost: ActivityOverlayPanelHosting {
         panel.contentView = hostingView
     }
 
-    func setFrame(origin: CGPoint, size: CGSize) {
-        panel?.setFrame(CGRect(origin: origin, size: size), display: false)
+    /// The very first placement of a session's panel calls this with `animated: false` (there is
+    /// no meaningful prior frame to animate from); every later resize during that same session -
+    /// e.g. the pill growing/shrinking as interim text arrives - animates smoothly instead of
+    /// snapping.
+    func setFrame(origin: CGPoint, size: CGSize, animated: Bool) {
+        guard let panel else { return }
+        let frame = CGRect(origin: origin, size: size)
+        guard animated else {
+            panel.setFrame(frame, display: false)
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.resizeAnimationDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrame(frame, display: true)
+        }
     }
 
     func setIgnoresMouseEvents(_ ignores: Bool) {

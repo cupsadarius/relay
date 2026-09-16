@@ -26,6 +26,7 @@ struct ActivityOverlayView: View {
             }
         }
         .frame(width: presentation.size.width, height: presentation.size.height)
+        .animation(.easeInOut(duration: 0.18), value: presentation.size)
         .background {
             RoundedRectangle(cornerRadius: presentation.cornerRadius, style: .continuous)
                 .fill(.ultraThinMaterial)
@@ -109,9 +110,25 @@ private struct InterimTextView: View {
     let text: String
     let visibleLineCount: Int
     let needsScroll: Bool
+    /// The stable-prefix/changed-tail split against the previous render of `text`, recomputed by
+    /// `onChange` before `text` itself updates so the diff always compares against what was
+    /// actually on screen a moment ago (see `InterimTextDiff`).
+    @State private var diff = InterimTextDiff.Result(stablePrefix: "", changedTail: "")
     private static let bottomAnchorID = "interim-text-bottom"
+    private static let scrollAnimation = Animation.easeOut(duration: 0.2)
 
     var body: some View {
+        content
+            .onAppear { diff = InterimTextDiff.diff(previous: "", current: text) }
+            .onChange(of: text) { oldValue, newValue in
+                withAnimation(.easeInOut(duration: 0.12)) {
+                    diff = InterimTextDiff.diff(previous: oldValue, current: newValue)
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         if needsScroll {
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
@@ -119,7 +136,9 @@ private struct InterimTextView: View {
                 }
                 .frame(height: CGFloat(visibleLineCount) * InterimLayout.lineHeight, alignment: .bottom)
                 .onChange(of: text) {
-                    proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                    withAnimation(Self.scrollAnimation) {
+                        proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                    }
                 }
                 .onAppear {
                     proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
@@ -137,12 +156,18 @@ private struct InterimTextView: View {
         }
     }
 
+    /// Renders the stable prefix and changed tail as one concatenated `Text` so wrapping still
+    /// flows as a single paragraph. Since `diff.stablePrefix` only changes when text is actually
+    /// revised (not every tick), SwiftUI's view diffing leaves that run alone across most
+    /// updates; `.contentTransition(.opacity)` gives the tail a subtle crossfade rather than a
+    /// hard cut when it does change, without ever changing this view's own identity.
     private var textLabel: some View {
-        Text(text)
+        (Text(diff.stablePrefix) + Text(diff.changedTail))
             .font(.system(size: 10))
             .foregroundStyle(OverlayPalette.subtitleText)
             .multilineTextAlignment(.leading)
             .fixedSize(horizontal: false, vertical: true)
+            .contentTransition(.opacity)
     }
 }
 
