@@ -38,4 +38,8 @@ jobs:
         run: xcodegen generate
 
       - name: Build & Test
-        run: set -o pipefail && xcodebuild test -scheme Relay -destination 'platform=macOS' | tail -80
+        # CODE_SIGNING_ALLOWED=NO: the app target uses Manual signing with a
+        # local-only identity ("Relay Local Development") that CI runners do
+        # not have. Unit tests run unsigned, so disable signing for the CI
+        # build rather than provisioning a certificate.
+        run: set -o pipefail && xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO | tail -80
