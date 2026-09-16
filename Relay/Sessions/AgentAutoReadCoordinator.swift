@@ -84,7 +84,7 @@ actor AgentAutoReadCoordinator {
         diagnostics.append(
             stage: "coordinator",
             outcome: "focus-decision",
-            detail: "state=\(decision.state.rawValue) confidence=\(Self.confidenceLabel(decision.confidence))"
+            detail: "state=\(decision.state.rawValue) confidence=\(Self.confidenceLabel(decision.confidence)) resolver=\(decision.resolverID) reason=\(decision.reason)"
         )
         guard decision.state == .focused, decision.confidence == .high else {
             diagnostics.append(stage: "coordinator", outcome: "silent", detail: "state/confidence not focused+high")

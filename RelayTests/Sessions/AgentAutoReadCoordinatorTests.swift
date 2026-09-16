@@ -92,6 +92,27 @@ final class AgentAutoReadCoordinatorTests: XCTestCase {
         }
         XCTAssertTrue(entries[focusDecisionIndex!].detail.contains("state=unknown"))
         XCTAssertTrue(entries[focusDecisionIndex!].detail.contains("confidence=low"))
+        XCTAssertTrue(entries[focusDecisionIndex!].detail.contains("resolver=generic"))
+        XCTAssertTrue(entries[focusDecisionIndex!].detail.contains("reason=ambiguous"))
+    }
+
+    func testFocusDecisionDiagnosticsEntryIncludesResolverAndReason() async throws {
+        let speech = RecordingSpeechSink()
+        let diagnostics = IntegrationDiagnosticsLog()
+        let coordinator = makeCoordinator(
+            focus: .notFocused(resolverID: "tmux", reason: "other pane"),
+            speech: speech,
+            autoRead: true,
+            diagnostics: diagnostics
+        )
+        await coordinator.handle(makeAutoReadEvent(text: "done"))
+
+        let entries = diagnostics.snapshot()
+        let focusDecision = entries.first { $0.outcome == "focus-decision" }
+        XCTAssertEqual(
+            focusDecision?.detail,
+            "state=notFocused confidence=high resolver=tmux reason=other pane"
+        )
     }
 }
 
