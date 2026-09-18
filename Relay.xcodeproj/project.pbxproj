@@ -76,6 +76,7 @@
 		64FEF10D16E628C7A2F35DE5 /* TmuxFocusResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AD65EC395A1803AB1DFF385 /* TmuxFocusResolverTests.swift */; };
 		65405307F3C55D13C120FF93 /* CodexInstallerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C7DEC3103AB0B5579F971AA /* CodexInstallerTests.swift */; };
 		65B13E67B1253BF28C14D10E /* IntegrationStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F62FB2475A4963FC6149879 /* IntegrationStatus.swift */; };
+		65E043351D7771289EF3323C /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = C63725AD43C61DF036E20CDB /* WhisperKit */; };
 		65E6BDB0A2BC4B857456A1E9 /* BoundedProcessRunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3897DB8BC3EDE939835ACEDF /* BoundedProcessRunnerTests.swift */; };
 		6659D1ED80FC3BC392C10303 /* HookTransportClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 548BBA4EF43DAABAE6DEA7E0 /* HookTransportClientTests.swift */; };
 		688747C0AE6A4CF6537808F1 /* CodexHookPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C46EAD4AC1F68BEB21F494D /* CodexHookPayload.swift */; };
@@ -368,6 +369,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4900F6EF78F8F5B2F3228ECA /* FluidAudio in Frameworks */,
+				65E043351D7771289EF3323C /* WhisperKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -806,6 +808,7 @@
 			name = Relay;
 			packageProductDependencies = (
 				323B0AC599ED79F41B90D793 /* FluidAudio */,
+				C63725AD43C61DF036E20CDB /* WhisperKit */,
 			);
 			productName = Relay;
 			productReference = B2640FB004F58617990C7498 /* Relay.app */;
@@ -871,6 +874,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				C16E3FF1C5261C4436908549 /* XCRemoteSwiftPackageReference "FluidAudio" */,
+				21B3701DC6F00574D79A8E16 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8108792C7BDAA099F962E116 /* Products */;
@@ -1396,6 +1400,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		21B3701DC6F00574D79A8E16 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/argmaxinc/argmax-oss-swift.git";
+			requirement = {
+				kind = exactVersion;
+				version = 1.1.0;
+			};
+		};
 		C16E3FF1C5261C4436908549 /* XCRemoteSwiftPackageReference "FluidAudio" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/FluidInference/FluidAudio.git";
@@ -1411,6 +1423,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C16E3FF1C5261C4436908549 /* XCRemoteSwiftPackageReference "FluidAudio" */;
 			productName = FluidAudio;
+		};
+		C63725AD43C61DF036E20CDB /* WhisperKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 21B3701DC6F00574D79A8E16 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */;
+			productName = WhisperKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
