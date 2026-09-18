@@ -13,6 +13,7 @@
 		0B604089F852B83304D81658 /* TTSBackendCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = C946F6D8E4671F893A836DF2 /* TTSBackendCatalog.swift */; };
 		0C3C74A43B72D383164C555C /* KokoroTTSBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 203E8DFFD8E671A374DB34E3 /* KokoroTTSBackendTests.swift */; };
 		12D93A16EC4BC9B4719345D7 /* GeneralSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBC3BAADB745BCF1A34311A3 /* GeneralSettingsView.swift */; };
+		130162138A710F890CD8A68F /* WhisperModelStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0D2DA9DBBF5ACF7D73C7CEB /* WhisperModelStoreTests.swift */; };
 		131B33B0A7200D30823A1201 /* SpeechModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA7F679F877AB1E080B262A1 /* SpeechModels.swift */; };
 		136ABF6DC61104C6277B7E88 /* HelperInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77908399E4D478E6A9287D22 /* HelperInstaller.swift */; };
 		18A0B28B851CB76A0406F54E /* AppSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED330EE6049AE116AFB2F072 /* AppSettingsTests.swift */; };
@@ -121,6 +122,7 @@
 		A81AECAA6FC7AB0F87F442DE /* SynthesizedAudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E5FC6AD7B609779FB7B0A48 /* SynthesizedAudioPlayer.swift */; };
 		AC049B62E4684DDDE0ABB970 /* ClaudeCodeIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C055D5BF893F187719EF44 /* ClaudeCodeIntegration.swift */; };
 		AC21C5CAF0A02A9029C1127C /* UnixSocketServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91ED1D7A6F95F0D69DB81AEF /* UnixSocketServer.swift */; };
+		ACDE15917036721CB1E97F72 /* WhisperModelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CBE40EFE5F3963B9976AA13 /* WhisperModelStore.swift */; };
 		AF4EAB5EC47262D70DE776AC /* SettingsViewsSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE11899BF95D51FEF77A4A4C /* SettingsViewsSmokeTests.swift */; };
 		B2E2ACBD73D895AA81FBD1B4 /* AppModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5BF4958844B2771537AF08D /* AppModelTests.swift */; };
 		B5059A51D144C468B1843122 /* RelayApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75C54FA6D0E67AA81510F66A /* RelayApp.swift */; };
@@ -253,6 +255,7 @@
 		483B44390B4757DC9D7B7505 /* AccessibilityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityService.swift; sourceTree = "<group>"; };
 		49DEB5422690339D2759CC63 /* AppleSpeechBackendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleSpeechBackendTests.swift; sourceTree = "<group>"; };
 		4C30617862641BA93DED04F2 /* TmuxExecutableLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxExecutableLocator.swift; sourceTree = "<group>"; };
+		4CBE40EFE5F3963B9976AA13 /* WhisperModelStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperModelStore.swift; sourceTree = "<group>"; };
 		4CE409E03262A10710015F9A /* ActivityOverlayPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverlayPresentationTests.swift; sourceTree = "<group>"; };
 		4FBBD2C60B929603A4187FB1 /* ClaudeCodeInstallerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCodeInstallerTests.swift; sourceTree = "<group>"; };
 		51D70AE0856B4E8045598BF7 /* BoundedStdinReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoundedStdinReader.swift; sourceTree = "<group>"; };
@@ -335,6 +338,7 @@
 		CD7B5DDABCD6925ACF15C1B3 /* RelayHook */ = {isa = PBXFileReference; includeInIndex = 0; path = RelayHook; sourceTree = BUILT_PRODUCTS_DIR; };
 		CFD159D40C20E2EB860D1629 /* RelayIntegration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayIntegration.swift; sourceTree = "<group>"; };
 		D01700458AA3E57B79695FD7 /* RulesSpeechPreprocessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RulesSpeechPreprocessor.swift; sourceTree = "<group>"; };
+		D0D2DA9DBBF5ACF7D73C7CEB /* WhisperModelStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperModelStoreTests.swift; sourceTree = "<group>"; };
 		D2945AA36C2854FD4A7C9469 /* ActivityOverlayWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverlayWindowController.swift; sourceTree = "<group>"; };
 		D3040811122AB7731EB71724 /* AgentSessionRegistryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSessionRegistryTests.swift; sourceTree = "<group>"; };
 		D4A3AE84BABE6230BCA922FB /* IntegrationDiagnosticsLogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrationDiagnosticsLogTests.swift; sourceTree = "<group>"; };
@@ -523,6 +527,7 @@
 			isa = PBXGroup;
 			children = (
 				68429CF3D4EB53857BF99D80 /* WhisperModelCatalogTests.swift */,
+				D0D2DA9DBBF5ACF7D73C7CEB /* WhisperModelStoreTests.swift */,
 			);
 			path = Whisper;
 			sourceTree = "<group>";
@@ -690,6 +695,7 @@
 			isa = PBXGroup;
 			children = (
 				24989B2035204427EA9ADDAA /* WhisperModelCatalog.swift */,
+				4CBE40EFE5F3963B9976AA13 /* WhisperModelStore.swift */,
 			);
 			path = Whisper;
 			sourceTree = "<group>";
@@ -1023,6 +1029,7 @@
 				E6B54216CADEF6964C54E936 /* UnixSocketServerOwnershipTests.swift in Sources */,
 				416ACED506F9EC70C96DD843 /* UnixSocketServerTests.swift in Sources */,
 				E21DBC3BB9CFE1A9D933064B /* WhisperModelCatalogTests.swift in Sources */,
+				130162138A710F890CD8A68F /* WhisperModelStoreTests.swift in Sources */,
 				59CEB26722FB7B5250A99741 /* WindowFocusCoordinatorTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1136,6 +1143,7 @@
 				47EC92CBE7FB145B22DFB7CD /* TmuxFocusResolver.swift in Sources */,
 				AC21C5CAF0A02A9029C1127C /* UnixSocketServer.swift in Sources */,
 				DBCAA2780855AF360A8B3D16 /* WhisperModelCatalog.swift in Sources */,
+				ACDE15917036721CB1E97F72 /* WhisperModelStore.swift in Sources */,
 				6EBCA693556C0B8F07AE9656 /* WindowFocusCoordinator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
