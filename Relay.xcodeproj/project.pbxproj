@@ -153,11 +153,13 @@
 		D5A6FF60B4626C4D3BB782F8 /* PocketTTSBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 887DB4ADA3775E932C1B5211 /* PocketTTSBackend.swift */; };
 		D97F726C0048114D443BDB31 /* PermissionsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F476045417F42F97BC90298 /* PermissionsSettingsView.swift */; };
 		DAADDCA17C999363EEE95FCB /* TTSSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F810D496F4EB25DFF87CD3E9 /* TTSSettingsView.swift */; };
+		DBCAA2780855AF360A8B3D16 /* WhisperModelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24989B2035204427EA9ADDAA /* WhisperModelCatalog.swift */; };
 		DC76A871110147F5D45200B5 /* ProcessInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDE382A48C3099EB2F2FC565 /* ProcessInspector.swift */; };
 		DE03F33E6FC5E69771829711 /* AppSettingsDecodeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F33CA3EA8C64416A942FA13A /* AppSettingsDecodeTests.swift */; };
 		DE60F514AF7DB717FE878E05 /* HookEnvelopeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCAE43E0E7232A29726586EA /* HookEnvelopeTests.swift */; };
 		DEB7ABD3D2EE7EB76531B9D1 /* RelayWindowTagger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A2D71436EB216912EA0F366 /* RelayWindowTagger.swift */; };
 		E205528FE59A3A731FA917AE /* HerdrModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E07986CA871BE584821FE608 /* HerdrModels.swift */; };
+		E21DBC3BB9CFE1A9D933064B /* WhisperModelCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68429CF3D4EB53857BF99D80 /* WhisperModelCatalogTests.swift */; };
 		E2C6E7141B67B8F4DBA3DE7B /* HookEnvelopeReceiverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83997371307F0FA88DB5A57E /* HookEnvelopeReceiverTests.swift */; };
 		E4B7522F3415C9AFF5FD260C /* CodexInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4825CDE46AE776AE50DCD55 /* CodexInstaller.swift */; };
 		E6B54216CADEF6964C54E936 /* UnixSocketServerOwnershipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63B61F60EF2F1B91A7692398 /* UnixSocketServerOwnershipTests.swift */; };
@@ -226,6 +228,7 @@
 		2388EB91FEE36FAF3715B0FE /* Diagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Diagnostics.swift; sourceTree = "<group>"; };
 		23D267BE7B2C822655C9AE70 /* GenericTerminalFocusResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenericTerminalFocusResolverTests.swift; sourceTree = "<group>"; };
 		2465E06C264240935EDE8666 /* TTSBackendContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSBackendContractTests.swift; sourceTree = "<group>"; };
+		24989B2035204427EA9ADDAA /* WhisperModelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperModelCatalog.swift; sourceTree = "<group>"; };
 		2499709E52B7C2AE389E0A68 /* GlobalHotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotkeyManager.swift; sourceTree = "<group>"; };
 		264D3B761DD35FEF92E86BAC /* TTSRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSRouterTests.swift; sourceTree = "<group>"; };
 		26B7DBB23381692173168C9B /* FluidAudioPocketTTSEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FluidAudioPocketTTSEngine.swift; sourceTree = "<group>"; };
@@ -267,6 +270,7 @@
 		64C44B2770EA66B11413E76A /* LoginItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginItemController.swift; sourceTree = "<group>"; };
 		657A747A71387C3416F3CF7C /* AppModelHotkeySideEffectTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModelHotkeySideEffectTests.swift; sourceTree = "<group>"; };
 		66FC6B9D3FF3241E9F3B71E1 /* AgentSessionRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSessionRegistry.swift; sourceTree = "<group>"; };
+		68429CF3D4EB53857BF99D80 /* WhisperModelCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperModelCatalogTests.swift; sourceTree = "<group>"; };
 		6A5013145E15E5C746C59782 /* AgentProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProvider.swift; sourceTree = "<group>"; };
 		6AAA555F92CDA973E5FD1ACA /* MicrophoneCaptureStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicrophoneCaptureStateTests.swift; sourceTree = "<group>"; };
 		6B541411E315249B0E88DAE3 /* SpeechCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechCoordinatorTests.swift; sourceTree = "<group>"; };
@@ -488,6 +492,7 @@
 				1BD1713F6B25B17ED9F3EEA7 /* PocketTTSBackendTests.swift */,
 				CBF5F56E780A70C3E1007687 /* StreamingTranscriberTests.swift */,
 				2465E06C264240935EDE8666 /* TTSBackendContractTests.swift */,
+				4C0DE990A0B635E41CAE93F6 /* Whisper */,
 			);
 			path = Backends;
 			sourceTree = "<group>";
@@ -512,6 +517,14 @@
 				751588B739A8C2497A075C0A /* STTRouter.swift */,
 			);
 			path = SpeechIn;
+			sourceTree = "<group>";
+		};
+		4C0DE990A0B635E41CAE93F6 /* Whisper */ = {
+			isa = PBXGroup;
+			children = (
+				68429CF3D4EB53857BF99D80 /* WhisperModelCatalogTests.swift */,
+			);
+			path = Whisper;
 			sourceTree = "<group>";
 		};
 		55F9F67CCCD674A771BA3A40 /* System */ = {
@@ -673,6 +686,14 @@
 			path = SpeechOut;
 			sourceTree = "<group>";
 		};
+		D6EFC6141A246F0DABA1F1A5 /* Whisper */ = {
+			isa = PBXGroup;
+			children = (
+				24989B2035204427EA9ADDAA /* WhisperModelCatalog.swift */,
+			);
+			path = Whisper;
+			sourceTree = "<group>";
+		};
 		DB2D484EE2072926850FD348 /* Backends */ = {
 			isa = PBXGroup;
 			children = (
@@ -684,6 +705,7 @@
 				29EE80E2D79C7BCF9E1806A0 /* ParakeetBackend.swift */,
 				887DB4ADA3775E932C1B5211 /* PocketTTSBackend.swift */,
 				C211838CBF61D21F08089E93 /* StreamingTranscriber.swift */,
+				D6EFC6141A246F0DABA1F1A5 /* Whisper */,
 			);
 			path = Backends;
 			sourceTree = "<group>";
@@ -1000,6 +1022,7 @@
 				64FEF10D16E628C7A2F35DE5 /* TmuxFocusResolverTests.swift in Sources */,
 				E6B54216CADEF6964C54E936 /* UnixSocketServerOwnershipTests.swift in Sources */,
 				416ACED506F9EC70C96DD843 /* UnixSocketServerTests.swift in Sources */,
+				E21DBC3BB9CFE1A9D933064B /* WhisperModelCatalogTests.swift in Sources */,
 				59CEB26722FB7B5250A99741 /* WindowFocusCoordinatorTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1112,6 +1135,7 @@
 				8352A4F3F66B4FC5015055D9 /* TmuxExecutableLocator.swift in Sources */,
 				47EC92CBE7FB145B22DFB7CD /* TmuxFocusResolver.swift in Sources */,
 				AC21C5CAF0A02A9029C1127C /* UnixSocketServer.swift in Sources */,
+				DBCAA2780855AF360A8B3D16 /* WhisperModelCatalog.swift in Sources */,
 				6EBCA693556C0B8F07AE9656 /* WindowFocusCoordinator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
