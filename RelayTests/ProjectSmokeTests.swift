@@ -32,6 +32,7 @@ final class ProjectSmokeTests: XCTestCase {
         XCTAssertTrue(model.canDownloadTTSModel("pocket-tts"))
         XCTAssertFalse(model.canDownloadTTSModel("apple-tts"))
         XCTAssertTrue(model.canDownloadSpeechModel("parakeet"))
+        XCTAssertTrue(model.canDownloadSpeechModel("whisper"))
         XCTAssertFalse(model.canDownloadSpeechModel("apple-speech"))
 
         // Backend status refresh actually runs against the real registries and produces rows.
@@ -60,5 +61,18 @@ final class ProjectSmokeTests: XCTestCase {
         case .registered, .unavailable:
             break
         }
+    }
+
+    /// Task 11 composition-root test: `RelayRuntime.makeProduction()` registers Whisper in the
+    /// STT registry AND its model manager, mirroring how the graph already registers Parakeet.
+    /// Checked directly against `RelayRuntime`'s own properties (rather than only through
+    /// `AppModel`) so this also pins the CONCRETE types, not just presence -- a swapped-in stub
+    /// that merely satisfies the protocols would still pass an `AppModel`-only check.
+    @MainActor
+    func testMakeProductionRegistersWhisperBackendAndModelManager() {
+        let runtime = RelayRuntime.makeProduction()
+
+        XCTAssertTrue(runtime.speechIn.sttRegistry["whisper"] is WhisperBackend)
+        XCTAssertTrue(runtime.speechIn.speechModelManagers["whisper"] is WhisperModelManager)
     }
 }

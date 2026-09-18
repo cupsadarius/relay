@@ -6,9 +6,16 @@ import Foundation
 ///
 /// `WhisperModelSelectionWriter` is the write half `WhisperModelManager` additionally needs:
 /// `selectModel` writes through it, and in production it (like the getter) is backed by
-/// `AppSettings`' persisted selection -- wired up in a later task, not here. In tests it is a
-/// fake closure pair the test owns directly.
-typealias WhisperModelSelectionWriter = @Sendable (WhisperModelID?) -> Void
+/// `AppSettings`' persisted selection, wired up in `RelayRuntime.makeProduction()`. In tests it is
+/// a fake closure pair the test owns directly.
+///
+/// `@MainActor`, unlike the getter: production's writer (`RelayRuntime.makeProduction()`) needs
+/// to reach `AppModel.setSelectedSpeechModel` -- the app's sole settings writer, MainActor-
+/// isolated -- so the write can go through `AppModel.updateSettings` and land on disk, rather
+/// than a production service mutating `AppSettings`/`SettingsBox` directly. `selectModel` is only
+/// ever reached through `AppModel.selectSpeechModel` (already MainActor), so awaiting a
+/// MainActor-isolated closure from there is a same-actor hop, not a real suspension.
+typealias WhisperModelSelectionWriter = @MainActor @Sendable (WhisperModelID?) -> Void
 
 /// Errors `WhisperModelManager` itself throws for a model-id string that doesn't map onto any
 /// `WhisperModelID`. Model-id validation lives here (the one place `SpeechModelManaging`'s
@@ -103,7 +110,7 @@ struct WhisperModelManager: SpeechModelManaging {
     /// decide when a selection should actually be fetched or loaded.
     func selectModel(_ id: String) async throws {
         let modelID = try Self.modelID(for: id)
-        setSelectedModel(modelID)
+        await setSelectedModel(modelID)
     }
 
     private static func descriptor(for id: WhisperModelID) -> SpeechModelDescriptor {

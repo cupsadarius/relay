@@ -1273,6 +1273,7 @@ final class AppModelTests: XCTestCase {
         ])
         let model = makeModel(sttRegistry: ["whisper": whisper], speechModelManagers: ["whisper": manager])
         await model.refreshSpeechModels()
+        let callCountBeforeSelect = await whisper.availabilityCallCount
 
         await model.selectSpeechModel(backendID: "whisper", modelID: "whisper-base")
 
@@ -1280,6 +1281,11 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.speechModels["whisper"]?.first(where: { $0.id == "whisper-base" })?.isSelected, true)
         let selectCalls = await manager.selectCalls
         XCTAssertEqual(selectCalls, ["whisper-base"])
+        // F1: selecting a model must also re-derive `sttBackends` (via `backend.availability()`),
+        // not just the per-model `speechModels` row -- otherwise `WhisperBackend.availability()`
+        // (selected-model presence) goes stale on the backend-level surface after a selection.
+        let callCountAfterSelect = await whisper.availabilityCallCount
+        XCTAssertGreaterThan(callCountAfterSelect, callCountBeforeSelect)
     }
 
     func testRemoveSpeechModelDelegatesToManagerAndRefreshes() async {
@@ -1289,12 +1295,56 @@ final class AppModelTests: XCTestCase {
         ])
         let model = makeModel(sttRegistry: ["whisper": whisper], speechModelManagers: ["whisper": manager])
         await model.refreshSpeechModels()
+        let callCountBeforeRemove = await whisper.availabilityCallCount
 
         await model.removeSpeechModel(backendID: "whisper", modelID: "whisper-tiny")
 
         let removeCalls = await manager.removeCalls
         XCTAssertEqual(removeCalls, ["whisper-tiny"])
         XCTAssertEqual(model.speechModels["whisper"]?.first(where: { $0.id == "whisper-tiny" })?.installState, .notDownloaded)
+        // F1: removing a model must also re-derive `sttBackends` -- a removed selected model
+        // should be reflected in backend-level availability, not just the per-model row.
+        let callCountAfterRemove = await whisper.availabilityCallCount
+        XCTAssertGreaterThan(callCountAfterRemove, callCountBeforeRemove)
+    }
+
+    /// F1: a successful per-model download must also refresh `sttBackends` (via
+    /// `backend.availability()`), so a backend whose availability derives from the just-downloaded
+    /// model (e.g. Whisper, once the selected model is present on disk) doesn't stay stale on the
+    /// backend-level surface until some unrelated refresh happens to run.
+    func testDownloadSpeechModelRefreshesBackendAvailabilityOnSuccess() async {
+        let whisper = FakeSTTBackend(id: "whisper", displayName: "Whisper")
+        let manager = FakeMultiModelSpeechModelManager(backendID: "whisper", models: [
+            makeModelStatus(id: "whisper-tiny"),
+        ])
+        let model = makeModel(sttRegistry: ["whisper": whisper], speechModelManagers: ["whisper": manager])
+        await model.refreshSpeechModels()
+        let callCountBeforeDownload = await whisper.availabilityCallCount
+
+        await model.downloadSpeechModel(backendID: "whisper", modelID: "whisper-tiny")
+
+        let callCountAfterDownload = await whisper.availabilityCallCount
+        XCTAssertGreaterThan(callCountAfterDownload, callCountBeforeDownload)
+    }
+
+    /// F1 (failure path): a FAILED per-model download does not need a backend-availability
+    /// refresh -- nothing about the backend's availability could have changed by a download that
+    /// never landed any bytes -- so this pins that `downloadSpeechModel` only refreshes on
+    /// success, matching the spec's "after a successful per-model download" wording exactly.
+    func testDownloadSpeechModelFailureDoesNotRefreshBackendAvailability() async {
+        let whisper = FakeSTTBackend(id: "whisper", displayName: "Whisper")
+        let manager = FakeMultiModelSpeechModelManager(backendID: "whisper", models: [
+            makeModelStatus(id: "whisper-tiny"),
+        ])
+        await manager.setErrorToThrow("whisper-tiny", TestError.saveFailed)
+        let model = makeModel(sttRegistry: ["whisper": whisper], speechModelManagers: ["whisper": manager])
+        await model.refreshSpeechModels()
+        let callCountBeforeDownload = await whisper.availabilityCallCount
+
+        await model.downloadSpeechModel(backendID: "whisper", modelID: "whisper-tiny")
+
+        let callCountAfterDownload = await whisper.availabilityCallCount
+        XCTAssertEqual(callCountAfterDownload, callCountBeforeDownload)
     }
 
     func testConcurrentRefreshGenerationCounterKeepsLatest() async {

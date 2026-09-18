@@ -38,14 +38,80 @@ struct SpeechOutputServices {
     let overlayPresenter: any ActivityOverlayPresenting
 }
 
-/// Speech-input services: the STT backend registry, its per-backend model managers (Parakeet
-/// today; Whisper joins in Task 11), and the dictation coordinator built around them. Kept as the
-/// CONCRETE `DictationCoordinator` type (rather than only `any DictationCoordinating`) since
-/// `AppModel` still needs to call `setStatusHandler` on it once `AppModel` itself exists.
+/// Speech-input services: the STT backend registry, its per-backend model managers (Parakeet,
+/// Whisper), and the dictation coordinator built around them. Kept as the CONCRETE
+/// `DictationCoordinator` type (rather than only `any DictationCoordinating`) since `AppModel`
+/// still needs to call `setStatusHandler` on it once `AppModel` itself exists.
 struct SpeechInputServices {
     let sttRegistry: [String: any SpeechToTextBackend]
     let speechModelManagers: [String: any SpeechModelManaging]
     let dictationCoordinator: DictationCoordinator?
+    /// The write half of Whisper's model-selection seam, exposed so `AppModel(runtime:)` can
+    /// re-point it at `AppModel.setSelectedSpeechModel` once `AppModel` exists -- see
+    /// `WhisperSelectionWriterBox`'s own doc comment for why this postponed-wiring step exists.
+    let whisperSelectionWriter: WhisperSelectionWriterBox
+}
+
+/// Thread-safe (lock-protected, `@unchecked Sendable`) cache of Whisper's currently-selected
+/// model id. Backs the `WhisperModelSelection` GETTER closure `RelayRuntime.makeProduction()`
+/// wires into both `WhisperBackend` and `WhisperModelManager`.
+///
+/// Deliberately NOT `SettingsBox`: `WhisperModelSelection` is a plain, non-actor-isolated
+/// `@Sendable () -> WhisperModelID?` (see that typealias's doc comment), and it is called from
+/// `WhisperBackend.availability()` -- running on `WhisperBackend`'s OWN actor, not `MainActor` --
+/// so it cannot touch a `@MainActor`-isolated `SettingsBox` without an `await` the closure's
+/// signature has no room for. This cache is the synchronous, cross-actor-safe source of truth for
+/// the CURRENT SESSION's selection; `AppSettings.selectedSpeechModelByBackend["whisper"]` on disk
+/// is the durable copy read once at `makeProduction()` to seed it, and written back to on every
+/// change via `WhisperSelectionWriterBox`/`AppModel.setSelectedSpeechModel`.
+final class WhisperSelectionCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var modelID: WhisperModelID?
+
+    init(_ initial: WhisperModelID?) {
+        modelID = initial
+    }
+
+    func read() -> WhisperModelID? {
+        lock.lock()
+        defer { lock.unlock() }
+        return modelID
+    }
+
+    func write(_ newValue: WhisperModelID?) {
+        lock.lock()
+        modelID = newValue
+        lock.unlock()
+    }
+}
+
+/// Mutable box for the write half of Whisper's model-selection seam
+/// (`WhisperModelSelectionWriter`, `@MainActor`-isolated -- see that typealias's doc comment).
+/// `RelayRuntime.makeProduction()` constructs `WhisperModelManager` (and the closure
+/// `setSelectedModel` wraps) before `AppModel` -- the app's sole settings writer, via
+/// `updateSettings` (see `SettingsBox`'s own doc comment) -- exists to give that write a home.
+/// `AppModel(runtime:)` re-points `persist` at `AppModel.setSelectedSpeechModel` immediately after
+/// constructing `AppModel`, mirroring the same postponed-wiring pattern already used just below it
+/// for `DictationCoordinator.setStatusHandler`.
+///
+/// `write(_:)` always updates `WhisperSelectionCache` synchronously first (so `WhisperBackend`/
+/// `WhisperModelManager` see the new selection immediately, from any actor, regardless of whether
+/// `persist` has been wired yet) and only THEN calls `persist`, which defaults to a no-op: nothing
+/// can actually reach `write(_:)` before `AppModel` exists, since `WhisperModelManager.selectModel`
+/// is only ever invoked through `AppModel.selectSpeechModel`.
+@MainActor
+final class WhisperSelectionWriterBox {
+    private let cache: WhisperSelectionCache
+    var persist: (WhisperModelID?) -> Void = { _ in }
+
+    init(cache: WhisperSelectionCache) {
+        self.cache = cache
+    }
+
+    func write(_ modelID: WhisperModelID?) {
+        cache.write(modelID)
+        persist(modelID)
+    }
 }
 
 /// Agent-integration services: the fixed-path Unix-socket receiver, the manager that decodes and
@@ -161,9 +227,46 @@ final class RelayRuntime {
         let parakeetEngine: any ParakeetEngine = FluidAudioParakeetEngine()
         let parakeetBackend = ParakeetBackend(engine: parakeetEngine)
         let parakeetModelManager = ParakeetModelManager(engine: parakeetEngine)
+
+        // Whisper: registered (Task 11) but never enabled by default -- `sttBackendOrder`'s
+        // default stays `["apple-speech"]` (`AppSettings.defaults`); the user opts in and picks a
+        // model from Settings. See `WhisperSelectionCache`/`WhisperSelectionWriterBox`'s doc
+        // comments above for why selection is threaded through a lock-protected cache plus a
+        // postponed-wiring box rather than reading/writing `SettingsBox` directly.
+        let whisperCacheDirectory = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Application Support", isDirectory: true)
+            .appendingPathComponent("Relay", isDirectory: true)
+            .appendingPathComponent("Models", isDirectory: true)
+            .appendingPathComponent("Whisper", isDirectory: true)
+        let whisperStore = WhisperModelStore(
+            cacheDirectory: whisperCacheDirectory,
+            downloader: HuggingFaceWhisperDownloader()
+        )
+        let whisperRuntime = WhisperRuntime(
+            engine: WhisperKitEngine(),
+            modelFolder: { whisperStore.modelDirectory(for: $0) }
+        )
+        let whisperSelectionCache = WhisperSelectionCache(
+            settings.selectedSpeechModelByBackend["whisper"].flatMap(WhisperModelID.init(rawValue:))
+        )
+        let whisperSelectionWriter = WhisperSelectionWriterBox(cache: whisperSelectionCache)
+        let whisperBackend = WhisperBackend(
+            store: whisperStore,
+            runtime: whisperRuntime,
+            selectedModel: { whisperSelectionCache.read() }
+        )
+        let whisperModelManager = WhisperModelManager(
+            store: whisperStore,
+            runtime: whisperRuntime,
+            selectedModel: { whisperSelectionCache.read() },
+            setSelectedModel: { whisperSelectionWriter.write($0) }
+        )
+
         let sttRegistry: [String: any SpeechToTextBackend] = [
             sttBackend.id: sttBackend,
             parakeetBackend.id: parakeetBackend,
+            whisperBackend.id: whisperBackend,
         ]
 
         // Phase 3 session-intelligence dependency graph. Every subsystem that needs frontmost-app
@@ -257,6 +360,7 @@ final class RelayRuntime {
         )
         let speechModelManagers: [String: any SpeechModelManaging] = [
             parakeetModelManager.backendID: parakeetModelManager,
+            whisperModelManager.backendID: whisperModelManager,
         ]
         // Apple never registers a downloader, since it has no model to download.
         let ttsModelDownloaders: [String: any SpeechModelDownloading] = [
@@ -290,7 +394,8 @@ final class RelayRuntime {
             speechIn: SpeechInputServices(
                 sttRegistry: sttRegistry,
                 speechModelManagers: speechModelManagers,
-                dictationCoordinator: dictation
+                dictationCoordinator: dictation,
+                whisperSelectionWriter: whisperSelectionWriter
             ),
             integrations: IntegrationServices(
                 hookEnvelopeReceiver: hookEnvelopeReceiver,

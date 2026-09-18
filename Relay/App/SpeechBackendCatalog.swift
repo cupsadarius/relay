@@ -231,6 +231,11 @@ extension AppModel {
             })
             recordDiagnostic(.speechModelDownloadFinished(backendID: backendID))
             endModelDownload(backendID: backendID, modelID: modelID, finalState: .downloaded)
+            // F1: a successful download can change the OWNING BACKEND's `availability()` too
+            // (e.g. Whisper's, which derives from the selected model's presence) -- refresh
+            // `sttBackends` too, not just the per-model `speechModels` row above, so that surface
+            // doesn't go stale until some unrelated refresh happens to run.
+            await refreshSpeechBackendStatuses()
         } catch {
             recordDiagnostic(.speechModelDownloadFailed(backendID: backendID))
             endModelDownload(backendID: backendID, modelID: modelID, finalState: .downloadFailed)
@@ -246,6 +251,10 @@ extension AppModel {
         guard let manager = speechModelManagers[backendID] else { return }
         try? await manager.selectModel(modelID)
         await refreshSpeechModels()
+        // F1: a selection change can move the OWNING BACKEND's `availability()` (e.g. Whisper's,
+        // which derives from the selected model's presence) -- refresh `sttBackends` too, not
+        // just the per-model `speechModels` row above.
+        await refreshSpeechBackendStatuses()
     }
 
     /// Removes model `modelID` from backend `backendID`, then refreshes `speechModels` so the
@@ -254,6 +263,10 @@ extension AppModel {
         guard let manager = speechModelManagers[backendID] else { return }
         try? await manager.removeModel(modelID)
         await refreshSpeechModels()
+        // F1: removing the currently-selected model can move the OWNING BACKEND's
+        // `availability()` back to `.modelNotDownloaded` -- refresh `sttBackends` too, not just
+        // the per-model `speechModels` row above.
+        await refreshSpeechBackendStatuses()
     }
 
     /// Merges a freshly fetched row list with the currently visible one for `backendID`: a model

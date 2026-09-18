@@ -192,6 +192,13 @@ final class AppModel {
             integrationDiagnosticsLog: runtime.integrationDiagnosticsLog
         )
         runtime.speechIn.dictationCoordinator?.setStatusHandler { [weak self] in self?.statusText = $0 }
+        // Postponed wiring (see `WhisperSelectionWriterBox`'s doc comment): `RelayRuntime
+        // .makeProduction()` builds `WhisperModelManager`'s selection writer before `AppModel`
+        // exists, so it starts as a no-op; re-point it at `setSelectedSpeechModel` now that
+        // `AppModel` -- the app's sole settings writer -- does exist.
+        runtime.speechIn.whisperSelectionWriter.persist = { [weak self] modelID in
+            self?.setSelectedSpeechModel(backendID: "whisper", modelID: modelID?.rawValue)
+        }
     }
 
     init(
@@ -451,6 +458,17 @@ final class AppModel {
     /// narrow so that file doesn't need broader access to `updateSettings`.
     func setTTSBackendOrder(_ order: [String]) {
         updateSettings { $0.ttsBackendOrder = order }
+    }
+
+    /// Persists a multi-model STT backend's currently-selected model id (e.g. Whisper's). Never
+    /// called directly by `SpeechBackendCatalog.swift`; `RelayRuntime.makeProduction()` wires
+    /// `WhisperSelectionWriterBox.persist` to this method right after constructing `AppModel`
+    /// (see `AppModel(runtime:)` below), so `WhisperModelManager.selectModel` -- which runs
+    /// before `AppModel` exists in `RelayRuntime.makeProduction()`'s own construction order --
+    /// still ultimately routes its persistence through `updateSettings`, `AppModel`'s sole write
+    /// path, instead of a production service writing `SettingsBox`/disk directly.
+    func setSelectedSpeechModel(backendID: String, modelID: String?) {
+        updateSettings { $0.selectedSpeechModelByBackend[backendID] = modelID }
     }
 
     /// Lets `SpeechBackendCatalog.swift` record diagnostics without widening `diagnostics` past
