@@ -520,3 +520,46 @@ Downloaded models are cached (and were left on disk after this spike, for
 the owner's convenience) under
 `~/Library/Application Support/RelaySpikeWhisperProbe/Models/`. Delete that
 directory to reclaim disk space; nothing in Relay proper reads it.
+
+---
+
+## Implementation status (2026-09-18)
+
+The production Whisper backend from this spike is now IMPLEMENTED on branch
+`feature/whisper-backend` (design: `docs/superpowers/specs/2026-09-18-whisper-backend-design.md`,
+plan: `docs/superpowers/plans/2026-09-18-whisper-backend.md`). Shipped as one STT
+backend (`whisper`) with all 11 catalog models selectable, on WhisperKit 1.1.0,
+behind the generalized `SpeechModelManaging` layer (Parakeet is the one-model
+case). Whisper is registered but NOT enabled by default. Full unit suite green
+(868 tests) with fakes for engine/store/runtime — no CoreML or network in CI.
+
+### Offline is real now (tokenizer fetched)
+The `whisperkit-coreml` model folders do NOT bundle `tokenizer.json`; WhisperKit
+would otherwise fetch the tokenizer from `openai/whisper-*` at first load (network).
+`WhisperModelStore` now also downloads + checksum-verifies each model's
+`tokenizer.json` + `tokenizer_config.json` (from the correct `openai/whisper-*`
+repo — note `turbo` uses `openai/whisper-large-v3`) into the model folder, and
+`presence()` requires `tokenizer.json`. So a downloaded model loads with zero
+network. **Pre-existing downloads from before this change must be re-downloaded**
+(their folders lack the tokenizer).
+
+### Still needs the owner's Mac (network + real models — not doable in CI)
+1. **Offline confirmation (do first):** download one model (e.g. `tiny.en`) with the
+   shipped code, DISABLE networking, then exercise `WhisperBackend` end-to-end
+   (or `WhisperRuntime.activate(.tinyEn)` + transcribe) and confirm it loads and
+   transcribes with ZERO network activity. Only the HF HTTP shape was curl-verified
+   in the spike; a real airplane-mode `activate()` was not run.
+2. **Exp 5 — all-11 smoke:** one short transcription through each of the 11 models
+   (multi-GB downloads). Record load time, peak memory, transcript, latency, unload.
+3. **Exp 6 — quality benchmark:** the fixed corpus (§24 of the proposal spike;
+   does not exist yet — build it) across representative Whisper models vs Parakeet v2
+   and Apple Speech. Record WER/edit distance, coding-term errors, latency, RTF.
+4. **Exp 7 — stability:** 100 sequential transcriptions (no crash, no monotonic
+   memory growth) + the cancellation matrix (cancel during load, cancel during
+   transcribe, model file missing, corrupt model, switch after many transcriptions).
+5. **Large models are live-but-unverified:** `medium`/`medium.en`/`large-v2`/
+   `large-v3`/`turbo` (~1.5–3 GB) ship selectable, but their real-Mac load time,
+   peak memory, and switch-stability were not measured. Use Exp 4's harness (above)
+   extended to these three-tier sizes; decide per §36 whether any should be
+   warned-about or excluded.
+6. **Pick the production default + router priority** after benchmarking (proposal §34).
