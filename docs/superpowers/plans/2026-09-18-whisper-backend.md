@@ -139,13 +139,13 @@ Mirror `FluidAudioKokoroModelLoader`/`FluidAudioParakeetEngine`'s presence-gate 
 
 - [ ] **Step 1: Write failing tests** (against a temp dir + a fake `WhisperDownloader`):
   - `testPresenceFalseWhenDirEmpty` — network-free, returns not-downloaded.
-  - `testPresenceTrueOnlyWhenAllFilesPresentAndChecksumMatches`.
-  - `testDownloadAtomicallyPromotesOnlyAfterChecksumVerifies` — fake writes good bytes → becomes downloaded.
-  - `testChecksumMismatchRejectsAndLeavesNotDownloaded`.
-  - `testInterruptedDownloadNeverBecomesSelectable` — fake throws mid-download; presence stays false; no partial file in the promoted path.
+  - `testPresenceTrueOnlyWhenAllFilesPresentAndVerifiedMarkerExists` — files present but no `.verified` marker → still not-downloaded.
+  - `testDownloadAtomicallyPromotesOnlyAfterEveryFileVerifies` — fake writes good bytes + matching oids → becomes downloaded (marker written).
+  - `testFileChecksumMismatchRejectsAndLeavesNotDownloaded` — one file's `oid` mismatches → reject, no promote, no marker.
+  - `testInterruptedDownloadNeverBecomesSelectable` — fake throws mid-download; presence stays false; no partial file or marker in the promoted path.
   - `testRemoveDeletesAndRediscoversAsNotDownloaded`.
 - [ ] **Step 2: Run — expect FAIL.**
-- [ ] **Step 3: Implement** `WhisperModelStore` + `WhisperDownloader` seam + the live downloader. Download to `<id>.incomplete/`, verify checksum, then atomic rename to `<id>/`. `presence(of:)` opens/hashes without network.
+- [ ] **Step 3: Implement** `WhisperModelStore` + `WhisperDownloader` seam + the live downloader. Download to `<id>.incomplete/`, verify every file against its HF `oid`, then atomic rename to `<id>/` AND write a `.verified` marker (as the results doc §4 does). `presence(of:)` is network-free: it checks all bundle files exist **and** the `.verified` marker is present — it does NOT re-hash against `oid`s (those are only known at download time, and offline it has no expected values). The marker is the offline proof that the atomic, verified promote completed.
 - [ ] **Step 4: Run — expect PASS.**
 - [ ] **Step 5: Commit.** `feat(whisper): add WhisperModelStore with atomic download + verify`
 
@@ -223,13 +223,13 @@ Composes catalog + store + runtime + the selection store. `models()` maps each c
 
 ## Task 8a: Mechanical rename `speechModelDownloaders` → `speechModelManagers` (STT only)
 
-**Files:** Modify `Relay/App/RelayRuntime.swift` (declaration ~line 256 + `SpeechInputServices` field ~line 47), `Relay/App/SpeechInputServices.swift`, `Relay/App/AppModel.swift` (reads `runtime.speechIn.speechModelDownloaders` ~line 163), `Relay/App/SpeechBackendCatalog.swift` (remove the `extension ParakeetBackend: SpeechModelDownloading {}` at line 7). Tests: existing suite must stay green.
+**Files:** Modify `Relay/App/RelayRuntime.swift` (contains both the `SpeechInputServices` struct — field ~line 47 — and the `speechModelDownloaders` declaration ~line 256; there is NO separate `SpeechInputServices.swift`), `Relay/App/AppModel.swift` (declares `speechModelDownloaders` ~lines 73/163/196/230/281/310), `Relay/App/SpeechBackendCatalog.swift` (~lines 49/85; remove the `extension ParakeetBackend: SpeechModelDownloading {}` at line 7). Test files that MUST change in the same unit: `RelayTests/App/AppModelTests.swift` (see Step 2 — this is non-mechanical), plus the call sites `DictationSettingsView.swift:84` and `ProjectSmokeTests.swift:34`.
 
-Pure refactor, behaviour unchanged. This is the atomic compile unit the reviewer flagged: the STT map's element type changes from `any SpeechModelDownloading` to `any SpeechModelManaging`, the Parakeet conformance goes, and RelayRuntime builds the map from `ParakeetModelManager` (Task 7) instead of the backend. `ttsModelDownloaders` and `SpeechModelDownloading` itself are **untouched** (TTS keeps them).
+This is the atomic compile unit the reviewer flagged: the STT map's element type changes from `any SpeechModelDownloading` to `any SpeechModelManaging`, the Parakeet conformance goes, and RelayRuntime builds the map from `ParakeetModelManager` (Task 7) instead of the backend. `ttsModelDownloaders` and `SpeechModelDownloading` itself are **untouched** (TTS keeps them). Production behaviour is unchanged, but the STT test fake is a different protocol surface, so this task is NOT purely mechanical — the whole suite fails to *build* until the fake is migrated, so do all of Steps 1–3 before running.
 
-- [ ] **Step 1:** Change the STT map type to `[String: any SpeechModelManaging]` everywhere it is declared/passed (`RelayRuntime`, `SpeechInputServices`, `AppModel`). Populate it from `[parakeetModelManager.backendID: parakeetModelManager]`. Remove `extension ParakeetBackend: SpeechModelDownloading {}`.
-- [ ] **Step 2:** Temporarily keep `canDownloadSpeechModel`/`downloadSpeechModel` compiling by adapting them to call the manager's `downloadModel` for the backend's single/selected model (behaviour parity for Parakeet's one model). Update the two call sites: `DictationSettingsView.swift:84` and `ProjectSmokeTests.swift:34`.
-- [ ] **Step 3: Run full suite — expect PASS** (no behaviour change; Parakeet download still works, TTS untouched).
+- [ ] **Step 1:** Change the STT map type to `[String: any SpeechModelManaging]` everywhere it is declared/passed (`RelayRuntime`, its `SpeechInputServices` field, `AppModel`). Populate it from `[parakeetModelManager.backendID: parakeetModelManager]`. Remove `extension ParakeetBackend: SpeechModelDownloading {}`. Keep `canDownloadSpeechModel`/`downloadSpeechModel` compiling by adapting them to call the manager's `downloadModel` for the backend's single/selected model (parity for Parakeet's one model). Update `DictationSettingsView.swift:84` and `ProjectSmokeTests.swift:34`.
+- [ ] **Step 2 (non-mechanical — the reviewer's blocker):** In `RelayTests/App/AppModelTests.swift`: rewrite `FakeSpeechModelDownloader: SpeechModelDownloading` (~line 1560) into a one-model `FakeSpeechModelManager: SpeechModelManaging` (implement `backendID`, `models()`, `downloadModel`, `removeModel`, `selectModel`; `downloadModel` preserves the existing progress/failure behaviour the tests rely on). Retype the `makeModel` helper param (~line 1362) and the `AppModel(...)` init call (~line 1385) to `[String: any SpeechModelManaging]`. Re-point the ~10 STT call sites (~lines 949, 982, 1006, 1032, 1058, 1084, 1120, 1141, 1168, 1303) at the new fake. Keep the existing Parakeet download/progress assertions green against the single-model parity path (Task 8b extends them to per-model). Do NOT touch `FakeTTSModelDownloader` / TTS tests.
+- [ ] **Step 3: Run full suite — expect PASS** (production behaviour unchanged; Parakeet download still works via the manager; TTS untouched).
 - [ ] **Step 4: Commit.** `refactor(stt): rename speechModelDownloaders to speechModelManagers`
 
 ---
