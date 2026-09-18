@@ -131,3 +131,25 @@ final class SpeechModelRowPresentationTests: XCTestCase {
         XCTAssertEqual(SpeechModelRowPresentation.make(status: missing).detailLabel, "")
     }
 }
+
+final class SpeechBackendModelDisplayModeTests: XCTestCase {
+    /// Zero models means the async `refreshSpeechModels()` hasn't populated `speechModels` for
+    /// this backend yet (or it genuinely has none, e.g. Apple Speech has no manager and never
+    /// appears in `speechModels` at all) -- neither the aggregate Download button nor the nested
+    /// per-model list should render, since showing the aggregate action here is exactly the
+    /// "silently downloads the first model" bug this gating exists to prevent.
+    func testZeroModelsShowsNeither() {
+        XCTAssertEqual(SpeechBackendModelDisplayMode.make(modelCount: 0), .none)
+    }
+
+    /// Exactly one model (Parakeet's genuine case) shows the single aggregate Download row.
+    func testOneModelShowsAggregateAction() {
+        XCTAssertEqual(SpeechBackendModelDisplayMode.make(modelCount: 1), .aggregateAction)
+    }
+
+    /// More than one model (Whisper) shows the nested per-model list instead.
+    func testMultipleModelsShowsNestedList() {
+        XCTAssertEqual(SpeechBackendModelDisplayMode.make(modelCount: 2), .nestedList)
+        XCTAssertEqual(SpeechBackendModelDisplayMode.make(modelCount: 5), .nestedList)
+    }
+}

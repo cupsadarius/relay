@@ -17,7 +17,7 @@ struct DictationSettingsView: View {
                 ForEach(model.sttBackends) { backend in
                     speechBackendRow(backend)
 
-                    if hasSelectableModels(backend.id) {
+                    if speechModelDisplayMode(for: backend.id) == .nestedList {
                         ForEach(model.speechModels[backend.id] ?? []) { status in
                             speechModelRow(backendID: backend.id, status: status)
                         }
@@ -58,8 +58,11 @@ struct DictationSettingsView: View {
             // A backend with more than one model manages downloads/selection per model in the
             // nested rows below instead, so the single aggregate action here would either
             // duplicate those controls or (via the old one-model-per-backend `downloadSpeechModel(_:)`)
-            // silently pick "the first model" on behalf of the user.
-            if !hasSelectableModels(backend.id) {
+            // silently pick "the first model" on behalf of the user. And before `speechModels` is
+            // populated (or for a backend with no manager, e.g. Apple Speech, which never appears
+            // in it) the model count is 0 -- showing the aggregate action there is exactly that
+            // same "picks the first model" bug, so it renders only for a genuine one-model backend.
+            if speechModelDisplayMode(for: backend.id) == .aggregateAction {
                 speechBackendActionView(backend)
             }
 
@@ -123,12 +126,10 @@ struct DictationSettingsView: View {
         )
     }
 
-    /// True once a backend has more than one model in `speechModels`, which is when the nested
-    /// per-model list (`speechModelRow`) replaces the single aggregate Download row. A backend
-    /// with zero or one model (Parakeet, and any backend before its first `refreshSpeechModels()`
-    /// has populated `speechModels`) keeps the existing single-row behavior unchanged.
-    private func hasSelectableModels(_ backendID: String) -> Bool {
-        (model.speechModels[backendID]?.count ?? 0) > 1
+    /// What `speechBackendRow`/the nested list should show for a backend, based on how many
+    /// models `speechModels` currently reports for it. See `SpeechBackendModelDisplayMode`.
+    private func speechModelDisplayMode(for backendID: String) -> SpeechBackendModelDisplayMode {
+        .make(modelCount: model.speechModels[backendID]?.count ?? 0)
     }
 
     private func speechModelRow(backendID: String, status: SpeechModelStatus) -> some View {
@@ -186,6 +187,34 @@ struct DictationSettingsView: View {
                     }
                 }
             }
+        }
+    }
+}
+
+/// What a speech backend's row shows for model download/selection, based solely on how many
+/// models `AppModel.speechModels` reports for that backend -- separated from
+/// `DictationSettingsView` so it is unit-testable without SwiftUI
+/// (`SpeechBackendModelDisplayModeTests` in `RelayTests/App/SettingsViewsSmokeTests.swift`).
+enum SpeechBackendModelDisplayMode: Equatable {
+    /// Nothing to show yet: either `speechModels` hasn't been populated for this backend (the
+    /// `.task { await model.refreshSpeechModels() }` in `DictationSettingsView.body` hasn't
+    /// completed) or the backend has no model manager at all (e.g. Apple Speech). Showing the
+    /// aggregate action here would resolve to `downloadSpeechModel(_:)`'s "first model" fallback
+    /// on the user's behalf before the real model count is known -- exactly the bug this type
+    /// exists to prevent.
+    case none
+    /// Exactly one model: the single aggregate Download row is a faithful one-model action
+    /// (Parakeet's case).
+    case aggregateAction
+    /// More than one model: the nested per-model list replaces the aggregate row so the user
+    /// picks explicitly (Whisper's case).
+    case nestedList
+
+    static func make(modelCount: Int) -> SpeechBackendModelDisplayMode {
+        switch modelCount {
+        case 1: .aggregateAction
+        case 2...: .nestedList
+        default: .none
         }
     }
 }
