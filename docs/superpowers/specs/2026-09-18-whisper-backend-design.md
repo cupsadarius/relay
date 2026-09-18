@@ -94,18 +94,23 @@ struct WhisperModelDescriptor: Identifiable, Equatable, Sendable {
     let id: WhisperModelID
     let displayName: String
     let upstreamCheckpoint: String
-    let runtimeArtifact: String      // HF repo path in argmaxinc/whisperkit-coreml
-    let expectedSHA256: String       // weights; sidecar files verified per spike results
+    let runtimeArtifact: String      // HF subfolder in argmaxinc/whisperkit-coreml, e.g. "openai_whisper-small.en"
     let englishOnly: Bool
     let approximateDiskBytes: Int64
 }
 ```
+The catalog carries **no** static per-model checksum. A `.mlmodelc` bundle is 19–24 files; the
+spike results doc §2 verifies **every** file — LFS weights against their recorded sha256 `oid`,
+sidecars against the host blob-sha1 `oid` — and those `oid`s are fetched live from the Hugging
+Face tree API at download time. Per-file verification therefore lives in `WhisperModelStore`
+(§5.2), not as a baked-in catalog constant.
 
 ### 5.2 `WhisperModelStore`
 Owns model files on disk under `~/Library/Application Support/Relay/Models/Whisper/<id>/`.
-- `presence(of:)` — network-free disk+checksum check (like Parakeet's `isModelValid`).
-- `download(_:progress:)` — download to a temp/incomplete path, verify checksum, **atomic promote**.
-  An interrupted or corrupt download never appears as ready.
+- `presence(of:)` — network-free disk check (all bundle files present) like Parakeet's `isModelValid`.
+- `download(_:progress:)` — fetch the artifact's HF tree to get each file's `oid`, download to a
+  temp/incomplete path, verify **every file** against its `oid` (sha256 for LFS weights, blob-sha1
+  for sidecars), then **atomic promote**. An interrupted or corrupt download never appears as ready.
 - `remove(_:)` — delete an inactive downloaded model; rediscovered as not-downloaded.
 
 ### 5.3 `WhisperRuntime` (actor)

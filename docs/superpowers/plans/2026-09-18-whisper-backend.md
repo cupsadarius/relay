@@ -39,12 +39,14 @@
 
 **Modify (production):**
 - `project.yml` — add the WhisperKit package + target dependency.
-- `Relay/Domain/AppSettings.swift` — add `selectedSpeechModelByBackend`, resilient decode.
-- `Relay/App/SpeechBackendCatalog.swift` — per-model download/select/remove; `speechModelDownloaders` → `speechModelManagers`.
-- `Relay/App/RelayRuntime.swift` (composition root) — register `WhisperBackend` + its manager.
-- `Relay/App/AppModel.swift` (or wherever `speechModelDownloaders` is declared) — rename to `speechModelManagers`.
-- `Relay/App/Settings/DictationSettingsView.swift` — nested model list for multi-model backends.
-- Delete `SpeechModelDownloading` from `Relay/App/BackendCatalog.swift` once Parakeet no longer conforms.
+- `Relay/Domain/AppSettings.swift` — add `selectedSpeechModelByBackend` (resilient decode) AND add `"whisper"` to `knownSTTBackendIDs` (line ~35 — otherwise `normalizedBackendOrder` strips it on every decode).
+- `Relay/App/SpeechBackendCatalog.swift` — per-model download/select/remove; remove the `extension ParakeetBackend: SpeechModelDownloading {}` conformance.
+- `Relay/App/RelayRuntime.swift` (composition root) — declares `speechModelDownloaders`/`ttsModelDownloaders`; rename the STT one to `speechModelManagers`; register `WhisperBackend` + its manager.
+- `Relay/App/AppModel.swift` and `Relay/App/SpeechInputServices.swift` (wherever `speechModelDownloaders` is declared/read — AppModel reads `runtime.speechIn.speechModelDownloaders`) — rename to `speechModelManagers`.
+- `Relay/App/Settings/DictationSettingsView.swift` — nested model list for multi-model backends; update the old single-arg `downloadSpeechModel(backend.id)` call site (~line 84).
+- `RelayTests/App/ProjectSmokeTests.swift` — update old single-arg `canDownloadSpeechModel("parakeet")` call site (~line 34).
+
+**Do NOT delete `SpeechModelDownloading`.** TTS still uses it: `KokoroTTSBackend` and `PocketTTSBackend` both conform, and `RelayRuntime`/`AppModel` carry `ttsModelDownloaders: [String: any SpeechModelDownloading]`. This work removes only the *STT* (Parakeet) use of it; the protocol stays for TTS, untouched.
 
 **Create (tests):**
 - `RelayTests/Backends/Whisper/WhisperModelCatalogTests.swift`
@@ -112,16 +114,16 @@ func testEnglishOnlyFlagsAreCorrect() {
     XCTAssertTrue(WhisperModelCatalog.descriptor(for: .tinyEn).englishOnly)
     XCTAssertFalse(WhisperModelCatalog.descriptor(for: .turbo).englishOnly)
 }
-func testEveryModelHasNonEmptyArtifactAndChecksum() {
+func testEveryModelHasNonEmptyArtifactAndPositiveSize() {
     for id in WhisperModelID.allCases {
         let d = WhisperModelCatalog.descriptor(for: id)
-        XCTAssertFalse(d.runtimeArtifact.isEmpty)
-        XCTAssertEqual(d.expectedSHA256.count, 64)  // hex sha256
+        XCTAssertFalse(d.runtimeArtifact.isEmpty)          // e.g. "openai_whisper-small.en"
+        XCTAssertGreaterThan(d.approximateDiskBytes, 0)
     }
 }
 ```
 - [ ] **Step 2: Run — expect FAIL.**
-- [ ] **Step 3: Implement** `WhisperModelID` (11 cases, `rawValue` = spec §4 ids) and `WhisperModelCatalog.descriptor(for:)`. Fill `runtimeArtifact`, `expectedSHA256`, `approximateDiskBytes` from the spike **results** doc's catalog table (`docs/superpowers/spikes/2026-09-18-openai-whisper-models-feasibility-results.md` §2). Do NOT invent checksums — copy them from the results doc; if any entry is missing there, STOP and flag it.
+- [ ] **Step 3: Implement** `WhisperModelID` (11 cases, `rawValue` = spec §4 ids) and `WhisperModelCatalog.descriptor(for:)`. Fill `runtimeArtifact` (the `openai_whisper-*` HF subfolder) and `approximateDiskBytes` from the results doc catalog table (`docs/superpowers/spikes/2026-09-18-openai-whisper-models-feasibility-results.md` §2, now present on this branch). **There is NO static per-model SHA256** — the catalog carries identity + size only; per-file checksum verification is done dynamically by `WhisperModelStore` (Task 3) against the HF tree `oid`s fetched at download time. If the artifact folder name or size for any id is missing from the results doc, STOP and flag it.
 - [ ] **Step 4: Run — expect PASS.**
 - [ ] **Step 5: Commit.** `feat(whisper): add WhisperModelCatalog`
 
@@ -131,7 +133,9 @@ func testEveryModelHasNonEmptyArtifactAndChecksum() {
 
 **Files:** Create `Relay/Backends/Whisper/WhisperModelStore.swift`; Test `RelayTests/Backends/Whisper/WhisperModelStoreTests.swift`.
 
-Mirror `FluidAudioKokoroModelLoader`/`FluidAudioParakeetEngine`'s presence-gate + atomic-promote thinking. Define a `WhisperDownloader` protocol seam so download logic is testable without the network; the live impl uses WhisperKit's HF download or `URLSession` (confirm which against the resolved API) to fetch `argmaxinc/whisperkit-coreml/<artifact>`.
+Mirror `FluidAudioKokoroModelLoader`/`FluidAudioParakeetEngine`'s presence-gate + atomic-promote thinking. Define a `WhisperDownloader` protocol seam so download logic is testable without the network; the live impl fetches `argmaxinc/whisperkit-coreml/<artifact>` via `URLSession` (or WhisperKit's HF helper — confirm against the resolved API).
+
+**Per-file verification (results doc §2):** a `.mlmodelc` bundle is many files. The live downloader fetches the HF tree for the artifact folder to get each file's `oid`, downloads every file, and verifies each against its `oid` — LFS files against the recorded sha256, non-LFS sidecars against the git blob-sha1 (`sha1("blob " + size + "\0" + content)`) — before the atomic promote. The `WhisperDownloader` seam returns verified bytes/paths so `WhisperModelStore`'s promote/presence logic is what the tests exercise; the fake supplies files + oids directly (no network).
 
 - [ ] **Step 1: Write failing tests** (against a temp dir + a fake `WhisperDownloader`):
   - `testPresenceFalseWhenDirEmpty` — network-free, returns not-downloaded.
@@ -180,7 +184,7 @@ Reads its selected model id from an injected selection source (a closure or a sm
   - `testTranscribeRejectsEmptyAudio`.
   - `testLoadFailureMapsToInitializationFailedAndRouterCanFallThrough`.
 - [ ] **Step 2: Run — expect FAIL.**
-- [ ] **Step 3: Implement** `WhisperBackend` (actor). `capabilities` = `[.fullyOffline]` plus `.multilingual` when the selected model is multilingual. `prepare()` activates the selected model. Error mapping parity with `ParakeetBackend.mapLoadError`.
+- [ ] **Step 3: Implement** `WhisperBackend` (actor). `capabilities` is a synchronous non-async getter, so it CANNOT await the selection source; advertise `[.fullyOffline, .multilingual]` **statically** (the Whisper backend as a whole can do multilingual — the catalog contains multilingual models). Do not vary capabilities per selected model. `prepare()` activates the selected model. Error mapping parity with `ParakeetBackend.mapLoadError`.
 - [ ] **Step 4: Run — expect PASS.**
 - [ ] **Step 5: Commit.** `feat(whisper): add WhisperBackend`
 
@@ -211,23 +215,37 @@ Composes catalog + store + runtime + the selection store. `models()` maps each c
 
 - [ ] **Step 1: Write failing tests:** one-model manager — `models().count == 1`, id `parakeet-v2`; `downloadModel` delegates to the existing Parakeet download; `selectModel` is a no-op-success (only one model); `installState` reflects presence.
 - [ ] **Step 2: Run — expect FAIL.**
-- [ ] **Step 3: Implement** `ParakeetModelManager` wrapping the existing Parakeet engine/download. Remove the `extension ParakeetBackend: SpeechModelDownloading {}` conformance. Leave `downloadModels` on the engine (the manager calls it).
-- [ ] **Step 4: Run — expect PASS.** (Do NOT delete the `SpeechModelDownloading` protocol yet — Task 8 removes its last consumers.)
+- [ ] **Step 3: Implement** `ParakeetModelManager` wrapping the existing Parakeet engine/download. Leave `downloadModels` on the engine (the manager calls it). **Do NOT remove the `extension ParakeetBackend: SpeechModelDownloading {}` conformance in this task** — `RelayRuntime.swift` (~line 256) still builds `speechModelDownloaders` from it, so removing it here breaks the build. The conformance removal + the RelayRuntime rewire happen together in Task 8a.
+- [ ] **Step 4: Run — expect PASS** (the new manager exists alongside the untouched Parakeet download path; nothing removed yet). `SpeechModelDownloading` stays — TTS keeps using it permanently.
 - [ ] **Step 5: Commit.** `feat(parakeet): add one-model ParakeetModelManager`
 
 ---
 
-## Task 8: Wire `AppModel`/`SpeechBackendCatalog` to per-model managers
+## Task 8a: Mechanical rename `speechModelDownloaders` → `speechModelManagers` (STT only)
 
-**Files:** Modify `Relay/App/SpeechBackendCatalog.swift`, `Relay/App/AppModel.swift` (declaration of `speechModelDownloaders`), `Relay/App/BackendCatalog.swift` (delete `SpeechModelDownloading`); Test `RelayTests/App/SpeechModelManagingCatalogTests.swift`.
+**Files:** Modify `Relay/App/RelayRuntime.swift` (declaration ~line 256 + `SpeechInputServices` field ~line 47), `Relay/App/SpeechInputServices.swift`, `Relay/App/AppModel.swift` (reads `runtime.speechIn.speechModelDownloaders` ~line 163), `Relay/App/SpeechBackendCatalog.swift` (remove the `extension ParakeetBackend: SpeechModelDownloading {}` at line 7). Tests: existing suite must stay green.
 
-This is the largest single task — split commits if it helps. Preserve the existing generation-counter race-safety; extend the download single-flight from per-backend (`downloadingBackendIDs`) to per-model (a `Set<String>` keyed `"<backendID>/<modelID>"`).
+Pure refactor, behaviour unchanged. This is the atomic compile unit the reviewer flagged: the STT map's element type changes from `any SpeechModelDownloading` to `any SpeechModelManaging`, the Parakeet conformance goes, and RelayRuntime builds the map from `ParakeetModelManager` (Task 7) instead of the backend. `ttsModelDownloaders` and `SpeechModelDownloading` itself are **untouched** (TTS keeps them).
 
-- [ ] **Step 1: Write failing tests** for the new per-model surface: `downloadSpeechModel(backendID:modelID:)` begins/ends download and writes `.downloading(progress:)` on the right model row; select updates `isSelected` and refreshes availability; progress monotonicity; a failed download marks that model `.downloadFailed` without touching others; the last-enabled-backend guard still holds.
-- [ ] **Step 2: Run — expect FAIL.**
-- [ ] **Step 3: Implement.** Rename `speechModelDownloaders` → `speechModelManagers: [String: any SpeechModelManaging]`. Rework `canDownloadSpeechModel`/`downloadSpeechModel`/progress bookkeeping to be per-model. Delete `SpeechModelDownloading` and its `ParakeetBackend` conformance references. Update any TTS-side callers only as far as needed to compile (TTS keeps its own current download path — do NOT migrate TTS; if TTS shared `SpeechModelDownloading`, give TTS its own minimal protocol or leave its existing type in place).
-- [ ] **Step 4: Run — expect PASS.**
-- [ ] **Step 5: Commit.** `refactor(stt): drive model download/select/remove per model`
+- [ ] **Step 1:** Change the STT map type to `[String: any SpeechModelManaging]` everywhere it is declared/passed (`RelayRuntime`, `SpeechInputServices`, `AppModel`). Populate it from `[parakeetModelManager.backendID: parakeetModelManager]`. Remove `extension ParakeetBackend: SpeechModelDownloading {}`.
+- [ ] **Step 2:** Temporarily keep `canDownloadSpeechModel`/`downloadSpeechModel` compiling by adapting them to call the manager's `downloadModel` for the backend's single/selected model (behaviour parity for Parakeet's one model). Update the two call sites: `DictationSettingsView.swift:84` and `ProjectSmokeTests.swift:34`.
+- [ ] **Step 3: Run full suite — expect PASS** (no behaviour change; Parakeet download still works, TTS untouched).
+- [ ] **Step 4: Commit.** `refactor(stt): rename speechModelDownloaders to speechModelManagers`
+
+---
+
+## Task 8b: Per-model download/select/remove + observable per-model state
+
+**Files:** Modify `Relay/App/SpeechBackendCatalog.swift`, `Relay/App/AppModel.swift`; Test `RelayTests/App/SpeechModelManagingCatalogTests.swift`.
+
+`BackendStatus`/`sttBackends` is strictly per-backend (one `state` per row) and `SpeechModelManaging.models()` is `async` returning immutable snapshots — neither can hold live per-model download progress, and `models()` can't be called from a SwiftUI `body`. So this task first defines the observable per-model container the view (Task 10) reads.
+
+- [ ] **Step 1: Define the observable per-model state on `AppModel`** (the reviewer's missing piece): e.g. `private(set) var speechModels: [String: [SpeechModelStatus]]` (backendID → snapshot rows) plus `private(set) var downloadingModelKeys: Set<String>` keyed `"<backendID>/<modelID>"` and a `downloadingModelProgress: [String: Double]` map. A `refreshSpeechModels()` awaits each manager's `models()` off-actor and assigns on the main actor, reusing the existing generation-counter race-safety pattern from `refreshSpeechBackendStatuses`.
+- [ ] **Step 2: Write failing tests** (fake `SpeechModelManaging`): `downloadSpeechModel(backendID:modelID:)` inserts the key into `downloadingModelKeys` and drives `.downloading(progress:)` for that row only; progress is monotonic; a failed download marks that model `.downloadFailed` and clears its key without touching sibling rows; `selectSpeechModel(backendID:modelID:)` updates the selected row's `isSelected` and refreshes backend availability; `removeSpeechModel` refuses/handles the loaded model per spec §17; the last-enabled-backend guard is unchanged.
+- [ ] **Step 3: Run — expect FAIL.**
+- [ ] **Step 4: Implement** the per-model download/select/remove methods + `refreshSpeechModels`, pairing the single-flight key with the visible row state in one synchronous step (same discipline as `beginDownload`/`endDownload`).
+- [ ] **Step 5: Run — expect PASS.**
+- [ ] **Step 6: Commit.** `feat(stt): per-model download/select/remove with observable state`
 
 ---
 
@@ -235,11 +253,11 @@ This is the largest single task — split commits if it helps. Preserve the exis
 
 **Files:** Modify `Relay/Domain/AppSettings.swift`; Test extend `RelayTests/Domain/AppSettingsTests.swift`.
 
-- [ ] **Step 1: Write failing tests:** default is empty; round-trips through the app's Codable/persistence; an unknown key/value decodes without throwing (resilient per-field decode, matching the repo's existing schema-migration pattern — read how other fields do it first).
+- [ ] **Step 1: Write failing tests:** (a) `selectedSpeechModelByBackend` default is empty; round-trips through Codable/persistence; a malformed/unknown value decodes without throwing (resilient per-field decode — read how existing fields do it first). (b) A `sttBackendOrder` containing `"whisper"` **survives** decode (round-trips), proving `whisper` was added to `knownSTTBackendIDs`.
 - [ ] **Step 2: Run — expect FAIL.**
-- [ ] **Step 3: Implement** the field + resilient decode. Wire `WhisperModelManager`/`WhisperBackend` selection to read/write it (persist selection only).
+- [ ] **Step 3: Implement** the `selectedSpeechModelByBackend` field + resilient decode, AND add `"whisper"` to `knownSTTBackendIDs` (~line 35) so `normalizedBackendOrder` no longer strips it. Wire `WhisperModelManager`/`WhisperBackend` selection to read/write the field (persist selection only). **Do NOT validate model ids in `AppSettings`** — it has no per-backend model set; an id no longer in a backend's catalog is dropped/ignored by the manager at read time, not by `AppSettings`. (Reconciles spec §7 wording.)
 - [ ] **Step 4: Run — expect PASS.**
-- [ ] **Step 5: Commit.** `feat(settings): persist selected speech model per backend`
+- [ ] **Step 5: Commit.** `feat(settings): persist selected speech model + register whisper backend id`
 
 ---
 
@@ -258,9 +276,9 @@ This is the largest single task — split commits if it helps. Preserve the exis
 
 **Files:** Modify `Relay/App/RelayRuntime.swift`.
 
-- [ ] **Step 1: Write/extend a test** at the composition-root level (mirror how Parakeet is asserted registered, if such a test exists) that `whisper` appears in the STT registry with a `WhisperModelManager`.
+- [ ] **Step 1: Write/extend a test** at the composition-root level (mirror how Parakeet is asserted registered) that `whisper` appears in the STT registry and in `speechModelManagers` with a `WhisperModelManager`.
 - [ ] **Step 2: Run — expect FAIL.**
-- [ ] **Step 3: Implement** construction of `WhisperBackend` + `WhisperModelManager` (catalog + store + runtime + live `WhisperKitEngine`) and register both. Append `whisper` to the default `sttBackendOrder`; do NOT place it first; do NOT pre-select a model.
+- [ ] **Step 3: Implement** construction of `WhisperBackend` + `WhisperModelManager` (catalog + store + runtime + live `WhisperKitEngine`) and register both. **Match the Parakeet precedent: register Whisper but do NOT enable it by default** — leave `AppSettings.sttBackendOrder`'s default at `["apple-speech"]` (do NOT touch `AppSettingsTests.swift:148,158`). The user enables Whisper and selects a model from Settings. No pre-selected model.
 - [ ] **Step 4: Run — expect PASS,** then full suite green.
 - [ ] **Step 5: Commit.** `feat(whisper): register OpenAI Whisper backend in RelayRuntime`
 
@@ -279,7 +297,7 @@ This is the largest single task — split commits if it helps. Preserve the exis
 
 - Full suite green: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO`.
 - No Python/CLI/subprocess introduced; WhisperKit called as a library.
-- Apple Speech + Parakeet behaviour unchanged; Parakeet UX still a single Download row.
-- `SpeechModelDownloading` removed from STT; TTS untouched.
+- Apple Speech + Parakeet behaviour unchanged; Parakeet UX still a single Download row; Parakeet not enabled by default; Whisper registered but not enabled by default.
+- STT no longer uses `SpeechModelDownloading` (Parakeet conformance removed); the protocol itself STAYS for TTS (`Kokoro`/`PocketTTS`), untouched.
 - Whisper selectable with all 11 models; switching unloads the prior context; failure falls through the router.
 - Manual/owner-Mac verification (Exp 5–7) explicitly deferred and documented — NOT claimed as done.
