@@ -10,7 +10,12 @@ final class FluidAudioParakeetEngineTests: XCTestCase {
         let engine = makeEngine(loader: FakeModelLoader())
         let modelDirectory = await engine.modelDirectory
 
-        XCTAssertEqual(modelDirectory.lastPathComponent, "parakeet-tdt-0.6b-v2-coreml")
+        // FluidAudio 0.15's `Repo.folderName` dropped the "-coreml" suffix for repos that fall
+        // through to its `default` case (via `name.replacingOccurrences(of: "-coreml", with: "")`),
+        // which is where `.parakeetV2` now lands - the cache folder name changed from
+        // "parakeet-tdt-0.6b-v2-coreml" (0.12.6) to "parakeet-tdt-0.6b-v2" (0.15.7). Anyone
+        // upgrading with an existing download will re-download once under the new path.
+        XCTAssertEqual(modelDirectory.lastPathComponent, "parakeet-tdt-0.6b-v2")
     }
 
     func testLoadThrowsModelsNotDownloadedWhenLocalValidationFailsAndNeverCallsLoad() async {

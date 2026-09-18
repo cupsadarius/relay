@@ -227,7 +227,14 @@ final class FluidAudioPocketTTSEngineTests: XCTestCase {
 
     func testModelsArePresentReturnsTrueOnlyWhenEveryRequiredModelExists() async throws {
         let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let modelsDirectory = tempDirectory.appendingPathComponent("Models").appendingPathComponent("pocket-tts")
+        // Matches `FluidAudioPocketTTSModelLoader.modelsDirectory`: FluidAudio 0.15 nests each
+        // language pack under a versioned subdirectory (`v2.1/<language>/`), computed here the
+        // same way rather than hardcoded so this test tracks the loader instead of drifting from
+        // it.
+        let modelsDirectory = tempDirectory
+            .appendingPathComponent(PocketTtsConstants.defaultModelsSubdirectory)
+            .appendingPathComponent(Repo.pocketTts.folderName)
+            .appendingPathComponent(PocketTtsLanguage.english.repoSubdirectory)
         try FileManager.default.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDirectory) }
 

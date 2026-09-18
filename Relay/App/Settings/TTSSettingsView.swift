@@ -7,9 +7,11 @@ struct TTSSettingsView: View {
     private let appleVoices = AVSpeechSynthesisVoice.speechVoices().sorted {
         $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
     }
-    /// American-English Kokoro voices only, per the plan: the rest of `TtsConstants.availableVoices`
-    /// covers other languages that aren't tested/supported yet.
-    private static let kokoroVoices = TtsConstants.availableVoices.filter {
+    /// American-English Kokoro voices only, per the plan: the rest of
+    /// `KokoroAneConstants.englishVoices` covers other English accents (British bf_/bm_, etc.)
+    /// that aren't tested/supported yet. (FluidAudio 0.15 replaced the old, mono-language
+    /// `TtsConstants.availableVoices` with this per-variant catalog on `KokoroAneConstants`.)
+    private static let kokoroVoices = KokoroAneConstants.englishVoices.filter {
         $0.hasPrefix("af_") || $0.hasPrefix("am_")
     }
     /// FluidAudio's `PocketTtsConstants` exposes no voice list - only `defaultVoice` ("alba") is

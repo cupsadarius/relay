@@ -259,7 +259,7 @@ actor FluidAudioPocketTTSEngine: PocketTTSEngine {
     }
 
     private static func defaultCacheDirectory() -> URL {
-        (try? TtsModels.cacheDirectoryURL())
+        (try? TtsCacheDirectory.ensure())
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".cache/fluidaudio")
     }
 }
@@ -274,15 +274,20 @@ actor FluidAudioPocketTTSEngine: PocketTTSEngine {
 /// `~/.cache/fluidaudio` if missing, so a plain "does the cache directory exist" check would
 /// always be true and falsely report the model as ready. Instead this checks for the actual
 /// compiled model bundles and constants directory FluidAudio's downloader places at
-/// `<cacheDirectory>/Models/pocket-tts/*` - the exact path `PocketTtsResourceDownloader.ensureModels`
-/// itself checks before deciding whether to download.
+/// `<cacheDirectory>/Models/pocket-tts/v2.1/english/*` - the exact path
+/// `PocketTtsResourceDownloader.ensureModels` itself checks before deciding whether to download.
 struct FluidAudioPocketTTSModelLoader: PocketTTSModelLoading {
     let cacheDirectory: URL
 
     private var modelsDirectory: URL {
+        // FluidAudio 0.15 nests each language pack under a versioned subdirectory
+        // (`v2.1/<language>/`); `PocketTtsLanguage.english.repoSubdirectory` gives that segment
+        // so this stays in sync with wherever `PocketTtsResourceDownloader.ensureModels` actually
+        // places the files.
         cacheDirectory
             .appendingPathComponent(PocketTtsConstants.defaultModelsSubdirectory)
             .appendingPathComponent(Repo.pocketTts.folderName)
+            .appendingPathComponent(PocketTtsLanguage.english.repoSubdirectory)
     }
 
     func modelsArePresent() async -> Bool {
@@ -305,6 +310,7 @@ struct FluidAudioPocketTTSModelLoader: PocketTTSModelLoading {
 
     func downloadAndLoad(progress: @escaping @Sendable (Double) -> Void) async throws -> any PocketTTSModelSession {
         _ = try await PocketTtsResourceDownloader.ensureModels(
+            language: .english,
             directory: cacheDirectory,
             progressHandler: { downloadProgress in progress(downloadProgress.fractionCompleted) }
         )
