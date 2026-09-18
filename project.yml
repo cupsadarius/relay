@@ -6,7 +6,7 @@ options:
 packages:
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio.git
-    exactVersion: 0.12.6
+    exactVersion: 0.15.7
 targets:
   Relay:
     type: application

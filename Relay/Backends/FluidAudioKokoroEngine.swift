@@ -3,26 +3,24 @@ import Foundation
 import os
 
 /// A loaded Kokoro model, ready to synthesize speech. `FluidAudioKokoroModelLoader` wraps
-/// FluidAudio's `KokoroTtsManager` (a plain, non-actor class) behind this protocol purely as a
-/// test seam, so `FluidAudioKokoroEngine`'s loading logic can be exercised against a fake without
-/// constructing real CoreML models. It is itself an actor (not just a struct wrapping the
-/// manager) so that concurrent calls into the underlying, non-`Sendable` `KokoroTtsManager` are
-/// always serialized, matching the safety `AsrManagerSession` gets for free from `AsrManager`
-/// already being an actor.
+/// FluidAudio's `KokoroAneManager` (a `public actor`, already `Sendable` on its own) behind this
+/// protocol purely as a test seam, so `FluidAudioKokoroEngine`'s loading logic can be exercised
+/// against a fake without constructing real CoreML models.
 protocol KokoroModelSession: Sendable {
     func synthesize(text: String, voice: String, speed: Float) async throws -> Data
 }
 
-/// Wraps FluidAudio's `TtsModels`/`KokoroTtsManager` static/instance calls behind a protocol so
-/// `FluidAudioKokoroEngine`'s single-flight, presence-check, and error-mapping logic can be
-/// exercised in tests without constructing real CoreML models.
+/// Wraps FluidAudio's `KokoroAneManager`/`KokoroAneResourceDownloader` static/instance calls
+/// behind a protocol so `FluidAudioKokoroEngine`'s single-flight, presence-check, and
+/// error-mapping logic can be exercised in tests without constructing real CoreML models.
 protocol KokoroModelLoading: Sendable {
-    /// Network-free: true only if a valid model is already on disk. Unlike ASR, FluidAudio's TTS
-    /// module exposes no models-exist API, so this must be hand-rolled against the filesystem.
+    /// Network-free: true only if a valid model is already on disk. FluidAudio's KokoroAne module
+    /// exposes no models-exist API, so this must be hand-rolled against the filesystem.
     func modelsArePresent() async -> Bool
     /// Loads an already-present model. Must only be called once `modelsArePresent()` has
-    /// returned `true` - there is no network-free load path in FluidAudio's TTS API, so this is
-    /// the only protection against a residual download (see `FluidAudioKokoroModelLoader`).
+    /// returned `true` - there is no network-free load path in FluidAudio's KokoroAne API, so
+    /// this is the only protection against a residual download (see
+    /// `FluidAudioKokoroModelLoader`).
     func loadLocal() async throws -> any KokoroModelSession
     /// Downloads the model (if needed) and loads it. The only *intended* network access in this
     /// type.
@@ -41,6 +39,13 @@ enum KokoroEngineError: Error, Equatable, Sendable {
     case loadFailed
     /// Synthesis failed, including a call made before the engine ever finished a successful load.
     case synthesisFailed
+    /// The input text produced more phonemes than a single KokoroAne call can handle (~510).
+    /// FluidAudio's `KokoroAneManager` has no built-in chunker for this; `KokoroTTSBackend` maps
+    /// this to `SpeechBackendError.inferenceFailed`, which the router treats as fallback-worthy,
+    /// so a caller with multiple TTS backends enabled falls through to the next one (e.g.
+    /// PocketTTS or Apple) instead of failing outright. See the doc comment on
+    /// `FluidAudioKokoroEngine` for what a real chunker would need.
+    case textTooLong
 }
 
 /// The seam between `KokoroTTSBackend` and the underlying Kokoro runtime (FluidAudio in
@@ -56,6 +61,9 @@ protocol KokoroEngine: Sendable {
     /// download is in flight; it may be called from any queue.
     func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws
     /// Synthesizes `text` to a complete WAV (24 kHz mono). The engine must already be loaded.
+    /// Throws `KokoroEngineError.textTooLong` if `text` phonemizes to more than KokoroAne's
+    /// ~510-phoneme per-call limit - callers must not feed it chunked text themselves without
+    /// also handling that case, since there is no built-in chunker to fall back on.
     func synthesize(text: String, voice: String, speed: Float) async throws -> Data
 }
 
@@ -66,16 +74,29 @@ extension KokoroEngine {
     }
 }
 
-/// Production `KokoroEngine` backed by FluidAudio's Kokoro CoreML TTS model. Loads and runs the
-/// model entirely on-device.
+/// Production `KokoroEngine` backed by FluidAudio's `KokoroAneManager` (the ANE-resident,
+/// 7-stage Kokoro 82M CoreML chain). Loads and runs the model entirely on-device.
 ///
-/// **There is no network-free load path in FluidAudio's TTS API.** Unlike `AsrModels`, which
-/// offers `isModelValid`/`load(from:)`, `TtsModels` offers only `download(directory:)`, which
-/// loads from disk when files are present but *re-downloads* if any are absent or corrupt. The
-/// hand-rolled `modelsArePresent()` presence gate on `load(allowDownload: false)` is therefore
-/// the ONLY protection against `TtsModels.download` reaching the network when a caller asked for
-/// a local-only load - there is no way to close that gap further without patching FluidAudio.
-/// Only `load(allowDownload: true)` is meant to reach the network.
+/// **There is no network-free load path in FluidAudio's KokoroAne API.** `KokoroAneManager`'s
+/// `initialize()` downloads any missing models before loading, and is a no-op download when
+/// files are already present. The hand-rolled `modelsArePresent()` presence gate on
+/// `load(allowDownload: false)` is therefore the ONLY protection against `initialize()` reaching
+/// the network when a caller asked for a local-only load - there is no way to close that gap
+/// further without patching FluidAudio. Only `load(allowDownload: true)` is meant to reach the
+/// network.
+///
+/// **No chunking**: `KokoroAneManager` caps input at ~510 phonemes per call and has no built-in
+/// chunker (splitting text is a text/prosody problem, not something the ANE pipeline can do
+/// safely on its own - see `KokoroAneConstants.maxPhonemeLength`). Rather than silently
+/// truncating or building an ad hoc chunker here, `synthesize` surfaces
+/// `KokoroEngineError.textTooLong` for over-limit input; `KokoroTTSBackend` maps that onto
+/// `SpeechBackendError.inferenceFailed`, which `TTSRouter` already treats as fallback-worthy, so
+/// a Relay install with more than one TTS backend enabled falls through to the next one (e.g.
+/// PocketTTS, which has no such limit, or Apple's system TTS) automatically. A production-grade
+/// fix would instead sentence-chunk the input upstream of this engine (splitting on sentence
+/// boundaries, keeping each chunk under the phoneme cap by phonemizing speculatively via
+/// `KokoroAneManager.phonemes(for:)`) and concatenate the resulting WAV/PCM segments - out of
+/// scope for this spike.
 actor FluidAudioKokoroEngine: KokoroEngine {
     /// Which flavor of load is in flight, tracked alongside its task. A caller with a different
     /// `allowDownload` value decides whether to join it, ignore it and start its own, or refuse
@@ -93,10 +114,9 @@ actor FluidAudioKokoroEngine: KokoroEngine {
     /// Caches a positive `modelsArePresent()` result for as long as it remains trustworthy:
     /// cleared on any load failure, since FluidAudio's own failure handling can delete and
     /// redownload files out from under us (see the type-level doc comment), so a stale `true`
-    /// could let a later `allowDownload: false` call reach `TtsModels.download` ungated. Never
-    /// caches a negative result, since the user may download the model between calls. Only ever
-    /// set by a `localOnly` load's own presence check - a `download` load never touches it
-    /// directly.
+    /// could let a later `allowDownload: false` call reach the network ungated. Never caches a
+    /// negative result, since the user may download the model between calls. Only ever set by a
+    /// `localOnly` load's own presence check - a `download` load never touches it directly.
     private var validatedModelsPresent: Bool
 
     init(
@@ -160,6 +180,8 @@ actor FluidAudioKokoroEngine: KokoroEngine {
             return try await session.synthesize(text: text, voice: voice, speed: speed)
         } catch is CancellationError {
             throw CancellationError()
+        } catch KokoroAneError.phonemeSequenceTooLong {
+            throw KokoroEngineError.textTooLong
         } catch {
             throw KokoroEngineError.synthesisFailed
         }
@@ -237,34 +259,47 @@ actor FluidAudioKokoroEngine: KokoroEngine {
         return present
     }
 
+    /// The directory `KokoroAneManager`/`KokoroAneResourceDownloader` treat as their "Models"
+    /// root - i.e. what gets passed as their `directory:` parameter directly, with no further
+    /// path segment appended by Relay. Mirrors `KokoroAneResourceDownloader`'s own default
+    /// (`TtsCacheDirectory.ensure()/Models`) so a caller that doesn't override the loader gets
+    /// the exact same on-disk location FluidAudio would pick on its own.
     private static func defaultCacheDirectory() -> URL {
-        (try? TtsModels.cacheDirectoryURL())
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".cache/fluidaudio")
+        (try? TtsCacheDirectory.ensure().appendingPathComponent(KokoroAneResourceDownloader.modelsSubdirectory))
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".cache/fluidaudio/Models")
     }
 }
 
-/// Live `KokoroModelLoading` backed by FluidAudio's `TtsModels`/`KokoroTtsManager` API.
+/// Live `KokoroModelLoading` backed by FluidAudio's `KokoroAneManager`/
+/// `KokoroAneResourceDownloader` API. Always loads the English variant - Relay exposes only the
+/// Kokoro-82M v1.0 English voice catalog (`KokoroAneConstants.englishVoices`), never Mandarin or
+/// Japanese.
 ///
 /// `modelsArePresent()` is deliberately hand-rolled with `FileManager` rather than relying on
-/// `TtsModels.cacheDirectoryURL()` existing: that call creates `~/.cache/fluidaudio` if missing,
-/// so a plain "does the cache directory exist" check would always be true and falsely report the
-/// model as ready. Instead this checks for the actual compiled model bundles FluidAudio's
-/// downloader places at `<cacheDirectory>/Models/kokoro/<variant>.mlmodelc`.
+/// `KokoroAneManager.isAvailable()`: that's only true once the models are already loaded into
+/// memory (i.e. after a successful `initialize()`), not a network-free "is it on disk" check -
+/// exactly the same "cache directory always exists" trap the old `TtsModels.cacheDirectoryURL()`
+/// had, just moved one level: `TtsCacheDirectory.ensure()` still creates
+/// `~/.cache/fluidaudio` if missing. Instead this checks for the actual compiled model bundles
+/// and auxiliary files FluidAudio's downloader places at
+/// `<cacheDirectory>/kokoro-82m-coreml/ANE/*`.
 struct FluidAudioKokoroModelLoader: KokoroModelLoading {
+    /// The directory `KokoroAneManager` and `KokoroAneResourceDownloader.ensureModels` treat as
+    /// their "Models" root when passed as `directory:` - NOT the same as the old FluidAudio API's
+    /// cache root, which had a "Models" subdirectory appended internally. See
+    /// `FluidAudioKokoroEngine.defaultCacheDirectory()`.
     let cacheDirectory: URL
 
+    private static let variant: KokoroAneVariant = .english
+
     private var modelsDirectory: URL {
-        cacheDirectory
-            .appendingPathComponent(TtsConstants.defaultModelsSubdirectory)
-            .appendingPathComponent(Repo.kokoro.folderName)
+        cacheDirectory.appendingPathComponent(Self.variant.repo.folderName)
     }
 
     func modelsArePresent() async -> Bool {
         let directory = modelsDirectory
-        for fileName in ModelNames.TTS.Variant.allCases.map(\.fileName) {
-            var isDirectory: ObjCBool = false
-            let path = directory.appendingPathComponent(fileName).path
-            guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
+        for fileName in ModelNames.KokoroAne.requiredModels {
+            guard FileManager.default.fileExists(atPath: directory.appendingPathComponent(fileName).path) else {
                 return false
             }
         }
@@ -272,63 +307,29 @@ struct FluidAudioKokoroModelLoader: KokoroModelLoading {
     }
 
     func loadLocal() async throws -> any KokoroModelSession {
-        let models = try await TtsModels.download(directory: cacheDirectory)
-        return try await makeSession(from: models)
+        try await makeSession(progress: nil)
     }
 
     func downloadAndLoad(progress: @escaping @Sendable (Double) -> Void) async throws -> any KokoroModelSession {
-        let models = try await TtsModels.download(
-            directory: cacheDirectory,
-            progressHandler: { downloadProgress in progress(downloadProgress.fractionCompleted) }
-        )
-        return try await makeSession(from: models)
+        try await makeSession(progress: progress)
     }
 
-    private func makeSession(from models: TtsModels) async throws -> any KokoroModelSession {
-        let manager = KokoroTtsManager(directory: cacheDirectory)
-        try await manager.initialize(models: models)
-        return KokoroTtsManagerSession(manager: manager)
+    private func makeSession(progress: (@Sendable (Double) -> Void)?) async throws -> any KokoroModelSession {
+        let manager = KokoroAneManager(variant: Self.variant, directory: cacheDirectory)
+        try await manager.initialize()
+        progress?(1.0)
+        return KokoroAneManagerSession(manager: manager)
     }
 }
 
-/// Serializes access to FluidAudio's `KokoroTtsManager`, which is a plain, non-`Sendable`,
-/// non-actor class (unlike `AsrManager`, which is already an actor) with internal mutable state
-/// (cached voice embeddings, etc.). Wrapping it in our own actor is not, by itself, enough:
-/// actors are reentrant, so two overlapping calls to `synthesize` could still both be suspended
-/// inside `manager.synthesize` at once. `manager` is therefore held `nonisolated(unsafe)` and
-/// every call is funneled through an explicit acquire/release queue so at most one call into the
-/// manager is ever in flight, giving `AsrManagerSession`'s safety guarantee back without
-/// depending on FluidAudio making the type Sendable.
-private actor KokoroTtsManagerSession: KokoroModelSession {
-    private nonisolated(unsafe) let manager: KokoroTtsManager
-    private var isBusy = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
-
-    init(manager: KokoroTtsManager) {
-        self.manager = manager
-    }
+/// Thin wrapper around FluidAudio's `KokoroAneManager` so it can conform to `KokoroModelSession`.
+/// `KokoroAneManager` is a `public actor` - already `Sendable` and self-serializing - so, unlike
+/// the old plain-class `KokoroTtsManager`, this needs no acquire/release wrapping to keep
+/// concurrent calls from interleaving inside it.
+private struct KokoroAneManagerSession: KokoroModelSession {
+    let manager: KokoroAneManager
 
     func synthesize(text: String, voice: String, speed: Float) async throws -> Data {
-        await acquire()
-        defer { release() }
-        return try await manager.synthesize(text: text, voice: voice, voiceSpeed: speed)
-    }
-
-    private func acquire() async {
-        if isBusy {
-            await withCheckedContinuation { waiters.append($0) }
-            return
-        }
-        isBusy = true
-    }
-
-    private func release() {
-        guard !waiters.isEmpty else {
-            isBusy = false
-            return
-        }
-        // Ownership passes directly to the next waiter; `isBusy` stays true throughout.
-        let next = waiters.removeFirst()
-        next.resume()
+        try await manager.synthesize(text: text, voice: voice, speed: speed)
     }
 }

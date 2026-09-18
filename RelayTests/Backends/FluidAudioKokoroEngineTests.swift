@@ -69,6 +69,21 @@ final class FluidAudioKokoroEngineTests: XCTestCase {
         }
     }
 
+    func testSynthesizeMapsPhonemeSequenceTooLongToTextTooLong() async throws {
+        let loader = FakeKokoroModelLoader()
+        await loader.setPresent(true)
+        let engine = FluidAudioKokoroEngine(modelLoader: loader)
+        try await engine.load(allowDownload: false)
+        await loader.setLastSessionSynthesizeError(KokoroAneError.phonemeSequenceTooLong(600))
+
+        do {
+            _ = try await engine.synthesize(text: String(repeating: "word ", count: 200), voice: "af_heart", speed: 1.0)
+            XCTFail("Expected textTooLong")
+        } catch {
+            XCTAssertEqual(error as? KokoroEngineError, .textTooLong)
+        }
+    }
+
     func testModelsArePresentDelegatesToLoaderWithoutLoading() async {
         let loader = FakeKokoroModelLoader()
         await loader.setPresent(true)
@@ -180,12 +195,14 @@ final class FluidAudioKokoroEngineTests: XCTestCase {
 
     func testModelsArePresentReturnsTrueOnlyWhenEveryVariantBundleExists() async throws {
         let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let modelsDirectory = tempDirectory.appendingPathComponent("Models").appendingPathComponent("kokoro")
+        // Matches `FluidAudioKokoroModelLoader.modelsDirectory`: cacheDirectory/<repo.folderName>,
+        // where the English KokoroAne variant's folder name is "kokoro-82m-coreml/ANE".
+        let modelsDirectory = tempDirectory.appendingPathComponent("kokoro-82m-coreml").appendingPathComponent("ANE")
         try FileManager.default.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDirectory) }
 
         let loader = FluidAudioKokoroModelLoader(cacheDirectory: tempDirectory)
-        let fileNames = ModelNames.TTS.Variant.allCases.map(\.fileName)
+        let fileNames = Array(ModelNames.KokoroAne.requiredModels)
 
         // Only the first bundle exists: still not present.
         try FileManager.default.createDirectory(
@@ -222,13 +239,21 @@ private final class ProgressBox: @unchecked Sendable {
 private actor FakeKokoroSession: KokoroModelSession {
     let text: String
     private(set) var received: (String, String, Float)?
+    private var synthesizeError: Error?
 
     init(text: String) {
         self.text = text
     }
 
+    func setSynthesizeError(_ error: Error?) {
+        synthesizeError = error
+    }
+
     func synthesize(text: String, voice: String, speed: Float) async throws -> Data {
         received = (text, voice, speed)
+        if let synthesizeError {
+            throw synthesizeError
+        }
         return Data(text.utf8)
     }
 }
@@ -262,6 +287,10 @@ private actor FakeKokoroModelLoader: KokoroModelLoading {
 
     func lastSessionReceivedArgs() async -> (String, String, Float)? {
         await lastSession?.received
+    }
+
+    func setLastSessionSynthesizeError(_ error: Error?) async {
+        await lastSession?.setSynthesizeError(error)
     }
 
     func modelsArePresent() async -> Bool {

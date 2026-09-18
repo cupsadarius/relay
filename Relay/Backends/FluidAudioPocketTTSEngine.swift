@@ -259,7 +259,7 @@ actor FluidAudioPocketTTSEngine: PocketTTSEngine {
     }
 
     private static func defaultCacheDirectory() -> URL {
-        (try? TtsModels.cacheDirectoryURL())
+        (try? TtsCacheDirectory.ensure())
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".cache/fluidaudio")
     }
 }
@@ -280,9 +280,14 @@ struct FluidAudioPocketTTSModelLoader: PocketTTSModelLoading {
     let cacheDirectory: URL
 
     private var modelsDirectory: URL {
+        // FluidAudio 0.15 nests each language pack under a versioned subdirectory
+        // (`v2.1/<language>/`); `PocketTtsLanguage.english.repoSubdirectory` gives that segment
+        // so this stays in sync with wherever `PocketTtsResourceDownloader.ensureModels` actually
+        // places the files.
         cacheDirectory
             .appendingPathComponent(PocketTtsConstants.defaultModelsSubdirectory)
             .appendingPathComponent(Repo.pocketTts.folderName)
+            .appendingPathComponent(PocketTtsLanguage.english.repoSubdirectory)
     }
 
     func modelsArePresent() async -> Bool {
@@ -305,6 +310,7 @@ struct FluidAudioPocketTTSModelLoader: PocketTTSModelLoading {
 
     func downloadAndLoad(progress: @escaping @Sendable (Double) -> Void) async throws -> any PocketTTSModelSession {
         _ = try await PocketTtsResourceDownloader.ensureModels(
+            language: .english,
             directory: cacheDirectory,
             progressHandler: { downloadProgress in progress(downloadProgress.fractionCompleted) }
         )

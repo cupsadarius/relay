@@ -250,7 +250,7 @@ private struct FluidAudioModelLoader: ParakeetModelLoading {
 
     private func makeSession(from models: AsrModels) async throws -> any ParakeetModelSession {
         let manager = AsrManager(config: .default)
-        try await manager.initialize(models: models)
+        try await manager.loadModels(models)
         return AsrManagerSession(manager: manager)
     }
 }
@@ -262,7 +262,12 @@ private struct AsrManagerSession: ParakeetModelSession {
     let manager: AsrManager
 
     func transcribe(samples: [Float]) async throws -> String {
-        let result = try await manager.transcribe(samples)
+        // FluidAudio 0.15's `transcribe` requires an explicit decoder state (needed for
+        // streaming state threading across chunks); a fresh state per call reproduces the old
+        // stateless, single-shot `transcribe(_:)` behavior. `decoderLayerCount` matches the
+        // loaded model version (2 for v2, which is all this engine ever loads).
+        var decoderState = TdtDecoderState.make(decoderLayers: await manager.decoderLayerCount)
+        let result = try await manager.transcribe(samples, decoderState: &decoderState)
         return result.text
     }
 }
