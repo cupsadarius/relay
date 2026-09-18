@@ -37,6 +37,10 @@ targets:
         INFOPLIST_KEY_LSUIElement: YES
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Relay uses the microphone only while you dictate."
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Relay uses on-device speech recognition when the Apple Speech backend is selected."
+      configs:
+        debug:
+          PRODUCT_BUNDLE_IDENTIFIER: dev.relaymac.Relay.debug
+          INFOPLIST_KEY_CFBundleDisplayName: "Relay Debug"
     postbuildScripts:
       - name: Embed RelayHook
         script: |
