@@ -58,6 +58,18 @@ final class AppModel {
     var lastMicrophoneCaptureDiagnostics: MicrophoneCaptureDiagnostics? { diagnostics.lastMicrophoneCaptureDiagnostics }
     var sttBackends: [STTBackendStatus] = []
     var speechBackendMessage: String?
+    /// Per-model snapshot rows, keyed by backend id, populated by `refreshSpeechModels()`. Unlike
+    /// `sttBackends` (one row per backend, derived from `availability()`), this is the per-model
+    /// surface the Settings view needs to list/download/select/remove an individual model for a
+    /// backend that offers more than one (Whisper). `models()` is async, so the view can't call it
+    /// directly from `body` — it reads this instead. Settable (like `sttBackends`) only so
+    /// `SpeechBackendCatalog.swift`'s `AppModel` extension can mutate it; callers outside `AppModel`
+    /// should treat it as read-only.
+    var speechModels: [String: [SpeechModelStatus]] = [:]
+    /// Models with an in-flight download, keyed `"<backendID>/<modelID>"`. Tracked as an
+    /// `@Observable`-visible property (unlike `downloadingBackendIDs`, which is bookkeeping-only)
+    /// so the view can show per-row download activity without inferring it from `installState`.
+    var downloadingModelKeys: Set<String> = []
     var ttsBackends: [TTSBackendStatus] = []
     var ttsBackendMessage: String?
     /// Whether the Relay agent-hook Unix socket is currently listening. Only ever flipped by
@@ -75,6 +87,10 @@ final class AppModel {
     @ObservationIgnored let ttsModelDownloaders: [String: any SpeechModelDownloading]
     @ObservationIgnored var downloadingBackendIDs: Set<String> = []
     @ObservationIgnored var refreshGeneration = 0
+    /// Generation counter for `refreshSpeechModels()`, mirroring `refreshGeneration`'s race-safety
+    /// pattern: a refresh that was superseded by a later one must not apply its (older) results
+    /// after the newer one has already won.
+    @ObservationIgnored var speechModelsRefreshGeneration = 0
     @ObservationIgnored var downloadingTTSBackendIDs: Set<String> = []
     @ObservationIgnored var ttsRefreshGeneration = 0
     /// The fire-and-forget initial status refresh kicked off from `init`. Exposed so tests can
