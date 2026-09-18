@@ -43,6 +43,17 @@ struct WhisperModelDescriptor: Identifiable, Equatable, Sendable {
     /// feasibility spike's live Hugging Face tree API measurement (`.mlmodelc/**` plus top-level
     /// `config.json`/`generation_config.json` only -- `.mlpackage` source copies excluded).
     let approximateDiskBytes: Int64
+    /// The `openai/whisper-*` Hugging Face repo WhisperKit's own
+    /// `ModelUtilities.tokenizerNameForVariant` resolves a loaded model of this id to -- i.e. the
+    /// repo `WhisperModelStore` must fetch `tokenizer.json`/`tokenizer_config.json` from so they
+    /// land in the model's own folder (`WhisperKitEngine.load`'s `tokenizerFolder: modelFolder`
+    /// then lets WhisperKit's local-first tokenizer search find them there, with no live Hub
+    /// fetch). Verified against argmax-oss-swift 1.1.0's
+    /// `Sources/WhisperKit/Utilities/ModelUtilities.swift` (`tokenizerNameForVariant`), not
+    /// guessed from `runtimeArtifact`/`upstreamCheckpoint` -- see
+    /// `WhisperModelCatalogTests.testTokenizerRepoMatchesVerifiedWhisperKitMapping` for why
+    /// `turbo` maps to `openai/whisper-large-v3` rather than a `-turbo`-named repo.
+    let tokenizerRepo: String
 }
 
 /// Pure metadata catalog for the Whisper models Relay's WhisperKit backend can offer. No network
@@ -68,7 +79,8 @@ enum WhisperModelCatalog {
             upstreamCheckpoint: "tiny.en",
             runtimeArtifact: "openai_whisper-tiny.en",
             englishOnly: true,
-            approximateDiskBytes: 76_650_906
+            approximateDiskBytes: 76_650_906,
+            tokenizerRepo: "openai/whisper-tiny.en"
         ),
         WhisperModelDescriptor(
             id: .tiny,
@@ -76,7 +88,8 @@ enum WhisperModelCatalog {
             upstreamCheckpoint: "tiny",
             runtimeArtifact: "openai_whisper-tiny",
             englishOnly: false,
-            approximateDiskBytes: 76_650_906
+            approximateDiskBytes: 76_650_906,
+            tokenizerRepo: "openai/whisper-tiny"
         ),
         WhisperModelDescriptor(
             id: .baseEn,
@@ -84,7 +97,8 @@ enum WhisperModelCatalog {
             upstreamCheckpoint: "base.en",
             runtimeArtifact: "openai_whisper-base.en",
             englishOnly: true,
-            approximateDiskBytes: 146_695_782
+            approximateDiskBytes: 146_695_782,
+            tokenizerRepo: "openai/whisper-base.en"
         ),
         WhisperModelDescriptor(
             id: .base,
@@ -92,7 +106,8 @@ enum WhisperModelCatalog {
             upstreamCheckpoint: "base",
             runtimeArtifact: "openai_whisper-base",
             englishOnly: false,
-            approximateDiskBytes: 146_695_782
+            approximateDiskBytes: 146_695_782,
+            tokenizerRepo: "openai/whisper-base"
         ),
         WhisperModelDescriptor(
             id: .smallEn,
@@ -100,7 +115,8 @@ enum WhisperModelCatalog {
             upstreamCheckpoint: "small.en",
             runtimeArtifact: "openai_whisper-small.en",
             englishOnly: true,
-            approximateDiskBytes: 486_539_264
+            approximateDiskBytes: 486_539_264,
+            tokenizerRepo: "openai/whisper-small.en"
         ),
         WhisperModelDescriptor(
             id: .small,
@@ -108,7 +124,8 @@ enum WhisperModelCatalog {
             upstreamCheckpoint: "small",
             runtimeArtifact: "openai_whisper-small",
             englishOnly: false,
-            approximateDiskBytes: 486_539_264
+            approximateDiskBytes: 486_539_264,
+            tokenizerRepo: "openai/whisper-small"
         ),
         WhisperModelDescriptor(
             id: .mediumEn,
@@ -116,7 +133,8 @@ enum WhisperModelCatalog {
             upstreamCheckpoint: "medium.en",
             runtimeArtifact: "openai_whisper-medium.en",
             englishOnly: true,
-            approximateDiskBytes: 1_529_662_669
+            approximateDiskBytes: 1_529_662_669,
+            tokenizerRepo: "openai/whisper-medium.en"
         ),
         WhisperModelDescriptor(
             id: .medium,
@@ -124,7 +142,8 @@ enum WhisperModelCatalog {
             upstreamCheckpoint: "medium",
             runtimeArtifact: "openai_whisper-medium",
             englishOnly: false,
-            approximateDiskBytes: 1_529_662_669
+            approximateDiskBytes: 1_529_662_669,
+            tokenizerRepo: "openai/whisper-medium"
         ),
         WhisperModelDescriptor(
             id: .largeV2,
@@ -132,7 +151,8 @@ enum WhisperModelCatalog {
             upstreamCheckpoint: "large-v2",
             runtimeArtifact: "openai_whisper-large-v2",
             englishOnly: false,
-            approximateDiskBytes: 3_090_048_614
+            approximateDiskBytes: 3_090_048_614,
+            tokenizerRepo: "openai/whisper-large-v2"
         ),
         WhisperModelDescriptor(
             id: .largeV3,
@@ -140,7 +160,8 @@ enum WhisperModelCatalog {
             upstreamCheckpoint: "large-v3",
             runtimeArtifact: "openai_whisper-large-v3",
             englishOnly: false,
-            approximateDiskBytes: 3_090_363_187
+            approximateDiskBytes: 3_090_363_187,
+            tokenizerRepo: "openai/whisper-large-v3"
         ),
         WhisperModelDescriptor(
             id: .turbo,
@@ -148,7 +169,8 @@ enum WhisperModelCatalog {
             upstreamCheckpoint: "large-v3-turbo",
             runtimeArtifact: "openai_whisper-large-v3_turbo",
             englishOnly: false,
-            approximateDiskBytes: 3_195_115_930
+            approximateDiskBytes: 3_195_115_930,
+            tokenizerRepo: "openai/whisper-large-v3"
         ),
     ]
 }

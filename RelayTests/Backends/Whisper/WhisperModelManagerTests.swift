@@ -68,7 +68,15 @@ final class WhisperModelManagerTests: XCTestCase {
             .appendingPathComponent("WhisperModelManagerTests-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
 
-        store = WhisperModelStore(cacheDirectory: tempDirectory, downloader: FakeWhisperDownloader())
+        let downloader = FakeWhisperDownloader()
+        // `WhisperModelStore.download` now requires every promoted model's file list to include
+        // `tokenizer.json` (see WhisperModelStoreTests.testDownloadRejectsWhenTokenizerFileMissingFromDownloaderManifest),
+        // so the fake needs at least that to let `downloadModel` succeed below.
+        let tokenizerData = Data("{\"tokenizer\":\"data\"}".utf8)
+        downloader.filesToWrite = [
+            .init(relativePath: "tokenizer.json", data: tokenizerData, oid: TestOID.gitBlobSHA1(tokenizerData))
+        ]
+        store = WhisperModelStore(cacheDirectory: tempDirectory, downloader: downloader)
         log = FakeWhisperEventLog()
         engine = FakeWhisperEngine(log: log)
         runtime = WhisperRuntime(engine: engine, modelFolder: fakeManagerModelFolder(for:))

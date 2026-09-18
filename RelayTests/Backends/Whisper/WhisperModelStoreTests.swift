@@ -122,12 +122,20 @@ final class WhisperModelStoreTests: XCTestCase {
     func testDownloadAtomicallyPromotesOnlyAfterEveryFileVerifies() async throws {
         let configData = Data("{\"key\":\"value\"}".utf8)
         let weightData = Data(repeating: 0xAB, count: 256)
+        let tokenizerData = Data("{\"tokenizer\":\"data\"}".utf8)
+        let tokenizerConfigData = Data("{\"tokenizer_class\":\"WhisperTokenizer\"}".utf8)
         downloader.filesToWrite = [
             .init(relativePath: "config.json", data: configData, oid: TestOID.gitBlobSHA1(configData)),
             .init(
                 relativePath: "AudioEncoder.mlmodelc/weights/weight.bin",
                 data: weightData,
                 oid: TestOID.sha256(weightData)
+            ),
+            .init(relativePath: "tokenizer.json", data: tokenizerData, oid: TestOID.gitBlobSHA1(tokenizerData)),
+            .init(
+                relativePath: "tokenizer_config.json",
+                data: tokenizerConfigData,
+                oid: TestOID.gitBlobSHA1(tokenizerConfigData)
             ),
         ]
 
@@ -143,7 +151,82 @@ final class WhisperModelStoreTests: XCTestCase {
                 atPath: modelDirectory.appendingPathComponent("AudioEncoder.mlmodelc/weights/weight.bin").path
             )
         )
+        // The whole point of this task: `tokenizer.json` must land directly at the model
+        // directory's top level, where `WhisperKitEngine.load`'s `tokenizerFolder: modelFolder`
+        // makes WhisperKit's local-first tokenizer search (`ModelUtilities.loadTokenizer`) find it
+        // without ever falling back to a live Hub fetch.
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: modelDirectory.appendingPathComponent("tokenizer.json").path)
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: modelDirectory.appendingPathComponent("tokenizer_config.json").path
+            )
+        )
         XCTAssertTrue(FileManager.default.fileExists(atPath: modelDirectory.appendingPathComponent(".verified").path))
+    }
+
+    /// `WhisperModelStore` does not merely pass through whatever a `WhisperDownloader` happens to
+    /// report -- it independently requires `tokenizer.json` to be part of any promoted download,
+    /// the same way it independently re-hashes every file rather than trusting the downloader's
+    /// claimed oid. This guards against a downloader implementation that silently forgets the
+    /// tokenizer (e.g. a future bug in `HuggingFaceWhisperDownloader`'s tokenizer-repo fetch)
+    /// promoting a model that would still hit WhisperKit's live-fetch fallback on first activate.
+    func testDownloadRejectsWhenTokenizerFileMissingFromDownloaderManifest() async throws {
+        let configData = Data("{\"key\":\"value\"}".utf8)
+        downloader.filesToWrite = [
+            .init(relativePath: "config.json", data: configData, oid: TestOID.gitBlobSHA1(configData))
+        ]
+
+        await XCTAssertThrowsErrorAsync(try await store.download(.tinyEn, progress: { _ in })) { error in
+            XCTAssertEqual(error as? WhisperModelStoreError, .missingTokenizer)
+        }
+
+        XCTAssertFalse(store.presence(of: .tinyEn))
+        let modelDirectory = tempDirectory.appendingPathComponent(WhisperModelID.tinyEn.rawValue, isDirectory: true)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: modelDirectory.path))
+    }
+
+    /// `presence(of:)` is deliberately generic over the manifest's contents (it just re-checks
+    /// every listed path still exists), but this pins down the specific scenario this task cares
+    /// about: a model whose `.mlmodelc` bundle is intact but whose tokenizer is gone (or was never
+    /// part of the manifest) must never report as downloaded, because WhisperKit's local tokenizer
+    /// search would then miss and fall back to a live fetch.
+    func testPresenceFalseWhenModelPresentButTokenizerMissing() throws {
+        let modelDirectory = tempDirectory.appendingPathComponent(WhisperModelID.tinyEn.rawValue, isDirectory: true)
+        try FileManager.default.createDirectory(at: modelDirectory, withIntermediateDirectories: true)
+        try Data("config".utf8).write(to: modelDirectory.appendingPathComponent("config.json"))
+        // tokenizer.json deliberately not written to disk.
+
+        let manifestListingTokenizer = try JSONEncoder().encode(["config.json", "tokenizer.json"])
+        try manifestListingTokenizer.write(to: modelDirectory.appendingPathComponent(".verified"))
+
+        XCTAssertFalse(store.presence(of: .tinyEn))
+
+        // Once tokenizer.json actually lands too, presence flips true.
+        try Data("{}".utf8).write(to: modelDirectory.appendingPathComponent("tokenizer.json"))
+        XCTAssertTrue(store.presence(of: .tinyEn))
+    }
+
+    /// The per-file checksum verification loop is already generic over every file the downloader
+    /// reports -- this pins down that a corrupted/mismatched tokenizer file is rejected exactly
+    /// like a corrupted model weight file, not treated as some lesser, ignorable sidecar.
+    func testTokenizerFileChecksumMismatchRejectsWholeDownload() async throws {
+        let configData = Data("{\"key\":\"value\"}".utf8)
+        let tokenizerData = Data("{\"tokenizer\":\"data\"}".utf8)
+        downloader.filesToWrite = [
+            .init(relativePath: "config.json", data: configData, oid: TestOID.gitBlobSHA1(configData)),
+            // Wrong oid: doesn't match tokenizerData's real blob sha1.
+            .init(relativePath: "tokenizer.json", data: tokenizerData, oid: .gitBlobSHA1(String(repeating: "0", count: 40))),
+        ]
+
+        await XCTAssertThrowsErrorAsync(try await store.download(.tinyEn, progress: { _ in })) { error in
+            XCTAssertEqual(error as? WhisperModelStoreError, .checksumMismatch)
+        }
+
+        XCTAssertFalse(store.presence(of: .tinyEn))
+        let modelDirectory = tempDirectory.appendingPathComponent(WhisperModelID.tinyEn.rawValue, isDirectory: true)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: modelDirectory.path))
     }
 
     func testFileChecksumMismatchRejectsAndLeavesNotDownloaded() async throws {
@@ -194,8 +277,10 @@ final class WhisperModelStoreTests: XCTestCase {
 
     func testRemoveDeletesAndRediscoversAsNotDownloaded() async throws {
         let configData = Data("{\"key\":\"value\"}".utf8)
+        let tokenizerData = Data("{\"tokenizer\":\"data\"}".utf8)
         downloader.filesToWrite = [
-            .init(relativePath: "config.json", data: configData, oid: TestOID.gitBlobSHA1(configData))
+            .init(relativePath: "config.json", data: configData, oid: TestOID.gitBlobSHA1(configData)),
+            .init(relativePath: "tokenizer.json", data: tokenizerData, oid: TestOID.gitBlobSHA1(tokenizerData)),
         ]
         try await store.download(.tinyEn, progress: { _ in })
         XCTAssertTrue(store.presence(of: .tinyEn))

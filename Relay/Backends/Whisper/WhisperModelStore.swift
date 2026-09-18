@@ -49,6 +49,13 @@ protocol WhisperDownloader: Sendable {
 enum WhisperModelStoreError: Error, Equatable, Sendable {
     /// A downloaded file's actual content did not hash to the oid the downloader reported for it.
     case checksumMismatch
+    /// The downloader's reported file list never included `tokenizer.json`. `WhisperModelStore`
+    /// enforces this itself rather than trusting a `WhisperDownloader` to remember it, the same
+    /// way it independently re-hashes every file rather than trusting a downloader's claimed oid
+    /// -- see `WhisperKitContext`'s doc comment in WhisperRuntime.swift for why a missing
+    /// `modelFolder/tokenizer.json` silently reintroduces a live Hugging Face fetch on first
+    /// `activate()`.
+    case missingTokenizer
 }
 
 /// Owns the on-disk lifecycle of Whisper model bundles: presence, download+verify, and removal.
@@ -73,6 +80,11 @@ enum WhisperModelStoreError: Error, Equatable, Sendable {
 /// touching the marker, so `presence(of:)` also re-checks that every listed path still exists.
 struct WhisperModelStore: Sendable {
     private static let verifiedMarkerName = ".verified"
+    /// The file WhisperKit's local-first tokenizer search (`ModelUtilities.loadTokenizer`) checks
+    /// for directly at the model folder's top level. `download` refuses to promote any model
+    /// whose downloader-reported file list doesn't include this, regardless of what the
+    /// downloader itself claims succeeded.
+    static let requiredTokenizerFileName = "tokenizer.json"
 
     let cacheDirectory: URL
     private let downloader: any WhisperDownloader
@@ -128,6 +140,10 @@ struct WhisperModelStore: Sendable {
                 }
             }
 
+            guard files.contains(where: { $0.relativePath == Self.requiredTokenizerFileName }) else {
+                throw WhisperModelStoreError.missingTokenizer
+            }
+
             let manifest = files.map(\.relativePath)
             let markerURL = stagingDirectory.appendingPathComponent(Self.verifiedMarkerName)
             try JSONEncoder().encode(manifest).write(to: markerURL)
@@ -180,33 +196,65 @@ enum WhisperDownloaderError: Error, Equatable, Sendable {
     case malformedResponse
 }
 
-/// Live `WhisperDownloader` backed directly by Hugging Face's REST API against
-/// `argmaxinc/whisperkit-coreml` -- the CoreML mirror of the OpenAI Whisper checkpoints
+/// Live `WhisperDownloader` backed directly by Hugging Face's REST API against two repos per
+/// model: `argmaxinc/whisperkit-coreml` -- the CoreML mirror of the OpenAI Whisper checkpoints
 /// WhisperKit loads (see docs/superpowers/spikes/2026-09-18-openai-whisper-models-feasibility-results.md
-/// section 1-2). No WhisperKit API is used here: Relay owns download/verify itself and only ever
-/// hands WhisperKit an already-verified local folder with `download: false`.
+/// section 1-2) -- for the `.mlmodelc` bundle, and each model's `WhisperModelDescriptor
+/// .tokenizerRepo` (an `openai/whisper-*` repo) for `tokenizer.json`/`tokenizer_config.json`. No
+/// WhisperKit API is used here: Relay owns download/verify itself and only ever hands WhisperKit
+/// an already-verified local folder with `download: false`.
 ///
-/// Two-step fetch per model, mirroring the spike's own `HFCatalog`/`WhisperModelStore` split:
+/// Two-step fetch per repo, mirroring the spike's own `HFCatalog`/`WhisperModelStore` split:
 /// 1. `GET /api/models/{repo}/tree/main/{subfolder}?recursive=true` to enumerate every file under
-///    the model's runtime artifact folder, with each entry's `oid` (git blob sha1) or, for
-///    LFS-tracked files, a nested `lfs.oid` (sha256). Paginated via the `Link: <url>; rel="next"`
-///    response header, per Hugging Face's API convention.
+///    a folder, with each entry's `oid` (git blob sha1) or, for LFS-tracked files, a nested
+///    `lfs.oid` (sha256). Paginated via the `Link: <url>; rel="next"` response header, per
+///    Hugging Face's API convention.
 /// 2. For each file, `GET /{repo}/resolve/main/{path}` to fetch its bytes directly into the
 ///    staging directory `WhisperModelStore` provided.
 ///
-/// `.mlpackage/` source-copy files are filtered out of the tree before downloading anything --
-/// WhisperKit only ever loads the compiled `.mlmodelc` bundle, and naively including the
+/// `.mlpackage/` source-copy files are filtered out of the model tree before downloading anything
+/// -- WhisperKit only ever loads the compiled `.mlmodelc` bundle, and naively including the
 /// `.mlpackage` copies roughly doubles the download for models that publish both (results doc
 /// section 2, data quality note 1).
 ///
-/// This type has not been exercised against the live network in this environment (no network
-/// access here); it mirrors the spike's proven `HFCatalog`/`WhisperModelStore` mechanics
+/// The tokenizer repo's tree is filtered down to exactly `tokenizerFileNames` before downloading
+/// anything -- that repo root also carries multi-hundred-MB PyTorch/Flax/TF checkpoint files
+/// (`pytorch_model.bin`, `model.safetensors`, `flax_model.msgpack`, `tf_model.h5`) Relay has no
+/// use for; naively fetching the whole tree would download those too. `tokenizer.json` and
+/// `tokenizer_config.json` are the only two files
+/// `ArgmaxCore.LanguageModelConfigurationFromHub.loadConfig(modelFolder:)` reads from a local
+/// folder (`tokenizer.json` required, throws `Hub.HubClientError.configurationMissing` if
+/// missing; `tokenizer_config.json` required by the one call site that matters here,
+/// `AutoTokenizer.from(modelFolder:)`, which throws `TokenizerError.missingConfig` if it comes
+/// back nil) -- verified directly against argmax-oss-swift 1.1.0's
+/// Sources/ArgmaxCore/External/Hub/Hub.swift and Sources/ArgmaxCore/External/Tokenizers/Tokenizer.swift.
+/// `config.json` is deliberately NOT re-fetched from the tokenizer repo: the model's own
+/// `argmaxinc/whisperkit-coreml` `config.json` (already fetched as part of the runtime artifact)
+/// is byte-for-byte the same transformers `WhisperConfig` JSON as the tokenizer repo's
+/// `config.json` (confirmed by diffing both for `openai_whisper-tiny.en` / `openai/whisper-tiny.en`),
+/// so fetching it again would be redundant, not a fix for a real gap.
+///
+/// Both fetched files land directly at the model directory's top level (not under a
+/// `tokenizerRepo`-named subfolder), because `WhisperKitEngine.load`'s `tokenizerFolder:
+/// modelFolder` makes `ModelUtilities.loadTokenizer`'s local-first search check
+/// `modelFolder/tokenizer.json` directly (the `tokenizerFolder` search path, second in priority
+/// order after the -- here always-missing -- hub-cache-shaped path) -- see WhisperRuntime.swift's
+/// `WhisperKitEngine` doc comment.
+///
+/// This type has not been exercised against the live network from inside an XCTest in this
+/// environment (the TDD tests in WhisperModelStoreTests.swift use a network-free fake); it
+/// mirrors the spike's proven `HFCatalog`/`WhisperModelStore` mechanics
 /// (docs/superpowers/spikes/2026-09-18-openai-whisper-models-feasibility-results.md sections 2
-/// and 4) but its HTTP/JSON handling itself is untested beyond compiling.
+/// and 4), and the tokenizer repo's tree shape/file set was independently confirmed live against
+/// Hugging Face's API while implementing this (see this task's report), but its HTTP/JSON
+/// handling itself is untested beyond compiling and that manual `curl` verification.
 struct HuggingFaceWhisperDownloader: WhisperDownloader {
-    private static let repoID = "argmaxinc/whisperkit-coreml"
+    private static let modelRepoID = "argmaxinc/whisperkit-coreml"
     private static let apiBase = URL(string: "https://huggingface.co/api/models")!
     private static let resolveBase = URL(string: "https://huggingface.co")!
+    /// The only files `WhisperModelStore` needs from a model's tokenizer repo -- see this type's
+    /// doc comment for exactly which WhisperKit/ArgmaxCore code paths read each one.
+    private static let tokenizerFileNames: Set<String> = ["tokenizer.json", "tokenizer_config.json"]
 
     private let session: URLSession
 
@@ -219,36 +267,33 @@ struct HuggingFaceWhisperDownloader: WhisperDownloader {
         into directory: URL,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> [WhisperModelFile] {
-        let entries = try await fetchTree(subfolder: descriptor.runtimeArtifact)
-        let totalBytes = entries.reduce(Int64(0)) { $0 + $1.size }
+        let modelEntries = try await fetchTree(repoID: Self.modelRepoID, subfolder: descriptor.runtimeArtifact)
+        let tokenizerEntries = try await fetchTree(repoID: descriptor.tokenizerRepo, subfolder: nil)
+            .filter { Self.tokenizerFileNames.contains($0.path) }
+
+        let totalBytes = (modelEntries + tokenizerEntries).reduce(Int64(0)) { $0 + $1.size }
         var completedBytes: Int64 = 0
         var manifest: [WhisperModelFile] = []
 
-        for entry in entries {
+        for entry in modelEntries {
             guard let relativePath = Self.relativePath(of: entry.path, under: descriptor.runtimeArtifact) else {
                 continue
             }
+            try await downloadFile(repoID: Self.modelRepoID, remotePath: entry.path, to: directory.appendingPathComponent(relativePath))
+            manifest.append(WhisperModelFile(relativePath: relativePath, oid: Self.oid(for: entry)))
+            completedBytes += entry.size
+            progress(totalBytes > 0 ? Double(completedBytes) / Double(totalBytes) : 1.0)
+        }
 
-            let destination = directory.appendingPathComponent(relativePath)
-            try FileManager.default.createDirectory(
-                at: destination.deletingLastPathComponent(),
-                withIntermediateDirectories: true
+        // Tokenizer repo entries are already relative (fetched at the repo root, no subfolder
+        // prefix to strip) and land directly at the model directory's top level.
+        for entry in tokenizerEntries {
+            try await downloadFile(
+                repoID: descriptor.tokenizerRepo,
+                remotePath: entry.path,
+                to: directory.appendingPathComponent(entry.path)
             )
-
-            let remoteURL = Self.resolveBase
-                .appendingPathComponent(Self.repoID)
-                .appendingPathComponent("resolve/main")
-                .appendingPathComponent(entry.path)
-            let (temporaryURL, response) = try await session.download(from: remoteURL)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                throw WhisperDownloaderError.httpError
-            }
-            try? FileManager.default.removeItem(at: destination)
-            try FileManager.default.moveItem(at: temporaryURL, to: destination)
-
-            let oid: WhisperFileOID = entry.lfs.map { .sha256($0.oid) } ?? .gitBlobSHA1(entry.oid)
-            manifest.append(WhisperModelFile(relativePath: relativePath, oid: oid))
-
+            manifest.append(WhisperModelFile(relativePath: entry.path, oid: Self.oid(for: entry)))
             completedBytes += entry.size
             progress(totalBytes > 0 ? Double(completedBytes) / Double(totalBytes) : 1.0)
         }
@@ -256,11 +301,36 @@ struct HuggingFaceWhisperDownloader: WhisperDownloader {
         return manifest
     }
 
-    /// Fetches and flattens every file (never directory) entry under `subfolder`, following
-    /// Hugging Face's `Link` pagination header, filtering out `.mlpackage/` source copies.
-    private func fetchTree(subfolder: String) async throws -> [HFTreeEntry] {
+    private static func oid(for entry: HFTreeEntry) -> WhisperFileOID {
+        entry.lfs.map { .sha256($0.oid) } ?? .gitBlobSHA1(entry.oid)
+    }
+
+    /// Downloads `repoID`'s `remotePath` to `destination`, creating any needed intermediate
+    /// directories first. Throws `WhisperDownloaderError.httpError` on a non-2xx response.
+    private func downloadFile(repoID: String, remotePath: String, to destination: URL) async throws {
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        let remoteURL = Self.resolveBase
+            .appendingPathComponent(repoID)
+            .appendingPathComponent("resolve/main")
+            .appendingPathComponent(remotePath)
+        let (temporaryURL, response) = try await session.download(from: remoteURL)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw WhisperDownloaderError.httpError
+        }
+        try? FileManager.default.removeItem(at: destination)
+        try FileManager.default.moveItem(at: temporaryURL, to: destination)
+    }
+
+    /// Fetches and flattens every file (never directory) entry under `subfolder` (the repo root,
+    /// if `nil`) in `repoID`, following Hugging Face's `Link` pagination header, filtering out
+    /// `.mlpackage/` source copies.
+    private func fetchTree(repoID: String, subfolder: String?) async throws -> [HFTreeEntry] {
         var entries: [HFTreeEntry] = []
-        var nextURL: URL? = Self.treeURL(subfolder: subfolder)
+        var nextURL: URL? = Self.treeURL(repoID: repoID, subfolder: subfolder)
 
         while let url = nextURL {
             let (data, response) = try await session.data(from: url)
@@ -279,12 +349,14 @@ struct HuggingFaceWhisperDownloader: WhisperDownloader {
             .filter { !$0.path.contains(".mlpackage/") }
     }
 
-    private static func treeURL(subfolder: String) -> URL {
-        apiBase
+    private static func treeURL(repoID: String, subfolder: String?) -> URL {
+        var url = apiBase
             .appendingPathComponent(repoID)
             .appendingPathComponent("tree/main")
-            .appendingPathComponent(subfolder)
-            .appending(queryItems: [URLQueryItem(name: "recursive", value: "true")])
+        if let subfolder {
+            url = url.appendingPathComponent(subfolder)
+        }
+        return url.appending(queryItems: [URLQueryItem(name: "recursive", value: "true")])
     }
 
     /// Hugging Face paginates list endpoints via an RFC 5988-shaped `Link` response header, e.g.

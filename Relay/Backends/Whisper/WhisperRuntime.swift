@@ -104,12 +104,10 @@ actor WhisperRuntime {
 /// `WhisperModelStore` is solely responsible for fetching and verifying model files; this type
 /// only ever loads an already-verified local folder.
 ///
-/// `tokenizerFolder: modelFolder` is passed alongside `modelFolder` so a local `tokenizer.json`
-/// colocated with the model (if one is ever present -- see the CONFIRMED gap in
-/// `WhisperKitContext`'s doc comment below) is found by WhisperKit's local-first tokenizer search
-/// without any further code change here. This is the closest fully-local config WhisperKit 1.1.0
-/// exposes; it does NOT, by itself, make a Whisper model's first activation network-free -- see
-/// below.
+/// `tokenizerFolder: modelFolder` is passed alongside `modelFolder` so the local `tokenizer.json`
+/// `WhisperModelStore`/`HuggingFaceWhisperDownloader` now fetch+verify into the model folder
+/// (colocated with the `.mlmodelc` bundle -- see `WhisperKitContext`'s doc comment below) is found
+/// by WhisperKit's local-first tokenizer search without any further code change here.
 struct WhisperKitEngine: WhisperEngine {
     func load(modelFolder: URL) async throws -> any LoadedWhisperContext {
         let config = WhisperKitConfig(
@@ -131,26 +129,27 @@ struct WhisperKitEngine: WhisperEngine {
 /// `LoadedWhisperContext` at a time and never accesses it concurrently, so there is no actual
 /// shared-mutable-state hazard -- only a missing annotation upstream.
 ///
-/// CONFIRMED GAP (verified against the resolved WhisperKit 1.1.0 source --
-/// `WhisperKit.swift`'s `loadTokenizerIfNeeded()` and `ModelUtilities.loadTokenizer` -- and
-/// against the live `argmaxinc/whisperkit-coreml` tree on Hugging Face, both reachable from this
-/// environment): a Whisper model's first `activate()` is NOT fully offline today, and
-/// `WhisperKitConfig(download: false)` does not change that -- `download` only gates the MODEL
-/// WEIGHTS path (`WhisperKit.setupModels`); `loadTokenizerIfNeeded()` never checks it.
-/// `argmaxinc/whisperkit-coreml`'s per-model runtime-artifact folders (what
-/// `HuggingFaceWhisperDownloader` fetches) contain only the `.mlmodelc` bundles and
-/// `config.json`/`generation_config.json` -- no `tokenizer.json` -- so WhisperKit's local-first
-/// tokenizer search (which checks `modelFolder` first, per the `tokenizerFolder: modelFolder`
-/// passed above) always misses, and it falls back to fetching the tokenizer live from a
-/// SEPARATE Hugging Face repo per model family (e.g. `openai/whisper-tiny.en`, via
-/// `ModelUtilities.tokenizerNameForVariant`). Closing this gap for real needs
-/// `WhisperModelStore`/`HuggingFaceWhisperDownloader` to also fetch+verify each model's
-/// `openai/whisper-*` tokenizer files into the model folder (so this file's
-/// `tokenizerFolder: modelFolder` then resolves them locally with no further code change) --
-/// that is store/downloader-layer work, out of this composition-root task's scope. Until that
-/// lands, treat "fully offline" as NOT yet achieved: the owner must verify Whisper's first
-/// activation with the network genuinely disabled before relying on `.fullyOffline` in
-/// `WhisperBackend.capabilities`.
+/// GAP CLOSED (previously "CONFIRMED GAP" here; verified against the resolved WhisperKit 1.1.0
+/// source -- `WhisperKit.swift`'s `loadTokenizerIfNeeded()`, `ModelUtilities.loadTokenizer`, and
+/// `ArgmaxCore`'s `LanguageModelConfigurationFromHub.loadConfig(modelFolder:)`/
+/// `AutoTokenizer.from(modelFolder:)`): a Whisper model's first `activate()` used to NOT be fully
+/// offline, because `WhisperKitConfig(download: false)` only gates the MODEL WEIGHTS path
+/// (`WhisperKit.setupModels`) -- `loadTokenizerIfNeeded()` never checks it -- and
+/// `argmaxinc/whisperkit-coreml`'s per-model runtime-artifact folders never carried a
+/// `tokenizer.json`, so WhisperKit's local-first tokenizer search (which checks `modelFolder`
+/// second, per the `tokenizerFolder: modelFolder` passed above) always missed and fell back to a
+/// live fetch from a SEPARATE Hugging Face repo per model family (`WhisperModelDescriptor
+/// .tokenizerRepo`, resolved the same way `ModelUtilities.tokenizerNameForVariant` does).
+/// `WhisperModelStore`/`HuggingFaceWhisperDownloader` now also fetch+verify `tokenizer.json` and
+/// `tokenizer_config.json` from that repo into the model folder before a model is ever considered
+/// downloaded (`WhisperModelStore.requiredTokenizerFileName`/`WhisperModelStoreError
+/// .missingTokenizer`), so `modelFolder/tokenizer.json` exists by the time `activate()` runs and
+/// this file's `tokenizerFolder: modelFolder` resolves it locally -- no further code change here.
+/// A model downloaded before this change lacks the tokenizer files and must be re-downloaded (its
+/// `.verified` manifest won't list them, so `presence(of:)` now correctly reports it as not
+/// downloaded). This closes the gap for any NEWLY downloaded model; the owner should still verify
+/// one real activation with the network genuinely disabled before relying on `.fullyOffline` in
+/// `WhisperBackend.capabilities` in production.
 struct WhisperKitContext: LoadedWhisperContext, @unchecked Sendable {
     private let whisperKit: WhisperKit
 
