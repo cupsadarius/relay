@@ -13,6 +13,7 @@
 		0B604089F852B83304D81658 /* TTSBackendCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = C946F6D8E4671F893A836DF2 /* TTSBackendCatalog.swift */; };
 		0C3C74A43B72D383164C555C /* KokoroTTSBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 203E8DFFD8E671A374DB34E3 /* KokoroTTSBackendTests.swift */; };
 		12D93A16EC4BC9B4719345D7 /* GeneralSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBC3BAADB745BCF1A34311A3 /* GeneralSettingsView.swift */; };
+		12F846E08B45F98DF8ECD20B /* WhisperRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = F035FDB2BC911C5E398D7E16 /* WhisperRuntime.swift */; };
 		130162138A710F890CD8A68F /* WhisperModelStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0D2DA9DBBF5ACF7D73C7CEB /* WhisperModelStoreTests.swift */; };
 		131B33B0A7200D30823A1201 /* SpeechModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA7F679F877AB1E080B262A1 /* SpeechModels.swift */; };
 		136ABF6DC61104C6277B7E88 /* HelperInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77908399E4D478E6A9287D22 /* HelperInstaller.swift */; };
@@ -37,6 +38,7 @@
 		37FBA412106C897F84C4B36A /* FluidAudioParakeetEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CB732B846FC4C710B2410FC /* FluidAudioParakeetEngine.swift */; };
 		3B7C2E5F0AF9756E45AB385A /* CodexIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA8288A8C021A7ACBC0613FE /* CodexIntegration.swift */; };
 		3DB3D551D7447EC9F85D06C2 /* AppModelIntegrationsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30523FE7FC87D2A513D0DAF1 /* AppModelIntegrationsTests.swift */; };
+		40B93C69DEC9B03163067D1C /* WhisperRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C4378331FFB24C3F3B1B46B /* WhisperRuntimeTests.swift */; };
 		412A7CAB611AAD65AD1553C1 /* ActivityOverlayModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA71CF6D19AFEA28AC72CE1 /* ActivityOverlayModel.swift */; };
 		416ACED506F9EC70C96DD843 /* UnixSocketServerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 196EAFDEDCE964071F1FD07A /* UnixSocketServerTests.swift */; };
 		41C36E1E85F8E70D46A0A087 /* HookTransportClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 275F0AFDBD57596BB855D04B /* HookTransportClient.swift */; };
@@ -247,6 +249,7 @@
 		36BC1C589CC6F88B197B1EF0 /* HotkeyDefinition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyDefinition.swift; sourceTree = "<group>"; };
 		3772B7BC9E1856FB2551A9D4 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		3897DB8BC3EDE939835ACEDF /* BoundedProcessRunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoundedProcessRunnerTests.swift; sourceTree = "<group>"; };
+		3C4378331FFB24C3F3B1B46B /* WhisperRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperRuntimeTests.swift; sourceTree = "<group>"; };
 		3E5FC6AD7B609779FB7B0A48 /* SynthesizedAudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SynthesizedAudioPlayer.swift; sourceTree = "<group>"; };
 		3E764C660DC8753D838587C8 /* HerdrFocusResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HerdrFocusResolver.swift; sourceTree = "<group>"; };
 		3FEA7F12EBADD824A6D473D8 /* TextInsertionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextInsertionService.swift; sourceTree = "<group>"; };
@@ -361,6 +364,7 @@
 		ED330EE6049AE116AFB2F072 /* AppSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsTests.swift; sourceTree = "<group>"; };
 		ED3BD3F00D312429300E274A /* HelperInstallerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperInstallerTests.swift; sourceTree = "<group>"; };
 		ED7F4126C70AC7872DBFD520 /* StreamingAudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingAudioPlayer.swift; sourceTree = "<group>"; };
+		F035FDB2BC911C5E398D7E16 /* WhisperRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperRuntime.swift; sourceTree = "<group>"; };
 		F13B9E204D55C00E48942AA2 /* HerdrSocketClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HerdrSocketClientTests.swift; sourceTree = "<group>"; };
 		F3332E401CE6B77C9E9402E3 /* FocusModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusModels.swift; sourceTree = "<group>"; };
 		F33CA3EA8C64416A942FA13A /* AppSettingsDecodeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsDecodeTests.swift; sourceTree = "<group>"; };
@@ -528,6 +532,7 @@
 			children = (
 				68429CF3D4EB53857BF99D80 /* WhisperModelCatalogTests.swift */,
 				D0D2DA9DBBF5ACF7D73C7CEB /* WhisperModelStoreTests.swift */,
+				3C4378331FFB24C3F3B1B46B /* WhisperRuntimeTests.swift */,
 			);
 			path = Whisper;
 			sourceTree = "<group>";
@@ -696,6 +701,7 @@
 			children = (
 				24989B2035204427EA9ADDAA /* WhisperModelCatalog.swift */,
 				4CBE40EFE5F3963B9976AA13 /* WhisperModelStore.swift */,
+				F035FDB2BC911C5E398D7E16 /* WhisperRuntime.swift */,
 			);
 			path = Whisper;
 			sourceTree = "<group>";
@@ -1030,6 +1036,7 @@
 				416ACED506F9EC70C96DD843 /* UnixSocketServerTests.swift in Sources */,
 				E21DBC3BB9CFE1A9D933064B /* WhisperModelCatalogTests.swift in Sources */,
 				130162138A710F890CD8A68F /* WhisperModelStoreTests.swift in Sources */,
+				40B93C69DEC9B03163067D1C /* WhisperRuntimeTests.swift in Sources */,
 				59CEB26722FB7B5250A99741 /* WindowFocusCoordinatorTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1144,6 +1151,7 @@
 				AC21C5CAF0A02A9029C1127C /* UnixSocketServer.swift in Sources */,
 				DBCAA2780855AF360A8B3D16 /* WhisperModelCatalog.swift in Sources */,
 				ACDE15917036721CB1E97F72 /* WhisperModelStore.swift in Sources */,
+				12F846E08B45F98DF8ECD20B /* WhisperRuntime.swift in Sources */,
 				6EBCA693556C0B8F07AE9656 /* WindowFocusCoordinator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
