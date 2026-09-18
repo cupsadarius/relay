@@ -940,13 +940,13 @@ final class AppModelTests: XCTestCase {
         let store = FakeSettingsStore(settings: settings)
         let diagnostics = DiagnosticsRecorder(capacity: 10)
         let parakeet = FakeSTTBackend(id: "parakeet", displayName: "Parakeet", availability: .modelNotDownloaded)
-        let downloader = FakeSpeechModelDownloader()
+        let downloader = FakeSpeechModelManager()
         await downloader.setProgressToReport([0.5])
         await downloader.setShouldBlock(true)
         let model = makeModel(
             store: store,
             sttRegistry: ["parakeet": parakeet],
-            speechModelDownloaders: ["parakeet": downloader],
+            speechModelManagers: ["parakeet": downloader],
             diagnostics: diagnostics
         )
         await model.initialSpeechBackendRefresh?.value
@@ -974,12 +974,12 @@ final class AppModelTests: XCTestCase {
         let store = FakeSettingsStore(settings: settings)
         let diagnostics = DiagnosticsRecorder(capacity: 10)
         let parakeet = FakeSTTBackend(id: "parakeet", displayName: "Parakeet", availability: .modelNotDownloaded)
-        let downloader = FakeSpeechModelDownloader()
+        let downloader = FakeSpeechModelManager()
         await downloader.setErrorToThrow(TestError.saveFailed)
         let model = makeModel(
             store: store,
             sttRegistry: ["parakeet": parakeet],
-            speechModelDownloaders: ["parakeet": downloader],
+            speechModelManagers: ["parakeet": downloader],
             diagnostics: diagnostics
         )
         await model.initialSpeechBackendRefresh?.value
@@ -1001,9 +1001,9 @@ final class AppModelTests: XCTestCase {
         settings.sttBackendOrder = ["parakeet"]
         let store = FakeSettingsStore(settings: settings)
         let parakeet = FakeSTTBackend(id: "parakeet", displayName: "Parakeet", availability: .modelNotDownloaded)
-        let downloader = FakeSpeechModelDownloader()
+        let downloader = FakeSpeechModelManager()
         await downloader.setErrorToThrow(TestError.saveFailed)
-        let model = makeModel(store: store, sttRegistry: ["parakeet": parakeet], speechModelDownloaders: ["parakeet": downloader])
+        let model = makeModel(store: store, sttRegistry: ["parakeet": parakeet], speechModelManagers: ["parakeet": downloader])
         await model.initialSpeechBackendRefresh?.value
 
         await model.downloadSpeechModel("parakeet")
@@ -1024,12 +1024,12 @@ final class AppModelTests: XCTestCase {
         settings.sttBackendOrder = ["parakeet"]
         let store = FakeSettingsStore(settings: settings)
         let parakeet = FakeSTTBackend(id: "parakeet", displayName: "Parakeet", availability: .modelNotDownloaded)
-        let downloader = FakeSpeechModelDownloader()
+        let downloader = FakeSpeechModelManager()
         await downloader.setShouldBlock(true)
         let model = makeModel(
             store: store,
             sttRegistry: ["parakeet": parakeet],
-            speechModelDownloaders: ["parakeet": downloader]
+            speechModelManagers: ["parakeet": downloader]
         )
         await model.initialSpeechBackendRefresh?.value
 
@@ -1050,12 +1050,12 @@ final class AppModelTests: XCTestCase {
         settings.sttBackendOrder = ["parakeet"]
         let store = FakeSettingsStore(settings: settings)
         let parakeet = FakeSTTBackend(id: "parakeet", displayName: "Parakeet", availability: .modelNotDownloaded)
-        let downloader = FakeSpeechModelDownloader()
+        let downloader = FakeSpeechModelManager()
         await downloader.setShouldBlock(true)
         let model = makeModel(
             store: store,
             sttRegistry: ["parakeet": parakeet],
-            speechModelDownloaders: ["parakeet": downloader]
+            speechModelManagers: ["parakeet": downloader]
         )
         await model.initialSpeechBackendRefresh?.value
         model.sttBackends = [] // simulate a Download click before any status row exists
@@ -1076,12 +1076,12 @@ final class AppModelTests: XCTestCase {
         settings.sttBackendOrder = ["parakeet"]
         let store = FakeSettingsStore(settings: settings)
         let parakeet = FakeSTTBackend(id: "parakeet", displayName: "Parakeet", availability: .modelNotDownloaded)
-        let downloader = FakeSpeechModelDownloader()
+        let downloader = FakeSpeechModelManager()
         await downloader.setShouldBlock(true)
         let model = makeModel(
             store: store,
             sttRegistry: ["parakeet": parakeet],
-            speechModelDownloaders: ["parakeet": downloader]
+            speechModelManagers: ["parakeet": downloader]
         )
         await model.initialSpeechBackendRefresh?.value
 
@@ -1116,8 +1116,8 @@ final class AppModelTests: XCTestCase {
         settings.sttBackendOrder = ["parakeet"]
         let store = FakeSettingsStore(settings: settings)
         let parakeet = FakeSTTBackend(id: "parakeet", displayName: "Parakeet", availability: .modelNotDownloaded)
-        let downloader = FakeSpeechModelDownloader()
-        let model = makeModel(store: store, sttRegistry: ["parakeet": parakeet], speechModelDownloaders: ["parakeet": downloader])
+        let downloader = FakeSpeechModelManager()
+        let model = makeModel(store: store, sttRegistry: ["parakeet": parakeet], speechModelManagers: ["parakeet": downloader])
         await model.initialSpeechBackendRefresh?.value
         await parakeet.setAvailability(.available)
 
@@ -1136,9 +1136,9 @@ final class AppModelTests: XCTestCase {
         settings.sttBackendOrder = ["parakeet"]
         let store = FakeSettingsStore(settings: settings)
         let parakeet = FakeSTTBackend(id: "parakeet", displayName: "Parakeet", availability: .modelNotDownloaded)
-        let downloader = FakeSpeechModelDownloader()
+        let downloader = FakeSpeechModelManager()
         await downloader.setShouldBlock(true)
-        let model = makeModel(store: store, sttRegistry: ["parakeet": parakeet], speechModelDownloaders: ["parakeet": downloader])
+        let model = makeModel(store: store, sttRegistry: ["parakeet": parakeet], speechModelManagers: ["parakeet": downloader])
         await model.initialSpeechBackendRefresh?.value
 
         let downloadTask = Task { await model.downloadSpeechModel("parakeet") }
@@ -1164,8 +1164,8 @@ final class AppModelTests: XCTestCase {
         let modelWithoutDownloader = makeModel(sttRegistry: ["a": a])
         XCTAssertFalse(modelWithoutDownloader.canDownloadSpeechModel("a"))
 
-        let downloader = FakeSpeechModelDownloader()
-        let modelWithDownloader = makeModel(sttRegistry: ["a": a], speechModelDownloaders: ["a": downloader])
+        let downloader = FakeSpeechModelManager()
+        let modelWithDownloader = makeModel(sttRegistry: ["a": a], speechModelManagers: ["a": downloader])
         XCTAssertTrue(modelWithDownloader.canDownloadSpeechModel("a"))
     }
 
@@ -1300,7 +1300,7 @@ final class AppModelTests: XCTestCase {
             overlayModel: overlay,
             overlayPresenter: NoOpActivityOverlayPresenter(),
             sttRegistry: [:],
-            speechModelDownloaders: [:],
+            speechModelManagers: [:],
             ttsRegistry: ["pocket-tts": pocket, "kokoro": kokoro, "apple-tts": apple]
         )
         return (model, hotkeys, pocket, kokoro, apple)
@@ -1359,7 +1359,7 @@ final class AppModelTests: XCTestCase {
         overlayModel: ActivityOverlayModel? = nil,
         overlayPresenter: (any ActivityOverlayPresenting)? = nil,
         sttRegistry: [String: any SpeechToTextBackend] = [:],
-        speechModelDownloaders: [String: any SpeechModelDownloading] = [:],
+        speechModelManagers: [String: any SpeechModelManaging] = [:],
         diagnostics: DiagnosticsRecorder? = nil,
         sessionRegistry: AgentSessionRegistry? = nil,
         focusResolution: (any SessionFocusResolving)? = nil,
@@ -1382,7 +1382,7 @@ final class AppModelTests: XCTestCase {
             overlayModel: overlayModel ?? ActivityOverlayModel(),
             overlayPresenter: overlayPresenter ?? NoOpActivityOverlayPresenter(),
             sttRegistry: sttRegistry,
-            speechModelDownloaders: speechModelDownloaders,
+            speechModelManagers: speechModelManagers,
             integrationManager: integrationManager,
             sessionRegistry: sessionRegistry ?? AgentSessionRegistry(),
             focusResolution: focusResolution ?? FocusResolutionService(
@@ -1557,38 +1557,87 @@ private actor FakeSTTBackend: SpeechToTextBackend {
     }
 }
 
-private actor FakeSpeechModelDownloader: SpeechModelDownloading {
+/// A one-model `SpeechModelManaging` fake -- the STT-side counterpart to `FakeTTSModelDownloader`
+/// (still `SpeechModelDownloading`, since TTS backends haven't migrated to the new per-model
+/// protocol). `models()` always reports a single model under `modelID`; `downloadModel` is the
+/// method under test in every "download" test in this file, and reproduces the exact
+/// progress/blocking/failure behavior the old `FakeSpeechModelDownloader.downloadModels` had, so
+/// every existing assertion (progress ticks, retry after failure, single-flight, stale/late
+/// progress) still holds unchanged against the new manager surface.
+private actor FakeSpeechModelManager: SpeechModelManaging {
+    let backendID: String
+    private let modelID: String
     private(set) var callCount = 0
     private var progressToReport: [Double] = []
     private var errorToThrow: Error?
     private var shouldBlock = false
     private var continuation: CheckedContinuation<Void, Never>?
+    /// True once `resume()` has been called with no `downloadModel` call currently blocked to
+    /// resume. `downloadSpeechModel` now resolves the manager's model id via `models()` before
+    /// calling `downloadModel` -- an extra actor hop versus the old direct `downloadModels` call
+    /// -- so a caller that calls `resume()` the instant it observes the "downloading" row (before
+    /// `downloadModel` has actually reached its blocking point) must not have that resume lost.
+    /// This flag makes `resume()` order-independent: called early, it makes the *next*
+    /// `downloadModel` call skip blocking entirely instead of arming a continuation nobody will
+    /// ever resume.
+    private var resumeRequested = false
     private var capturedProgress: (@Sendable (Double) -> Void)?
+
+    init(backendID: String = "parakeet", modelID: String = "parakeet-v2") {
+        self.backendID = backendID
+        self.modelID = modelID
+    }
 
     func setProgressToReport(_ values: [Double]) { progressToReport = values }
     func setErrorToThrow(_ error: Error?) { errorToThrow = error }
     func setShouldBlock(_ value: Bool) { shouldBlock = value }
 
-    func downloadModels(progress: @escaping @Sendable (Double) -> Void) async throws {
+    func models() async -> [SpeechModelStatus] {
+        [
+            SpeechModelStatus(
+                descriptor: SpeechModelDescriptor(id: modelID, displayName: modelID, detail: nil, approximateDownloadBytes: nil),
+                installState: .notDownloaded,
+                isSelected: true,
+                isLoaded: false
+            ),
+        ]
+    }
+
+    func downloadModel(_ id: String, progress: @escaping @Sendable (Double) -> Void) async throws {
         callCount += 1
         capturedProgress = progress
         for value in progressToReport {
             progress(value)
         }
         if shouldBlock {
-            await withCheckedContinuation { continuation = $0 }
+            if resumeRequested {
+                resumeRequested = false
+            } else {
+                await withCheckedContinuation { continuation = $0 }
+            }
         }
         if let errorToThrow {
             throw errorToThrow
         }
     }
 
+    func removeModel(_ id: String) async throws {}
+
+    func selectModel(_ id: String) async throws {}
+
+    /// Order-independent: resumes an already-blocked `downloadModel` call, or -- if none is
+    /// blocked yet -- arms `resumeRequested` so the next `downloadModel` call skips blocking
+    /// instead of hanging forever on a continuation nobody will resume.
     func resume() {
-        continuation?.resume()
-        continuation = nil
+        if let continuation {
+            continuation.resume()
+            self.continuation = nil
+        } else {
+            resumeRequested = true
+        }
     }
 
-    /// Invokes the progress closure captured from the most recent `downloadModels` call, letting
+    /// Invokes the progress closure captured from the most recent `downloadModel` call, letting
     /// a test simulate a tick arriving at an arbitrary time — including after completion, or out
     /// of order relative to an earlier tick.
     func reportProgress(_ value: Double) {

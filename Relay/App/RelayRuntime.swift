@@ -38,13 +38,13 @@ struct SpeechOutputServices {
     let overlayPresenter: any ActivityOverlayPresenting
 }
 
-/// Speech-input services: the STT backend registry, its model downloaders (Parakeet), and the
-/// dictation coordinator built around them. Kept as the CONCRETE `DictationCoordinator` type
-/// (rather than only `any DictationCoordinating`) since `AppModel` still needs to call
-/// `setStatusHandler` on it once `AppModel` itself exists.
+/// Speech-input services: the STT backend registry, its per-backend model managers (Parakeet
+/// today; Whisper joins in Task 11), and the dictation coordinator built around them. Kept as the
+/// CONCRETE `DictationCoordinator` type (rather than only `any DictationCoordinating`) since
+/// `AppModel` still needs to call `setStatusHandler` on it once `AppModel` itself exists.
 struct SpeechInputServices {
     let sttRegistry: [String: any SpeechToTextBackend]
-    let speechModelDownloaders: [String: any SpeechModelDownloading]
+    let speechModelManagers: [String: any SpeechModelManaging]
     let dictationCoordinator: DictationCoordinator?
 }
 
@@ -158,7 +158,9 @@ final class RelayRuntime {
             overlay: overlayModel
         )
         let sttBackend = AppleSpeechBackend()
-        let parakeetBackend = ParakeetBackend()
+        let parakeetEngine: any ParakeetEngine = FluidAudioParakeetEngine()
+        let parakeetBackend = ParakeetBackend(engine: parakeetEngine)
+        let parakeetModelManager = ParakeetModelManager(engine: parakeetEngine)
         let sttRegistry: [String: any SpeechToTextBackend] = [
             sttBackend.id: sttBackend,
             parakeetBackend.id: parakeetBackend,
@@ -253,8 +255,8 @@ final class RelayRuntime {
             diagnostics: diagnostics,
             onAction: { [actionDispatcher] action in actionDispatcher.perform(action) }
         )
-        let speechModelDownloaders: [String: any SpeechModelDownloading] = [
-            parakeetBackend.id: parakeetBackend,
+        let speechModelManagers: [String: any SpeechModelManaging] = [
+            parakeetModelManager.backendID: parakeetModelManager,
         ]
         // Apple never registers a downloader, since it has no model to download.
         let ttsModelDownloaders: [String: any SpeechModelDownloading] = [
@@ -287,7 +289,7 @@ final class RelayRuntime {
             ),
             speechIn: SpeechInputServices(
                 sttRegistry: sttRegistry,
-                speechModelDownloaders: speechModelDownloaders,
+                speechModelManagers: speechModelManagers,
                 dictationCoordinator: dictation
             ),
             integrations: IntegrationServices(

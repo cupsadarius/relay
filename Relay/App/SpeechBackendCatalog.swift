@@ -4,7 +4,13 @@ import Foundation
 /// call sites (`AppModel.sttBackends`, `DictationSettingsView`, tests) don't need to change.
 typealias STTBackendStatus = BackendStatus
 
-extension ParakeetBackend: SpeechModelDownloading {}
+/// Thrown by `downloadSpeechModel` if a registered manager unexpectedly reports no models.
+/// Every manager registered today (Parakeet) always has exactly one, so this should never
+/// actually happen in production; it exists only so the backend-id -> model-id parity adapter
+/// has something well-defined to throw instead of force-unwrapping.
+private enum SpeechModelCatalogError: Error, Sendable {
+    case noModelRegistered
+}
 
 private typealias Catalog = BackendCatalog<any SpeechToTextBackend>
 
@@ -43,10 +49,10 @@ extension AppModel {
         sttBackends = Catalog.sorted(Catalog.merged(fresh: fresh, live: sttBackends, downloadingIDs: downloadingBackendIDs))
     }
 
-    /// Whether `id` has a registered downloader (only Parakeet, today). The view uses this to
+    /// Whether `id` has a registered model manager (only Parakeet, today). The view uses this to
     /// decide whether to show a Download button at all.
     func canDownloadSpeechModel(_ id: String) -> Bool {
-        speechModelDownloaders[id] != nil
+        speechModelManagers[id] != nil
     }
 
     /// Enables or disables a backend in `sttBackendOrder`. Refuses to disable the last enabled
@@ -77,12 +83,18 @@ extension AppModel {
     }
 
     /// Downloads the model for `id` (currently only Parakeet has one). Ignored if that backend
-    /// has no downloader registered or a download for it is already running. `downloadingBackendIDs`
+    /// has no manager registered or a download for it is already running. `downloadingBackendIDs`
     /// and the row's `.downloading` state are always written together in the same synchronous
     /// step (`beginDownload`/`endDownload`) so the two can never disagree about whether a
     /// download is running.
+    ///
+    /// `speechModelManagers` is keyed by backend id but `SpeechModelManaging.downloadModel` takes
+    /// a MODEL id, so this resolves the manager's single model via `models()` first -- parity
+    /// with the old one-download-per-backend behavior. Per-model selection (letting a caller
+    /// download one of several models for a backend) lands in the follow-up task; every manager
+    /// registered here today (Parakeet) still has exactly one model.
     func downloadSpeechModel(_ id: String) async {
-        guard let downloader = speechModelDownloaders[id] else { return }
+        guard let manager = speechModelManagers[id] else { return }
         guard !downloadingBackendIDs.contains(id) else { return }
 
         beginDownload(id)
@@ -90,7 +102,10 @@ extension AppModel {
         recordDiagnostic(.speechModelDownloadStarted(backendID: id))
 
         do {
-            try await downloader.downloadModels(progress: { [weak self] progress in
+            guard let modelID = await manager.models().first?.id else {
+                throw SpeechModelCatalogError.noModelRegistered
+            }
+            try await manager.downloadModel(modelID, progress: { [weak self] progress in
                 Task { @MainActor in
                     self?.applyDownloadProgress(id: id, progress: progress)
                 }

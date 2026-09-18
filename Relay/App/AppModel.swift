@@ -70,7 +70,7 @@ final class AppModel {
     @ObservationIgnored let overlayModel: ActivityOverlayModel
 
     @ObservationIgnored let sttRegistry: [String: any SpeechToTextBackend]
-    @ObservationIgnored let speechModelDownloaders: [String: any SpeechModelDownloading]
+    @ObservationIgnored let speechModelManagers: [String: any SpeechModelManaging]
     @ObservationIgnored let ttsRegistry: [String: any TextToSpeechBackend]
     @ObservationIgnored let ttsModelDownloaders: [String: any SpeechModelDownloading]
     @ObservationIgnored var downloadingBackendIDs: Set<String> = []
@@ -160,7 +160,7 @@ final class AppModel {
             overlayModel: runtime.speechOut.overlayModel,
             overlayPresenter: runtime.speechOut.overlayPresenter,
             sttRegistry: runtime.speechIn.sttRegistry,
-            speechModelDownloaders: runtime.speechIn.speechModelDownloaders,
+            speechModelManagers: runtime.speechIn.speechModelManagers,
             ttsRegistry: runtime.speechOut.ttsRegistry,
             ttsModelDownloaders: runtime.speechOut.ttsModelDownloaders,
             hookEnvelopeReceiver: runtime.integrations.hookEnvelopeReceiver,
@@ -193,7 +193,7 @@ final class AppModel {
         overlayModel: ActivityOverlayModel = ActivityOverlayModel(),
         overlayPresenter: any ActivityOverlayPresenting = NoOpActivityOverlayPresenter(),
         sttRegistry: [String: any SpeechToTextBackend] = [:],
-        speechModelDownloaders: [String: any SpeechModelDownloading] = [:],
+        speechModelManagers: [String: any SpeechModelManaging] = [:],
         ttsRegistry: [String: any TextToSpeechBackend] = [:],
         ttsModelDownloaders: [String: any SpeechModelDownloading] = [:],
         hookEnvelopeReceiver: HookEnvelopeReceiver = HookEnvelopeReceiver(),
@@ -227,7 +227,7 @@ final class AppModel {
         self.overlayModel = overlayModel
         self.overlayPresenter = overlayPresenter
         self.sttRegistry = sttRegistry
-        self.speechModelDownloaders = speechModelDownloaders
+        self.speechModelManagers = speechModelManagers
         self.ttsRegistry = ttsRegistry
         self.ttsModelDownloaders = ttsModelDownloaders
         self.hookEnvelopeReceiver = hookEnvelopeReceiver
@@ -278,7 +278,7 @@ final class AppModel {
         overlayModel: ActivityOverlayModel,
         overlayPresenter: any ActivityOverlayPresenting,
         sttRegistry: [String: any SpeechToTextBackend],
-        speechModelDownloaders: [String: any SpeechModelDownloading],
+        speechModelManagers: [String: any SpeechModelManaging],
         ttsRegistry: [String: any TextToSpeechBackend],
         ttsModelDownloaders: [String: any SpeechModelDownloading],
         hookEnvelopeReceiver: HookEnvelopeReceiver,
@@ -307,7 +307,7 @@ final class AppModel {
         self.overlayModel = overlayModel
         self.overlayPresenter = overlayPresenter
         self.sttRegistry = sttRegistry
-        self.speechModelDownloaders = speechModelDownloaders
+        self.speechModelManagers = speechModelManagers
         self.ttsRegistry = ttsRegistry
         self.ttsModelDownloaders = ttsModelDownloaders
         self.hookEnvelopeReceiver = hookEnvelopeReceiver
