@@ -107,8 +107,15 @@ final class WhisperModelStoreTests: XCTestCase {
         // Files present, but no `.verified` marker: must not report downloaded.
         XCTAssertFalse(store.presence(of: .tinyEn))
 
-        // Now the marker also exists: reports downloaded.
-        try Data().write(to: modelDirectory.appendingPathComponent(".verified"))
+        // Marker present, but it lists a bundle file that isn't actually there: still not
+        // downloaded -- the marker alone is not sufficient proof.
+        let incompleteManifest = try JSONEncoder().encode(["config.json", "AudioEncoder.mlmodelc/model.mil"])
+        try incompleteManifest.write(to: modelDirectory.appendingPathComponent(".verified"))
+        XCTAssertFalse(store.presence(of: .tinyEn))
+
+        // Marker present and every listed file actually exists: reports downloaded.
+        let completeManifest = try JSONEncoder().encode(["config.json"])
+        try completeManifest.write(to: modelDirectory.appendingPathComponent(".verified"))
         XCTAssertTrue(store.presence(of: .tinyEn))
     }
 

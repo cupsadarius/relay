@@ -66,9 +66,11 @@ enum WhisperModelStoreError: Error, Equatable, Sendable {
 ///
 /// `presence(of:)` is deliberately network-free and does not re-hash anything: the expected oids
 /// are only known at download time (fetched from Hugging Face's tree metadata), so there is
-/// nothing to re-verify against offline. Instead it trusts the `.verified` marker as proof that
-/// the atomic, fully-verified promote already happened -- the marker only ever exists inside a
-/// directory that reached its final path via that one atomic rename.
+/// nothing to re-verify against offline. Instead the `.verified` marker's *content* -- a JSON
+/// array of every relative path that was verified at promote time -- lets `presence(of:)` confirm
+/// the bundle is still intact: the marker's mere existence proves an atomic, fully-verified
+/// promote happened once, but a bundle file can still be deleted or corrupted afterwards without
+/// touching the marker, so `presence(of:)` also re-checks that every listed path still exists.
 struct WhisperModelStore: Sendable {
     private static let verifiedMarkerName = ".verified"
 
@@ -87,11 +89,22 @@ struct WhisperModelStore: Sendable {
         cacheDirectory.appendingPathComponent(id.rawValue, isDirectory: true)
     }
 
-    /// Network-free. `true` only if the model's ready directory carries a `.verified` marker --
-    /// see the type-level doc comment for why that alone is sufficient proof.
+    /// Network-free: reads the `.verified` marker's JSON file-manifest and re-checks that every
+    /// listed path still exists under the model directory. Does not re-hash file contents (no
+    /// expected checksums are available offline) -- only existence is re-checked. Returns `false`
+    /// if the marker is missing, unreadable, or malformed, or if any listed file is gone.
     func presence(of id: WhisperModelID) -> Bool {
-        let markerURL = modelDirectory(for: id).appendingPathComponent(Self.verifiedMarkerName)
-        return FileManager.default.fileExists(atPath: markerURL.path)
+        let directory = modelDirectory(for: id)
+        let markerURL = directory.appendingPathComponent(Self.verifiedMarkerName)
+        guard let markerData = try? Data(contentsOf: markerURL) else {
+            return false
+        }
+        guard let manifest = try? JSONDecoder().decode([String].self, from: markerData) else {
+            return false
+        }
+        return manifest.allSatisfy { relativePath in
+            FileManager.default.fileExists(atPath: directory.appendingPathComponent(relativePath).path)
+        }
     }
 
     /// Downloads and verifies every file in `id`'s runtime artifact, promoting it atomically once
@@ -115,8 +128,9 @@ struct WhisperModelStore: Sendable {
                 }
             }
 
+            let manifest = files.map(\.relativePath)
             let markerURL = stagingDirectory.appendingPathComponent(Self.verifiedMarkerName)
-            FileManager.default.createFile(atPath: markerURL.path, contents: Data())
+            try JSONEncoder().encode(manifest).write(to: markerURL)
 
             let readyDirectory = modelDirectory(for: id)
             try? FileManager.default.removeItem(at: readyDirectory)
