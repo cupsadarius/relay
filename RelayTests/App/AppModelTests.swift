@@ -940,13 +940,13 @@ final class AppModelTests: XCTestCase {
         let store = FakeSettingsStore(settings: settings)
         let diagnostics = DiagnosticsRecorder(capacity: 10)
         let parakeet = FakeSTTBackend(id: "parakeet", displayName: "Parakeet", availability: .modelNotDownloaded)
-        let downloader = FakeSpeechModelDownloader()
+        let downloader = FakeSpeechModelManager()
         await downloader.setProgressToReport([0.5])
         await downloader.setShouldBlock(true)
         let model = makeModel(
             store: store,
             sttRegistry: ["parakeet": parakeet],
-            speechModelDownloaders: ["parakeet": downloader],
+            speechModelManagers: ["parakeet": downloader],
             diagnostics: diagnostics
         )
         await model.initialSpeechBackendRefresh?.value
@@ -974,12 +974,12 @@ final class AppModelTests: XCTestCase {
         let store = FakeSettingsStore(settings: settings)
         let diagnostics = DiagnosticsRecorder(capacity: 10)
         let parakeet = FakeSTTBackend(id: "parakeet", displayName: "Parakeet", availability: .modelNotDownloaded)
-        let downloader = FakeSpeechModelDownloader()
+        let downloader = FakeSpeechModelManager()
         await downloader.setErrorToThrow(TestError.saveFailed)
         let model = makeModel(
             store: store,
             sttRegistry: ["parakeet": parakeet],
-            speechModelDownloaders: ["parakeet": downloader],
+            speechModelManagers: ["parakeet": downloader],
             diagnostics: diagnostics
         )
         await model.initialSpeechBackendRefresh?.value
@@ -1001,9 +1001,9 @@ final class AppModelTests: XCTestCase {
         settings.sttBackendOrder = ["parakeet"]
         let store = FakeSettingsStore(settings: settings)
         let parakeet = FakeSTTBackend(id: "parakeet", displayName: "Parakeet", availability: .modelNotDownloaded)
-        let downloader = FakeSpeechModelDownloader()
+        let downloader = FakeSpeechModelManager()
         await downloader.setErrorToThrow(TestError.saveFailed)
-        let model = makeModel(store: store, sttRegistry: ["parakeet": parakeet], speechModelDownloaders: ["parakeet": downloader])
+        let model = makeModel(store: store, sttRegistry: ["parakeet": parakeet], speechModelManagers: ["parakeet": downloader])
         await model.initialSpeechBackendRefresh?.value
 
         await model.downloadSpeechModel("parakeet")
@@ -1024,12 +1024,12 @@ final class AppModelTests: XCTestCase {
         settings.sttBackendOrder = ["parakeet"]
         let store = FakeSettingsStore(settings: settings)
         let parakeet = FakeSTTBackend(id: "parakeet", displayName: "Parakeet", availability: .modelNotDownloaded)
-        let downloader = FakeSpeechModelDownloader()
+        let downloader = FakeSpeechModelManager()
         await downloader.setShouldBlock(true)
         let model = makeModel(
             store: store,
             sttRegistry: ["parakeet": parakeet],
-            speechModelDownloaders: ["parakeet": downloader]
+            speechModelManagers: ["parakeet": downloader]
         )
         await model.initialSpeechBackendRefresh?.value
 
@@ -1050,12 +1050,12 @@ final class AppModelTests: XCTestCase {
         settings.sttBackendOrder = ["parakeet"]
         let store = FakeSettingsStore(settings: settings)
         let parakeet = FakeSTTBackend(id: "parakeet", displayName: "Parakeet", availability: .modelNotDownloaded)
-        let downloader = FakeSpeechModelDownloader()
+        let downloader = FakeSpeechModelManager()
         await downloader.setShouldBlock(true)
         let model = makeModel(
             store: store,
             sttRegistry: ["parakeet": parakeet],
-            speechModelDownloaders: ["parakeet": downloader]
+            speechModelManagers: ["parakeet": downloader]
         )
         await model.initialSpeechBackendRefresh?.value
         model.sttBackends = [] // simulate a Download click before any status row exists
@@ -1076,12 +1076,12 @@ final class AppModelTests: XCTestCase {
         settings.sttBackendOrder = ["parakeet"]
         let store = FakeSettingsStore(settings: settings)
         let parakeet = FakeSTTBackend(id: "parakeet", displayName: "Parakeet", availability: .modelNotDownloaded)
-        let downloader = FakeSpeechModelDownloader()
+        let downloader = FakeSpeechModelManager()
         await downloader.setShouldBlock(true)
         let model = makeModel(
             store: store,
             sttRegistry: ["parakeet": parakeet],
-            speechModelDownloaders: ["parakeet": downloader]
+            speechModelManagers: ["parakeet": downloader]
         )
         await model.initialSpeechBackendRefresh?.value
 
@@ -1116,8 +1116,8 @@ final class AppModelTests: XCTestCase {
         settings.sttBackendOrder = ["parakeet"]
         let store = FakeSettingsStore(settings: settings)
         let parakeet = FakeSTTBackend(id: "parakeet", displayName: "Parakeet", availability: .modelNotDownloaded)
-        let downloader = FakeSpeechModelDownloader()
-        let model = makeModel(store: store, sttRegistry: ["parakeet": parakeet], speechModelDownloaders: ["parakeet": downloader])
+        let downloader = FakeSpeechModelManager()
+        let model = makeModel(store: store, sttRegistry: ["parakeet": parakeet], speechModelManagers: ["parakeet": downloader])
         await model.initialSpeechBackendRefresh?.value
         await parakeet.setAvailability(.available)
 
@@ -1136,9 +1136,9 @@ final class AppModelTests: XCTestCase {
         settings.sttBackendOrder = ["parakeet"]
         let store = FakeSettingsStore(settings: settings)
         let parakeet = FakeSTTBackend(id: "parakeet", displayName: "Parakeet", availability: .modelNotDownloaded)
-        let downloader = FakeSpeechModelDownloader()
+        let downloader = FakeSpeechModelManager()
         await downloader.setShouldBlock(true)
-        let model = makeModel(store: store, sttRegistry: ["parakeet": parakeet], speechModelDownloaders: ["parakeet": downloader])
+        let model = makeModel(store: store, sttRegistry: ["parakeet": parakeet], speechModelManagers: ["parakeet": downloader])
         await model.initialSpeechBackendRefresh?.value
 
         let downloadTask = Task { await model.downloadSpeechModel("parakeet") }
@@ -1164,9 +1164,213 @@ final class AppModelTests: XCTestCase {
         let modelWithoutDownloader = makeModel(sttRegistry: ["a": a])
         XCTAssertFalse(modelWithoutDownloader.canDownloadSpeechModel("a"))
 
-        let downloader = FakeSpeechModelDownloader()
-        let modelWithDownloader = makeModel(sttRegistry: ["a": a], speechModelDownloaders: ["a": downloader])
+        let downloader = FakeSpeechModelManager()
+        let modelWithDownloader = makeModel(sttRegistry: ["a": a], speechModelManagers: ["a": downloader])
         XCTAssertTrue(modelWithDownloader.canDownloadSpeechModel("a"))
+    }
+
+    func testRefreshSpeechModelsPopulatesRowsPerBackend() async {
+        let parakeet = FakeSTTBackend(id: "parakeet", displayName: "Parakeet")
+        let whisper = FakeSTTBackend(id: "whisper", displayName: "Whisper")
+        let parakeetManager = FakeMultiModelSpeechModelManager(backendID: "parakeet", models: [
+            makeModelStatus(id: "parakeet-v2", isSelected: true),
+        ])
+        let whisperManager = FakeMultiModelSpeechModelManager(backendID: "whisper", models: [
+            makeModelStatus(id: "whisper-tiny", isSelected: true),
+            makeModelStatus(id: "whisper-base"),
+        ])
+        let model = makeModel(
+            sttRegistry: ["parakeet": parakeet, "whisper": whisper],
+            speechModelManagers: ["parakeet": parakeetManager, "whisper": whisperManager]
+        )
+
+        await model.refreshSpeechModels()
+
+        XCTAssertEqual(model.speechModels["parakeet"]?.map(\.id), ["parakeet-v2"])
+        XCTAssertEqual(model.speechModels["whisper"]?.map(\.id), ["whisper-tiny", "whisper-base"])
+    }
+
+    func testDownloadSpeechModelMarksOnlyThatModelDownloadingAndFinishesDownloaded() async {
+        let whisper = FakeSTTBackend(id: "whisper", displayName: "Whisper")
+        let manager = FakeMultiModelSpeechModelManager(backendID: "whisper", models: [
+            makeModelStatus(id: "whisper-tiny"),
+            makeModelStatus(id: "whisper-base"),
+        ])
+        await manager.setProgressToReport("whisper-tiny", [0.5])
+        await manager.setShouldBlock("whisper-tiny", true)
+        let model = makeModel(sttRegistry: ["whisper": whisper], speechModelManagers: ["whisper": manager])
+        await model.refreshSpeechModels()
+
+        let downloadTask = Task { await model.downloadSpeechModel(backendID: "whisper", modelID: "whisper-tiny") }
+        await waitUntil {
+            model.speechModels["whisper"]?.first(where: { $0.id == "whisper-tiny" })?.installState == .downloading(progress: 0.5)
+        }
+
+        XCTAssertTrue(model.downloadingModelKeys.contains("whisper/whisper-tiny"))
+        XCTAssertEqual(model.speechModels["whisper"]?.first(where: { $0.id == "whisper-base" })?.installState, .notDownloaded)
+
+        await manager.resumeDownload("whisper-tiny")
+        await downloadTask.value
+
+        XCTAssertEqual(model.speechModels["whisper"]?.first(where: { $0.id == "whisper-tiny" })?.installState, .downloaded)
+        XCTAssertFalse(model.downloadingModelKeys.contains("whisper/whisper-tiny"))
+        XCTAssertEqual(model.speechModels["whisper"]?.first(where: { $0.id == "whisper-base" })?.installState, .notDownloaded)
+    }
+
+    func testDownloadProgressIsMonotonicPerModel() async {
+        let whisper = FakeSTTBackend(id: "whisper", displayName: "Whisper")
+        let manager = FakeMultiModelSpeechModelManager(backendID: "whisper", models: [
+            makeModelStatus(id: "whisper-tiny"),
+        ])
+        await manager.setShouldBlock("whisper-tiny", true)
+        let model = makeModel(sttRegistry: ["whisper": whisper], speechModelManagers: ["whisper": manager])
+        await model.refreshSpeechModels()
+
+        let downloadTask = Task { await model.downloadSpeechModel(backendID: "whisper", modelID: "whisper-tiny") }
+        await waitUntil { await manager.downloadCallCount("whisper-tiny") > 0 }
+
+        await manager.reportProgress("whisper-tiny", 0.7)
+        await waitUntil {
+            model.speechModels["whisper"]?.first(where: { $0.id == "whisper-tiny" })?.installState == .downloading(progress: 0.7)
+        }
+
+        await manager.reportProgress("whisper-tiny", 0.3) // out of order: must not move progress backwards
+        await Task.yield()
+        await Task.yield()
+
+        XCTAssertEqual(
+            model.speechModels["whisper"]?.first(where: { $0.id == "whisper-tiny" })?.installState,
+            .downloading(progress: 0.7)
+        )
+
+        await manager.resumeDownload("whisper-tiny")
+        await downloadTask.value
+    }
+
+    func testDownloadFailureMarksThatModelDownloadFailedWithoutTouchingSiblings() async {
+        let whisper = FakeSTTBackend(id: "whisper", displayName: "Whisper")
+        let manager = FakeMultiModelSpeechModelManager(backendID: "whisper", models: [
+            makeModelStatus(id: "whisper-tiny"),
+            makeModelStatus(id: "whisper-base", installState: .downloaded),
+        ])
+        await manager.setErrorToThrow("whisper-tiny", TestError.saveFailed)
+        let model = makeModel(sttRegistry: ["whisper": whisper], speechModelManagers: ["whisper": manager])
+        await model.refreshSpeechModels()
+
+        await model.downloadSpeechModel(backendID: "whisper", modelID: "whisper-tiny")
+
+        XCTAssertEqual(model.speechModels["whisper"]?.first(where: { $0.id == "whisper-tiny" })?.installState, .downloadFailed)
+        XCTAssertEqual(model.speechModels["whisper"]?.first(where: { $0.id == "whisper-base" })?.installState, .downloaded)
+        XCTAssertFalse(model.downloadingModelKeys.contains("whisper/whisper-tiny"))
+        XCTAssertEqual(model.statusText, "Whisper model download failed. Check your connection and try again.")
+    }
+
+    func testSelectSpeechModelUpdatesSelectedRowAndRefreshesAvailability() async {
+        let whisper = FakeSTTBackend(id: "whisper", displayName: "Whisper")
+        let manager = FakeMultiModelSpeechModelManager(backendID: "whisper", models: [
+            makeModelStatus(id: "whisper-tiny", isSelected: true),
+            makeModelStatus(id: "whisper-base"),
+        ])
+        let model = makeModel(sttRegistry: ["whisper": whisper], speechModelManagers: ["whisper": manager])
+        await model.refreshSpeechModels()
+        let callCountBeforeSelect = await whisper.availabilityCallCount
+
+        await model.selectSpeechModel(backendID: "whisper", modelID: "whisper-base")
+
+        XCTAssertEqual(model.speechModels["whisper"]?.first(where: { $0.id == "whisper-tiny" })?.isSelected, false)
+        XCTAssertEqual(model.speechModels["whisper"]?.first(where: { $0.id == "whisper-base" })?.isSelected, true)
+        let selectCalls = await manager.selectCalls
+        XCTAssertEqual(selectCalls, ["whisper-base"])
+        // F1: selecting a model must also re-derive `sttBackends` (via `backend.availability()`),
+        // not just the per-model `speechModels` row -- otherwise `WhisperBackend.availability()`
+        // (selected-model presence) goes stale on the backend-level surface after a selection.
+        let callCountAfterSelect = await whisper.availabilityCallCount
+        XCTAssertGreaterThan(callCountAfterSelect, callCountBeforeSelect)
+    }
+
+    func testRemoveSpeechModelDelegatesToManagerAndRefreshes() async {
+        let whisper = FakeSTTBackend(id: "whisper", displayName: "Whisper")
+        let manager = FakeMultiModelSpeechModelManager(backendID: "whisper", models: [
+            makeModelStatus(id: "whisper-tiny", installState: .downloaded),
+        ])
+        let model = makeModel(sttRegistry: ["whisper": whisper], speechModelManagers: ["whisper": manager])
+        await model.refreshSpeechModels()
+        let callCountBeforeRemove = await whisper.availabilityCallCount
+
+        await model.removeSpeechModel(backendID: "whisper", modelID: "whisper-tiny")
+
+        let removeCalls = await manager.removeCalls
+        XCTAssertEqual(removeCalls, ["whisper-tiny"])
+        XCTAssertEqual(model.speechModels["whisper"]?.first(where: { $0.id == "whisper-tiny" })?.installState, .notDownloaded)
+        // F1: removing a model must also re-derive `sttBackends` -- a removed selected model
+        // should be reflected in backend-level availability, not just the per-model row.
+        let callCountAfterRemove = await whisper.availabilityCallCount
+        XCTAssertGreaterThan(callCountAfterRemove, callCountBeforeRemove)
+    }
+
+    /// F1: a successful per-model download must also refresh `sttBackends` (via
+    /// `backend.availability()`), so a backend whose availability derives from the just-downloaded
+    /// model (e.g. Whisper, once the selected model is present on disk) doesn't stay stale on the
+    /// backend-level surface until some unrelated refresh happens to run.
+    func testDownloadSpeechModelRefreshesBackendAvailabilityOnSuccess() async {
+        let whisper = FakeSTTBackend(id: "whisper", displayName: "Whisper")
+        let manager = FakeMultiModelSpeechModelManager(backendID: "whisper", models: [
+            makeModelStatus(id: "whisper-tiny"),
+        ])
+        let model = makeModel(sttRegistry: ["whisper": whisper], speechModelManagers: ["whisper": manager])
+        await model.refreshSpeechModels()
+        let callCountBeforeDownload = await whisper.availabilityCallCount
+
+        await model.downloadSpeechModel(backendID: "whisper", modelID: "whisper-tiny")
+
+        let callCountAfterDownload = await whisper.availabilityCallCount
+        XCTAssertGreaterThan(callCountAfterDownload, callCountBeforeDownload)
+    }
+
+    /// F1 (failure path): a FAILED per-model download does not need a backend-availability
+    /// refresh -- nothing about the backend's availability could have changed by a download that
+    /// never landed any bytes -- so this pins that `downloadSpeechModel` only refreshes on
+    /// success, matching the spec's "after a successful per-model download" wording exactly.
+    func testDownloadSpeechModelFailureDoesNotRefreshBackendAvailability() async {
+        let whisper = FakeSTTBackend(id: "whisper", displayName: "Whisper")
+        let manager = FakeMultiModelSpeechModelManager(backendID: "whisper", models: [
+            makeModelStatus(id: "whisper-tiny"),
+        ])
+        await manager.setErrorToThrow("whisper-tiny", TestError.saveFailed)
+        let model = makeModel(sttRegistry: ["whisper": whisper], speechModelManagers: ["whisper": manager])
+        await model.refreshSpeechModels()
+        let callCountBeforeDownload = await whisper.availabilityCallCount
+
+        await model.downloadSpeechModel(backendID: "whisper", modelID: "whisper-tiny")
+
+        let callCountAfterDownload = await whisper.availabilityCallCount
+        XCTAssertEqual(callCountAfterDownload, callCountBeforeDownload)
+    }
+
+    func testConcurrentRefreshGenerationCounterKeepsLatest() async {
+        let whisper = FakeSTTBackend(id: "whisper", displayName: "Whisper")
+        let manager = FakeMultiModelSpeechModelManager(backendID: "whisper", models: [
+            makeModelStatus(id: "whisper-tiny"),
+        ])
+        let model = makeModel(sttRegistry: ["whisper": whisper], speechModelManagers: ["whisper": manager])
+
+        await manager.setShouldBlockModels(true)
+        let staleTask = Task { await model.refreshSpeechModels() }
+        await waitUntil { await manager.modelsCallCount > 0 }
+
+        // A newer refresh starts and completes while the stale one is still suspended inside
+        // models().
+        await manager.setStatus("whisper-tiny", installState: .downloaded)
+        await manager.setShouldBlockModels(false)
+        await model.refreshSpeechModels()
+
+        XCTAssertEqual(model.speechModels["whisper"]?.first(where: { $0.id == "whisper-tiny" })?.installState, .downloaded)
+
+        // Resuming the stale refresh must not clobber the newer (already-applied) result.
+        await manager.resumeModels()
+        await staleTask.value
+
+        XCTAssertEqual(model.speechModels["whisper"]?.first(where: { $0.id == "whisper-tiny" })?.installState, .downloaded)
     }
 
     func testSpeechBackendMessageIsSetOnRefusalAndClearedOnNextSuccessfulAction() async {
@@ -1300,7 +1504,7 @@ final class AppModelTests: XCTestCase {
             overlayModel: overlay,
             overlayPresenter: NoOpActivityOverlayPresenter(),
             sttRegistry: [:],
-            speechModelDownloaders: [:],
+            speechModelManagers: [:],
             ttsRegistry: ["pocket-tts": pocket, "kokoro": kokoro, "apple-tts": apple]
         )
         return (model, hotkeys, pocket, kokoro, apple)
@@ -1359,7 +1563,7 @@ final class AppModelTests: XCTestCase {
         overlayModel: ActivityOverlayModel? = nil,
         overlayPresenter: (any ActivityOverlayPresenting)? = nil,
         sttRegistry: [String: any SpeechToTextBackend] = [:],
-        speechModelDownloaders: [String: any SpeechModelDownloading] = [:],
+        speechModelManagers: [String: any SpeechModelManaging] = [:],
         diagnostics: DiagnosticsRecorder? = nil,
         sessionRegistry: AgentSessionRegistry? = nil,
         focusResolution: (any SessionFocusResolving)? = nil,
@@ -1382,7 +1586,7 @@ final class AppModelTests: XCTestCase {
             overlayModel: overlayModel ?? ActivityOverlayModel(),
             overlayPresenter: overlayPresenter ?? NoOpActivityOverlayPresenter(),
             sttRegistry: sttRegistry,
-            speechModelDownloaders: speechModelDownloaders,
+            speechModelManagers: speechModelManagers,
             integrationManager: integrationManager,
             sessionRegistry: sessionRegistry ?? AgentSessionRegistry(),
             focusResolution: focusResolution ?? FocusResolutionService(
@@ -1557,38 +1761,212 @@ private actor FakeSTTBackend: SpeechToTextBackend {
     }
 }
 
-private actor FakeSpeechModelDownloader: SpeechModelDownloading {
+private func makeModelStatus(
+    id: String,
+    installState: SpeechModelInstallState = .notDownloaded,
+    isSelected: Bool = false,
+    isLoaded: Bool = false
+) -> SpeechModelStatus {
+    SpeechModelStatus(
+        descriptor: SpeechModelDescriptor(id: id, displayName: id, detail: nil, approximateDownloadBytes: nil),
+        installState: installState,
+        isSelected: isSelected,
+        isLoaded: isLoaded
+    )
+}
+
+/// A multi-model `SpeechModelManaging` fake used by the per-model download/select/remove tests
+/// (Whisper hasn't registered as a backend yet, so these tests exercise the new per-model surface
+/// against a fake with more than one model). Mirrors `FakeSpeechModelManager`'s and
+/// `FakeSTTBackend`'s blocking/continuation style, but keyed per model id so one model's download
+/// (or `models()` call) can be held in flight independently of its siblings.
+private actor FakeMultiModelSpeechModelManager: SpeechModelManaging {
+    let backendID: String
+    private var statuses: [String: SpeechModelStatus]
+    private let order: [String]
+
+    private(set) var modelsCallCount = 0
+    private var shouldBlockModels = false
+    private var modelsContinuation: CheckedContinuation<Void, Never>?
+
+    private var downloadCallCounts: [String: Int] = [:]
+    private var progressToReport: [String: [Double]] = [:]
+    private var errorToThrow: [String: Error] = [:]
+    private var shouldBlockDownload: Set<String> = []
+    private var downloadContinuations: [String: CheckedContinuation<Void, Never>] = [:]
+    private var downloadResumeRequested: Set<String> = []
+    private var capturedProgress: [String: @Sendable (Double) -> Void] = [:]
+
+    private(set) var selectCalls: [String] = []
+    private(set) var removeCalls: [String] = []
+
+    init(backendID: String, models: [SpeechModelStatus]) {
+        self.backendID = backendID
+        order = models.map(\.id)
+        statuses = Dictionary(uniqueKeysWithValues: models.map { ($0.id, $0) })
+    }
+
+    func models() async -> [SpeechModelStatus] {
+        modelsCallCount += 1
+        if shouldBlockModels {
+            await withCheckedContinuation { modelsContinuation = $0 }
+        }
+        return order.compactMap { statuses[$0] }
+    }
+
+    /// Makes `models()` suspend on a continuation instead of returning immediately, so a test can
+    /// deterministically hold a refresh mid-flight and interleave a second refresh before calling
+    /// `resumeModels()`.
+    func setShouldBlockModels(_ value: Bool) { shouldBlockModels = value }
+
+    func resumeModels() {
+        modelsContinuation?.resume()
+        modelsContinuation = nil
+    }
+
+    func setStatus(_ id: String, installState: SpeechModelInstallState? = nil, isSelected: Bool? = nil) {
+        guard var status = statuses[id] else { return }
+        if let installState { status.installState = installState }
+        if let isSelected { status.isSelected = isSelected }
+        statuses[id] = status
+    }
+
+    func setProgressToReport(_ id: String, _ values: [Double]) { progressToReport[id] = values }
+    func setErrorToThrow(_ id: String, _ error: Error?) { errorToThrow[id] = error }
+    func setShouldBlock(_ id: String, _ value: Bool) {
+        if value { shouldBlockDownload.insert(id) } else { shouldBlockDownload.remove(id) }
+    }
+
+    func downloadModel(_ id: String, progress: @escaping @Sendable (Double) -> Void) async throws {
+        downloadCallCounts[id, default: 0] += 1
+        capturedProgress[id] = progress
+        for value in progressToReport[id] ?? [] {
+            progress(value)
+        }
+        if shouldBlockDownload.contains(id) {
+            if downloadResumeRequested.contains(id) {
+                downloadResumeRequested.remove(id)
+            } else {
+                await withCheckedContinuation { downloadContinuations[id] = $0 }
+            }
+        }
+        if let error = errorToThrow[id] {
+            throw error
+        }
+    }
+
+    /// Order-independent, per-model: resumes an already-blocked `downloadModel(id)` call, or --
+    /// if none is blocked yet -- arms a per-id resume flag so that model's next `downloadModel`
+    /// call skips blocking instead of hanging on a continuation nobody will resume.
+    func resumeDownload(_ id: String) {
+        if let continuation = downloadContinuations[id] {
+            continuation.resume()
+            downloadContinuations[id] = nil
+        } else {
+            downloadResumeRequested.insert(id)
+        }
+    }
+
+    func reportProgress(_ id: String, _ value: Double) {
+        capturedProgress[id]?(value)
+    }
+
+    func downloadCallCount(_ id: String) -> Int { downloadCallCounts[id, default: 0] }
+
+    func removeModel(_ id: String) async throws {
+        removeCalls.append(id)
+        statuses[id]?.installState = .notDownloaded
+    }
+
+    func selectModel(_ id: String) async throws {
+        selectCalls.append(id)
+        for key in statuses.keys {
+            statuses[key]?.isSelected = (key == id)
+        }
+    }
+}
+
+/// A one-model `SpeechModelManaging` fake -- the STT-side counterpart to `FakeTTSModelDownloader`
+/// (still `SpeechModelDownloading`, since TTS backends haven't migrated to the new per-model
+/// protocol). `models()` always reports a single model under `modelID`; `downloadModel` is the
+/// method under test in every "download" test in this file, and reproduces the exact
+/// progress/blocking/failure behavior the old `FakeSpeechModelDownloader.downloadModels` had, so
+/// every existing assertion (progress ticks, retry after failure, single-flight, stale/late
+/// progress) still holds unchanged against the new manager surface.
+private actor FakeSpeechModelManager: SpeechModelManaging {
+    let backendID: String
+    private let modelID: String
     private(set) var callCount = 0
     private var progressToReport: [Double] = []
     private var errorToThrow: Error?
     private var shouldBlock = false
     private var continuation: CheckedContinuation<Void, Never>?
+    /// True once `resume()` has been called with no `downloadModel` call currently blocked to
+    /// resume. `downloadSpeechModel` now resolves the manager's model id via `models()` before
+    /// calling `downloadModel` -- an extra actor hop versus the old direct `downloadModels` call
+    /// -- so a caller that calls `resume()` the instant it observes the "downloading" row (before
+    /// `downloadModel` has actually reached its blocking point) must not have that resume lost.
+    /// This flag makes `resume()` order-independent: called early, it makes the *next*
+    /// `downloadModel` call skip blocking entirely instead of arming a continuation nobody will
+    /// ever resume.
+    private var resumeRequested = false
     private var capturedProgress: (@Sendable (Double) -> Void)?
+
+    init(backendID: String = "parakeet", modelID: String = "parakeet-v2") {
+        self.backendID = backendID
+        self.modelID = modelID
+    }
 
     func setProgressToReport(_ values: [Double]) { progressToReport = values }
     func setErrorToThrow(_ error: Error?) { errorToThrow = error }
     func setShouldBlock(_ value: Bool) { shouldBlock = value }
 
-    func downloadModels(progress: @escaping @Sendable (Double) -> Void) async throws {
+    func models() async -> [SpeechModelStatus] {
+        [
+            SpeechModelStatus(
+                descriptor: SpeechModelDescriptor(id: modelID, displayName: modelID, detail: nil, approximateDownloadBytes: nil),
+                installState: .notDownloaded,
+                isSelected: true,
+                isLoaded: false
+            ),
+        ]
+    }
+
+    func downloadModel(_ id: String, progress: @escaping @Sendable (Double) -> Void) async throws {
         callCount += 1
         capturedProgress = progress
         for value in progressToReport {
             progress(value)
         }
         if shouldBlock {
-            await withCheckedContinuation { continuation = $0 }
+            if resumeRequested {
+                resumeRequested = false
+            } else {
+                await withCheckedContinuation { continuation = $0 }
+            }
         }
         if let errorToThrow {
             throw errorToThrow
         }
     }
 
+    func removeModel(_ id: String) async throws {}
+
+    func selectModel(_ id: String) async throws {}
+
+    /// Order-independent: resumes an already-blocked `downloadModel` call, or -- if none is
+    /// blocked yet -- arms `resumeRequested` so the next `downloadModel` call skips blocking
+    /// instead of hanging forever on a continuation nobody will resume.
     func resume() {
-        continuation?.resume()
-        continuation = nil
+        if let continuation {
+            continuation.resume()
+            self.continuation = nil
+        } else {
+            resumeRequested = true
+        }
     }
 
-    /// Invokes the progress closure captured from the most recent `downloadModels` call, letting
+    /// Invokes the progress closure captured from the most recent `downloadModel` call, letting
     /// a test simulate a tick arriving at an arbitrary time — including after completion, or out
     /// of order relative to an earlier tick.
     func reportProgress(_ value: Double) {

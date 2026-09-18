@@ -64,3 +64,92 @@ final class SettingsViewsSmokeTests: XCTestCase {
         XCTAssertEqual(model.settings.autoReadEnabled, initial)
     }
 }
+
+final class SpeechModelRowPresentationTests: XCTestCase {
+    private func descriptor(detail: String? = "English only") -> SpeechModelDescriptor {
+        SpeechModelDescriptor(id: "whisper-tiny", displayName: "Tiny", detail: detail, approximateDownloadBytes: 100)
+    }
+
+    func testActiveWhenSelectedAndDownloaded() {
+        let status = SpeechModelStatus(descriptor: descriptor(), installState: .downloaded, isSelected: true, isLoaded: false)
+        let presentation = SpeechModelRowPresentation.make(status: status)
+
+        XCTAssertTrue(presentation.isActive)
+        XCTAssertEqual(presentation.stateLabel, "\u{25CF} Active")
+        XCTAssertFalse(presentation.showsRemove)
+    }
+
+    func testDownloadableWhenNotDownloaded() {
+        let status = SpeechModelStatus(descriptor: descriptor(), installState: .notDownloaded, isSelected: false, isLoaded: false)
+        let presentation = SpeechModelRowPresentation.make(status: status)
+
+        XCTAssertFalse(presentation.isActive)
+        XCTAssertEqual(presentation.stateLabel, "Download")
+        XCTAssertFalse(presentation.showsRemove)
+    }
+
+    func testDownloadingShowsProgress() {
+        let status = SpeechModelStatus(descriptor: descriptor(), installState: .downloading(progress: 0.42), isSelected: false, isLoaded: false)
+        let presentation = SpeechModelRowPresentation.make(status: status)
+
+        XCTAssertEqual(presentation.stateLabel, "Downloading 42%")
+        XCTAssertFalse(presentation.isActive)
+        XCTAssertFalse(presentation.showsRemove)
+    }
+
+    func testFailedState() {
+        let status = SpeechModelStatus(descriptor: descriptor(), installState: .downloadFailed, isSelected: false, isLoaded: false)
+        let presentation = SpeechModelRowPresentation.make(status: status)
+
+        XCTAssertEqual(presentation.stateLabel, "Failed")
+        XCTAssertFalse(presentation.isActive)
+        XCTAssertFalse(presentation.showsRemove)
+    }
+
+    func testRemoveOfferedOnlyForInactiveDownloaded() {
+        let inactiveDownloaded = SpeechModelStatus(descriptor: descriptor(), installState: .downloaded, isSelected: false, isLoaded: false)
+        XCTAssertTrue(SpeechModelRowPresentation.make(status: inactiveDownloaded).showsRemove)
+
+        let activeDownloaded = SpeechModelStatus(descriptor: descriptor(), installState: .downloaded, isSelected: true, isLoaded: false)
+        XCTAssertFalse(SpeechModelRowPresentation.make(status: activeDownloaded).showsRemove)
+
+        let notDownloaded = SpeechModelStatus(descriptor: descriptor(), installState: .notDownloaded, isSelected: false, isLoaded: false)
+        XCTAssertFalse(SpeechModelRowPresentation.make(status: notDownloaded).showsRemove)
+
+        let downloading = SpeechModelStatus(descriptor: descriptor(), installState: .downloading(progress: 0.1), isSelected: false, isLoaded: false)
+        XCTAssertFalse(SpeechModelRowPresentation.make(status: downloading).showsRemove)
+    }
+
+    func testEnglishVsMultilingualLabel() {
+        let english = SpeechModelStatus(descriptor: descriptor(detail: "English only"), installState: .notDownloaded, isSelected: false, isLoaded: false)
+        XCTAssertEqual(SpeechModelRowPresentation.make(status: english).detailLabel, "English only")
+
+        let multilingual = SpeechModelStatus(descriptor: descriptor(detail: "Multilingual"), installState: .notDownloaded, isSelected: false, isLoaded: false)
+        XCTAssertEqual(SpeechModelRowPresentation.make(status: multilingual).detailLabel, "Multilingual")
+
+        let missing = SpeechModelStatus(descriptor: descriptor(detail: nil), installState: .notDownloaded, isSelected: false, isLoaded: false)
+        XCTAssertEqual(SpeechModelRowPresentation.make(status: missing).detailLabel, "")
+    }
+}
+
+final class SpeechBackendModelDisplayModeTests: XCTestCase {
+    /// Zero models means the async `refreshSpeechModels()` hasn't populated `speechModels` for
+    /// this backend yet (or it genuinely has none, e.g. Apple Speech has no manager and never
+    /// appears in `speechModels` at all) -- neither the aggregate Download button nor the nested
+    /// per-model list should render, since showing the aggregate action here is exactly the
+    /// "silently downloads the first model" bug this gating exists to prevent.
+    func testZeroModelsShowsNeither() {
+        XCTAssertEqual(SpeechBackendModelDisplayMode.make(modelCount: 0), .none)
+    }
+
+    /// Exactly one model (Parakeet's genuine case) shows the single aggregate Download row.
+    func testOneModelShowsAggregateAction() {
+        XCTAssertEqual(SpeechBackendModelDisplayMode.make(modelCount: 1), .aggregateAction)
+    }
+
+    /// More than one model (Whisper) shows the nested per-model list instead.
+    func testMultipleModelsShowsNestedList() {
+        XCTAssertEqual(SpeechBackendModelDisplayMode.make(modelCount: 2), .nestedList)
+        XCTAssertEqual(SpeechBackendModelDisplayMode.make(modelCount: 5), .nestedList)
+    }
+}

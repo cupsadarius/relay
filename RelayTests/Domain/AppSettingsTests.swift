@@ -164,6 +164,55 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertTrue(AppSettings.defaults.ttsBackendOrder.contains("apple-tts"))
     }
 
+    func testSelectedSpeechModelByBackendDefaultsEmpty() {
+        XCTAssertEqual(AppSettings.defaults.selectedSpeechModelByBackend, [:])
+    }
+
+    func testSelectedSpeechModelByBackendRoundTrips() throws {
+        var value = AppSettings.defaults
+        value.selectedSpeechModelByBackend = ["whisper": "small.en", "parakeet": "parakeet-v2"]
+
+        let data = try JSONEncoder().encode(value)
+
+        XCTAssertEqual(
+            try JSONDecoder().decode(AppSettings.self, from: data).selectedSpeechModelByBackend,
+            value.selectedSpeechModelByBackend
+        )
+    }
+
+    /// A malformed value for the field (here, a non-string value under a known key) must decode
+    /// without throwing and fall back to the empty default, matching the resilient per-field
+    /// decode pattern the rest of this file follows (e.g. `hotkeys`) rather than resetting every
+    /// other field along with it.
+    func testSelectedSpeechModelByBackendDecodesResilientlyOnGarbage() throws {
+        var saved = AppSettings.defaults
+        saved.dictationMode = .toggle
+        let encoded = try JSONEncoder().encode(saved)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object["selectedSpeechModelByBackend"] = ["whisper": 42]
+
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+
+        XCTAssertEqual(decoded.selectedSpeechModelByBackend, [:])
+        XCTAssertEqual(decoded.dictationMode, .toggle)
+    }
+
+    /// `whisper` must be registered in `AppSettings.knownSTTBackendIDs` so it survives
+    /// `normalizedBackendOrder`'s known-id filter during decode, even though it is not part of
+    /// the default order (Task 11 registers the backend itself in the composition root).
+    func testWhisperIdSurvivesBackendOrderDecode() throws {
+        var saved = AppSettings.defaults
+        saved.sttBackendOrder = ["apple-speech", "whisper"]
+        let encoded = try JSONEncoder().encode(saved)
+
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: encoded)
+
+        XCTAssertEqual(decoded.sttBackendOrder, ["apple-speech", "whisper"])
+    }
+
     @MainActor
     func testSettingsStoreReturnsDefaultsWhenNoSettingsAreSaved() {
         let defaults = makeUserDefaults()

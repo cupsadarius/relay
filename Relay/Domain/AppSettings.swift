@@ -23,6 +23,12 @@ struct AppSettings: Codable, Equatable, Sendable {
     var kokoroVoice: String?
     var pocketVoice: String?
     var liveTranscriptionEnabled: Bool
+    /// The last model id selected per STT backend id (e.g. `"whisper": "small.en"`), so a
+    /// multi-model backend like Whisper remembers the user's choice across launches. Absent
+    /// entries mean no selection has been made yet for that backend; resolving an id no longer
+    /// present in a backend's catalog is that backend's manager's problem at read time, not
+    /// AppSettings'.
+    var selectedSpeechModelByBackend: [String: String]
 
     /// The current on-disk schema version. Bump this and add a case to the `switch` in
     /// `init(from:)` whenever a future change needs an explicit transformation step (e.g.
@@ -32,7 +38,7 @@ struct AppSettings: Codable, Equatable, Sendable {
     /// Backend ids `sttBackendOrder` recognizes as valid, mirroring the STT backends
     /// `RelayRuntime.makeProduction()` actually registers (`Relay/App/RelayRuntime.swift`).
     /// Update this alongside that registry when a new STT backend is added.
-    static let knownSTTBackendIDs: Set<String> = ["apple-speech", "parakeet"]
+    static let knownSTTBackendIDs: Set<String> = ["apple-speech", "parakeet", "whisper"]
 
     /// Backend ids `ttsBackendOrder` recognizes as valid, mirroring the TTS backends
     /// `RelayRuntime.makeProduction()` actually registers (`Relay/App/RelayRuntime.swift`).
@@ -48,6 +54,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         case dictationMode, hotkeys, sttBackendOrder, ttsBackendOrder
         case ttsVoiceIdentifier, ttsRate, autoReadEnabled, activityOverlayStyle, kokoroVoice, pocketVoice
         case liveTranscriptionEnabled
+        case selectedSpeechModelByBackend
     }
 
     init(from decoder: Decoder) throws {
@@ -91,6 +98,10 @@ struct AppSettings: Codable, Equatable, Sendable {
         kokoroVoice = try values.decodeIfPresent(String.self, forKey: .kokoroVoice)
         pocketVoice = try values.decodeIfPresent(String.self, forKey: .pocketVoice)
         liveTranscriptionEnabled = try values.decodeIfPresent(Bool.self, forKey: .liveTranscriptionEnabled) ?? false
+        selectedSpeechModelByBackend = (try? values.decode(
+            [String: String].self,
+            forKey: .selectedSpeechModelByBackend
+        )) ?? AppSettings.defaults.selectedSpeechModelByBackend
 
         // Normalize AFTER every field has its per-field fallback value: drop unknown/duplicate
         // backend ids (keeping the first occurrence of each known id, in order) and clamp the
@@ -140,6 +151,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         kokoroVoice: String? = nil,
         pocketVoice: String? = nil,
         liveTranscriptionEnabled: Bool = false,
+        selectedSpeechModelByBackend: [String: String] = [:],
         schemaVersion: Int = AppSettings.currentSchemaVersion
     ) {
         self.schemaVersion = schemaVersion
@@ -154,6 +166,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         self.kokoroVoice = kokoroVoice
         self.pocketVoice = pocketVoice
         self.liveTranscriptionEnabled = liveTranscriptionEnabled
+        self.selectedSpeechModelByBackend = selectedSpeechModelByBackend
     }
 
     static let defaults = AppSettings(

@@ -7,6 +7,9 @@ packages:
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio.git
     exactVersion: 0.15.7
+  WhisperKit:
+    url: https://github.com/argmaxinc/argmax-oss-swift.git
+    exactVersion: 1.1.0
 targets:
   Relay:
     type: application
@@ -23,6 +26,8 @@ targets:
     dependencies:
       - package: FluidAudio
         product: FluidAudio
+      - package: WhisperKit
+        product: WhisperKit
       - target: RelayHook
     settings:
       base:

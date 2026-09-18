@@ -58,6 +58,18 @@ final class AppModel {
     var lastMicrophoneCaptureDiagnostics: MicrophoneCaptureDiagnostics? { diagnostics.lastMicrophoneCaptureDiagnostics }
     var sttBackends: [STTBackendStatus] = []
     var speechBackendMessage: String?
+    /// Per-model snapshot rows, keyed by backend id, populated by `refreshSpeechModels()`. Unlike
+    /// `sttBackends` (one row per backend, derived from `availability()`), this is the per-model
+    /// surface the Settings view needs to list/download/select/remove an individual model for a
+    /// backend that offers more than one (Whisper). `models()` is async, so the view can't call it
+    /// directly from `body` — it reads this instead. Settable (like `sttBackends`) only so
+    /// `SpeechBackendCatalog.swift`'s `AppModel` extension can mutate it; callers outside `AppModel`
+    /// should treat it as read-only.
+    var speechModels: [String: [SpeechModelStatus]] = [:]
+    /// Models with an in-flight download, keyed `"<backendID>/<modelID>"`. Tracked as an
+    /// `@Observable`-visible property (unlike `downloadingBackendIDs`, which is bookkeeping-only)
+    /// so the view can show per-row download activity without inferring it from `installState`.
+    var downloadingModelKeys: Set<String> = []
     var ttsBackends: [TTSBackendStatus] = []
     var ttsBackendMessage: String?
     /// Whether the Relay agent-hook Unix socket is currently listening. Only ever flipped by
@@ -70,11 +82,15 @@ final class AppModel {
     @ObservationIgnored let overlayModel: ActivityOverlayModel
 
     @ObservationIgnored let sttRegistry: [String: any SpeechToTextBackend]
-    @ObservationIgnored let speechModelDownloaders: [String: any SpeechModelDownloading]
+    @ObservationIgnored let speechModelManagers: [String: any SpeechModelManaging]
     @ObservationIgnored let ttsRegistry: [String: any TextToSpeechBackend]
     @ObservationIgnored let ttsModelDownloaders: [String: any SpeechModelDownloading]
     @ObservationIgnored var downloadingBackendIDs: Set<String> = []
     @ObservationIgnored var refreshGeneration = 0
+    /// Generation counter for `refreshSpeechModels()`, mirroring `refreshGeneration`'s race-safety
+    /// pattern: a refresh that was superseded by a later one must not apply its (older) results
+    /// after the newer one has already won.
+    @ObservationIgnored var speechModelsRefreshGeneration = 0
     @ObservationIgnored var downloadingTTSBackendIDs: Set<String> = []
     @ObservationIgnored var ttsRefreshGeneration = 0
     /// The fire-and-forget initial status refresh kicked off from `init`. Exposed so tests can
@@ -160,7 +176,7 @@ final class AppModel {
             overlayModel: runtime.speechOut.overlayModel,
             overlayPresenter: runtime.speechOut.overlayPresenter,
             sttRegistry: runtime.speechIn.sttRegistry,
-            speechModelDownloaders: runtime.speechIn.speechModelDownloaders,
+            speechModelManagers: runtime.speechIn.speechModelManagers,
             ttsRegistry: runtime.speechOut.ttsRegistry,
             ttsModelDownloaders: runtime.speechOut.ttsModelDownloaders,
             hookEnvelopeReceiver: runtime.integrations.hookEnvelopeReceiver,
@@ -176,6 +192,13 @@ final class AppModel {
             integrationDiagnosticsLog: runtime.integrationDiagnosticsLog
         )
         runtime.speechIn.dictationCoordinator?.setStatusHandler { [weak self] in self?.statusText = $0 }
+        // Postponed wiring (see `WhisperSelectionWriterBox`'s doc comment): `RelayRuntime
+        // .makeProduction()` builds `WhisperModelManager`'s selection writer before `AppModel`
+        // exists, so it starts as a no-op; re-point it at `setSelectedSpeechModel` now that
+        // `AppModel` -- the app's sole settings writer -- does exist.
+        runtime.speechIn.whisperSelectionWriter.persist = { [weak self] modelID in
+            self?.setSelectedSpeechModel(backendID: "whisper", modelID: modelID?.rawValue)
+        }
     }
 
     init(
@@ -193,7 +216,7 @@ final class AppModel {
         overlayModel: ActivityOverlayModel = ActivityOverlayModel(),
         overlayPresenter: any ActivityOverlayPresenting = NoOpActivityOverlayPresenter(),
         sttRegistry: [String: any SpeechToTextBackend] = [:],
-        speechModelDownloaders: [String: any SpeechModelDownloading] = [:],
+        speechModelManagers: [String: any SpeechModelManaging] = [:],
         ttsRegistry: [String: any TextToSpeechBackend] = [:],
         ttsModelDownloaders: [String: any SpeechModelDownloading] = [:],
         hookEnvelopeReceiver: HookEnvelopeReceiver = HookEnvelopeReceiver(),
@@ -227,7 +250,7 @@ final class AppModel {
         self.overlayModel = overlayModel
         self.overlayPresenter = overlayPresenter
         self.sttRegistry = sttRegistry
-        self.speechModelDownloaders = speechModelDownloaders
+        self.speechModelManagers = speechModelManagers
         self.ttsRegistry = ttsRegistry
         self.ttsModelDownloaders = ttsModelDownloaders
         self.hookEnvelopeReceiver = hookEnvelopeReceiver
@@ -278,7 +301,7 @@ final class AppModel {
         overlayModel: ActivityOverlayModel,
         overlayPresenter: any ActivityOverlayPresenting,
         sttRegistry: [String: any SpeechToTextBackend],
-        speechModelDownloaders: [String: any SpeechModelDownloading],
+        speechModelManagers: [String: any SpeechModelManaging],
         ttsRegistry: [String: any TextToSpeechBackend],
         ttsModelDownloaders: [String: any SpeechModelDownloading],
         hookEnvelopeReceiver: HookEnvelopeReceiver,
@@ -307,7 +330,7 @@ final class AppModel {
         self.overlayModel = overlayModel
         self.overlayPresenter = overlayPresenter
         self.sttRegistry = sttRegistry
-        self.speechModelDownloaders = speechModelDownloaders
+        self.speechModelManagers = speechModelManagers
         self.ttsRegistry = ttsRegistry
         self.ttsModelDownloaders = ttsModelDownloaders
         self.hookEnvelopeReceiver = hookEnvelopeReceiver
@@ -435,6 +458,17 @@ final class AppModel {
     /// narrow so that file doesn't need broader access to `updateSettings`.
     func setTTSBackendOrder(_ order: [String]) {
         updateSettings { $0.ttsBackendOrder = order }
+    }
+
+    /// Persists a multi-model STT backend's currently-selected model id (e.g. Whisper's). Never
+    /// called directly by `SpeechBackendCatalog.swift`; `RelayRuntime.makeProduction()` wires
+    /// `WhisperSelectionWriterBox.persist` to this method right after constructing `AppModel`
+    /// (see `AppModel(runtime:)` below), so `WhisperModelManager.selectModel` -- which runs
+    /// before `AppModel` exists in `RelayRuntime.makeProduction()`'s own construction order --
+    /// still ultimately routes its persistence through `updateSettings`, `AppModel`'s sole write
+    /// path, instead of a production service writing `SettingsBox`/disk directly.
+    func setSelectedSpeechModel(backendID: String, modelID: String?) {
+        updateSettings { $0.selectedSpeechModelByBackend[backendID] = modelID }
     }
 
     /// Lets `SpeechBackendCatalog.swift` record diagnostics without widening `diagnostics` past
