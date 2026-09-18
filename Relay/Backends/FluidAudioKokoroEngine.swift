@@ -80,10 +80,13 @@ extension KokoroEngine {
 /// **There is no network-free load path in FluidAudio's KokoroAne API.** `KokoroAneManager`'s
 /// `initialize()` downloads any missing models before loading, and is a no-op download when
 /// files are already present. The hand-rolled `modelsArePresent()` presence gate on
-/// `load(allowDownload: false)` is therefore the ONLY protection against `initialize()` reaching
-/// the network when a caller asked for a local-only load - there is no way to close that gap
-/// further without patching FluidAudio. Only `load(allowDownload: true)` is meant to reach the
-/// network.
+/// `load(allowDownload: false)` is therefore the primary protection against `initialize()`
+/// reaching the network when a caller asked for a local-only load. It must cover every asset
+/// `initialize()` can trigger a download for - not just the ANE chain itself but also the shared
+/// G2P CoreML assets `initialize()` separately hard-downloads into a different cache directory
+/// (see `FluidAudioKokoroModelLoader.modelsArePresent()`) - since a gate that only checks part of
+/// what `initialize()` might download would still let a local-only load reach the network on a
+/// partial cache. Only `load(allowDownload: true)` is meant to reach the network.
 ///
 /// **No chunking**: `KokoroAneManager` caps input at ~510 phonemes per call and has no built-in
 /// chunker (splitting text is a text/prosody problem, not something the ANE pipeline can do
@@ -281,8 +284,13 @@ actor FluidAudioKokoroEngine: KokoroEngine {
 /// exactly the same "cache directory always exists" trap the old `TtsModels.cacheDirectoryURL()`
 /// had, just moved one level: `TtsCacheDirectory.ensure()` still creates
 /// `~/.cache/fluidaudio` if missing. Instead this checks for the actual compiled model bundles
-/// and auxiliary files FluidAudio's downloader places at
-/// `<cacheDirectory>/kokoro-82m-coreml/ANE/*`.
+/// and auxiliary files FluidAudio's downloader places at `<cacheDirectory>/kokoro-82m-coreml/ANE/*`
+/// (the ANE chain itself) - **and**, since `KokoroAneManager.initialize()` (English variant) also
+/// hard-downloads the shared G2P CoreML assets it needs for text -> IPA conversion into a
+/// different folder, at `<cacheDirectory>/kokoro/*` (see `ModelNames.G2P.requiredModels` and
+/// `KokoroAneResourceDownloader.ensureG2PAssets`). Both sets must be present on disk for
+/// `modelsArePresent()` to report `true`; a cache with only one half present (e.g. a G2P fetch
+/// that previously failed) must not be reported as ready.
 struct FluidAudioKokoroModelLoader: KokoroModelLoading {
     /// The directory `KokoroAneManager` and `KokoroAneResourceDownloader.ensureModels` treat as
     /// their "Models" root when passed as `directory:` - NOT the same as the old FluidAudio API's
@@ -296,9 +304,28 @@ struct FluidAudioKokoroModelLoader: KokoroModelLoading {
         cacheDirectory.appendingPathComponent(Self.variant.repo.folderName)
     }
 
+    /// Where `KokoroAneResourceDownloader.ensureG2PAssets` places the shared G2P encoder/decoder
+    /// (`G2PEncoder.mlmodelc`, `G2PDecoder.mlmodelc`, `g2p_vocab.json`): `Repo.kokoro.folderName`
+    /// ("kokoro") under the same "Models" root as `modelsDirectory` - a sibling of
+    /// `kokoro-82m-coreml/ANE`, not nested under it. `KokoroAneManager.initialize()` actually
+    /// fetches these via `ensureG2PAssets(directory: nil)`, which always resolves to FluidAudio's
+    /// own default cache root rather than honoring a caller-supplied `directory:` - but that
+    /// default is exactly what `FluidAudioKokoroEngine.defaultCacheDirectory()` passes as
+    /// `cacheDirectory` here, so this stays correct as long as nothing overrides that default.
+    private var g2pDirectory: URL {
+        cacheDirectory.appendingPathComponent(Repo.kokoro.folderName)
+    }
+
     func modelsArePresent() async -> Bool {
-        let directory = modelsDirectory
-        for fileName in ModelNames.KokoroAne.requiredModels {
+        Self.allFilesExist(ModelNames.KokoroAne.requiredModels, in: modelsDirectory)
+            && Self.allFilesExist(ModelNames.G2P.requiredModels, in: g2pDirectory)
+    }
+
+    /// `.mlmodelc` entries are directories and `.json`/other auxiliary entries are plain files,
+    /// but `FileManager.fileExists(atPath:)` doesn't care which - so this stays correct for both
+    /// the ANE set and the G2P set without needing a per-entry `isDirectory` check.
+    private static func allFilesExist(_ fileNames: Set<String>, in directory: URL) -> Bool {
+        for fileName in fileNames {
             guard FileManager.default.fileExists(atPath: directory.appendingPathComponent(fileName).path) else {
                 return false
             }

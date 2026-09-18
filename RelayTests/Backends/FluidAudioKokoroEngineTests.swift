@@ -204,6 +204,10 @@ final class FluidAudioKokoroEngineTests: XCTestCase {
         let loader = FluidAudioKokoroModelLoader(cacheDirectory: tempDirectory)
         let fileNames = Array(ModelNames.KokoroAne.requiredModels)
 
+        // The shared G2P assets are present from the start here: this test is only about the ANE
+        // bundle-by-bundle behavior. See the dedicated G2P tests below for the widened gate.
+        try createG2PAssets(under: tempDirectory)
+
         // Only the first bundle exists: still not present.
         try FileManager.default.createDirectory(
             at: modelsDirectory.appendingPathComponent(fileNames[0]),
@@ -221,6 +225,88 @@ final class FluidAudioKokoroEngineTests: XCTestCase {
         }
         present = await loader.modelsArePresent()
         XCTAssertTrue(present)
+    }
+
+    /// Regression test for the gate widening: `KokoroAneManager.initialize()` (English variant)
+    /// also hard-downloads the shared G2P CoreML assets (`ModelNames.G2P.requiredModels`) into
+    /// `<cacheDirectory>/kokoro/*` - a different folder than the ANE chain's
+    /// `<cacheDirectory>/kokoro-82m-coreml/ANE/*`. A gate that only checked the ANE folder would
+    /// report `true` on a partial cache (ANE present, G2P fetch previously failed) and let a
+    /// `load(allowDownload: false)` reach the network via `initialize()`.
+    func testModelsArePresentReturnsFalseWhenAneModelsPresentButG2PAssetsAreMissing() async throws {
+        let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        try createAneModels(under: tempDirectory)
+        // Deliberately no G2P assets created.
+
+        let loader = FluidAudioKokoroModelLoader(cacheDirectory: tempDirectory)
+        let present = await loader.modelsArePresent()
+
+        XCTAssertFalse(present, "ANE models alone must not satisfy the gate when the shared G2P assets are absent")
+    }
+
+    /// Mirror of the above: G2P assets present but the ANE chain missing must also fail the gate.
+    func testModelsArePresentReturnsFalseWhenG2PAssetsPresentButAneModelsAreMissing() async throws {
+        let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        try createG2PAssets(under: tempDirectory)
+        // Deliberately no ANE models created.
+
+        let loader = FluidAudioKokoroModelLoader(cacheDirectory: tempDirectory)
+        let present = await loader.modelsArePresent()
+
+        XCTAssertFalse(present, "G2P assets alone must not satisfy the gate when the ANE chain is absent")
+    }
+
+    /// Only once both the ANE chain and the shared G2P assets are on disk does the gate report
+    /// present - the positive counterpart to the two tests above.
+    func testModelsArePresentReturnsTrueOnlyWhenBothAneModelsAndG2PAssetsArePresent() async throws {
+        let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let loader = FluidAudioKokoroModelLoader(cacheDirectory: tempDirectory)
+
+        try createAneModels(under: tempDirectory)
+        var present = await loader.modelsArePresent()
+        XCTAssertFalse(present, "Must still be false with only the ANE chain present")
+
+        try createG2PAssets(under: tempDirectory)
+        present = await loader.modelsArePresent()
+        XCTAssertTrue(present, "Must be true once both the ANE chain and the shared G2P assets are present")
+    }
+
+    /// Creates every file `ModelNames.KokoroAne.requiredModels` names under
+    /// `<cacheDirectory>/kokoro-82m-coreml/ANE/`, matching
+    /// `FluidAudioKokoroModelLoader.modelsDirectory` for the English variant.
+    private func createAneModels(under cacheDirectory: URL) throws {
+        let modelsDirectory = cacheDirectory.appendingPathComponent("kokoro-82m-coreml").appendingPathComponent("ANE")
+        for fileName in ModelNames.KokoroAne.requiredModels {
+            try FileManager.default.createDirectory(
+                at: modelsDirectory.appendingPathComponent(fileName),
+                withIntermediateDirectories: true
+            )
+        }
+    }
+
+    /// Creates every file `ModelNames.G2P.requiredModels` names under `<cacheDirectory>/kokoro/`,
+    /// matching `FluidAudioKokoroModelLoader.g2pDirectory` (`Repo.kokoro.folderName == "kokoro"`).
+    /// Mirrors the mixed file/directory handling of `FluidAudioKokoroModelLoader.allFilesExist`:
+    /// every required name is created as a directory here (as the existing ANE fixtures already
+    /// do for `vocab.json`/`af_heart.bin`) since `FileManager.fileExists(atPath:)` does not
+    /// distinguish files from directories.
+    private func createG2PAssets(under cacheDirectory: URL) throws {
+        let g2pDirectory = cacheDirectory.appendingPathComponent(Repo.kokoro.folderName)
+        for fileName in ModelNames.G2P.requiredModels {
+            try FileManager.default.createDirectory(
+                at: g2pDirectory.appendingPathComponent(fileName),
+                withIntermediateDirectories: true
+            )
+        }
     }
 
     private func makeEngine(loader: FakeKokoroModelLoader) -> FluidAudioKokoroEngine {
