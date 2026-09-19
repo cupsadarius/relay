@@ -3,6 +3,11 @@ import SwiftUI
 struct DictationSettingsView: View {
     @Bindable var model: AppModel
 
+    /// Which providers' nested model lists are currently expanded, keyed by backend id. Absent
+    /// (or explicitly removed) means collapsed -- the default state for every provider, per-view-
+    /// session only (SwiftUI `@State`), never persisted to disk.
+    @State private var expandedBackendIDs: Set<String> = []
+
     var body: some View {
         Form {
             Section("Dictation") {
@@ -17,7 +22,7 @@ struct DictationSettingsView: View {
                 ForEach(model.sttBackends) { backend in
                     speechBackendRow(backend)
 
-                    if speechModelDisplayMode(for: backend.id) == .nestedList {
+                    if speechModelDisplayMode(for: backend.id) == .nestedList, isExpanded(backend.id) {
                         ForEach(model.speechModels[backend.id] ?? []) { status in
                             speechModelRow(backendID: backend.id, status: status)
                         }
@@ -39,32 +44,41 @@ struct DictationSettingsView: View {
         .task { await model.refreshSpeechModels() }
     }
 
+    /// The provider row: display name, a status/subtitle caption, an enable toggle, and (for a
+    /// backend with at least one model, i.e. `speechModelDisplayMode(for:) == .nestedList`) a
+    /// disclosure control that shows/hides the nested model list below. Every backend renders
+    /// through this SAME code path -- no per-backend branching -- so Apple Speech, Parakeet, and
+    /// OpenAI Whisper all look and behave identically here regardless of how many models they
+    /// have (0, 1, or 11).
     private func speechBackendRow(_ backend: STTBackendStatus) -> some View {
         let enabledCount = model.sttBackends.filter(\.isEnabled).count
         let isEnabledBinding = Binding(
             get: { backend.isEnabled },
             set: { model.setSTTBackendEnabled(backend.id, $0) }
         )
+        let displayMode = speechModelDisplayMode(for: backend.id)
+        let expanded = isExpanded(backend.id)
+
         return HStack(alignment: .center) {
+            if displayMode == .nestedList {
+                Button {
+                    toggleExpanded(backend.id)
+                } label: {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .frame(width: 12)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(expanded ? "Collapse \(backend.displayName) models" : "Expand \(backend.displayName) models")
+            }
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(backend.displayName)
-                Text(speechBackendStatusLabel(backend.state))
+                Text(speechBackendSubtitle(backend: backend, displayMode: displayMode, expanded: expanded))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             Spacer()
-
-            // A backend with more than one model manages downloads/selection per model in the
-            // nested rows below instead, so the single aggregate action here would either
-            // duplicate those controls or (via the old one-model-per-backend `downloadSpeechModel(_:)`)
-            // silently pick "the first model" on behalf of the user. And before `speechModels` is
-            // populated (or for a backend with no manager, e.g. Apple Speech, which never appears
-            // in it) the model count is 0 -- showing the aggregate action there is exactly that
-            // same "picks the first model" bug, so it renders only for a genuine one-model backend.
-            if speechModelDisplayMode(for: backend.id) == .aggregateAction {
-                speechBackendActionView(backend)
-            }
 
             Toggle("", isOn: isEnabledBinding)
                 .labelsHidden()
@@ -90,22 +104,14 @@ struct DictationSettingsView: View {
         }
     }
 
-    @ViewBuilder
-    private func speechBackendActionView(_ backend: STTBackendStatus) -> some View {
-        switch backend.state {
-        case let .downloading(progress):
-            ProgressView(value: progress)
-                .frame(width: 80)
-        case .modelNotDownloaded, .downloadFailed:
-            if model.canDownloadSpeechModel(backend.id) {
-                Button("Download") {
-                    Task { await model.downloadSpeechModel(backend.id) }
-                }
-                .controlSize(.small)
-            }
-        case .ready, .unsupported, .unavailable:
-            EmptyView()
-        }
+    /// What the provider row's caption shows: the plain status label while expanded (the nested
+    /// rows below already show which model is active) or while there's no active model to
+    /// summarize, otherwise (collapsed, with an active model) that model's name -- see
+    /// `CollapsedProviderSubtitle`.
+    private func speechBackendSubtitle(backend: STTBackendStatus, displayMode: SpeechBackendModelDisplayMode, expanded: Bool) -> String {
+        let statusLabel = speechBackendStatusLabel(backend.state)
+        guard displayMode == .nestedList, !expanded else { return statusLabel }
+        return CollapsedProviderSubtitle.make(models: model.speechModels[backend.id] ?? [], statusLabel: statusLabel)
     }
 
     private func speechBackendStatusLabel(_ state: STTBackendStatus.State) -> String {
@@ -132,6 +138,18 @@ struct DictationSettingsView: View {
         .make(modelCount: model.speechModels[backendID]?.count ?? 0)
     }
 
+    private func isExpanded(_ backendID: String) -> Bool {
+        expandedBackendIDs.contains(backendID)
+    }
+
+    private func toggleExpanded(_ backendID: String) {
+        if expandedBackendIDs.contains(backendID) {
+            expandedBackendIDs.remove(backendID)
+        } else {
+            expandedBackendIDs.insert(backendID)
+        }
+    }
+
     private func speechModelRow(backendID: String, status: SpeechModelStatus) -> some View {
         let presentation = SpeechModelRowPresentation.make(status: status)
         return HStack(alignment: .center) {
@@ -153,9 +171,8 @@ struct DictationSettingsView: View {
         .padding(.leading, 20)
     }
 
-    /// Renders `presentation.stateLabel`, with the leading "Active" bubble drawn in a semantic
-    /// green when `presentation.isActive` -- the rest of the label keeps its normal color. Only
-    /// the dot changes color; the surrounding text is unaffected.
+    /// Renders `presentation.stateLabel`, with the leading "Active" bubble drawn in green when
+    /// `presentation.isActive` -- the rest of the label keeps its normal color.
     @ViewBuilder
     private func speechModelStateLabel(_ presentation: SpeechModelRowPresentation) -> some View {
         if presentation.isActive {
@@ -209,31 +226,29 @@ struct DictationSettingsView: View {
     }
 }
 
-/// What a speech backend's row shows for model download/selection, based solely on how many
-/// models `AppModel.speechModels` reports for that backend -- separated from
-/// `DictationSettingsView` so it is unit-testable without SwiftUI
-/// (`SpeechBackendModelDisplayModeTests` in `RelayTests/App/SettingsViewsSmokeTests.swift`).
+/// What a speech backend's row shows below it, based solely on how many models
+/// `AppModel.speechModels` reports for that backend -- separated from `DictationSettingsView` so
+/// it is unit-testable without SwiftUI (`SpeechBackendModelDisplayModeTests` in
+/// `RelayTests/App/SettingsViewsSmokeTests.swift`).
+///
+/// Every registered backend (Apple Speech, Parakeet, OpenAI Whisper) has a `SpeechModelManaging`
+/// today, so in production this is always `.nestedList` once `speechModels` is populated --
+/// `.none` covers the brief window before `DictationSettingsView`'s `.task { await
+/// model.refreshSpeechModels() }` has completed, and any future backend that genuinely has no
+/// model manager at all.
 enum SpeechBackendModelDisplayMode: Equatable {
-    /// Nothing to show yet: either `speechModels` hasn't been populated for this backend (the
-    /// `.task { await model.refreshSpeechModels() }` in `DictationSettingsView.body` hasn't
-    /// completed) or the backend has no model manager at all (e.g. Apple Speech). Showing the
-    /// aggregate action here would resolve to `downloadSpeechModel(_:)`'s "first model" fallback
-    /// on the user's behalf before the real model count is known -- exactly the bug this type
-    /// exists to prevent.
+    /// Nothing to show yet: `speechModels` hasn't been populated for this backend (the `.task`
+    /// hasn't completed) or the backend has no model manager at all. No disclosure control and no
+    /// nested list render for this backend.
     case none
-    /// Exactly one model: the single aggregate Download row is a faithful one-model action
-    /// (Parakeet's case).
-    case aggregateAction
-    /// More than one model: the nested per-model list replaces the aggregate row so the user
-    /// picks explicitly (Whisper's case).
+    /// One or more models: a disclosure control and (when expanded) the nested per-model list
+    /// render, showing every model (Apple Speech's one, Parakeet's one, or Whisper's eleven)
+    /// through the identical row UI -- there is no longer a distinct "single aggregate action"
+    /// case for a one-model backend.
     case nestedList
 
     static func make(modelCount: Int) -> SpeechBackendModelDisplayMode {
-        switch modelCount {
-        case 1: .aggregateAction
-        case 2...: .nestedList
-        default: .none
-        }
+        modelCount > 0 ? .nestedList : .none
     }
 }
 
@@ -274,6 +289,22 @@ struct SpeechModelRowPresentation: Equatable {
             isActive: isActive,
             showsRemove: showsRemove
         )
+    }
+}
+
+/// What a multi-model provider row's caption shows while its nested list is collapsed --
+/// separated from `DictationSettingsView` so it is unit-testable without SwiftUI. See
+/// `CollapsedProviderSubtitleTests` in `RelayTests/App/SettingsViewsSmokeTests.swift`.
+enum CollapsedProviderSubtitle {
+    /// The active (selected AND downloaded) model's display name, if there is one; otherwise
+    /// `statusLabel` unchanged -- e.g. "Model not downloaded" or "Ready" when nothing is selected
+    /// or downloaded yet. Lets the collapsed provider row surface which model is in use without
+    /// requiring the user to expand it.
+    static func make(models: [SpeechModelStatus], statusLabel: String) -> String {
+        guard let active = models.first(where: { $0.isSelected && $0.installState == .downloaded }) else {
+            return statusLabel
+        }
+        return active.descriptor.displayName
     }
 }
 

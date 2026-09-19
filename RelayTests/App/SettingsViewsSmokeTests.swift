@@ -134,22 +134,65 @@ final class SpeechModelRowPresentationTests: XCTestCase {
 
 final class SpeechBackendModelDisplayModeTests: XCTestCase {
     /// Zero models means the async `refreshSpeechModels()` hasn't populated `speechModels` for
-    /// this backend yet (or it genuinely has none, e.g. Apple Speech has no manager and never
-    /// appears in `speechModels` at all) -- neither the aggregate Download button nor the nested
-    /// per-model list should render, since showing the aggregate action here is exactly the
-    /// "silently downloads the first model" bug this gating exists to prevent.
+    /// this backend yet, or the backend genuinely has no `SpeechModelManaging` registered at all
+    /// -- no disclosure control and no nested list should render, since showing either before the
+    /// real model count is known risks the same "acts on the wrong model" class of bug this
+    /// gating originally existed to prevent.
     func testZeroModelsShowsNeither() {
         XCTAssertEqual(SpeechBackendModelDisplayMode.make(modelCount: 0), .none)
     }
 
-    /// Exactly one model (Parakeet's genuine case) shows the single aggregate Download row.
-    func testOneModelShowsAggregateAction() {
-        XCTAssertEqual(SpeechBackendModelDisplayMode.make(modelCount: 1), .aggregateAction)
+    /// Exactly one model (Apple Speech's and Parakeet's genuine case) shows the SAME collapsible
+    /// nested-list UI as a many-model backend -- there is no longer a distinct one-model
+    /// "aggregate action" case; a one-model backend just has a nested list with one row in it.
+    func testOneModelShowsNestedList() {
+        XCTAssertEqual(SpeechBackendModelDisplayMode.make(modelCount: 1), .nestedList)
     }
 
-    /// More than one model (Whisper) shows the nested per-model list instead.
+    /// More than one model (Whisper) shows the nested per-model list too, through the identical
+    /// code path.
     func testMultipleModelsShowsNestedList() {
         XCTAssertEqual(SpeechBackendModelDisplayMode.make(modelCount: 2), .nestedList)
         XCTAssertEqual(SpeechBackendModelDisplayMode.make(modelCount: 5), .nestedList)
+    }
+}
+
+final class CollapsedProviderSubtitleTests: XCTestCase {
+    private func status(id: String, displayName: String, isSelected: Bool, installState: SpeechModelInstallState) -> SpeechModelStatus {
+        SpeechModelStatus(
+            descriptor: SpeechModelDescriptor(id: id, displayName: displayName, detail: nil, approximateDownloadBytes: nil),
+            installState: installState,
+            isSelected: isSelected,
+            isLoaded: false
+        )
+    }
+
+    /// A downloaded, selected model's display name is shown in place of the status label -- this
+    /// is what lets a collapsed provider row surface which model is active without expanding it.
+    func testShowsActiveModelDisplayNameWhenOneIsSelectedAndDownloaded() {
+        let models = [
+            status(id: "whisper-tiny", displayName: "Tiny", isSelected: false, installState: .notDownloaded),
+            status(id: "whisper-base", displayName: "Base (English)", isSelected: true, installState: .downloaded),
+        ]
+
+        XCTAssertEqual(CollapsedProviderSubtitle.make(models: models, statusLabel: "Ready"), "Base (English)")
+    }
+
+    /// Selected but not yet downloaded doesn't count as active -- falls back to the status label,
+    /// same as having no models at all.
+    func testFallsBackToStatusLabelWhenSelectedModelIsNotDownloaded() {
+        let models = [status(id: "whisper-base", displayName: "Base (English)", isSelected: true, installState: .notDownloaded)]
+
+        XCTAssertEqual(CollapsedProviderSubtitle.make(models: models, statusLabel: "Model not downloaded"), "Model not downloaded")
+    }
+
+    func testFallsBackToStatusLabelWhenNoModelIsSelected() {
+        let models = [status(id: "whisper-base", displayName: "Base (English)", isSelected: false, installState: .downloaded)]
+
+        XCTAssertEqual(CollapsedProviderSubtitle.make(models: models, statusLabel: "Ready"), "Ready")
+    }
+
+    func testFallsBackToStatusLabelWhenModelsIsEmpty() {
+        XCTAssertEqual(CollapsedProviderSubtitle.make(models: [], statusLabel: "Ready"), "Ready")
     }
 }

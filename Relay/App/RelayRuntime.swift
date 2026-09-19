@@ -224,6 +224,7 @@ final class RelayRuntime {
             overlay: overlayModel
         )
         let sttBackend = AppleSpeechBackend()
+        let appleSpeechModelManager = AppleSpeechModelManager()
         let parakeetEngine: any ParakeetEngine = FluidAudioParakeetEngine()
         let parakeetBackend = ParakeetBackend(engine: parakeetEngine)
         let parakeetModelManager = ParakeetModelManager(engine: parakeetEngine)
@@ -359,6 +360,7 @@ final class RelayRuntime {
             onAction: { [actionDispatcher] action in actionDispatcher.perform(action) }
         )
         let speechModelManagers: [String: any SpeechModelManaging] = [
+            appleSpeechModelManager.backendID: appleSpeechModelManager,
             parakeetModelManager.backendID: parakeetModelManager,
             whisperModelManager.backendID: whisperModelManager,
         ]
