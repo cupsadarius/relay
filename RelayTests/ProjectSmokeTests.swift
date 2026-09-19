@@ -27,13 +27,16 @@ final class ProjectSmokeTests: XCTestCase {
         XCTAssertNotNil(model.permissionSnapshot)
 
         // STT/TTS registries and their downloaders are wired: Kokoro and PocketTTS can download a
-        // model, Apple TTS never does (it has no model to download).
+        // model, Apple TTS never does (it has no model to download). On the STT side every
+        // backend -- including Apple Speech, via `AppleSpeechModelManager`'s always-downloaded
+        // one-model façade -- has a registered manager, so the settings UI can render all three
+        // through the same collapsible-provider + nested-model-list code path.
         XCTAssertTrue(model.canDownloadTTSModel("kokoro"))
         XCTAssertTrue(model.canDownloadTTSModel("pocket-tts"))
         XCTAssertFalse(model.canDownloadTTSModel("apple-tts"))
         XCTAssertTrue(model.canDownloadSpeechModel("parakeet"))
         XCTAssertTrue(model.canDownloadSpeechModel("whisper"))
-        XCTAssertFalse(model.canDownloadSpeechModel("apple-speech"))
+        XCTAssertTrue(model.canDownloadSpeechModel("apple-speech"))
 
         // Backend status refresh actually runs against the real registries and produces rows.
         await model.initialSpeechBackendRefresh?.value

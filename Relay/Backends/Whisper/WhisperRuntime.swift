@@ -158,8 +158,16 @@ struct WhisperKitContext: LoadedWhisperContext, @unchecked Sendable {
     }
 
     func transcribe(_ samples: [Float], options: STTOptions) async throws -> String {
-        let results = try await whisperKit.transcribe(audioArray: samples)
-        return results.map(\.text).joined()
+        // `skipSpecialTokens: true` -- WhisperKit 1.1.0's `DecodingOptions` (`Configurations.swift`)
+        // -- suppresses genuine `<|...|>` special tokens (e.g. `<|startoftranscript|>`) at the
+        // source. It does NOT suppress bracketed non-speech markers like `[BLANK_AUDIO]`: those
+        // aren't special tokens, they're ordinary word tokens the model itself decodes for
+        // silence/noise segments. `WhisperTranscriptCleanup.clean` below is the defensive,
+        // conservative strip for both -- see its doc comment.
+        let decodeOptions = DecodingOptions(skipSpecialTokens: true)
+        let results = try await whisperKit.transcribe(audioArray: samples, decodeOptions: decodeOptions)
+        let joined = results.map(\.text).joined()
+        return WhisperTranscriptCleanup.clean(joined)
     }
 
     func unload() async {
