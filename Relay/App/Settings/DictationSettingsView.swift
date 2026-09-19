@@ -146,13 +146,31 @@ struct DictationSettingsView: View {
 
             Spacer()
 
-            Text(presentation.stateLabel)
-                .font(.caption)
-                .foregroundStyle(presentation.isActive ? .primary : .secondary)
+            speechModelStateLabel(presentation)
 
             speechModelActionView(backendID: backendID, status: status, presentation: presentation)
         }
         .padding(.leading, 20)
+    }
+
+    /// Renders `presentation.stateLabel`, with the leading "Active" bubble drawn in a semantic
+    /// green when `presentation.isActive` -- the rest of the label keeps its normal color. Only
+    /// the dot changes color; the surrounding text is unaffected.
+    @ViewBuilder
+    private func speechModelStateLabel(_ presentation: SpeechModelRowPresentation) -> some View {
+        if presentation.isActive {
+            HStack(spacing: 4) {
+                Text("\u{25CF}")
+                    .foregroundStyle(.green)
+                Text("Active")
+                    .foregroundStyle(.primary)
+            }
+            .font(.caption)
+        } else {
+            Text(presentation.stateLabel)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 
     /// Every action here is explicit (a button the user taps), so selecting a not-downloaded
