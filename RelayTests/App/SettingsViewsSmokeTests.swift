@@ -130,6 +130,20 @@ final class SpeechModelRowPresentationTests: XCTestCase {
         let missing = SpeechModelStatus(descriptor: descriptor(detail: nil), installState: .notDownloaded, isSelected: false, isLoaded: false)
         XCTAssertEqual(SpeechModelRowPresentation.make(status: missing).detailLabel, "")
     }
+
+    /// A model can be reported selected+downloaded by its manager (e.g.
+    /// `AppleSpeechModelManager`'s always-downloaded façade) even while the OWNING backend isn't
+    /// actually usable (`STTBackendStatus.State` other than `.ready`, e.g. `.unsupported` on a Mac
+    /// where Apple Speech isn't available). `backendReady: false` must suppress "Active" in that
+    /// case -- a model can never show as in-use on a backend that can't run it -- falling back to
+    /// the same "Downloaded" label an inactive-but-present model gets.
+    func testNotActiveWhenBackendIsNotReadyEvenIfSelectedAndDownloaded() {
+        let status = SpeechModelStatus(descriptor: descriptor(), installState: .downloaded, isSelected: true, isLoaded: false)
+        let presentation = SpeechModelRowPresentation.make(status: status, backendReady: false)
+
+        XCTAssertFalse(presentation.isActive)
+        XCTAssertEqual(presentation.stateLabel, "Downloaded")
+    }
 }
 
 final class SpeechBackendModelDisplayModeTests: XCTestCase {
@@ -194,5 +208,21 @@ final class CollapsedProviderSubtitleTests: XCTestCase {
 
     func testFallsBackToStatusLabelWhenModelsIsEmpty() {
         XCTAssertEqual(CollapsedProviderSubtitle.make(models: [], statusLabel: "Ready"), "Ready")
+    }
+
+    /// Same scenario as `SpeechModelRowPresentationTests
+    /// .testNotActiveWhenBackendIsNotReadyEvenIfSelectedAndDownloaded`, one level up: a
+    /// downloaded+selected model on a backend that isn't ready (e.g. Apple Speech reported
+    /// `.unsupported` by `AppleSpeechBackend.availability()`, even though
+    /// `AppleSpeechModelManager` always reports its one model downloaded+selected) must show the
+    /// real status label, not the model's name -- the collapsed subtitle must never claim a model
+    /// is in use on a backend that can't run it.
+    func testFallsBackToStatusLabelWhenBackendIsNotReady() {
+        let models = [status(id: "apple-on-device", displayName: "On-device", isSelected: true, installState: .downloaded)]
+
+        XCTAssertEqual(
+            CollapsedProviderSubtitle.make(models: models, statusLabel: "Unsupported on this Mac", backendReady: false),
+            "Unsupported on this Mac"
+        )
     }
 }

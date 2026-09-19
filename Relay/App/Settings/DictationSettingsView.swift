@@ -24,7 +24,7 @@ struct DictationSettingsView: View {
 
                     if speechModelDisplayMode(for: backend.id) == .nestedList, isExpanded(backend.id) {
                         ForEach(model.speechModels[backend.id] ?? []) { status in
-                            speechModelRow(backendID: backend.id, status: status)
+                            speechModelRow(backendID: backend.id, status: status, backendReady: backend.state == .ready)
                         }
                     }
                 }
@@ -105,13 +105,21 @@ struct DictationSettingsView: View {
     }
 
     /// What the provider row's caption shows: the plain status label while expanded (the nested
-    /// rows below already show which model is active) or while there's no active model to
-    /// summarize, otherwise (collapsed, with an active model) that model's name -- see
-    /// `CollapsedProviderSubtitle`.
+    /// rows below already show which model is active), while there's no active model to
+    /// summarize, or while the backend itself isn't ready (see `CollapsedProviderSubtitle`'s
+    /// `backendReady` gate -- a model can be downloaded+selected on a backend that's currently
+    /// unsupported/unavailable, e.g. Apple Speech's `AppleSpeechModelManager` façade always
+    /// reports its one model downloaded+selected regardless of `AppleSpeechBackend.availability()`,
+    /// and the subtitle must not claim that model is in use when it isn't). Otherwise (collapsed,
+    /// ready, with an active model) shows that model's name.
     private func speechBackendSubtitle(backend: STTBackendStatus, displayMode: SpeechBackendModelDisplayMode, expanded: Bool) -> String {
         let statusLabel = speechBackendStatusLabel(backend.state)
         guard displayMode == .nestedList, !expanded else { return statusLabel }
-        return CollapsedProviderSubtitle.make(models: model.speechModels[backend.id] ?? [], statusLabel: statusLabel)
+        return CollapsedProviderSubtitle.make(
+            models: model.speechModels[backend.id] ?? [],
+            statusLabel: statusLabel,
+            backendReady: backend.state == .ready
+        )
     }
 
     private func speechBackendStatusLabel(_ state: STTBackendStatus.State) -> String {
@@ -150,8 +158,8 @@ struct DictationSettingsView: View {
         }
     }
 
-    private func speechModelRow(backendID: String, status: SpeechModelStatus) -> some View {
-        let presentation = SpeechModelRowPresentation.make(status: status)
+    private func speechModelRow(backendID: String, status: SpeechModelStatus, backendReady: Bool) -> some View {
+        let presentation = SpeechModelRowPresentation.make(status: status, backendReady: backendReady)
         return HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(presentation.title)
@@ -267,8 +275,17 @@ struct SpeechModelRowPresentation: Equatable {
     /// the active model, or a model that isn't downloaded yet, isn't a valid action.
     let showsRemove: Bool
 
-    static func make(status: SpeechModelStatus) -> SpeechModelRowPresentation {
-        let isActive = status.isSelected && status.installState == .downloaded
+    /// - Parameter backendReady: whether the OWNING backend itself is currently usable
+    ///   (`STTBackendStatus.State.ready`). Most backends' model presence and backend
+    ///   availability agree by construction (Whisper/Parakeet's availability derives from model
+    ///   presence), but a façade like `AppleSpeechModelManager` can report a model
+    ///   downloaded+selected while the backend is `.unsupported`/`.unavailable` -- gating on this
+    ///   here (rather than trusting `isSelected`/`installState` alone) keeps a model from ever
+    ///   showing as "Active" on a backend that can't actually run it. Defaults to `true` so
+    ///   existing call sites that don't have -- or don't need -- backend-readiness context are
+    ///   unaffected.
+    static func make(status: SpeechModelStatus, backendReady: Bool = true) -> SpeechModelRowPresentation {
+        let isActive = backendReady && status.isSelected && status.installState == .downloaded
         let showsRemove = status.installState == .downloaded && !isActive
         let stateLabel: String
         switch status.installState {
@@ -296,12 +313,17 @@ struct SpeechModelRowPresentation: Equatable {
 /// separated from `DictationSettingsView` so it is unit-testable without SwiftUI. See
 /// `CollapsedProviderSubtitleTests` in `RelayTests/App/SettingsViewsSmokeTests.swift`.
 enum CollapsedProviderSubtitle {
-    /// The active (selected AND downloaded) model's display name, if there is one; otherwise
-    /// `statusLabel` unchanged -- e.g. "Model not downloaded" or "Ready" when nothing is selected
-    /// or downloaded yet. Lets the collapsed provider row surface which model is in use without
-    /// requiring the user to expand it.
-    static func make(models: [SpeechModelStatus], statusLabel: String) -> String {
-        guard let active = models.first(where: { $0.isSelected && $0.installState == .downloaded }) else {
+    /// The active (selected AND downloaded) model's display name, if there is one AND the
+    /// backend itself is ready; otherwise `statusLabel` unchanged -- e.g. "Model not downloaded",
+    /// "Ready" when nothing is selected or downloaded yet, or "Unsupported on this Mac" when a
+    /// façade like `AppleSpeechModelManager` reports a model downloaded+selected even though the
+    /// backend can't currently run (see `SpeechModelRowPresentation.make`'s `backendReady` doc
+    /// comment for why that split exists). Lets the collapsed provider row surface which model is
+    /// in use without requiring the user to expand it, without ever claiming a model is in use on
+    /// a backend that isn't ready. `backendReady` defaults to `true` so existing call sites that
+    /// don't need this distinction are unaffected.
+    static func make(models: [SpeechModelStatus], statusLabel: String, backendReady: Bool = true) -> String {
+        guard backendReady, let active = models.first(where: { $0.isSelected && $0.installState == .downloaded }) else {
             return statusLabel
         }
         return active.descriptor.displayName
