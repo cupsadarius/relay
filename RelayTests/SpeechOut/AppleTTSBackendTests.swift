@@ -4,8 +4,15 @@ import XCTest
 
 @MainActor
 final class AppleTTSBackendTests: XCTestCase {
+    func testIdentifiesAsApple() {
+        let backend = makeBackend()
+
+        XCTAssertEqual(backend.id, "apple-tts")
+        XCTAssertEqual(backend.displayName, "Apple System Voice")
+    }
+
     func testAppleBackendReportsSupportedCapabilities() {
-        let backend = AppleTTSBackend(synthesizer: FakeAppleSpeechSynthesizing())
+        let backend = makeBackend()
 
         XCTAssertTrue(backend.capabilities.contains(.voiceSelection))
         XCTAssertTrue(backend.capabilities.contains(.pauseResume))
@@ -13,218 +20,84 @@ final class AppleTTSBackendTests: XCTestCase {
         XCTAssertFalse(backend.capabilities.contains(.streaming))
     }
 
-    func testScheduledEventEmittedBeforeCallingSynthesizerSpeak() async throws {
-        let synthesizer = FakeAppleSpeechSynthesizing()
-        let backend = AppleTTSBackend(synthesizer: synthesizer)
-        var order: [String] = []
-        synthesizer.onSpeak = { order.append("synthesizer.speak") }
-        backend.setPlaybackEventHandler { event in
-            if case .scheduled = event { order.append("scheduled") }
-        }
+    func testAvailabilityIsAlwaysAvailable() async {
+        let backend = makeBackend()
 
-        try await backend.speak(text: "hello", options: TTSOptions(), sessionID: UUID())
+        let availability = await backend.availability()
 
-        XCTAssertEqual(order, ["scheduled", "synthesizer.speak"])
+        XCTAssertEqual(availability, .available)
     }
 
-    func testSpeakSchedulesUtteranceAndEmitsScheduledEvent() async throws {
-        let synthesizer = FakeAppleSpeechSynthesizing()
-        let backend = AppleTTSBackend(synthesizer: synthesizer)
-        var events: [TTSPlaybackEvent] = []
-        backend.setPlaybackEventHandler { events.append($0) }
-        let sessionID = UUID()
-
-        try await backend.speak(text: "hello", options: TTSOptions(), sessionID: sessionID)
-
-        XCTAssertEqual(synthesizer.spokenUtterances.count, 1)
-        XCTAssertEqual(events, [.scheduled(sessionID: sessionID)])
-    }
-
-    func testInvalidVoiceIdentifierThrowsWithoutSpeakingOrEmitting() async {
-        let synthesizer = FakeAppleSpeechSynthesizing()
-        let backend = AppleTTSBackend(synthesizer: synthesizer)
-        var events: [TTSPlaybackEvent] = []
-        backend.setPlaybackEventHandler { events.append($0) }
+    func testMakeAudioSourceRejectsAnUnknownVoiceIdentifierWithoutBuildingASynthesizer() async {
+        let synthesizerCount = SynthesizerCounter()
+        let backend = makeBackend(synthesizerCount: synthesizerCount)
 
         do {
-            try await backend.speak(
+            _ = try await backend.makeAudioSource(
                 text: "hello",
-                options: TTSOptions(voiceIdentifier: "not-a-real-voice"),
-                sessionID: UUID()
+                options: TTSOptions(voiceIdentifier: "not-a-real-voice")
             )
             XCTFail("Expected invalidInput")
         } catch {
             XCTAssertEqual(error as? SpeechBackendError, .invalidInput)
         }
-        XCTAssertTrue(synthesizer.spokenUtterances.isEmpty)
-        XCTAssertTrue(events.isEmpty)
+        XCTAssertEqual(synthesizerCount.value, 0, "An invalid voice must be rejected before any synthesizer is built")
     }
 
-    func testDelegateDidStartMapsToStartedEventForMatchingUtterance() async throws {
-        let synthesizer = FakeAppleSpeechSynthesizing()
-        let backend = AppleTTSBackend(synthesizer: synthesizer)
-        var events: [TTSPlaybackEvent] = []
-        backend.setPlaybackEventHandler { events.append($0) }
-        let sessionID = UUID()
-        try await backend.speak(text: "hello", options: TTSOptions(), sessionID: sessionID)
-        let utterance = try XCTUnwrap(synthesizer.spokenUtterances.last)
+    func testMakeAudioSourceWithDefaultVoiceReturnsAnAppleSource() async throws {
+        let backend = makeBackend()
 
-        synthesizer.delegate?.speechSynthesizer?(AVSpeechSynthesizer(), didStart: utterance)
+        let source = try await backend.makeAudioSource(text: "hello", options: TTSOptions())
 
-        XCTAssertEqual(events.last, .started(sessionID: sessionID))
+        XCTAssertTrue(source is AppleTTSAudioSource)
     }
 
-    func testDelegateDidFinishMapsToFinishedEventAndClearsTrackedSession() async throws {
-        let synthesizer = FakeAppleSpeechSynthesizing()
-        let backend = AppleTTSBackend(synthesizer: synthesizer)
-        var events: [TTSPlaybackEvent] = []
-        backend.setPlaybackEventHandler { events.append($0) }
-        let sessionID = UUID()
-        try await backend.speak(text: "hello", options: TTSOptions(), sessionID: sessionID)
-        let utterance = try XCTUnwrap(synthesizer.spokenUtterances.last)
+    func testMakeAudioSourceBuildsAFreshSynthesizerPerCall() async throws {
+        let synthesizerCount = SynthesizerCounter()
+        let backend = makeBackend(synthesizerCount: synthesizerCount)
 
-        synthesizer.delegate?.speechSynthesizer?(AVSpeechSynthesizer(), didFinish: utterance)
-        events.removeAll()
-        synthesizer.delegate?.speechSynthesizer?(AVSpeechSynthesizer(), didFinish: utterance)
+        _ = try await backend.makeAudioSource(text: "one", options: TTSOptions())
+        _ = try await backend.makeAudioSource(text: "two", options: TTSOptions())
 
-        XCTAssertTrue(events.isEmpty, "A repeated terminal callback for the same utterance must not re-emit")
+        XCTAssertEqual(synthesizerCount.value, 2, "Each speech attempt must own an isolated synthesizer")
     }
 
-    func testDelegateDidFinishEmitsFinishedEvent() async throws {
-        let synthesizer = FakeAppleSpeechSynthesizing()
-        let backend = AppleTTSBackend(synthesizer: synthesizer)
-        var events: [TTSPlaybackEvent] = []
-        backend.setPlaybackEventHandler { events.append($0) }
-        let sessionID = UUID()
-        try await backend.speak(text: "hello", options: TTSOptions(), sessionID: sessionID)
-        let utterance = try XCTUnwrap(synthesizer.spokenUtterances.last)
+    // MARK: Helpers
 
-        synthesizer.delegate?.speechSynthesizer?(AVSpeechSynthesizer(), didFinish: utterance)
-
-        XCTAssertEqual(events.last, .finished(sessionID: sessionID))
+    private func makeBackend(synthesizerCount: SynthesizerCounter = SynthesizerCounter()) -> AppleTTSBackend {
+        AppleTTSBackend(
+            makeSynthesizer: {
+                synthesizerCount.value += 1
+                return FakeAppleSynthesizer()
+            },
+            bufferConverter: FakeBufferConverter()
+        )
     }
+}
 
-    func testDelegateDidCancelMapsToCancelledEvent() async throws {
-        let synthesizer = FakeAppleSpeechSynthesizing()
-        let backend = AppleTTSBackend(synthesizer: synthesizer)
-        var events: [TTSPlaybackEvent] = []
-        backend.setPlaybackEventHandler { events.append($0) }
-        let sessionID = UUID()
-        try await backend.speak(text: "hello", options: TTSOptions(), sessionID: sessionID)
-        let utterance = try XCTUnwrap(synthesizer.spokenUtterances.last)
-
-        synthesizer.delegate?.speechSynthesizer?(AVSpeechSynthesizer(), didCancel: utterance)
-
-        XCTAssertEqual(events.last, .cancelled(sessionID: sessionID))
-    }
-
-    func testUnknownUtteranceCallbackIsIgnored() async throws {
-        let synthesizer = FakeAppleSpeechSynthesizing()
-        let backend = AppleTTSBackend(synthesizer: synthesizer)
-        var events: [TTSPlaybackEvent] = []
-        backend.setPlaybackEventHandler { events.append($0) }
-        try await backend.speak(text: "hello", options: TTSOptions(), sessionID: UUID())
-        events.removeAll()
-
-        synthesizer.delegate?.speechSynthesizer?(AVSpeechSynthesizer(), didStart: AVSpeechUtterance(string: "other"))
-
-        XCTAssertTrue(events.isEmpty)
-    }
-
-    func testStopPauseResumeForwardToSynthesizer() {
-        let synthesizer = FakeAppleSpeechSynthesizing()
-        let backend = AppleTTSBackend(synthesizer: synthesizer)
-
-        backend.stop()
-        backend.pause()
-        backend.resume()
-
-        XCTAssertEqual(synthesizer.stopCount, 1)
-        XCTAssertEqual(synthesizer.pauseCount, 1)
-        XCTAssertEqual(synthesizer.continueCount, 1)
-    }
-
-    func testStopClearsTrackedUtterancesBeforeStoppingSoLateCancelEmitsNothing() async throws {
-        let synthesizer = FakeAppleSpeechSynthesizing()
-        let backend = AppleTTSBackend(synthesizer: synthesizer)
-        var events: [TTSPlaybackEvent] = []
-        backend.setPlaybackEventHandler { events.append($0) }
-        try await backend.speak(text: "hello", options: TTSOptions(), sessionID: UUID())
-        let utterance = try XCTUnwrap(synthesizer.spokenUtterances.last)
-        events.removeAll()
-
-        backend.stop()
-        synthesizer.delegate?.speechSynthesizer?(AVSpeechSynthesizer(), didCancel: utterance)
-
-        XCTAssertTrue(events.isEmpty, "A late didCancel for an utterance stop() already dropped must not emit")
-    }
-
-    func testDelegateCallbackFromBackgroundThreadStillDeliversEvent() async throws {
-        let synthesizer = FakeAppleSpeechSynthesizing()
-        let backend = AppleTTSBackend(synthesizer: synthesizer)
-        let sessionID = UUID()
-        try await backend.speak(text: "hello", options: TTSOptions(), sessionID: sessionID)
-        let utterance = try XCTUnwrap(synthesizer.spokenUtterances.last)
-        let realSynthesizer = AVSpeechSynthesizer()
-
-        let delivered = expectation(description: "started event delivered")
-        var events: [TTSPlaybackEvent] = []
-        backend.setPlaybackEventHandler { event in
-            events.append(event)
-            delivered.fulfill()
-        }
-
-        // Boxed for identity only: the background thread only forwards these references
-        // into a delegate callback, never mutates them, so the lack of `Sendable` conformance
-        // on `AVSpeechSynthesizer`/`AVSpeechUtterance` doesn't matter here.
-        let synthesizerBox = UncheckedSendableBox(value: realSynthesizer)
-        let utteranceBox = UncheckedSendableBox(value: utterance)
-        Thread.detachNewThread {
-            backend.speechSynthesizer(synthesizerBox.value, didStart: utteranceBox.value)
-        }
-
-        await fulfillment(of: [delivered], timeout: 2.0)
-        XCTAssertEqual(events, [.started(sessionID: sessionID)])
-    }
+/// Counts synthesizer factory calls. Only ever touched on the main actor (in the factory closure
+/// and test assertions), so it needs no isolation of its own - and staying non-isolated lets it be
+/// a default-argument value in a nonisolated context.
+private final class SynthesizerCounter {
+    var value = 0
 }
 
 @MainActor
-private final class FakeAppleSpeechSynthesizing: AppleSpeechSynthesizing {
-    // Held weakly, matching the real AVSpeechSynthesizer and the protocol's
-    // documented contract, since AppleTTSBackend owns both its synthesizer
-    // and (as the delegate) itself.
+private final class FakeAppleSynthesizer: AppleSpeechSynthesizing {
     weak var delegate: AVSpeechSynthesizerDelegate?
-    private(set) var spokenUtterances: [AVSpeechUtterance] = []
-    private(set) var stopCount = 0
-    private(set) var pauseCount = 0
-    private(set) var continueCount = 0
-    var onSpeak: (() -> Void)?
 
-    func speak(_ utterance: AVSpeechUtterance) {
-        spokenUtterances.append(utterance)
-        onSpeak?()
-    }
-
+    func speak(_ utterance: AVSpeechUtterance) {}
     func write(_ utterance: AVSpeechUtterance, toBufferCallback bufferCallback: @escaping AVSpeechSynthesizer.BufferCallback) {}
-
-    func stopSpeaking(at boundary: AVSpeechBoundary) -> Bool {
-        stopCount += 1
-        return true
-    }
-
-    func pauseSpeaking(at boundary: AVSpeechBoundary) -> Bool {
-        pauseCount += 1
-        return true
-    }
-
-    func continueSpeaking() -> Bool {
-        continueCount += 1
-        return true
-    }
+    func stopSpeaking(at boundary: AVSpeechBoundary) -> Bool { true }
+    func pauseSpeaking(at boundary: AVSpeechBoundary) -> Bool { true }
+    func continueSpeaking() -> Bool { true }
 }
 
-/// Boxes a non-`Sendable` value for identity-only handoff across a thread boundary in tests.
-private final class UncheckedSendableBox<T>: @unchecked Sendable {
-    let value: T
-    init(value: T) { self.value = value }
+private struct FakeBufferConverter: AppleSpeechBufferConverting {
+    func frame(from buffer: AVAudioPCMBuffer) throws -> TTSAudioFrame {
+        TTSAudioFrame(
+            samples: [],
+            format: TTSAudioFormat(sampleRate: buffer.format.sampleRate, channelCount: 1)
+        )
+    }
 }

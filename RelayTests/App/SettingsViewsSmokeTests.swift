@@ -30,7 +30,7 @@ final class SettingsViewsSmokeTests: XCTestCase {
             selectionReader: SelectionReader(accessibility: AccessibilityService(), clipboard: ClipboardService()),
             preprocessor: RulesSpeechPreprocessor(),
             speechCoordinator: SpeechCoordinator(
-                router: TTSRouter(backends: [:], backendOrder: { [] }),
+                router: TTSRouter(backends: [:], backendOrder: { [] }, player: FakePlayer()),
                 options: { TTSOptions() },
                 overlay: ActivityOverlayModel()
             ),

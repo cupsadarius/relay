@@ -1473,9 +1473,14 @@ final class AppModelTests: XCTestCase {
         settings.pocketVoice = "alba"
         let store = FakeSettingsStore(settings: settings)
         let overlay = ActivityOverlayModel()
+        let player = FakePlayer()
+        pocket.player = player
+        kokoro.player = player
+        apple.player = player
         let router = TTSRouter(
             backends: ["pocket-tts": pocket, "kokoro": kokoro, "apple-tts": apple],
-            backendOrder: { settings.ttsBackendOrder }
+            backendOrder: { settings.ttsBackendOrder },
+            player: player
         )
         let coordinator = SpeechCoordinator(
             router: router,

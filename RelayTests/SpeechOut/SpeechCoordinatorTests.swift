@@ -511,9 +511,12 @@ final class SpeechCoordinatorTests: XCTestCase {
         now: @escaping () -> Date = Date.init
     ) -> SpeechCoordinator {
         let overlay = overlay ?? ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        let player = FakePlayer()
+        backend.player = player
         let router = TTSRouter(
             backends: [backend.id: backend],
-            backendOrder: { [backend.id] }
+            backendOrder: { [backend.id] },
+            player: player
         )
         return SpeechCoordinator(router: router, options: options, overlay: overlay, now: now)
     }

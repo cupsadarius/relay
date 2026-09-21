@@ -126,7 +126,6 @@ final class AppleTTSAudioSourceTests: XCTestCase {
 
     func testMakeAudioSourceRejectsAnUnknownVoiceIdentifier() async {
         let backend = AppleTTSBackend(
-            synthesizer: FakeWriteSynthesizer(),
             makeSynthesizer: { FakeWriteSynthesizer() },
             bufferConverter: ScriptedConverter()
         )

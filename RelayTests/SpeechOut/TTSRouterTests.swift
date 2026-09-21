@@ -3,14 +3,14 @@ import XCTest
 
 @MainActor
 final class TTSRouterTests: XCTestCase {
+    // MARK: Backend selection and fallback (before audible start)
+
     func testUsesCurrentBackendOrderForEveryRequest() async throws {
         let first = FakeTTSBackend(id: "first")
         let second = FakeTTSBackend(id: "second")
+        let player = FakePlayer()
         var order = ["first", "second"]
-        let router = TTSRouter(
-            backends: ["first": first, "second": second],
-            backendOrder: { order }
-        )
+        let router = makeRouter([first, second], player: player, order: { order })
 
         try await router.speak(text: "one", options: .init(), sessionID: UUID())
         order = ["second", "first"]
@@ -20,7 +20,7 @@ final class TTSRouterTests: XCTestCase {
         XCTAssertEqual(second.spoken.map(\.text), ["two"])
     }
 
-    func testFallsBackAfterFallbackWorthyFailure() async throws {
+    func testMakeAudioSourceFailureFallsThrough() async throws {
         let first = FakeTTSBackend(id: "first")
         first.error = SpeechBackendError.inferenceFailed("boom")
         let second = FakeTTSBackend(id: "second")
@@ -28,10 +28,23 @@ final class TTSRouterTests: XCTestCase {
 
         try await router.speak(text: "hello", options: .init(), sessionID: UUID())
 
+        XCTAssertTrue(first.spoken.isEmpty)
         XCTAssertEqual(second.spoken.map(\.text), ["hello"])
     }
 
-    func testStopsRoutingAfterNonFallbackError() async {
+    func testUnavailableBackendIsSkipped() async throws {
+        let first = FakeTTSBackend(id: "first")
+        first.availabilityValue = .modelNotDownloaded
+        let second = FakeTTSBackend(id: "second")
+        let router = makeRouter([first, second])
+
+        try await router.speak(text: "hello", options: .init(), sessionID: UUID())
+
+        XCTAssertTrue(first.spoken.isEmpty)
+        XCTAssertEqual(second.spoken.map(\.text), ["hello"])
+    }
+
+    func testNonFallbackWorthyMakeAudioSourceErrorStopsRouting() async {
         let first = FakeTTSBackend(id: "first")
         first.error = SpeechBackendError.invalidInput
         let second = FakeTTSBackend(id: "second")
@@ -39,446 +52,300 @@ final class TTSRouterTests: XCTestCase {
 
         do {
             try await router.speak(text: "hello", options: .init(), sessionID: UUID())
-            XCTFail("Expected invalidInput")
+            XCTFail("Expected invalidInput to propagate without fallback")
+        } catch let error as SpeechBackendError {
+            XCTAssertEqual(error, .invalidInput)
         } catch {
-            XCTAssertEqual(error as? SpeechBackendError, .invalidInput)
+            XCTFail("Unexpected error \(error)")
         }
+
         XCTAssertTrue(second.spoken.isEmpty)
     }
 
-    func testNonFallbackErrorEmitsFailedEventWithoutErrorText() async {
-        let backend = FakeTTSBackend(id: "apple")
-        backend.error = SpeechBackendError.invalidInput
-        let router = makeRouter([backend])
-        var events: [TTSPlaybackEvent] = []
-        router.setPlaybackEventHandler { event, _ in events.append(event) }
-        let sessionID = UUID()
+    func testPreStartPlayerFailureFallsThrough() async throws {
+        // The first backend produces a source, but the shared player fails BEFORE `.started`.
+        // That is safe to treat as fallback-worthy, so the second backend takes over.
+        let first = FakeTTSBackend(id: "first")
+        let second = FakeTTSBackend(id: "second")
+        let player = FakePlayer()
+        player.failNextStart = SpeechBackendError.inferenceFailed("player boom")
+        let router = makeRouter([first, second], player: player)
 
-        _ = try? await router.speak(text: "hello", options: .init(), sessionID: sessionID)
+        try await router.speak(text: "hello", options: .init(), sessionID: UUID())
 
-        XCTAssertEqual(events, [.failed(sessionID: sessionID)])
+        // The first source was produced and cancelled; the second backend's source played.
+        XCTAssertEqual(player.started.count, 2)
+        XCTAssertEqual(second.spoken.map(\.text), ["hello"])
     }
 
-    func testExhaustingAllFallbackCandidatesEmitsFailedEvent() async {
+    // MARK: One-session `.scheduled`
+
+    func testScheduledEmittedExactlyOnceAcrossFallbackAttempts() async throws {
         let first = FakeTTSBackend(id: "first")
         first.error = SpeechBackendError.inferenceFailed("boom")
         let second = FakeTTSBackend(id: "second")
-        second.error = SpeechBackendError.inferenceFailed("boom again")
-        let router = makeRouter([first, second])
-        var events: [TTSPlaybackEvent] = []
-        router.setPlaybackEventHandler { event, _ in events.append(event) }
-        let sessionID = UUID()
-
-        do {
-            try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
-            XCTFail("Expected failure")
-        } catch {
-            // expected
-        }
-
-        XCTAssertEqual(events, [.failed(sessionID: sessionID)])
-    }
-
-    func testSkipsMissingAndUnavailableEntries() async throws {
-        let unavailable = FakeTTSBackend(id: "unavailable")
-        unavailable.availabilityValue = .unavailable("disabled")
-        let available = FakeTTSBackend(id: "available")
-        let router = TTSRouter(
-            backends: ["unavailable": unavailable, "available": available],
-            backendOrder: { ["missing", "unavailable", "available"] }
-        )
-
-        try await router.speak(text: "hello", options: .init(), sessionID: UUID())
-
-        XCTAssertTrue(unavailable.spoken.isEmpty)
-        XCTAssertEqual(available.spoken.map(\.text), ["hello"])
-    }
-
-    func testTransportControlsTargetOnlyActiveBackend() async throws {
-        let first = FakeTTSBackend(id: "first")
-        let second = FakeTTSBackend(id: "second")
         let router = makeRouter([first, second])
 
-        try await router.speak(text: "hello", options: .init(), sessionID: UUID())
-        router.pause()
-        router.resume()
-        router.stop()
-        router.pause()
-        router.resume()
-
-        XCTAssertEqual(first.pauseCount, 1)
-        XCTAssertEqual(first.resumeCount, 1)
-        XCTAssertEqual(first.stopCount, 1)
-        XCTAssertEqual(second.pauseCount, 0)
-        XCTAssertEqual(second.resumeCount, 0)
-        XCTAssertEqual(second.stopCount, 0)
-    }
-
-    func testSwitchingBackendsStopsThePreviouslyActiveBackend() async throws {
-        let first = FakeTTSBackend(id: "first")
-        let second = FakeTTSBackend(id: "second")
-        var events: [String] = []
-        first.onStop = { events.append("first stopped") }
-        second.onSpeak = { events.append("second spoke") }
-        var order = ["first", "second"]
-        let router = TTSRouter(
-            backends: ["first": first, "second": second],
-            backendOrder: { order }
-        )
-
-        try await router.speak(text: "one", options: .init(), sessionID: UUID())
-        order = ["second", "first"]
-        try await router.speak(text: "two", options: .init(), sessionID: UUID())
-        router.stop()
-
-        XCTAssertEqual(first.stopCount, 1)
-        XCTAssertEqual(second.stopCount, 1)
-        XCTAssertEqual(first.spoken.map(\.text), ["one"])
-        XCTAssertEqual(second.spoken.map(\.text), ["two"])
-        XCTAssertEqual(events, ["first stopped", "second spoke"])
-    }
-
-    func testStopWithSessionIDNoOpsForStaleSession() async throws {
-        let backend = FakeTTSBackend(id: "apple")
-        let router = makeRouter([backend])
-        try await router.speak(text: "hello", options: .init(), sessionID: UUID())
-
-        router.stop(sessionID: UUID())
-
-        XCTAssertEqual(backend.stopCount, 0)
-    }
-
-    func testStopWithSessionIDStopsMatchingSession() async throws {
-        let backend = FakeTTSBackend(id: "apple")
-        let router = makeRouter([backend])
-        let sessionID = UUID()
-        try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
-
-        router.stop(sessionID: sessionID)
-
-        XCTAssertEqual(backend.stopCount, 1)
-    }
-
-    /// Regression test: a STREAMING backend's `speak(...)` does not return
-    /// until playback finishes, so while it is in flight the router must
-    /// already have `active` set (assigned before `speak` is called, not
-    /// after it returns) - stop must still be able to reach the in-flight
-    /// backend.
-    func testStopWithSessionIDStopsInFlightStreamingBackend() async throws {
-        let backend = FakeTTSBackend(id: "pocket")
-        backend.suspendUntilStopped = true
-        let router = makeRouter([backend])
-        let sessionID = UUID()
-        var reachedSuspension = false
-        backend.duringSpeak = { _ in reachedSuspension = true }
-
-        let speakTask = Task { @MainActor in
-            try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
-        }
-        while !reachedSuspension {
-            await Task.yield()
-        }
-
-        let didStop = router.stop(sessionID: sessionID)
-
-        XCTAssertTrue(didStop)
-        XCTAssertEqual(backend.stopCount, 1)
-        try await speakTask.value
-    }
-
-    func testStopWithSessionIDDoesNotStopInFlightBackendForNonMatchingSession() async throws {
-        let backend = FakeTTSBackend(id: "pocket")
-        backend.suspendUntilStopped = true
-        let router = makeRouter([backend])
-        let sessionID = UUID()
-        var reachedSuspension = false
-        backend.duringSpeak = { _ in reachedSuspension = true }
-
-        let speakTask = Task { @MainActor in
-            try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
-        }
-        while !reachedSuspension {
-            await Task.yield()
-        }
-
-        let didStop = router.stop(sessionID: UUID())
-
-        XCTAssertFalse(didStop)
-        XCTAssertEqual(backend.stopCount, 0)
-
-        // Clean up: stop the real session so the suspended speak() completes.
-        router.stop(sessionID: sessionID)
-        try await speakTask.value
-    }
-
-    func testStopRoutesToInFlightBackendDuringStream() async throws {
-        let backend = FakeTTSBackend(id: "pocket")
-        backend.suspendUntilStopped = true
-        let router = makeRouter([backend])
-        let sessionID = UUID()
-        var reachedSuspension = false
-        backend.duringSpeak = { _ in reachedSuspension = true }
-
-        let speakTask = Task { @MainActor in
-            try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
-        }
-        while !reachedSuspension {
-            await Task.yield()
-        }
-
-        router.stop()
-
-        XCTAssertEqual(backend.stopCount, 1)
-        try await speakTask.value
-    }
-
-    func testOnlyActiveBackendAndSessionEventsAreForwarded() async throws {
-        let first = FakeTTSBackend(id: "first")
-        let second = FakeTTSBackend(id: "second")
-        var order = ["first", "second"]
-        let router = TTSRouter(
-            backends: ["first": first, "second": second],
-            backendOrder: { order }
-        )
         var events: [TTSPlaybackEvent] = []
         router.setPlaybackEventHandler { event, _ in events.append(event) }
 
-        try await router.speak(text: "one", options: .init(), sessionID: UUID())
-        let firstSessionID = first.lastSessionID!
-        order = ["second", "first"]
-        try await router.speak(text: "two", options: .init(), sessionID: UUID())
-        let secondSessionID = second.lastSessionID!
-
-        first.emit(.started(sessionID: firstSessionID))
-        second.emit(.started(sessionID: secondSessionID))
-
-        XCTAssertEqual(events, [.started(sessionID: secondSessionID)])
-    }
-
-    func testEventsEmittedSynchronouslyDuringSpeakAreForwarded() async throws {
-        let backend = FakeTTSBackend(id: "apple")
-        let router = makeRouter([backend])
-        var events: [TTSPlaybackEvent] = []
-        router.setPlaybackEventHandler { event, _ in events.append(event) }
         let sessionID = UUID()
-        backend.duringSpeak = { sessionID in
-            backend.emit(.scheduled(sessionID: sessionID))
-            backend.emit(.started(sessionID: sessionID))
-        }
-
         try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
 
-        XCTAssertEqual(events, [.scheduled(sessionID: sessionID), .started(sessionID: sessionID)])
+        XCTAssertEqual(events, [.scheduled(sessionID: sessionID)])
     }
 
-    func testEventEmittedAfterSuspensionDuringSpeakIsForwarded() async throws {
+    // MARK: Commit-on-started
+
+    func testFirstStartedCommitsBackend() async throws {
         let backend = FakeTTSBackend(id: "apple")
-        backend.yieldBeforeEmitting = true
-        let router = makeRouter([backend])
-        var events: [TTSPlaybackEvent] = []
-        router.setPlaybackEventHandler { event, _ in events.append(event) }
+        let player = FakePlayer()
+        let router = makeRouter([backend], player: player)
+
+        var startedBackendIDs: [String?] = []
+        router.setPlaybackEventHandler { event, backend in
+            if case .started = event { startedBackendIDs.append(backend?.id) }
+        }
+
         let sessionID = UUID()
-        backend.duringSpeak = { sessionID in
-            backend.emit(.started(sessionID: sessionID))
-        }
-
         try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
+        player.fireEvent(.started(sessionID: sessionID))
 
-        XCTAssertEqual(events, [.started(sessionID: sessionID)])
+        XCTAssertEqual(startedBackendIDs, ["apple"])
     }
 
-    func testForwardedEventsIncludeTheEmittingBackend() async throws {
-        let backend = FakeTTSBackend(id: "apple")
-        let router = makeRouter([backend])
-        var receivedBackendIDs: [String?] = []
-        router.setPlaybackEventHandler { _, receivedBackend in
-            receivedBackendIDs.append((receivedBackend as? FakeTTSBackend)?.id)
-        }
-        let sessionID = UUID()
-
-        try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
-        backend.emit(.started(sessionID: sessionID))
-
-        XCTAssertEqual(receivedBackendIDs, ["apple"])
-    }
-
-    func testNonFallbackFailureCarriesNilBackend() async {
-        let backend = FakeTTSBackend(id: "apple")
-        backend.error = SpeechBackendError.invalidInput
-        let router = makeRouter([backend])
-        var receivedBackends: [(any TextToSpeechBackend)?] = []
-        router.setPlaybackEventHandler { _, receivedBackend in
-            receivedBackends.append(receivedBackend)
-        }
-
-        _ = try? await router.speak(text: "hello", options: .init(), sessionID: UUID())
-
-        XCTAssertEqual(receivedBackends.count, 1)
-        XCTAssertNil(receivedBackends[0])
-    }
-
-    func testExhaustedFallbackFailureCarriesNilBackend() async {
+    func testStartedEventReportsCommittedBackendIdentity() async throws {
         let first = FakeTTSBackend(id: "first")
         first.error = SpeechBackendError.inferenceFailed("boom")
         let second = FakeTTSBackend(id: "second")
-        second.error = SpeechBackendError.inferenceFailed("boom again")
-        let router = makeRouter([first, second])
-        var receivedBackends: [(any TextToSpeechBackend)?] = []
-        router.setPlaybackEventHandler { _, receivedBackend in
-            receivedBackends.append(receivedBackend)
-        }
+        let player = FakePlayer()
+        let router = makeRouter([first, second], player: player)
 
-        _ = try? await router.speak(text: "hello", options: .init(), sessionID: UUID())
-
-        XCTAssertEqual(receivedBackends.count, 1)
-        XCTAssertNil(receivedBackends[0])
-    }
-
-    func testFailureWithNoAvailableBackendPassesNilBackend() async {
-        let unavailable = FakeTTSBackend(id: "unavailable")
-        unavailable.availabilityValue = .unavailable("disabled")
-        let router = makeRouter([unavailable])
-        var receivedBackends: [(any TextToSpeechBackend)?] = []
-        router.setPlaybackEventHandler { _, receivedBackend in
-            receivedBackends.append(receivedBackend)
-        }
-
-        _ = try? await router.speak(text: "hello", options: .init(), sessionID: UUID())
-
-        XCTAssertEqual(receivedBackends.count, 1)
-        XCTAssertNil(receivedBackends[0])
-    }
-
-    /// Regression test for the historical bug: `pause()`/`resume()` used to
-    /// target only `activeBackend`, which was assigned after `speak(...)`
-    /// returned - a no-op for backends whose `speak(...)` didn't return
-    /// until playback finished. Verifies transport controls now reach
-    /// whichever backend is currently playing, for every backend.
-    func testPauseResumeTargetCurrentPlaybackForEveryBackend() async throws {
-        for id in ["apple", "kokoro", "pocket"] {
-            let backend = FakeTTSBackend(id: id)
-            let router = makeRouter([backend])
-
-            try await router.speak(text: "hello", options: .init(), sessionID: UUID())
-            router.pause()
-            router.resume()
-
-            XCTAssertEqual(backend.pauseCount, 1, "pause() should reach \(id)")
-            XCTAssertEqual(backend.resumeCount, 1, "resume() should reach \(id)")
-        }
-    }
-
-    func testStopTargetsCurrentPlayback() async throws {
-        for id in ["apple", "kokoro", "pocket"] {
-            let backend = FakeTTSBackend(id: id)
-            let router = makeRouter([backend])
-
-            try await router.speak(text: "hello", options: .init(), sessionID: UUID())
-            router.stop()
-
-            XCTAssertEqual(backend.stopCount, 1, "stop() should reach \(id)")
-        }
-    }
-
-    func testOneSessionEmitsExactlyOneTerminal() async throws {
-        let backend = FakeTTSBackend(id: "apple")
-        let router = makeRouter([backend])
-        var terminalEvents: [TTSPlaybackEvent] = []
-        router.setPlaybackEventHandler { event, _ in
+        var identities: [String?] = []
+        router.setPlaybackEventHandler { event, backend in
             switch event {
-            case .finished, .cancelled, .failed:
-                terminalEvents.append(event)
-            case .scheduled, .started, .level:
+            case .started, .level, .finished:
+                identities.append(backend?.id)
+            default:
                 break
             }
         }
+
         let sessionID = UUID()
-
         try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
-        backend.emit(.started(sessionID: sessionID))
-        backend.emit(.finished(sessionID: sessionID))
-        // A stray duplicate/late terminal event for the same session must
-        // not be forwarded again once the router has already cleared it.
-        backend.emit(.finished(sessionID: sessionID))
+        player.fireEvent(.started(sessionID: sessionID))
+        player.fireEvent(.finished(sessionID: sessionID))
 
-        XCTAssertEqual(terminalEvents, [.finished(sessionID: sessionID)])
+        // The fell-through first backend never appears; the committed second backend owns every
+        // player-sourced event.
+        XCTAssertEqual(identities, ["second", "second"])
     }
 
-    /// Regression guard for the event-drop bug: if `active` were assigned
-    /// only after `speak(...)` returns, the `.scheduled`/`.started` events
-    /// emitted synchronously *during* `speak(...)` would be filtered out by
-    /// `forward` for every backend.
-    func testScheduledAndStartedAreForwardedForEveryBackend() async throws {
-        for id in ["apple", "kokoro", "pocket"] {
-            let backend = FakeTTSBackend(id: id)
-            let router = makeRouter([backend])
-            var events: [TTSPlaybackEvent] = []
-            router.setPlaybackEventHandler { event, _ in events.append(event) }
-            let sessionID = UUID()
-            backend.duringSpeak = { sessionID in
-                backend.emit(.scheduled(sessionID: sessionID))
-                backend.emit(.started(sessionID: sessionID))
-            }
+    func testPostStartFailureDoesNotFallThrough() async throws {
+        let first = FakeTTSBackend(id: "first")
+        let second = FakeTTSBackend(id: "second")
+        let player = FakePlayer()
+        let router = makeRouter([first, second], player: player)
 
-            try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
-
-            XCTAssertEqual(
-                events,
-                [.scheduled(sessionID: sessionID), .started(sessionID: sessionID)],
-                "scheduled/started should be forwarded for \(id)"
-            )
+        var terminalBackendIDs: [String?] = []
+        router.setPlaybackEventHandler { event, backend in
+            if case .failed = event { terminalBackendIDs.append(backend?.id) }
         }
+
+        let sessionID = UUID()
+        try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
+        // Commit the first backend, then fail it. The router must NOT restart on the second.
+        player.fireEvent(.started(sessionID: sessionID))
+        player.fireEvent(.failed(sessionID: sessionID))
+
+        XCTAssertEqual(first.spoken.map(\.text), ["hello"])
+        XCTAssertTrue(second.spoken.isEmpty)
+        XCTAssertEqual(terminalBackendIDs, ["first"])
     }
 
-    func testStaleStopBySessionIDIsIgnored() async throws {
+    // MARK: Stop / pause / resume delegate to the shared player
+
+    func testStopCancelsPlayer() async throws {
         let backend = FakeTTSBackend(id: "apple")
-        let router = makeRouter([backend])
-        try await router.speak(text: "hello", options: .init(), sessionID: UUID())
+        let player = FakePlayer()
+        let router = makeRouter([backend], player: player)
 
-        let didStop = router.stop(sessionID: UUID())
+        let sessionID = UUID()
+        try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
+        router.stop()
 
-        XCTAssertFalse(didStop)
-        XCTAssertEqual(backend.stopCount, 0)
+        XCTAssertEqual(player.stopCount, 1)
     }
 
-    private func makeRouter(_ backends: [FakeTTSBackend]) -> TTSRouter {
-        TTSRouter(
+    func testPauseAndResumeDelegateToPlayer() async throws {
+        let backend = FakeTTSBackend(id: "apple")
+        let player = FakePlayer()
+        let router = makeRouter([backend], player: player)
+
+        try await router.speak(text: "hello", options: .init(), sessionID: UUID())
+        router.pause()
+        router.resume()
+
+        XCTAssertEqual(player.pauseCount, 1)
+        XCTAssertEqual(player.resumeCount, 1)
+    }
+
+    func testSessionSpecificStopIgnoresStaleID() async throws {
+        let backend = FakeTTSBackend(id: "apple")
+        let player = FakePlayer()
+        let router = makeRouter([backend], player: player)
+
+        let sessionID = UUID()
+        try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
+        player.fireEvent(.started(sessionID: sessionID))
+
+        let didStopStale = router.stop(sessionID: UUID())
+        XCTAssertFalse(didStopStale)
+        XCTAssertEqual(player.stopCount, 0)
+
+        let didStopMatching = router.stop(sessionID: sessionID)
+        XCTAssertTrue(didStopMatching)
+        XCTAssertEqual(player.stopCount, 1)
+    }
+
+    // MARK: Helpers
+
+    private func makeRouter(
+        _ backends: [FakeTTSBackend],
+        player: FakePlayer? = nil,
+        order: (() -> [String])? = nil
+    ) -> TTSRouter {
+        let player = player ?? FakePlayer()
+        backends.forEach { $0.player = player }
+        let ids = backends.map(\.id)
+        return TTSRouter(
             backends: Dictionary(uniqueKeysWithValues: backends.map { ($0.id, $0) }),
-            backendOrder: { backends.map(\.id) }
+            backendOrder: order ?? { ids },
+            player: player
         )
     }
 }
 
+// MARK: - Shared TTS test fakes
+
+/// Trivial pull-based source that carries the request that produced it (and the backend that
+/// produced it), so the fake player can record exactly what each backend dispatched.
+final class FakeTTSAudioSource: TTSAudioSource, @unchecked Sendable {
+    let backendID: String
+    let text: String
+    let options: TTSOptions
+    private(set) var cancelled = false
+
+    init(backendID: String, text: String, options: TTSOptions) {
+        self.backendID = backendID
+        self.text = text
+        self.options = options
+    }
+
+    func next() async throws -> TTSAudioFrame? { nil }
+    func cancel() async { cancelled = true }
+}
+
+/// Stand-in for the single shared `StreamingAudioPlayer`. It records what it was asked to play and
+/// lets tests drive lifecycle events, control pre-`.started` failures, and simulate a streaming
+/// player whose `startPlayback` only returns once stopped.
+@MainActor
+final class FakePlayer: StreamingAudioPlaying {
+    var onEvent: (@MainActor (TTSPlaybackEvent) -> Void)?
+
+    private(set) var started: [(source: any TTSAudioSource, sessionID: UUID)] = []
+    private(set) var stopCount = 0
+    private(set) var pauseCount = 0
+    private(set) var resumeCount = 0
+
+    /// Thrown from the next `startPlayback`, simulating a pre-`.started` player failure.
+    var failNextStart: Error?
+    /// Invoked synchronously inside `startPlayback`, after the session is recorded, with the session
+    /// being played - lets tests drive lifecycle events (e.g. `.started`/`.finished`) mid-call.
+    var duringStart: (@MainActor (UUID) -> Void)?
+    /// When true, `startPlayback` suspends until `stop()` resumes it, mirroring the real player's
+    /// streaming completion continuation.
+    var suspendUntilStopped = false
+    /// Invoked synchronously inside `stop()` (only when something is playing), before it returns -
+    /// lets tests simulate a player whose stop reentrantly emits a synchronous terminal event.
+    var onStop: (@MainActor () -> Void)?
+
+    /// The session currently being played, cleared on a terminal event or an effective `stop()`.
+    /// Modelled so `stop()` is a no-op (as on the real idle player) when nothing is playing.
+    private var activeSessionID: UUID?
+    private var stopContinuation: CheckedContinuation<Void, Never>?
+
+    var lastSessionID: UUID? { started.last?.sessionID }
+
+    /// What each backend dispatched, in play order, for tests that read via the backend proxy.
+    var spoken: [(backendID: String, text: String, options: TTSOptions, sessionID: UUID)] {
+        started.compactMap { entry in
+            (entry.source as? FakeTTSAudioSource).map {
+                ($0.backendID, $0.text, $0.options, entry.sessionID)
+            }
+        }
+    }
+
+    func startPlayback(_ source: any TTSAudioSource, sessionID: UUID) async throws {
+        started.append((source, sessionID))
+        if let failNextStart {
+            self.failNextStart = nil
+            throw failNextStart
+        }
+        activeSessionID = sessionID
+        duringStart?(sessionID)
+        if suspendUntilStopped {
+            await withCheckedContinuation { stopContinuation = $0 }
+        }
+    }
+
+    func startPlayback(
+        _ frames: AsyncThrowingStream<[Float], Error>,
+        sampleRate: Double,
+        sessionID: UUID
+    ) async throws {}
+
+    func stop() {
+        guard activeSessionID != nil else { return }
+        activeSessionID = nil
+        stopCount += 1
+        onStop?()
+        if let stopContinuation {
+            self.stopContinuation = nil
+            stopContinuation.resume()
+        }
+    }
+
+    func pause() { pauseCount += 1 }
+    func resume() { resumeCount += 1 }
+
+    /// Fires a lifecycle event through the router's installed handler, updating the fake's own
+    /// active-session tracking so a subsequent idle `stop()` correctly no-ops.
+    func fireEvent(_ event: TTSPlaybackEvent) {
+        switch event {
+        case .finished, .cancelled, .failed:
+            if activeSessionID == event.sessionID { activeSessionID = nil }
+        default:
+            break
+        }
+        onEvent?(event)
+    }
+}
+
+/// A pure audio-producer backend. `makeAudioSource` records nothing itself (it has no session ID);
+/// the shared `FakePlayer` is the single source of truth for what played. Playback state and event
+/// injection are exposed here as proxies so characterization tests can keep reading and driving via
+/// the backend, exactly as they did when backends owned playback.
 @MainActor
 final class FakeTTSBackend: TextToSpeechBackend {
     let id: String
     let displayName: String
     let capabilities = TTSCapabilities([])
     var availabilityValue: BackendAvailability = .available
+    /// Thrown from `makeAudioSource`.
     var error: Error?
-    var spoken: [(text: String, options: TTSOptions, sessionID: UUID)] = []
-    var stopCount = 0
-    var pauseCount = 0
-    var resumeCount = 0
-    var onSpeak: (() -> Void)?
-    var onStop: (() -> Void)?
-    /// Called from inside `speak`, after any configured suspension, with the
-    /// session ID being routed - lets tests emit events before `speak`
-    /// returns to exercise the router's mid-call event forwarding.
-    var duringSpeak: (@MainActor (UUID) -> Void)?
-    /// When true, `speak` suspends (`Task.yield()`) before invoking
-    /// `duringSpeak`, so tests can prove events survive an actor suspension.
-    var yieldBeforeEmitting = false
-    /// When true, `speak` suspends indefinitely after `duringSpeak` runs,
-    /// simulating a STREAMING backend whose `speak(...)` does not return
-    /// until playback finishes. `stop()` resumes the suspension and `speak`
-    /// then returns normally, mirroring `PocketTTSBackend`/
-    /// `StreamingAudioPlayer`, which resume the in-flight completion
-    /// continuation on stop rather than throwing.
-    var suspendUntilStopped = false
-    private(set) var lastSessionID: UUID?
-    private var playbackEventHandler: (@MainActor (TTSPlaybackEvent) -> Void)?
-    private var stopContinuation: CheckedContinuation<Void, Never>?
+    /// The router's shared player; set by the test helper before the router is used.
+    var player: FakePlayer!
 
     init(id: String) {
         self.id = id
@@ -487,40 +354,41 @@ final class FakeTTSBackend: TextToSpeechBackend {
 
     func availability() async -> BackendAvailability { availabilityValue }
 
-    func setPlaybackEventHandler(_ handler: @escaping @MainActor (TTSPlaybackEvent) -> Void) {
-        playbackEventHandler = handler
-    }
-
-    func speak(text: String, options: TTSOptions, sessionID: UUID) async throws {
-        lastSessionID = sessionID
+    func makeAudioSource(text: String, options: TTSOptions) async throws -> any TTSAudioSource {
         if let error { throw error }
-        if yieldBeforeEmitting { await Task.yield() }
-        duringSpeak?(sessionID)
-        if suspendUntilStopped {
-            await withCheckedContinuation { continuation in
-                stopContinuation = continuation
-            }
-        }
-        onSpeak?()
-        spoken.append((text, options, sessionID))
+        return FakeTTSAudioSource(backendID: id, text: text, options: options)
     }
 
-    func stop() {
-        stopCount += 1
-        onStop?()
-        if let stopContinuation {
-            self.stopContinuation = nil
-            stopContinuation.resume()
-        }
-    }
-    func pause() { pauseCount += 1 }
-    func resume() { resumeCount += 1 }
+    // MARK: Playback proxies (this backend's slice of the shared player's state)
 
-    /// Test helper: manually fires a playback event as if it came from the
-    /// underlying real backend.
-    func emit(_ event: TTSPlaybackEvent) {
-        playbackEventHandler?(event)
+    var spoken: [(text: String, options: TTSOptions, sessionID: UUID)] {
+        player.spoken.filter { $0.backendID == id }.map { ($0.text, $0.options, $0.sessionID) }
     }
+
+    var lastSessionID: UUID? {
+        player.spoken.last { $0.backendID == id }?.sessionID
+    }
+
+    var stopCount: Int { player.stopCount }
+    var pauseCount: Int { player.pauseCount }
+    var resumeCount: Int { player.resumeCount }
+
+    var duringSpeak: (@MainActor (UUID) -> Void)? {
+        get { player.duringStart }
+        set { player.duringStart = newValue }
+    }
+
+    var onStop: (@MainActor () -> Void)? {
+        get { player.onStop }
+        set { player.onStop = newValue }
+    }
+
+    var suspendUntilStopped: Bool {
+        get { player.suspendUntilStopped }
+        set { player.suspendUntilStopped = newValue }
+    }
+
+    func emit(_ event: TTSPlaybackEvent) { player.fireEvent(event) }
 
     func emitStarted() {
         guard let lastSessionID else { return }

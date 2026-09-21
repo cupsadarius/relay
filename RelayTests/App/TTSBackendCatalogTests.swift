@@ -494,11 +494,9 @@ private final class FakeTTSCatalogBackend: TextToSpeechBackend {
         availabilityContinuation = nil
     }
 
-    func setPlaybackEventHandler(_ handler: @escaping @MainActor (TTSPlaybackEvent) -> Void) {}
-    func speak(text: String, options: TTSOptions, sessionID: UUID) async throws {}
-    func stop() {}
-    func pause() {}
-    func resume() {}
+    func makeAudioSource(text: String, options: TTSOptions) async throws -> any TTSAudioSource {
+        FakeTTSAudioSource(backendID: id, text: text, options: options)
+    }
 }
 
 private actor FakeTTSModelManager: SpeechModelManaging {

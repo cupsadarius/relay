@@ -206,7 +206,7 @@ final class RelayRuntime {
         let pocketEngine: any PocketTTSEngine = FluidAudioPocketTTSEngine()
         let pocketTTS = PocketTTSBackend(engine: pocketEngine)
         let pocketModelManager = PocketTTSModelManager(engine: pocketEngine)
-        let sharedTTSPlayer = UnifiedStreamingAudioPlayer()
+        let ttsPlayer = StreamingAudioPlayer()
         let ttsRegistry: [String: any TextToSpeechBackend] = [
             appleTTS.id: appleTTS,
             kokoroTTS.id: kokoroTTS,
@@ -215,7 +215,7 @@ final class RelayRuntime {
         let router = TTSRouter(
             backends: ttsRegistry,
             backendOrder: { settingsBox.value.ttsBackendOrder },
-            sharedPlayer: sharedTTSPlayer
+            player: ttsPlayer
         )
         let coordinator = SpeechCoordinator(
             router: router,

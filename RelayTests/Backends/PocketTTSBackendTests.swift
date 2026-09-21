@@ -5,14 +5,14 @@ import XCTest
 @MainActor
 final class PocketTTSBackendTests: XCTestCase {
     func testIdentifiesAsPocketTTS() {
-        let backend = PocketTTSBackend(engine: FakePocketTTSEngine(), player: FakePlayer())
+        let backend = PocketTTSBackend(engine: FakePocketTTSEngine())
 
         XCTAssertEqual(backend.id, "pocket-tts")
         XCTAssertEqual(backend.displayName, "PocketTTS")
     }
 
     func testCapabilities() {
-        let backend = PocketTTSBackend(engine: FakePocketTTSEngine(), player: FakePlayer())
+        let backend = PocketTTSBackend(engine: FakePocketTTSEngine())
 
         XCTAssertTrue(backend.capabilities.contains(.fullyOffline))
         XCTAssertTrue(backend.capabilities.contains(.voiceSelection))
@@ -24,7 +24,7 @@ final class PocketTTSBackendTests: XCTestCase {
     func testAvailabilityIsAvailableWhenModelsArePresent() async {
         let engine = FakePocketTTSEngine()
         engine.modelsPresent = true
-        let backend = PocketTTSBackend(engine: engine, player: FakePlayer())
+        let backend = PocketTTSBackend(engine: engine)
 
         let availability = await backend.availability()
 
@@ -34,7 +34,7 @@ final class PocketTTSBackendTests: XCTestCase {
     func testAvailabilityIsModelNotDownloadedWhenModelsAreAbsent() async {
         let engine = FakePocketTTSEngine()
         engine.modelsPresent = false
-        let backend = PocketTTSBackend(engine: engine, player: FakePlayer())
+        let backend = PocketTTSBackend(engine: engine)
 
         let availability = await backend.availability()
 
@@ -44,124 +44,105 @@ final class PocketTTSBackendTests: XCTestCase {
     func testAvailabilityNeverTriggersLoad() async {
         let engine = FakePocketTTSEngine()
         engine.modelsPresent = true
-        let backend = PocketTTSBackend(engine: engine, player: FakePlayer())
+        let backend = PocketTTSBackend(engine: engine)
 
         _ = await backend.availability()
 
         XCTAssertTrue(engine.loadCalls.isEmpty, "availability() must never load the engine")
     }
 
-    func testSpeakLazilyLoadsWithoutAllowingDownload() async throws {
+    func testMakeAudioSourceLazilyLoadsWithoutAllowingDownload() async throws {
         let engine = FakePocketTTSEngine()
         engine.modelsPresent = true
-        let backend = PocketTTSBackend(engine: engine, player: FakePlayer())
+        let backend = PocketTTSBackend(engine: engine)
 
-        try await backend.speak(text: "hello", options: .init(), sessionID: UUID())
+        _ = try await backend.makeAudioSource(text: "hello", options: .init())
 
         XCTAssertEqual(engine.loadCalls, [false])
     }
 
-    func testSpeakUsesPocketVoiceFromOptions() async throws {
+    func testMakeAudioSourceUsesPocketVoiceFromOptions() async throws {
         let engine = FakePocketTTSEngine()
         engine.modelsPresent = true
-        let backend = PocketTTSBackend(engine: engine, player: FakePlayer())
+        let backend = PocketTTSBackend(engine: engine)
 
-        try await backend.speak(text: "hello", options: .init(pocketVoice: "alba"), sessionID: UUID())
+        _ = try await backend.makeAudioSource(text: "hello", options: .init(pocketVoice: "alba"))
 
         XCTAssertEqual(engine.synthesizeCalls.last?.voice, "alba")
     }
 
-    func testSpeakFallsBackToDefaultVoiceWhenNoneConfigured() async throws {
+    func testMakeAudioSourceFallsBackToDefaultVoiceWhenNoneConfigured() async throws {
         let engine = FakePocketTTSEngine()
         engine.modelsPresent = true
-        let backend = PocketTTSBackend(engine: engine, player: FakePlayer())
+        let backend = PocketTTSBackend(engine: engine)
 
-        try await backend.speak(text: "hello", options: .init(pocketVoice: nil), sessionID: UUID())
+        _ = try await backend.makeAudioSource(text: "hello", options: .init(pocketVoice: nil))
 
         XCTAssertEqual(engine.synthesizeCalls.last?.voice, PocketTtsConstants.defaultVoice)
     }
 
-    func testSpeakIgnoresAppleAndKokoroVoiceIdentifiers() async throws {
+    func testMakeAudioSourceIgnoresAppleAndKokoroVoiceIdentifiers() async throws {
         let engine = FakePocketTTSEngine()
         engine.modelsPresent = true
-        let backend = PocketTTSBackend(engine: engine, player: FakePlayer())
+        let backend = PocketTTSBackend(engine: engine)
 
-        try await backend.speak(
+        _ = try await backend.makeAudioSource(
             text: "hello",
             options: .init(
                 voiceIdentifier: "com.apple.voice.compact.en-US.Samantha",
                 kokoroVoice: "af_bella",
                 pocketVoice: "alba"
-            ),
-            sessionID: UUID()
+            )
         )
 
         XCTAssertEqual(engine.synthesizeCalls.last?.voice, "alba")
     }
 
-    func testSpeakIgnoresTheSharedRateSlider() async throws {
+    func testMakeAudioSourceIgnoresTheSharedRateSlider() async throws {
         let engine = FakePocketTTSEngine()
         engine.modelsPresent = true
-        let backend = PocketTTSBackend(engine: engine, player: FakePlayer())
+        let backend = PocketTTSBackend(engine: engine)
 
-        try await backend.speak(text: "hello", options: .init(rate: 0.1), sessionID: UUID())
-        try await backend.speak(text: "hello", options: .init(rate: 1.0), sessionID: UUID())
+        _ = try await backend.makeAudioSource(text: "hello", options: .init(rate: 0.1))
+        _ = try await backend.makeAudioSource(text: "hello", options: .init(rate: 1.0))
 
         XCTAssertEqual(engine.synthesizeCalls.map(\.text), ["hello", "hello"])
     }
 
-    func testSpeakHandsSynthesizedFramesToThePlayerWithTheSameSessionIDAndSampleRate() async throws {
+    func testMakeAudioSourceProducesTheEngineStreamFramesAtThePocketSampleRate() async throws {
         let engine = FakePocketTTSEngine()
         engine.modelsPresent = true
         engine.synthesizeStreamFrames = [[1, 2, 3], [4, 5, 6]]
-        let player = FakePlayer()
-        let backend = PocketTTSBackend(engine: engine, player: player)
-        let sessionID = UUID()
+        let backend = PocketTTSBackend(engine: engine)
 
-        try await backend.speak(text: "hello", options: .init(), sessionID: sessionID)
+        let source = try await backend.makeAudioSource(text: "hello", options: .init())
+        var frames: [TTSAudioFrame] = []
+        while let frame = try await source.next() { frames.append(frame) }
 
-        XCTAssertEqual(player.playCalls.count, 1)
-        XCTAssertEqual(player.playCalls.first?.frames, [[1, 2, 3], [4, 5, 6]])
-        XCTAssertEqual(player.playCalls.first?.sessionID, sessionID)
-        XCTAssertEqual(player.playCalls.first?.sampleRate, Double(PocketTtsConstants.audioSampleRate))
+        XCTAssertEqual(frames.map(\.samples), [[1, 2, 3], [4, 5, 6]])
+        XCTAssertEqual(
+            frames.first?.format,
+            TTSAudioFormat(sampleRate: Double(PocketTtsConstants.audioSampleRate), channelCount: 1)
+        )
     }
 
-    func testSpeakForwardsPlayerEventsToTheInstalledHandler() async throws {
+    func testMakeAudioSourceWithEmptyTextDoesNotCrash() async throws {
         let engine = FakePocketTTSEngine()
         engine.modelsPresent = true
-        let player = FakePlayer()
-        let backend = PocketTTSBackend(engine: engine, player: player)
-        var received: [TTSPlaybackEvent] = []
-        backend.setPlaybackEventHandler { received.append($0) }
-        let sessionID = UUID()
-        player.emitOnPlay = [.scheduled(sessionID: sessionID), .started(sessionID: sessionID), .finished(sessionID: sessionID)]
+        let backend = PocketTTSBackend(engine: engine)
 
-        try await backend.speak(text: "hello", options: .init(), sessionID: sessionID)
-
-        XCTAssertEqual(received, [
-            .scheduled(sessionID: sessionID),
-            .started(sessionID: sessionID),
-            .finished(sessionID: sessionID),
-        ])
-    }
-
-    func testSpeakWithEmptyTextDoesNotCrash() async throws {
-        let engine = FakePocketTTSEngine()
-        engine.modelsPresent = true
-        let backend = PocketTTSBackend(engine: engine, player: FakePlayer())
-
-        try await backend.speak(text: "", options: .init(), sessionID: UUID())
+        _ = try await backend.makeAudioSource(text: "", options: .init())
 
         XCTAssertEqual(engine.synthesizeCalls.last?.text, "")
     }
 
-    func testSpeakMapsModelNotDownloadedToFallbackWorthyError() async {
+    func testMakeAudioSourceMapsModelNotDownloadedToFallbackWorthyError() async {
         let engine = FakePocketTTSEngine()
         engine.modelsPresent = false
-        let backend = PocketTTSBackend(engine: engine, player: FakePlayer())
+        let backend = PocketTTSBackend(engine: engine)
 
         do {
-            try await backend.speak(text: "hello", options: .init(), sessionID: UUID())
+            _ = try await backend.makeAudioSource(text: "hello", options: .init())
             XCTFail("Expected modelNotDownloaded")
         } catch {
             let mapped = error as? SpeechBackendError
@@ -170,162 +151,80 @@ final class PocketTTSBackendTests: XCTestCase {
         }
     }
 
-    func testSpeakMapsLoadFailureToFallbackWorthyErrorWithoutEmittingFailed() async {
+    func testMakeAudioSourceMapsLoadFailureToFallbackWorthyError() async {
         let engine = FakePocketTTSEngine()
         engine.modelsPresent = true
         engine.loadError = PocketTTSEngineError.loadFailed
-        let backend = PocketTTSBackend(engine: engine, player: FakePlayer())
-        var received: [TTSPlaybackEvent] = []
-        backend.setPlaybackEventHandler { received.append($0) }
-        let sessionID = UUID()
+        let backend = PocketTTSBackend(engine: engine)
 
         do {
-            try await backend.speak(text: "hello", options: .init(), sessionID: sessionID)
+            _ = try await backend.makeAudioSource(text: "hello", options: .init())
             XCTFail("Expected initializationFailed")
         } catch {
             let mapped = error as? SpeechBackendError
             XCTAssertEqual(mapped, .initializationFailed("PocketTTS model load failed"))
             XCTAssertEqual(mapped?.isFallbackWorthy, true)
         }
-        // TTSRouter centralizes `.failed`, emitting it only once all backends are exhausted -
-        // the backend itself must never emit it, or a successful Apple fallback would still
-        // show a stale failure in the UI.
-        XCTAssertFalse(received.contains(.failed(sessionID: sessionID)), "Backend must not emit .failed - TTSRouter owns that")
     }
 
-    func testSpeakMapsSynthesisFailureToFallbackWorthyErrorWithoutEmittingFailed() async {
+    func testMakeAudioSourceMapsSynthesisFailureToFallbackWorthyError() async {
         let engine = FakePocketTTSEngine()
         engine.modelsPresent = true
         engine.synthesizeError = PocketTTSEngineError.synthesisFailed
-        let backend = PocketTTSBackend(engine: engine, player: FakePlayer())
-        var received: [TTSPlaybackEvent] = []
-        backend.setPlaybackEventHandler { received.append($0) }
-        let sessionID = UUID()
+        let backend = PocketTTSBackend(engine: engine)
 
         do {
-            try await backend.speak(text: "hello", options: .init(), sessionID: sessionID)
+            _ = try await backend.makeAudioSource(text: "hello", options: .init())
             XCTFail("Expected inferenceFailed")
         } catch {
             let mapped = error as? SpeechBackendError
             XCTAssertEqual(mapped, .inferenceFailed("PocketTTS synthesis failed"))
             XCTAssertEqual(mapped?.isFallbackWorthy, true)
         }
-        XCTAssertFalse(received.contains(.failed(sessionID: sessionID)), "Backend must not emit .failed - TTSRouter owns that")
     }
 
-    func testSpeakMapsPlaybackFailureToFallbackWorthyErrorWithoutEmittingFailed() async {
-        let engine = FakePocketTTSEngine()
-        engine.modelsPresent = true
-        let player = FakePlayer()
-        player.playError = StreamingAudioPlayerError.bufferAllocationFailed
-        let backend = PocketTTSBackend(engine: engine, player: player)
-        var received: [TTSPlaybackEvent] = []
-        backend.setPlaybackEventHandler { received.append($0) }
-        let sessionID = UUID()
-
-        do {
-            try await backend.speak(text: "hello", options: .init(), sessionID: sessionID)
-            XCTFail("Expected inferenceFailed")
-        } catch {
-            let mapped = error as? SpeechBackendError
-            XCTAssertEqual(mapped, .inferenceFailed("PocketTTS playback failed"))
-            XCTAssertEqual(mapped?.isFallbackWorthy, true)
-        }
-        // Uniform terminal-event contract: even when `.started` already fired before playback
-        // failed, the backend still must not emit `.failed` itself.
-        XCTAssertFalse(received.contains(.failed(sessionID: sessionID)), "Backend must not emit .failed - TTSRouter owns that")
-    }
-
-    func testSpeakRethrowsCancellationErrorFromLoadWithoutRemappingOrEmittingFailed() async {
+    func testMakeAudioSourceRethrowsCancellationErrorFromLoadWithoutRemapping() async {
         let engine = FakePocketTTSEngine()
         engine.modelsPresent = true
         engine.loadError = CancellationError()
-        let backend = PocketTTSBackend(engine: engine, player: FakePlayer())
-        var received: [TTSPlaybackEvent] = []
-        backend.setPlaybackEventHandler { received.append($0) }
-        let sessionID = UUID()
+        let backend = PocketTTSBackend(engine: engine)
 
         do {
-            try await backend.speak(text: "hello", options: .init(), sessionID: sessionID)
+            _ = try await backend.makeAudioSource(text: "hello", options: .init())
             XCTFail("Expected CancellationError")
         } catch is CancellationError {
             // expected - must not be remapped to SpeechBackendError
         } catch {
             XCTFail("Expected CancellationError, got \(error)")
         }
-        XCTAssertFalse(received.contains(.failed(sessionID: sessionID)), "Backend must not emit .failed - TTSRouter owns that")
     }
 
-    func testSpeakRethrowsCancellationErrorFromSynthesisWithoutRemappingOrEmittingFailed() async {
+    func testMakeAudioSourceRethrowsCancellationErrorFromSynthesisWithoutRemapping() async {
         let engine = FakePocketTTSEngine()
         engine.modelsPresent = true
         engine.synthesizeError = CancellationError()
-        let backend = PocketTTSBackend(engine: engine, player: FakePlayer())
-        var received: [TTSPlaybackEvent] = []
-        backend.setPlaybackEventHandler { received.append($0) }
-        let sessionID = UUID()
+        let backend = PocketTTSBackend(engine: engine)
 
         do {
-            try await backend.speak(text: "hello", options: .init(), sessionID: sessionID)
+            _ = try await backend.makeAudioSource(text: "hello", options: .init())
             XCTFail("Expected CancellationError")
         } catch is CancellationError {
             // expected - must not be remapped to SpeechBackendError
         } catch {
             XCTFail("Expected CancellationError, got \(error)")
         }
-        XCTAssertFalse(received.contains(.failed(sessionID: sessionID)), "Backend must not emit .failed - TTSRouter owns that")
     }
 
-    func testSpeakRethrowsCancellationErrorFromPlaybackWithoutRemappingOrEmittingFailed() async {
+    func testSecondMakeAudioSourceDoesNotTriggerASecondEngineLoad() async throws {
         let engine = FakePocketTTSEngine()
         engine.modelsPresent = true
-        let player = FakePlayer()
-        player.playError = CancellationError()
-        let backend = PocketTTSBackend(engine: engine, player: player)
-        var received: [TTSPlaybackEvent] = []
-        backend.setPlaybackEventHandler { received.append($0) }
-        let sessionID = UUID()
+        let backend = PocketTTSBackend(engine: engine)
 
-        do {
-            try await backend.speak(text: "hello", options: .init(), sessionID: sessionID)
-            XCTFail("Expected CancellationError")
-        } catch is CancellationError {
-            // expected - must not be remapped to SpeechBackendError
-        } catch {
-            XCTFail("Expected CancellationError, got \(error)")
-        }
-        XCTAssertFalse(received.contains(.failed(sessionID: sessionID)), "Backend must not emit .failed - TTSRouter owns that")
+        _ = try await backend.makeAudioSource(text: "hello", options: .init())
+        _ = try await backend.makeAudioSource(text: "world", options: .init())
+
+        XCTAssertEqual(engine.loadCalls, [false], "A second makeAudioSource must not reload an already-loaded engine")
     }
-
-    func testStopPauseResumeDelegateToThePlayer() {
-        let player = FakePlayer()
-        let backend = PocketTTSBackend(engine: FakePocketTTSEngine(), player: player)
-
-        backend.stop()
-        backend.pause()
-        backend.resume()
-
-        XCTAssertEqual(player.stopCallCount, 1)
-        XCTAssertEqual(player.pauseCallCount, 1)
-        XCTAssertEqual(player.resumeCallCount, 1)
-    }
-
-    func testSecondSpeakDoesNotTriggerASecondEngineLoad() async throws {
-        let engine = FakePocketTTSEngine()
-        engine.modelsPresent = true
-        let backend = PocketTTSBackend(engine: engine, player: FakePlayer())
-
-        try await backend.speak(text: "hello", options: .init(), sessionID: UUID())
-        try await backend.speak(text: "world", options: .init(), sessionID: UUID())
-
-        XCTAssertEqual(engine.loadCalls, [false], "A second speak must not reload an already-loaded engine")
-    }
-}
-
-/// Sendable accumulator for progress callbacks. `@escaping @Sendable` closures can't safely
-/// capture a mutable local `var`, so tests that record progress ticks use this instead.
-private final class ProgressBox: @unchecked Sendable {
-    var values: [Double] = []
 }
 
 @MainActor
@@ -388,49 +287,4 @@ private final class FakePocketTTSEngine: PocketTTSEngine {
             continuation.finish()
         }
     }
-}
-
-@MainActor
-private final class FakePlayer: StreamingAudioPlaying {
-    var onEvent: (@MainActor @Sendable (TTSPlaybackEvent) -> Void)?
-    var playError: Error?
-    /// Events this fake emits (via `onEvent`) from inside a successful `play(_:sampleRate:sessionID:)`
-    /// call, simulating the real player's lifecycle.
-    var emitOnPlay: [TTSPlaybackEvent] = []
-    private(set) var playCalls: [(frames: [[Float]], sampleRate: Double, sessionID: UUID)] = []
-    private(set) var stopCallCount = 0
-    private(set) var pauseCallCount = 0
-    private(set) var resumeCallCount = 0
-
-    func startPlayback(_ frames: AsyncThrowingStream<[Float], Error>, sampleRate: Double, sessionID: UUID) async throws {
-        var received: [[Float]] = []
-        for try await frame in frames {
-            received.append(frame)
-        }
-        playCalls.append((received, sampleRate, sessionID))
-        if let playError {
-            throw playError
-        }
-        for event in emitOnPlay {
-            onEvent?(event)
-        }
-    }
-
-    func startPlayback(_ source: any TTSAudioSource, sessionID: UUID) async throws {
-        var received: [[Float]] = []
-        while let frame = try await source.next() {
-            received.append(frame.samples)
-        }
-        playCalls.append((received, 0, sessionID))
-        if let playError {
-            throw playError
-        }
-        for event in emitOnPlay {
-            onEvent?(event)
-        }
-    }
-
-    func stop() { stopCallCount += 1 }
-    func pause() { pauseCallCount += 1 }
-    func resume() { resumeCallCount += 1 }
 }
