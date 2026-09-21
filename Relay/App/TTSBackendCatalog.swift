@@ -40,12 +40,11 @@ extension AppModel {
         ttsBackends = Catalog.sorted(Catalog.merged(fresh: fresh, live: ttsBackends, downloadingIDs: downloadingTTSBackendIDs))
     }
 
-    /// Production TTS model downloads use the post-Whisper `SpeechModelManaging` pattern. The
-    /// legacy downloader fallback stays temporarily so pre-cutover tests/custom compositions do
-    /// not have to migrate in the same commit; `RelayRuntime.makeProduction()` registers only
-    /// managers for Kokoro and PocketTTS.
+    /// Production TTS model downloads use the post-Whisper `SpeechModelManaging` pattern.
+    /// `RelayRuntime.makeProduction()` registers a one-model manager for Kokoro and PocketTTS;
+    /// Apple has no manager because it downloads nothing.
     func canDownloadTTSModel(_ id: String) -> Bool {
-        ttsModelManagers[id] != nil || ttsModelDownloaders[id] != nil
+        ttsModelManagers[id] != nil
     }
 
     /// Enables or disables a backend in `ttsBackendOrder`. Refuses to disable the last enabled
@@ -76,13 +75,12 @@ extension AppModel {
     }
 
     /// Downloads the model for `id` (currently Kokoro and PocketTTS). Ignored if that backend has
-    /// no model manager/compatibility downloader registered or a download is already running.
-    /// `downloadingTTSBackendIDs`
+    /// no model manager registered or a download is already running. `downloadingTTSBackendIDs`
     /// and the row's `.downloading` state are always written together in the same synchronous
     /// step (`beginTTSDownload`/`endTTSDownload`) so the two can never disagree about whether a
     /// download is running.
     func downloadTTSModel(_ id: String) async {
-        guard ttsModelManagers[id] != nil || ttsModelDownloaders[id] != nil else { return }
+        guard let manager = ttsModelManagers[id] else { return }
         guard !downloadingTTSBackendIDs.contains(id) else { return }
 
         beginTTSDownload(id)
@@ -90,23 +88,14 @@ extension AppModel {
         recordDiagnostic(.speechModelDownloadStarted(backendID: id))
 
         do {
-            if let manager = ttsModelManagers[id] {
-                guard let modelID = await manager.models().first?.id else {
-                    throw TTSModelCatalogError.noModelRegistered
-                }
-                try await manager.downloadModel(modelID, progress: { [weak self] progress in
-                    Task { @MainActor in
-                        self?.applyTTSDownloadProgress(id: id, progress: progress)
-                    }
-                })
-            } else if let downloader = ttsModelDownloaders[id] {
-                // Compatibility-only path. Production does not register these after this patch.
-                try await downloader.downloadModels(progress: { [weak self] progress in
-                    Task { @MainActor in
-                        self?.applyTTSDownloadProgress(id: id, progress: progress)
-                    }
-                })
+            guard let modelID = await manager.models().first?.id else {
+                throw TTSModelCatalogError.noModelRegistered
             }
+            try await manager.downloadModel(modelID, progress: { [weak self] progress in
+                Task { @MainActor in
+                    self?.applyTTSDownloadProgress(id: id, progress: progress)
+                }
+            })
 
             recordDiagnostic(.speechModelDownloadFinished(backendID: id))
             let availability = await ttsRegistry[id]?.availability()

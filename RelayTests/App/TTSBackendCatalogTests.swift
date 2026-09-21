@@ -106,13 +106,13 @@ final class TTSBackendCatalogTests: XCTestCase {
         let store = FakeSettingsStore(settings: settings)
         let diagnostics = DiagnosticsRecorder(capacity: 10)
         let kokoro = FakeTTSCatalogBackend(id: "kokoro", displayName: "Kokoro", availability: .modelNotDownloaded)
-        let downloader = FakeTTSModelDownloader()
+        let downloader = FakeTTSModelManager()
         await downloader.setProgressToReport([0.5])
         await downloader.setShouldBlock(true)
         let model = makeModel(
             store: store,
             ttsRegistry: ["kokoro": kokoro],
-            ttsModelDownloaders: ["kokoro": downloader],
+            ttsModelManagers: ["kokoro": downloader],
             diagnostics: diagnostics
         )
         await model.initialTTSBackendRefresh?.value
@@ -137,20 +137,20 @@ final class TTSBackendCatalogTests: XCTestCase {
     /// Confirms `AppModel`'s real wiring (added alongside PocketTTS's backend/registry
     /// registration) reaches the same generic, backend-agnostic download flow Kokoro already
     /// exercises above - proving the TTS catalog's Download button drives PocketTTS's registered
-    /// `SpeechModelDownloading` through `.downloading` progress ticks to `.ready`.
+    /// `SpeechModelManaging` through `.downloading` progress ticks to `.ready`.
     func testDownloadPocketTTSModelReportsProgressThenBecomesReady() async {
         var settings = AppSettings.defaults
         settings.ttsBackendOrder = ["pocket-tts"]
         let store = FakeSettingsStore(settings: settings)
         let diagnostics = DiagnosticsRecorder(capacity: 10)
         let pocket = FakeTTSCatalogBackend(id: "pocket-tts", displayName: "PocketTTS", availability: .modelNotDownloaded)
-        let downloader = FakeTTSModelDownloader()
+        let downloader = FakeTTSModelManager()
         await downloader.setProgressToReport([0.5])
         await downloader.setShouldBlock(true)
         let model = makeModel(
             store: store,
             ttsRegistry: ["pocket-tts": pocket],
-            ttsModelDownloaders: ["pocket-tts": downloader],
+            ttsModelManagers: ["pocket-tts": downloader],
             diagnostics: diagnostics
         )
         await model.initialTTSBackendRefresh?.value
@@ -178,12 +178,12 @@ final class TTSBackendCatalogTests: XCTestCase {
         let store = FakeSettingsStore(settings: settings)
         let diagnostics = DiagnosticsRecorder(capacity: 10)
         let pocket = FakeTTSCatalogBackend(id: "pocket-tts", displayName: "PocketTTS", availability: .modelNotDownloaded)
-        let downloader = FakeTTSModelDownloader()
+        let downloader = FakeTTSModelManager()
         await downloader.setErrorToThrow(TestCatalogError.boom)
         let model = makeModel(
             store: store,
             ttsRegistry: ["pocket-tts": pocket],
-            ttsModelDownloaders: ["pocket-tts": downloader],
+            ttsModelManagers: ["pocket-tts": downloader],
             diagnostics: diagnostics
         )
         await model.initialTTSBackendRefresh?.value
@@ -206,12 +206,12 @@ final class TTSBackendCatalogTests: XCTestCase {
         let store = FakeSettingsStore(settings: settings)
         let diagnostics = DiagnosticsRecorder(capacity: 10)
         let kokoro = FakeTTSCatalogBackend(id: "kokoro", displayName: "Kokoro", availability: .modelNotDownloaded)
-        let downloader = FakeTTSModelDownloader()
+        let downloader = FakeTTSModelManager()
         await downloader.setErrorToThrow(TestCatalogError.boom)
         let model = makeModel(
             store: store,
             ttsRegistry: ["kokoro": kokoro],
-            ttsModelDownloaders: ["kokoro": downloader],
+            ttsModelManagers: ["kokoro": downloader],
             diagnostics: diagnostics
         )
         await model.initialTTSBackendRefresh?.value
@@ -233,9 +233,9 @@ final class TTSBackendCatalogTests: XCTestCase {
         settings.ttsBackendOrder = ["kokoro"]
         let store = FakeSettingsStore(settings: settings)
         let kokoro = FakeTTSCatalogBackend(id: "kokoro", displayName: "Kokoro", availability: .modelNotDownloaded)
-        let downloader = FakeTTSModelDownloader()
+        let downloader = FakeTTSModelManager()
         await downloader.setErrorToThrow(TestCatalogError.boom)
-        let model = makeModel(store: store, ttsRegistry: ["kokoro": kokoro], ttsModelDownloaders: ["kokoro": downloader])
+        let model = makeModel(store: store, ttsRegistry: ["kokoro": kokoro], ttsModelManagers: ["kokoro": downloader])
         await model.initialTTSBackendRefresh?.value
 
         await model.downloadTTSModel("kokoro")
@@ -256,9 +256,9 @@ final class TTSBackendCatalogTests: XCTestCase {
         settings.ttsBackendOrder = ["kokoro"]
         let store = FakeSettingsStore(settings: settings)
         let kokoro = FakeTTSCatalogBackend(id: "kokoro", displayName: "Kokoro", availability: .modelNotDownloaded)
-        let downloader = FakeTTSModelDownloader()
+        let downloader = FakeTTSModelManager()
         await downloader.setShouldBlock(true)
-        let model = makeModel(store: store, ttsRegistry: ["kokoro": kokoro], ttsModelDownloaders: ["kokoro": downloader])
+        let model = makeModel(store: store, ttsRegistry: ["kokoro": kokoro], ttsModelManagers: ["kokoro": downloader])
         await model.initialTTSBackendRefresh?.value
 
         let firstTask = Task { await model.downloadTTSModel("kokoro") }
@@ -278,9 +278,9 @@ final class TTSBackendCatalogTests: XCTestCase {
         settings.ttsBackendOrder = ["kokoro"]
         let store = FakeSettingsStore(settings: settings)
         let kokoro = FakeTTSCatalogBackend(id: "kokoro", displayName: "Kokoro", availability: .modelNotDownloaded)
-        let downloader = FakeTTSModelDownloader()
+        let downloader = FakeTTSModelManager()
         await downloader.setShouldBlock(true)
-        let model = makeModel(store: store, ttsRegistry: ["kokoro": kokoro], ttsModelDownloaders: ["kokoro": downloader])
+        let model = makeModel(store: store, ttsRegistry: ["kokoro": kokoro], ttsModelManagers: ["kokoro": downloader])
         await model.initialTTSBackendRefresh?.value
         model.ttsBackends = [] // simulate a Download click before any status row exists
 
@@ -300,9 +300,9 @@ final class TTSBackendCatalogTests: XCTestCase {
         settings.ttsBackendOrder = ["kokoro"]
         let store = FakeSettingsStore(settings: settings)
         let kokoro = FakeTTSCatalogBackend(id: "kokoro", displayName: "Kokoro", availability: .modelNotDownloaded)
-        let downloader = FakeTTSModelDownloader()
+        let downloader = FakeTTSModelManager()
         await downloader.setShouldBlock(true)
-        let model = makeModel(store: store, ttsRegistry: ["kokoro": kokoro], ttsModelDownloaders: ["kokoro": downloader])
+        let model = makeModel(store: store, ttsRegistry: ["kokoro": kokoro], ttsModelManagers: ["kokoro": downloader])
         await model.initialTTSBackendRefresh?.value
 
         kokoro.setShouldBlockAvailability(true)
@@ -332,8 +332,8 @@ final class TTSBackendCatalogTests: XCTestCase {
         settings.ttsBackendOrder = ["kokoro"]
         let store = FakeSettingsStore(settings: settings)
         let kokoro = FakeTTSCatalogBackend(id: "kokoro", displayName: "Kokoro", availability: .modelNotDownloaded)
-        let downloader = FakeTTSModelDownloader()
-        let model = makeModel(store: store, ttsRegistry: ["kokoro": kokoro], ttsModelDownloaders: ["kokoro": downloader])
+        let downloader = FakeTTSModelManager()
+        let model = makeModel(store: store, ttsRegistry: ["kokoro": kokoro], ttsModelManagers: ["kokoro": downloader])
         await model.initialTTSBackendRefresh?.value
         kokoro.setAvailability(.available)
 
@@ -352,9 +352,9 @@ final class TTSBackendCatalogTests: XCTestCase {
         settings.ttsBackendOrder = ["kokoro"]
         let store = FakeSettingsStore(settings: settings)
         let kokoro = FakeTTSCatalogBackend(id: "kokoro", displayName: "Kokoro", availability: .modelNotDownloaded)
-        let downloader = FakeTTSModelDownloader()
+        let downloader = FakeTTSModelManager()
         await downloader.setShouldBlock(true)
-        let model = makeModel(store: store, ttsRegistry: ["kokoro": kokoro], ttsModelDownloaders: ["kokoro": downloader])
+        let model = makeModel(store: store, ttsRegistry: ["kokoro": kokoro], ttsModelManagers: ["kokoro": downloader])
         await model.initialTTSBackendRefresh?.value
 
         let downloadTask = Task { await model.downloadTTSModel("kokoro") }
@@ -380,8 +380,8 @@ final class TTSBackendCatalogTests: XCTestCase {
         let modelWithoutDownloader = makeModel(ttsRegistry: ["apple-tts": apple])
         XCTAssertFalse(modelWithoutDownloader.canDownloadTTSModel("apple-tts"))
 
-        let downloader = FakeTTSModelDownloader()
-        let modelWithDownloader = makeModel(ttsRegistry: ["apple-tts": apple], ttsModelDownloaders: ["apple-tts": downloader])
+        let downloader = FakeTTSModelManager()
+        let modelWithDownloader = makeModel(ttsRegistry: ["apple-tts": apple], ttsModelManagers: ["apple-tts": downloader])
         XCTAssertTrue(modelWithDownloader.canDownloadTTSModel("apple-tts"))
     }
 
@@ -443,7 +443,7 @@ final class TTSBackendCatalogTests: XCTestCase {
     private func makeModel(
         store: FakeSettingsStore? = nil,
         ttsRegistry: [String: any TextToSpeechBackend] = [:],
-        ttsModelDownloaders: [String: any SpeechModelDownloading] = [:],
+        ttsModelManagers: [String: any SpeechModelManaging] = [:],
         diagnostics: DiagnosticsRecorder? = nil
     ) -> AppModel {
         AppModel(
@@ -454,7 +454,7 @@ final class TTSBackendCatalogTests: XCTestCase {
             hotkeyManager: NoOpHotkeyManager(),
             diagnostics: diagnostics ?? DiagnosticsRecorder(capacity: 10),
             ttsRegistry: ttsRegistry,
-            ttsModelDownloaders: ttsModelDownloaders
+            ttsModelManagers: ttsModelManagers
         )
     }
 }
@@ -501,35 +501,68 @@ private final class FakeTTSCatalogBackend: TextToSpeechBackend {
     func resume() {}
 }
 
-private actor FakeTTSModelDownloader: SpeechModelDownloading {
+private actor FakeTTSModelManager: SpeechModelManaging {
+    let backendID: String
+    let modelID: String
     private(set) var callCount = 0
+    private var present = false
     private var progressToReport: [Double] = []
     private var errorToThrow: Error?
     private var shouldBlock = false
     private var continuation: CheckedContinuation<Void, Never>?
+    private var resumeRequested = false
     private var capturedProgress: (@Sendable (Double) -> Void)?
+
+    init(backendID: String = "tts", modelID: String = "model") {
+        self.backendID = backendID
+        self.modelID = modelID
+    }
+
+    func models() async -> [SpeechModelStatus] {
+        [SpeechModelStatus(
+            descriptor: .init(id: modelID, displayName: modelID, detail: nil, approximateDownloadBytes: nil),
+            installState: present ? .downloaded : .notDownloaded,
+            isSelected: true,
+            isLoaded: false
+        )]
+    }
 
     func setProgressToReport(_ values: [Double]) { progressToReport = values }
     func setErrorToThrow(_ error: Error?) { errorToThrow = error }
     func setShouldBlock(_ value: Bool) { shouldBlock = value }
 
-    func downloadModels(progress: @escaping @Sendable (Double) -> Void) async throws {
+    func downloadModel(_ id: String, progress: @escaping @Sendable (Double) -> Void) async throws {
         callCount += 1
         capturedProgress = progress
         for value in progressToReport {
             progress(value)
         }
         if shouldBlock {
-            await withCheckedContinuation { continuation = $0 }
+            // `resume()` may be called before this point is reached (the catalog does an
+            // `await manager.models()` hop before entering `downloadModel`). Honor a resume that
+            // already arrived instead of suspending forever.
+            if resumeRequested {
+                resumeRequested = false
+            } else {
+                await withCheckedContinuation { continuation = $0 }
+            }
         }
         if let errorToThrow {
             throw errorToThrow
         }
+        present = true
     }
 
+    func removeModel(_ id: String) async throws {}
+    func selectModel(_ id: String) async throws {}
+
     func resume() {
-        continuation?.resume()
-        continuation = nil
+        if let continuation {
+            self.continuation = nil
+            continuation.resume()
+        } else {
+            resumeRequested = true
+        }
     }
 
     func reportProgress(_ value: Double) {

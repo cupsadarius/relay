@@ -8,6 +8,6 @@ final class TTSMigrationProductionWiringTests: XCTestCase {
 
         XCTAssertTrue(runtime.speechOut.ttsModelManagers["kokoro"] is KokoroModelManager)
         XCTAssertTrue(runtime.speechOut.ttsModelManagers["pocket-tts"] is PocketTTSModelManager)
-        XCTAssertTrue(runtime.speechOut.ttsModelDownloaders.isEmpty)
+        XCTAssertNil(runtime.speechOut.ttsModelManagers["apple-tts"])
     }
 }

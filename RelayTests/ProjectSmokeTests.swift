@@ -78,4 +78,16 @@ final class ProjectSmokeTests: XCTestCase {
         XCTAssertTrue(runtime.speechIn.sttRegistry["whisper"] is WhisperBackend)
         XCTAssertTrue(runtime.speechIn.speechModelManagers["whisper"] is WhisperModelManager)
     }
+
+    /// Composition-root test for the TTS side: `RelayRuntime.makeProduction()` registers a one-model
+    /// `SpeechModelManaging` for each model-backed TTS backend (Kokoro, PocketTTS), and none for
+    /// Apple, which downloads nothing. Pins the concrete manager types.
+    @MainActor
+    func testMakeProductionRegistersTTSModelManagers() {
+        let runtime = RelayRuntime.makeProduction()
+
+        XCTAssertTrue(runtime.speechOut.ttsModelManagers["kokoro"] is KokoroModelManager)
+        XCTAssertTrue(runtime.speechOut.ttsModelManagers["pocket-tts"] is PocketTTSModelManager)
+        XCTAssertNil(runtime.speechOut.ttsModelManagers["apple-tts"])
+    }
 }

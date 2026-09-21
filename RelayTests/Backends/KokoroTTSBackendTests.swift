@@ -242,43 +242,6 @@ final class KokoroTTSBackendTests: XCTestCase {
         XCTAssertFalse(received.contains(.failed(sessionID: sessionID)), "Backend must not emit .failed - TTSRouter owns that")
     }
 
-    func testDownloadModelsCallsEngineWithDownloadAllowedAndForwardsProgress() async throws {
-        let engine = FakeKokoroEngine()
-        let backend = KokoroTTSBackend(engine: engine, player: FakePlayer())
-        let reported = ProgressBox()
-
-        try await backend.downloadModels(progress: { reported.values.append($0) })
-
-        XCTAssertEqual(engine.loadCalls, [true])
-        XCTAssertEqual(reported.values, [0.5, 1.0])
-    }
-
-    func testDownloadModelsMapsEngineFailureToFallbackWorthyError() async {
-        let engine = FakeKokoroEngine()
-        engine.loadError = KokoroEngineError.loadFailed
-        let backend = KokoroTTSBackend(engine: engine, player: FakePlayer())
-
-        do {
-            try await backend.downloadModels(progress: { _ in })
-            XCTFail("Expected initializationFailed")
-        } catch {
-            let mapped = error as? SpeechBackendError
-            XCTAssertEqual(mapped, .initializationFailed("Kokoro model load failed"))
-            XCTAssertEqual(mapped?.isFallbackWorthy, true)
-        }
-    }
-
-    func testDownloadModelsDoesNotEmitAnyPlaybackEvent() async throws {
-        let engine = FakeKokoroEngine()
-        let backend = KokoroTTSBackend(engine: engine, player: FakePlayer())
-        var received: [TTSPlaybackEvent] = []
-        backend.setPlaybackEventHandler { received.append($0) }
-
-        try await backend.downloadModels(progress: { _ in })
-
-        XCTAssertTrue(received.isEmpty, "A model download is not a playback session and must not emit playback events")
-    }
-
     func testStopPauseResumeDelegateToThePlayer() {
         let player = FakePlayer()
         let backend = KokoroTTSBackend(engine: FakeKokoroEngine(), player: player)

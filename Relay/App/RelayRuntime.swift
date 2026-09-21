@@ -28,12 +28,11 @@ struct SessionServices {
 }
 
 /// Speech-output services: the TTS backend registry/router pair, post-Whisper model managers for
-/// model-backed TTS providers, the temporary legacy-downloader compatibility map, the shared
-/// `SpeechCoordinator`, and the activity overlay model/presenter pair the coordinator drives.
+/// model-backed TTS providers, the shared `SpeechCoordinator`, and the activity overlay
+/// model/presenter pair the coordinator drives.
 struct SpeechOutputServices {
     let ttsRegistry: [String: any TextToSpeechBackend]
     let ttsModelManagers: [String: any SpeechModelManaging]
-    let ttsModelDownloaders: [String: any SpeechModelDownloading]
     let speechCoordinator: any SpeechCoordinating
     let overlayModel: ActivityOverlayModel
     let overlayPresenter: any ActivityOverlayPresenting
@@ -375,10 +374,6 @@ final class RelayRuntime {
             kokoroModelManager.backendID: kokoroModelManager,
             pocketModelManager.backendID: pocketModelManager,
         ]
-        // Production TTS no longer registers the one-model downloader path. Keep the empty map
-        // only for source compatibility with existing test/custom AppModel compositions until
-        // Apple's generated-audio quality gate allows the final compatibility cleanup.
-        let ttsModelDownloaders: [String: any SpeechModelDownloading] = [:]
 
         return RelayRuntime(
             settingsStore: settingsStore,
@@ -399,7 +394,6 @@ final class RelayRuntime {
             speechOut: SpeechOutputServices(
                 ttsRegistry: ttsRegistry,
                 ttsModelManagers: ttsModelManagers,
-                ttsModelDownloaders: ttsModelDownloaders,
                 speechCoordinator: coordinator,
                 overlayModel: overlayModel,
                 overlayPresenter: overlayPresenter

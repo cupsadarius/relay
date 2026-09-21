@@ -85,7 +85,6 @@ final class AppModel {
     @ObservationIgnored let speechModelManagers: [String: any SpeechModelManaging]
     @ObservationIgnored let ttsRegistry: [String: any TextToSpeechBackend]
     @ObservationIgnored let ttsModelManagers: [String: any SpeechModelManaging]
-    @ObservationIgnored let ttsModelDownloaders: [String: any SpeechModelDownloading]
     @ObservationIgnored var downloadingBackendIDs: Set<String> = []
     @ObservationIgnored var refreshGeneration = 0
     /// Generation counter for `refreshSpeechModels()`, mirroring `refreshGeneration`'s race-safety
@@ -180,7 +179,6 @@ final class AppModel {
             speechModelManagers: runtime.speechIn.speechModelManagers,
             ttsRegistry: runtime.speechOut.ttsRegistry,
             ttsModelManagers: runtime.speechOut.ttsModelManagers,
-            ttsModelDownloaders: runtime.speechOut.ttsModelDownloaders,
             hookEnvelopeReceiver: runtime.integrations.hookEnvelopeReceiver,
             integrationManager: runtime.integrations.integrationManager,
             claudeCodeInstaller: runtime.integrations.claudeCodeInstaller,
@@ -221,7 +219,6 @@ final class AppModel {
         speechModelManagers: [String: any SpeechModelManaging] = [:],
         ttsRegistry: [String: any TextToSpeechBackend] = [:],
         ttsModelManagers: [String: any SpeechModelManaging] = [:],
-        ttsModelDownloaders: [String: any SpeechModelDownloading] = [:],
         hookEnvelopeReceiver: HookEnvelopeReceiver = HookEnvelopeReceiver(),
         integrationManager: IntegrationManager? = nil,
         claudeCodeInstaller: ClaudeCodeInstaller = ClaudeCodeInstaller(),
@@ -256,7 +253,6 @@ final class AppModel {
         self.speechModelManagers = speechModelManagers
         self.ttsRegistry = ttsRegistry
         self.ttsModelManagers = ttsModelManagers
-        self.ttsModelDownloaders = ttsModelDownloaders
         self.hookEnvelopeReceiver = hookEnvelopeReceiver
         self.integrationManager = integrationManager ?? IntegrationManager(
             events: hookEnvelopeReceiver.events,
@@ -308,7 +304,6 @@ final class AppModel {
         speechModelManagers: [String: any SpeechModelManaging],
         ttsRegistry: [String: any TextToSpeechBackend],
         ttsModelManagers: [String: any SpeechModelManaging],
-        ttsModelDownloaders: [String: any SpeechModelDownloading],
         hookEnvelopeReceiver: HookEnvelopeReceiver,
         integrationManager: IntegrationManager,
         claudeCodeInstaller: ClaudeCodeInstaller,
@@ -338,7 +333,6 @@ final class AppModel {
         self.speechModelManagers = speechModelManagers
         self.ttsRegistry = ttsRegistry
         self.ttsModelManagers = ttsModelManagers
-        self.ttsModelDownloaders = ttsModelDownloaders
         self.hookEnvelopeReceiver = hookEnvelopeReceiver
         self.integrationManager = integrationManager
         self.claudeCodeInstaller = claudeCodeInstaller

@@ -23,17 +23,6 @@ struct BackendStatus: Identifiable, Equatable, Sendable {
     var position: Int
 }
 
-/// The seam `AppModel` uses to trigger an explicit, on-device model download for a speech backend
-/// (Parakeet on the STT side; Kokoro/PocketTTS on the TTS side) without depending on the concrete
-/// backend type. Kept separate from `SpeechToTextBackend`/`TextToSpeechBackend` so the routers
-/// never have to know about downloading at all.
-protocol SpeechModelDownloading: Sendable {
-    /// Downloads the backend's model. `progress` is called with a fraction in [0, 1] while the
-    /// download is in flight; it may be called from any queue, in any order, including after the
-    /// call has already completed — callers must tolerate stale or out-of-order ticks.
-    func downloadModels(progress: @escaping @Sendable (Double) -> Void) async throws
-}
-
 /// The result of attempting to enable or disable a backend: either nothing changes (unknown id,
 /// or already in the requested state), the change is refused with a message (disabling the last
 /// enabled backend), or it should be applied as a new order.

@@ -1886,9 +1886,8 @@ private actor FakeMultiModelSpeechModelManager: SpeechModelManaging {
     }
 }
 
-/// A one-model `SpeechModelManaging` fake -- the STT-side counterpart to `FakeTTSModelDownloader`
-/// (still `SpeechModelDownloading`, since TTS backends haven't migrated to the new per-model
-/// protocol). `models()` always reports a single model under `modelID`; `downloadModel` is the
+/// A one-model `SpeechModelManaging` fake. Both STT and TTS backends now use `SpeechModelManaging`
+/// for model management. `models()` always reports a single model under `modelID`; `downloadModel` is the
 /// method under test in every "download" test in this file, and reproduces the exact
 /// progress/blocking/failure behavior the old `FakeSpeechModelDownloader.downloadModels` had, so
 /// every existing assertion (progress ticks, retry after failure, single-flight, stale/late
