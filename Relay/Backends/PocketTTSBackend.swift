@@ -9,7 +9,7 @@ import Foundation
 /// Apple's backend never emits). Unlike `KokoroTTSBackend`, PocketTTS has no speed parameter, so
 /// the shared rate slider (`options.rate`) is ignored here.
 @MainActor
-final class PocketTTSBackend: TextToSpeechBackend {
+final class PocketTTSBackend: TextToSpeechBackend, TTSAudioSourceProducing {
     let id = "pocket-tts"
     let displayName = "PocketTTS"
     let capabilities = TTSCapabilities([
@@ -39,6 +39,29 @@ final class PocketTTSBackend: TextToSpeechBackend {
 
     func setPlaybackEventHandler(_ handler: @escaping @MainActor (TTSPlaybackEvent) -> Void) {
         playbackEventHandler = handler
+    }
+
+    func makeAudioSource(text: String, options: TTSOptions) async throws -> any TTSAudioSource {
+        do {
+            try await engine.load(allowDownload: false)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw Self.mapEngineError(error)
+        }
+
+        let voice = options.pocketVoice ?? PocketTtsConstants.defaultVoice
+        do {
+            let stream = try await engine.synthesizeStream(text: text, voice: voice)
+            return PocketTTSAudioSource(
+                stream: stream,
+                sampleRate: Double(PocketTtsConstants.audioSampleRate)
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw SpeechBackendError.inferenceFailed("PocketTTS synthesis failed")
+        }
     }
 
     func speak(text: String, options: TTSOptions, sessionID: UUID) async throws {

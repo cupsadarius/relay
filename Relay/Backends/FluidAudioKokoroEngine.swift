@@ -6,8 +6,15 @@ import os
 /// FluidAudio's `KokoroAneManager` (a `public actor`, already `Sendable` on its own) behind this
 /// protocol purely as a test seam, so `FluidAudioKokoroEngine`'s loading logic can be exercised
 /// against a fake without constructing real CoreML models.
+struct KokoroPCM: Sendable, Equatable {
+    let samples: [Float]
+    let sampleRate: Double
+}
+
 protocol KokoroModelSession: Sendable {
     func synthesize(text: String, voice: String, speed: Float) async throws -> Data
+    func phonemes(for text: String) async throws -> String
+    func synthesize(phonemes: String, voice: String, speed: Float) async throws -> KokoroPCM
 }
 
 /// Wraps FluidAudio's `KokoroAneManager`/`KokoroAneResourceDownloader` static/instance calls
@@ -46,6 +53,10 @@ enum KokoroEngineError: Error, Equatable, Sendable {
     /// PocketTTS or Apple) instead of failing outright. See the doc comment on
     /// `FluidAudioKokoroEngine` for what a real chunker would need.
     case textTooLong
+    /// A phoneme-safe segment still exceeded Kokoro's baked acoustic-frame cap. Long-form
+    /// synthesis may split this specific size failure further; generic inference failures are
+    /// never retried as though they were length failures.
+    case acousticFramesTooLong
 }
 
 /// The seam between `KokoroTTSBackend` and the underlying Kokoro runtime (FluidAudio in
@@ -65,12 +76,36 @@ protocol KokoroEngine: Sendable {
     /// ~510-phoneme per-call limit - callers must not feed it chunked text themselves without
     /// also handling that case, since there is no built-in chunker to fall back on.
     func synthesize(text: String, voice: String, speed: Float) async throws -> Data
+    /// Resolves exactly the phoneme stream Kokoro would synthesize for `text`.
+    func phonemes(for text: String) async throws -> String
+    /// Synthesizes an already-resolved phoneme segment directly to raw PCM.
+    func synthesize(phonemes: String, voice: String, speed: Float) async throws -> KokoroPCM
 }
 
 extension KokoroEngine {
     /// Convenience overload for callers that don't need download progress.
     func load(allowDownload: Bool) async throws {
         try await load(allowDownload: allowDownload, progress: { _ in })
+    }
+
+    /// Compatibility defaults keep existing engine test fakes source-compatible while the live
+    /// engine adopts the long-form primitives. Any source path using an old fake fails cleanly.
+    func phonemes(for text: String) async throws -> String {
+        throw KokoroEngineError.synthesisFailed
+    }
+
+    func synthesize(phonemes: String, voice: String, speed: Float) async throws -> KokoroPCM {
+        throw KokoroEngineError.synthesisFailed
+    }
+}
+
+extension KokoroModelSession {
+    func phonemes(for text: String) async throws -> String {
+        throw KokoroEngineError.synthesisFailed
+    }
+
+    func synthesize(phonemes: String, voice: String, speed: Float) async throws -> KokoroPCM {
+        throw KokoroEngineError.synthesisFailed
     }
 }
 
@@ -88,18 +123,10 @@ extension KokoroEngine {
 /// what `initialize()` might download would still let a local-only load reach the network on a
 /// partial cache. Only `load(allowDownload: true)` is meant to reach the network.
 ///
-/// **No chunking**: `KokoroAneManager` caps input at ~510 phonemes per call and has no built-in
-/// chunker (splitting text is a text/prosody problem, not something the ANE pipeline can do
-/// safely on its own - see `KokoroAneConstants.maxPhonemeLength`). Rather than silently
-/// truncating or building an ad hoc chunker here, `synthesize` surfaces
-/// `KokoroEngineError.textTooLong` for over-limit input; `KokoroTTSBackend` maps that onto
-/// `SpeechBackendError.inferenceFailed`, which `TTSRouter` already treats as fallback-worthy, so
-/// a Relay install with more than one TTS backend enabled falls through to the next one (e.g.
-/// PocketTTS, which has no such limit, or Apple's system TTS) automatically. A production-grade
-/// fix would instead sentence-chunk the input upstream of this engine (splitting on sentence
-/// boundaries, keeping each chunk under the phoneme cap by phonemizing speculatively via
-/// `KokoroAneManager.phonemes(for:)`) and concatenate the resulting WAV/PCM segments - out of
-/// scope for this spike.
+/// Relay now performs long-form chunking above this engine: the full text is resolved through
+/// `phonemes(for:)`, safe phoneme segments are synthesized through the raw-PCM overload, and a
+/// bounded audio source feeds the shared player. The legacy whole-WAV `synthesize(text:...)`
+/// stays temporarily for the compatibility path while the unified-player migration settles.
 actor FluidAudioKokoroEngine: KokoroEngine {
     /// Which flavor of load is in flight, tracked alongside its task. A caller with a different
     /// `allowDownload` value decides whether to join it, ignore it and start its own, or refuse
@@ -185,6 +212,38 @@ actor FluidAudioKokoroEngine: KokoroEngine {
             throw CancellationError()
         } catch KokoroAneError.phonemeSequenceTooLong {
             throw KokoroEngineError.textTooLong
+        } catch {
+            throw KokoroEngineError.synthesisFailed
+        }
+    }
+
+    func phonemes(for text: String) async throws -> String {
+        guard let session else {
+            throw KokoroEngineError.synthesisFailed
+        }
+
+        do {
+            return try await session.phonemes(for: text)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw KokoroEngineError.synthesisFailed
+        }
+    }
+
+    func synthesize(phonemes: String, voice: String, speed: Float) async throws -> KokoroPCM {
+        guard let session else {
+            throw KokoroEngineError.synthesisFailed
+        }
+
+        do {
+            return try await session.synthesize(phonemes: phonemes, voice: voice, speed: speed)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch KokoroAneError.phonemeSequenceTooLong {
+            throw KokoroEngineError.textTooLong
+        } catch KokoroAneError.acousticFramesExceedCap {
+            throw KokoroEngineError.acousticFramesTooLong
         } catch {
             throw KokoroEngineError.synthesisFailed
         }
@@ -358,5 +417,18 @@ private struct KokoroAneManagerSession: KokoroModelSession {
 
     func synthesize(text: String, voice: String, speed: Float) async throws -> Data {
         try await manager.synthesize(text: text, voice: voice, speed: speed)
+    }
+
+    func phonemes(for text: String) async throws -> String {
+        try await manager.phonemes(for: text)
+    }
+
+    func synthesize(phonemes: String, voice: String, speed: Float) async throws -> KokoroPCM {
+        let result = try await manager.synthesizeFromPhonemesDetailed(
+            phonemes,
+            voice: voice,
+            speed: speed
+        )
+        return KokoroPCM(samples: result.samples, sampleRate: Double(result.sampleRate))
     }
 }

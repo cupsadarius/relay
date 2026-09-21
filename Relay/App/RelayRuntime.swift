@@ -27,11 +27,12 @@ struct SessionServices {
     let focusResolution: any SessionFocusResolving
 }
 
-/// Speech-output services: the TTS backend registry/router pair, the model downloaders for
-/// backends that need one (Kokoro, PocketTTS), the shared `SpeechCoordinator`, and the activity
-/// overlay model/presenter pair the coordinator drives.
+/// Speech-output services: the TTS backend registry/router pair, post-Whisper model managers for
+/// model-backed TTS providers, the temporary legacy-downloader compatibility map, the shared
+/// `SpeechCoordinator`, and the activity overlay model/presenter pair the coordinator drives.
 struct SpeechOutputServices {
     let ttsRegistry: [String: any TextToSpeechBackend]
+    let ttsModelManagers: [String: any SpeechModelManaging]
     let ttsModelDownloaders: [String: any SpeechModelDownloading]
     let speechCoordinator: any SpeechCoordinating
     let overlayModel: ActivityOverlayModel
@@ -200,8 +201,13 @@ final class RelayRuntime {
         let overlayModel = ActivityOverlayModel()
 
         let appleTTS = AppleTTSBackend()
-        let kokoroTTS = KokoroTTSBackend()
-        let pocketTTS = PocketTTSBackend()
+        let kokoroEngine: any KokoroEngine = FluidAudioKokoroEngine()
+        let kokoroTTS = KokoroTTSBackend(engine: kokoroEngine)
+        let kokoroModelManager = KokoroModelManager(engine: kokoroEngine)
+        let pocketEngine: any PocketTTSEngine = FluidAudioPocketTTSEngine()
+        let pocketTTS = PocketTTSBackend(engine: pocketEngine)
+        let pocketModelManager = PocketTTSModelManager(engine: pocketEngine)
+        let sharedTTSPlayer = UnifiedStreamingAudioPlayer()
         let ttsRegistry: [String: any TextToSpeechBackend] = [
             appleTTS.id: appleTTS,
             kokoroTTS.id: kokoroTTS,
@@ -209,7 +215,8 @@ final class RelayRuntime {
         ]
         let router = TTSRouter(
             backends: ttsRegistry,
-            backendOrder: { settingsBox.value.ttsBackendOrder }
+            backendOrder: { settingsBox.value.ttsBackendOrder },
+            sharedPlayer: sharedTTSPlayer
         )
         let coordinator = SpeechCoordinator(
             router: router,
@@ -364,11 +371,14 @@ final class RelayRuntime {
             parakeetModelManager.backendID: parakeetModelManager,
             whisperModelManager.backendID: whisperModelManager,
         ]
-        // Apple never registers a downloader, since it has no model to download.
-        let ttsModelDownloaders: [String: any SpeechModelDownloading] = [
-            kokoroTTS.id: kokoroTTS,
-            pocketTTS.id: pocketTTS,
+        let ttsModelManagers: [String: any SpeechModelManaging] = [
+            kokoroModelManager.backendID: kokoroModelManager,
+            pocketModelManager.backendID: pocketModelManager,
         ]
+        // Production TTS no longer registers the one-model downloader path. Keep the empty map
+        // only for source compatibility with existing test/custom AppModel compositions until
+        // Apple's generated-audio quality gate allows the final compatibility cleanup.
+        let ttsModelDownloaders: [String: any SpeechModelDownloading] = [:]
 
         return RelayRuntime(
             settingsStore: settingsStore,
@@ -388,6 +398,7 @@ final class RelayRuntime {
             ),
             speechOut: SpeechOutputServices(
                 ttsRegistry: ttsRegistry,
+                ttsModelManagers: ttsModelManagers,
                 ttsModelDownloaders: ttsModelDownloaders,
                 speechCoordinator: coordinator,
                 overlayModel: overlayModel,

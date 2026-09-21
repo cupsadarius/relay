@@ -6,7 +6,7 @@ import Foundation
 /// it through a `SynthesizedAudioPlaying` player, forwarding its lifecycle events (including
 /// `.level`, which Apple's backend never emits).
 @MainActor
-final class KokoroTTSBackend: TextToSpeechBackend {
+final class KokoroTTSBackend: TextToSpeechBackend, TTSAudioSourceProducing {
     let id = "kokoro"
     let displayName = "Kokoro"
     let capabilities = TTSCapabilities([
@@ -35,6 +35,36 @@ final class KokoroTTSBackend: TextToSpeechBackend {
 
     func setPlaybackEventHandler(_ handler: @escaping @MainActor (TTSPlaybackEvent) -> Void) {
         playbackEventHandler = handler
+    }
+
+    func makeAudioSource(text: String, options: TTSOptions) async throws -> any TTSAudioSource {
+        do {
+            try await engine.load(allowDownload: false)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw Self.mapEngineError(error)
+        }
+
+        let voice = options.kokoroVoice ?? TtsConstants.recommendedVoice
+        let speed = options.rate / 0.5
+        do {
+            let phonemes = try await engine.phonemes(for: text)
+            let chunks = KokoroPhonemeChunker(
+                preferredTarget: 480,
+                hardMaximum: KokoroAneConstants.maxPhonemeLength
+            ).chunks(from: phonemes)
+            return KokoroTTSAudioSource(
+                engine: engine,
+                chunks: chunks,
+                voice: voice,
+                speed: speed
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw Self.mapEngineError(error)
+        }
     }
 
     func speak(text: String, options: TTSOptions, sessionID: UUID) async throws {
@@ -98,7 +128,9 @@ final class KokoroTTSBackend: TextToSpeechBackend {
             .modelNotDownloaded
         case KokoroEngineError.loadFailed:
             .initializationFailed("Kokoro model load failed")
-        case KokoroEngineError.synthesisFailed:
+        case KokoroEngineError.synthesisFailed,
+             KokoroEngineError.textTooLong,
+             KokoroEngineError.acousticFramesTooLong:
             .inferenceFailed("Kokoro synthesis failed")
         default:
             .initializationFailed("Kokoro model load failed")

@@ -84,6 +84,7 @@ final class AppModel {
     @ObservationIgnored let sttRegistry: [String: any SpeechToTextBackend]
     @ObservationIgnored let speechModelManagers: [String: any SpeechModelManaging]
     @ObservationIgnored let ttsRegistry: [String: any TextToSpeechBackend]
+    @ObservationIgnored let ttsModelManagers: [String: any SpeechModelManaging]
     @ObservationIgnored let ttsModelDownloaders: [String: any SpeechModelDownloading]
     @ObservationIgnored var downloadingBackendIDs: Set<String> = []
     @ObservationIgnored var refreshGeneration = 0
@@ -178,6 +179,7 @@ final class AppModel {
             sttRegistry: runtime.speechIn.sttRegistry,
             speechModelManagers: runtime.speechIn.speechModelManagers,
             ttsRegistry: runtime.speechOut.ttsRegistry,
+            ttsModelManagers: runtime.speechOut.ttsModelManagers,
             ttsModelDownloaders: runtime.speechOut.ttsModelDownloaders,
             hookEnvelopeReceiver: runtime.integrations.hookEnvelopeReceiver,
             integrationManager: runtime.integrations.integrationManager,
@@ -218,6 +220,7 @@ final class AppModel {
         sttRegistry: [String: any SpeechToTextBackend] = [:],
         speechModelManagers: [String: any SpeechModelManaging] = [:],
         ttsRegistry: [String: any TextToSpeechBackend] = [:],
+        ttsModelManagers: [String: any SpeechModelManaging] = [:],
         ttsModelDownloaders: [String: any SpeechModelDownloading] = [:],
         hookEnvelopeReceiver: HookEnvelopeReceiver = HookEnvelopeReceiver(),
         integrationManager: IntegrationManager? = nil,
@@ -252,6 +255,7 @@ final class AppModel {
         self.sttRegistry = sttRegistry
         self.speechModelManagers = speechModelManagers
         self.ttsRegistry = ttsRegistry
+        self.ttsModelManagers = ttsModelManagers
         self.ttsModelDownloaders = ttsModelDownloaders
         self.hookEnvelopeReceiver = hookEnvelopeReceiver
         self.integrationManager = integrationManager ?? IntegrationManager(
@@ -303,6 +307,7 @@ final class AppModel {
         sttRegistry: [String: any SpeechToTextBackend],
         speechModelManagers: [String: any SpeechModelManaging],
         ttsRegistry: [String: any TextToSpeechBackend],
+        ttsModelManagers: [String: any SpeechModelManaging],
         ttsModelDownloaders: [String: any SpeechModelDownloading],
         hookEnvelopeReceiver: HookEnvelopeReceiver,
         integrationManager: IntegrationManager,
@@ -332,6 +337,7 @@ final class AppModel {
         self.sttRegistry = sttRegistry
         self.speechModelManagers = speechModelManagers
         self.ttsRegistry = ttsRegistry
+        self.ttsModelManagers = ttsModelManagers
         self.ttsModelDownloaders = ttsModelDownloaders
         self.hookEnvelopeReceiver = hookEnvelopeReceiver
         self.integrationManager = integrationManager
