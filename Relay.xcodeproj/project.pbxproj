@@ -77,6 +77,7 @@
 		5A940B7CDFFD5E197ACA7422 /* ActivityOverlayWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2945AA36C2854FD4A7C9469 /* ActivityOverlayWindowController.swift */; };
 		5AEB040E011549C43640F5CA /* ActivityOverlayPanelHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032A9782E9C2C931DFB89322 /* ActivityOverlayPanelHost.swift */; };
 		5BB20F6CC812C4783D7205B6 /* GlobalHotkeyManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CE61334B063F0337C2E6BB7 /* GlobalHotkeyManagerTests.swift */; };
+		5C6CFFDE1506A36D24B63E29 /* SpeechModelControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0A3ADFA84D5EF795F23DF2F /* SpeechModelControllerTests.swift */; };
 		5DFE942299A26F7BEA31560A /* MicrophoneCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90563D92C2FAAA30698339C5 /* MicrophoneCapture.swift */; };
 		5E3C0D7C2CEA693C9285FCCC /* AgentSessionRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66FC6B9D3FF3241E9F3B71E1 /* AgentSessionRegistry.swift */; };
 		5F9951BF827C08A326E03030 /* HelperInstallerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED3BD3F00D312429300E274A /* HelperInstallerTests.swift */; };
@@ -141,6 +142,7 @@
 		AC049B62E4684DDDE0ABB970 /* ClaudeCodeIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C055D5BF893F187719EF44 /* ClaudeCodeIntegration.swift */; };
 		AC21C5CAF0A02A9029C1127C /* UnixSocketServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91ED1D7A6F95F0D69DB81AEF /* UnixSocketServer.swift */; };
 		ACDE15917036721CB1E97F72 /* WhisperModelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CBE40EFE5F3963B9976AA13 /* WhisperModelStore.swift */; };
+		ACF9928864FA603052194AC3 /* SpeechModelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C548A33FC956251EDBE84B56 /* SpeechModelController.swift */; };
 		ACFC8944BA869D288E5454C0 /* KokoroModelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35C53E7EC33ADB0644A90797 /* KokoroModelManager.swift */; };
 		AF4EAB5EC47262D70DE776AC /* SettingsViewsSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE11899BF95D51FEF77A4A4C /* SettingsViewsSmokeTests.swift */; };
 		B0895093AA56F05821B4493E /* WhisperBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9200D8D23AD5235ED457245 /* WhisperBackendTests.swift */; };
@@ -377,6 +379,7 @@
 		C211838CBF61D21F08089E93 /* StreamingTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingTranscriber.swift; sourceTree = "<group>"; };
 		C32FF9C1F2EBE4E2345AF573 /* TerminalContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalContext.swift; sourceTree = "<group>"; };
 		C52A3EAD989A599CE25D4ED4 /* PCMFramer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PCMFramer.swift; sourceTree = "<group>"; };
+		C548A33FC956251EDBE84B56 /* SpeechModelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechModelController.swift; sourceTree = "<group>"; };
 		C9310CC2B63FAED92154DB23 /* SelectionReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionReader.swift; sourceTree = "<group>"; };
 		C946F6D8E4671F893A836DF2 /* TTSBackendCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSBackendCatalog.swift; sourceTree = "<group>"; };
 		CA7F679F877AB1E080B262A1 /* SpeechModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechModels.swift; sourceTree = "<group>"; };
@@ -398,6 +401,7 @@
 		DCE828C9DB3F9860FC01EF8E /* TTSAudioPipe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSAudioPipe.swift; sourceTree = "<group>"; };
 		DDE382A48C3099EB2F2FC565 /* ProcessInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessInspector.swift; sourceTree = "<group>"; };
 		E07986CA871BE584821FE608 /* HerdrModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HerdrModels.swift; sourceTree = "<group>"; };
+		E0A3ADFA84D5EF795F23DF2F /* SpeechModelControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechModelControllerTests.swift; sourceTree = "<group>"; };
 		E1051DD5EB76A94B3E60AA1D /* SpeechModelManaging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechModelManaging.swift; sourceTree = "<group>"; };
 		E23CDA4357CD8BC474D788F1 /* RelayRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRuntime.swift; sourceTree = "<group>"; };
 		E2E464DE9B8D3EF3FBAF0A9E /* SpeechCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechCoordinator.swift; sourceTree = "<group>"; };
@@ -454,6 +458,7 @@
 				F5BF4958844B2771537AF08D /* AppModelTests.swift */,
 				9591DD93C5918B2635CFBFDF /* InterimTextDiffTests.swift */,
 				AE11899BF95D51FEF77A4A4C /* SettingsViewsSmokeTests.swift */,
+				E0A3ADFA84D5EF795F23DF2F /* SpeechModelControllerTests.swift */,
 				5DED03634A55B66FBCED816D /* TTSBackendCatalogTests.swift */,
 				89DD937CF0E308FBD09824BE /* TTSMigrationProductionWiringTests.swift */,
 				035CD1C6FBA0F8F91F652E6F /* WindowFocusCoordinatorTests.swift */,
@@ -686,6 +691,7 @@
 				E23CDA4357CD8BC474D788F1 /* RelayRuntime.swift */,
 				9A2D71436EB216912EA0F366 /* RelayWindowTagger.swift */,
 				939E4B16B30B18A7F7A66345 /* SpeechBackendCatalog.swift */,
+				C548A33FC956251EDBE84B56 /* SpeechModelController.swift */,
 				C946F6D8E4671F893A836DF2 /* TTSBackendCatalog.swift */,
 				1F90592F0F4CAEF1DF31EC85 /* WindowFocusCoordinator.swift */,
 				F80ADB4C2E35962B077F6A82 /* Settings */,
@@ -1106,6 +1112,7 @@
 				70155993155C43ABD4EACFE4 /* SpeechBackendContractsTests.swift in Sources */,
 				C5FAB2BF576BBC52717C7E8E /* SpeechCoordinatorTests.swift in Sources */,
 				F0D6CCF2CC789848B54BA388 /* SpeechCoordinatorWatchdogTests.swift in Sources */,
+				5C6CFFDE1506A36D24B63E29 /* SpeechModelControllerTests.swift in Sources */,
 				7D04E84081221327DDB31323 /* SpeechModelManagingTests.swift in Sources */,
 				4E17960F53595769C23FFCC5 /* StreamingAudioPlayerTests.swift in Sources */,
 				4755E91C42C75F1349BA5D68 /* StreamingTranscriberTests.swift in Sources */,
@@ -1229,6 +1236,7 @@
 				1BAF0FCF7F0F72251EE22A7D /* SpeechBackendCatalog.swift in Sources */,
 				740BAC00FB22AFBE28844B6E /* SpeechBackendError.swift in Sources */,
 				D3DF712D1B92B3D921467185 /* SpeechCoordinator.swift in Sources */,
+				ACF9928864FA603052194AC3 /* SpeechModelController.swift in Sources */,
 				A6E1A60876F04F0F1C465F34 /* SpeechModelManaging.swift in Sources */,
 				131B33B0A7200D30823A1201 /* SpeechModels.swift in Sources */,
 				010EFDE2D6C4A73206572BBE /* SpeechToTextBackend.swift in Sources */,

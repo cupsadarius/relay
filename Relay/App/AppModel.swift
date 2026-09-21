@@ -85,6 +85,7 @@ final class AppModel {
     @ObservationIgnored let speechModelManagers: [String: any SpeechModelManaging]
     @ObservationIgnored let ttsRegistry: [String: any TextToSpeechBackend]
     @ObservationIgnored let ttsModelManagers: [String: any SpeechModelManaging]
+    @ObservationIgnored let modelController: SpeechModelController
     @ObservationIgnored var downloadingBackendIDs: Set<String> = []
     @ObservationIgnored var refreshGeneration = 0
     /// Generation counter for `refreshSpeechModels()`, mirroring `refreshGeneration`'s race-safety
@@ -253,6 +254,10 @@ final class AppModel {
         self.speechModelManagers = speechModelManagers
         self.ttsRegistry = ttsRegistry
         self.ttsModelManagers = ttsModelManagers
+        self.modelController = SpeechModelController(
+            managers: Self.modelManagers(dictation: speechModelManagers, textToSpeech: ttsModelManagers),
+            diagnostics: diagnostics
+        )
         self.hookEnvelopeReceiver = hookEnvelopeReceiver
         self.integrationManager = integrationManager ?? IntegrationManager(
             events: hookEnvelopeReceiver.events,
@@ -277,11 +282,18 @@ final class AppModel {
         self.settings = settings
         let state = SettingsBox(settings)
         settingsState = state
+        configureModelController()
         registerHotkeys()
         observeAppActivation()
         bindOverlayPresenter()
-        initialSpeechBackendRefresh = Task { [weak self] in await self?.refreshSpeechBackendStatuses() }
-        initialTTSBackendRefresh = Task { [weak self] in await self?.refreshTTSBackendStatuses() }
+        initialSpeechBackendRefresh = Task { [weak self] in
+            await self?.refreshSpeechBackendStatuses()
+            await self?.modelController.refresh(domain: .dictation)
+        }
+        initialTTSBackendRefresh = Task { [weak self] in
+            await self?.refreshTTSBackendStatuses()
+            await self?.modelController.refresh(domain: .textToSpeech)
+        }
     }
 
     private init(
@@ -333,6 +345,10 @@ final class AppModel {
         self.speechModelManagers = speechModelManagers
         self.ttsRegistry = ttsRegistry
         self.ttsModelManagers = ttsModelManagers
+        self.modelController = SpeechModelController(
+            managers: Self.modelManagers(dictation: speechModelManagers, textToSpeech: ttsModelManagers),
+            diagnostics: diagnostics
+        )
         self.hookEnvelopeReceiver = hookEnvelopeReceiver
         self.integrationManager = integrationManager
         self.claudeCodeInstaller = claudeCodeInstaller
@@ -351,11 +367,50 @@ final class AppModel {
         launchAtLoginEnabled = loginItemService.isEnabled
         settings = loadedSettings
         self.settingsState = settingsState
+        configureModelController()
         registerHotkeys()
         observeAppActivation()
         bindOverlayPresenter()
-        initialSpeechBackendRefresh = Task { [weak self] in await self?.refreshSpeechBackendStatuses() }
-        initialTTSBackendRefresh = Task { [weak self] in await self?.refreshTTSBackendStatuses() }
+        initialSpeechBackendRefresh = Task { [weak self] in
+            await self?.refreshSpeechBackendStatuses()
+            await self?.modelController.refresh(domain: .dictation)
+        }
+        initialTTSBackendRefresh = Task { [weak self] in
+            await self?.refreshTTSBackendStatuses()
+            await self?.modelController.refresh(domain: .textToSpeech)
+        }
+    }
+
+    private static func modelManagers(
+        dictation: [String: any SpeechModelManaging],
+        textToSpeech: [String: any SpeechModelManaging]
+    ) -> SpeechModelController.Managers {
+        var result: SpeechModelController.Managers = [:]
+        for (backendID, manager) in dictation {
+            result[SpeechModelBackendKey(domain: .dictation, backendID: backendID)] = manager
+        }
+        for (backendID, manager) in textToSpeech {
+            result[SpeechModelBackendKey(domain: .textToSpeech, backendID: backendID)] = manager
+        }
+        return result
+    }
+
+    private func configureModelController() {
+        modelController.configureHooks(
+            refreshBackends: { [weak self] domain in
+                switch domain {
+                case .dictation:
+                    await self?.refreshSpeechBackendStatuses()
+                case .textToSpeech:
+                    await self?.refreshTTSBackendStatuses()
+                }
+            },
+            beforeRemoval: { [weak self] key in
+                if key.domain == .textToSpeech {
+                    self?.speechCoordinator.stop()
+                }
+            }
+        )
     }
 
     func setHotkey(_ definition: HotkeyDefinition, for action: HotkeyAction) {

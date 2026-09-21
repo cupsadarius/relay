@@ -14,6 +14,10 @@ enum DiagnosticsEvent: Equatable, Sendable {
     case speechModelDownloadStarted(backendID: String)
     case speechModelDownloadFinished(backendID: String)
     case speechModelDownloadFailed(backendID: String)
+    case speechModelSelectionFinished(backendID: String)
+    case speechModelSelectionFailed(backendID: String)
+    case speechModelRemovalFinished(backendID: String)
+    case speechModelRemovalFailed(backendID: String)
     /// Settings failed to decode even after per-field resilience (the saved blob wasn't a
     /// decodable settings object at all — e.g. not JSON, or not a JSON object). Carries only the
     /// byte count of the blob that failed: never its contents, never the raw decode error, which
@@ -54,6 +58,14 @@ enum DiagnosticsEvent: Equatable, Sendable {
             "\(Self.speechBackendDisplayName(backendID)) model download finished"
         case let .speechModelDownloadFailed(backendID):
             "\(Self.speechBackendDisplayName(backendID)) model download failed"
+        case let .speechModelSelectionFinished(backendID):
+            "\(Self.speechBackendDisplayName(backendID)) model selection finished"
+        case let .speechModelSelectionFailed(backendID):
+            "\(Self.speechBackendDisplayName(backendID)) model selection failed"
+        case let .speechModelRemovalFinished(backendID):
+            "\(Self.speechBackendDisplayName(backendID)) model removal finished"
+        case let .speechModelRemovalFailed(backendID):
+            "\(Self.speechBackendDisplayName(backendID)) model removal failed"
         case let .settingsDecodeFailed(byteCount):
             "Settings failed to decode (\(byteCount) bytes); restored defaults, blob preserved for recovery"
         }
