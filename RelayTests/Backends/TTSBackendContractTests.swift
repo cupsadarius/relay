@@ -213,6 +213,12 @@ private final class FakeContractStreamingPlayer: StreamingAudioPlaying {
         onEvent?(.started(sessionID: sessionID))
     }
 
+    func startPlayback(_ source: any TTSAudioSource, sessionID: UUID) async throws {
+        while try await source.next() != nil {}
+        onEvent?(.scheduled(sessionID: sessionID))
+        onEvent?(.started(sessionID: sessionID))
+    }
+
     func emitFinished(sessionID: UUID) {
         onEvent?(.finished(sessionID: sessionID))
     }

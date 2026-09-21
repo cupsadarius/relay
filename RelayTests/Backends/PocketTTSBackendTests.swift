@@ -416,6 +416,20 @@ private final class FakePlayer: StreamingAudioPlaying {
         }
     }
 
+    func startPlayback(_ source: any TTSAudioSource, sessionID: UUID) async throws {
+        var received: [[Float]] = []
+        while let frame = try await source.next() {
+            received.append(frame.samples)
+        }
+        playCalls.append((received, 0, sessionID))
+        if let playError {
+            throw playError
+        }
+        for event in emitOnPlay {
+            onEvent?(event)
+        }
+    }
+
     func stop() { stopCallCount += 1 }
     func pause() { pauseCallCount += 1 }
     func resume() { resumeCallCount += 1 }

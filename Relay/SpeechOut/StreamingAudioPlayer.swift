@@ -1,34 +1,81 @@
 import AVFoundation
 import Foundation
 
-/// Seam over `StreamingAudioPlayer` so `PocketTTSBackend` can be tested without exercising a real
-/// `AVAudioEngine`. Mirrors `SynthesizedAudioPlaying`'s shape, but `startPlayback` takes a live
-/// frame stream plus the source sample rate instead of a complete WAV `Data` value, since
-/// PocketTTS streaming yields raw Float32 frames rather than a finished file.
+/// The single production playback seam. `TTSRouter` drives one shared player for every provider:
+/// a backend produces a provider-neutral `TTSAudioSource`, the player pulls PCM frames from it,
+/// converts them to the output device format, and schedules them - emitting the standard
+/// `TTSPlaybackEvent` lifecycle (`scheduled -> started -> level* -> finished|cancelled|failed`).
+///
+/// `startPlayback(_:sessionID:)` returns as soon as playback has actually started (after
+/// prebuffering, or immediately once an empty/short source ends before reaching the prebuffer
+/// threshold) - never waiting for the terminal event, which is delivered later through `onEvent`.
+/// It THROWS (emitting no terminal event) only when playback never started, so `TTSRouter` can
+/// fall back to the next backend. Once `.started` has fired the router is committed: a later
+/// source failure drains already-scheduled audio and ends the session as `.failed` rather than
+/// restarting it elsewhere.
 @MainActor
 protocol StreamingAudioPlaying: AnyObject {
     var onEvent: (@MainActor (TTSPlaybackEvent) -> Void)? { get set }
-    /// Starts consuming `frames` and RETURNS as soon as playback has actually started (after
-    /// prebuffering, or immediately once the source ends if it never reached the prebuffer
-    /// threshold) - never waiting for it to finish. `.scheduled` is emitted synchronously before
-    /// this returns; `.started` is emitted once buffered audio actually begins playing, which may
-    /// require awaiting real prebuffering time. The terminal event (`.finished`/`.cancelled`/
-    /// `.failed`) is always reported later, asynchronously, through `onEvent` - draining the rest
-    /// of `frames` continues in the background after this returns. Throws (emitting no TERMINAL
-    /// event - `.scheduled` is still emitted synchronously before the throw can occur) only if
-    /// playback never started, e.g. the engine could not be configured or the source stream
-    /// failed before any audio played.
+    func startPlayback(_ source: any TTSAudioSource, sessionID: UUID) async throws
+    /// Legacy raw-frame entry point retained during the migration for the PocketTTS streaming
+    /// call site and its real-engine tests. It is a thin adapter over `startPlayback(_:sessionID:)`
+    /// and carries no playback logic of its own; it is removed once every backend produces a
+    /// `TTSAudioSource`.
     func startPlayback(_ frames: AsyncThrowingStream<[Float], Error>, sampleRate: Double, sessionID: UUID) async throws
     func stop()
     func pause()
     func resume()
 }
 
-/// Carries the mutable "already provided input" flag and the source buffer across the boundary
-/// into `AVAudioConverter`'s `@Sendable`-imported input block, which `convert(to:error:
-/// withInputFrom:)` in fact only ever calls synchronously on the calling thread. `@unchecked`
-/// because that synchronous contract is what actually makes it safe, not anything the type system
-/// can verify.
+/// The audio-output device seam. Production wraps `AVAudioEngine`/`AVAudioPlayerNode`; tests inject
+/// a fake that reports a real `AVAudioFormat` (so conversion runs) and lets the test fire
+/// buffer-played callbacks deterministically (so demand-bounded scheduling can be verified without
+/// a real audio device).
+@MainActor
+protocol AudioOutputNode: AnyObject {
+    var outputFormat: AVAudioFormat { get }
+    func start() throws
+    func play()
+    func pause()
+    func stop()
+    func schedule(_ buffer: AVAudioPCMBuffer, onPlayed: @escaping @Sendable @MainActor () -> Void)
+}
+
+/// Production `AudioOutputNode`: one `AVAudioPlayerNode` connected to the main mixer at the mixer's
+/// own output format, so the realtime render loop never resamples (every incoming frame is
+/// converted to `outputFormat` up front, off the render thread).
+@MainActor
+final class AVEngineOutputNode: AudioOutputNode {
+    private let engine = AVAudioEngine()
+    private let playerNode = AVAudioPlayerNode()
+    let outputFormat: AVAudioFormat
+
+    init() {
+        engine.attach(playerNode)
+        outputFormat = engine.mainMixerNode.outputFormat(forBus: 0)
+        engine.connect(playerNode, to: engine.mainMixerNode, format: outputFormat)
+    }
+
+    func start() throws { try engine.start() }
+    func play() { playerNode.play() }
+    func pause() { playerNode.pause() }
+
+    func stop() {
+        playerNode.stop()
+        engine.stop()
+    }
+
+    func schedule(_ buffer: AVAudioPCMBuffer, onPlayed: @escaping @Sendable @MainActor () -> Void) {
+        playerNode.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { _ in
+            Task { @MainActor in onPlayed() }
+        }
+    }
+}
+
+/// Carries the mutable "already provided input" flag and the source buffer across the boundary into
+/// `AVAudioConverter`'s `@Sendable`-imported input block, which `convert(to:error:withInputFrom:)`
+/// in fact only ever calls synchronously on the calling thread. `@unchecked` because that
+/// synchronous contract is what actually makes it safe, not anything the type system can verify.
 private final class ConversionInputState: @unchecked Sendable {
     var providedInput = false
     let sourceBuffer: AVAudioPCMBuffer
@@ -41,291 +88,335 @@ private final class ConversionInputState: @unchecked Sendable {
 /// Errors raised by `StreamingAudioPlayer` itself (as opposed to ones AVFoundation raises while
 /// building the engine graph or converting a buffer, which are propagated as-is).
 enum StreamingAudioPlayerError: Error, Equatable, Sendable {
-    /// The source sample rate could not be represented as a valid `AVAudioFormat`.
     case invalidSourceFormat
-    /// `AVAudioConverter` could not be constructed for the source -> output format pair.
+    case unsupportedChannelCount(Int)
     case converterCreationFailed
-    /// A `AVAudioPCMBuffer` could not be allocated for an incoming or converted frame. Should not
-    /// happen in practice; guards a force-unwrap.
     case bufferAllocationFailed
-    /// `AVAudioConverter.convert(to:error:withInputFrom:)` reported an error without producing a
-    /// more specific one of its own.
     case conversionFailed
 }
 
-/// Plays a live stream of raw Float32 audio frames (as `FluidAudioPocketTTSEngine.synthesizeStream`
-/// yields) through an `AVAudioEngine` / `AVAudioPlayerNode` graph, emitting the same
-/// `TTSPlaybackEvent` lifecycle `SynthesizedAudioPlayer` emits for the whole-WAV Kokoro/Apple
-/// path, so `PocketTTSBackend` can start playback within a fraction of a second of the first
-/// frame instead of waiting for synthesis of the entire utterance to finish.
-///
-/// This is a NEW type, not a replacement for `SynthesizedAudioPlayer` (which stays exactly as-is
-/// for Kokoro and Apple). It exists because those two hard-won lessons from
-/// `SynthesizedAudioPlayer`'s history do not simply carry over to a *streaming* source:
-///
-/// 1. **No realtime tap.** An earlier `SynthesizedAudioPlayer` drove `.level` off a realtime
-///    `AVAudioPlayerNode` tap that allocated a `Task` per callback on the audio render thread,
-///    causing periodic pulsing/dropouts. This player never installs a tap; `.level` is computed
-///    up front per frame (`level(forFrame:)`) and walked by a `MainActor` timer instead, exactly
-///    like `SynthesizedAudioPlayer.startLevelTimer`.
-/// 2. **No render-loop resampling.** Playing 24kHz buffers through a player node connected to
-///    `mainMixerNode` at 24kHz, letting the engine resample to the hardware rate inside its
-///    realtime render loop, garbled playback. Here the player node is connected to the mixer at
-///    the mixer's own output format, and every incoming frame is converted from the source rate
-///    to that output format up front via `AVAudioConverter`, on the `MainActor`, before it is
-///    ever scheduled - the render loop itself does no resampling.
 @MainActor
 final class StreamingAudioPlayer: StreamingAudioPlaying {
+    private struct PendingBuffer {
+        let buffer: AVAudioPCMBuffer
+        let duration: TimeInterval
+        let level: Float
+    }
+
     /// Matches `SynthesizedAudioPlayer.levelGain` so the pill's speaking waveform behaves
     /// identically whichever backend is feeding it.
     private static nonisolated let levelGain: Float = 4
     /// How much audio to buffer before starting playback, trading a little latency for headroom
     /// against synthesis briefly falling behind real time.
     private static let prebufferSeconds: TimeInterval = 0.6
-    /// Samples per frame in FluidAudio's PocketTTS streaming contract (80ms at 24kHz). Used only
-    /// to derive `frameDurationSeconds` from the caller's `sampleRate`; if a future source frame
-    /// happens to carry a different sample count, `.level` timing degrades gracefully (it just
-    /// drifts) rather than crashing.
-    private static let frameSampleCount = 1_920
+    /// The scheduled-ahead ceiling. The player stops pulling the source once this much converted
+    /// audio is scheduled but not yet played, so upstream backpressure reflects real audio ahead of
+    /// playback instead of letting the whole response accumulate inside `AVAudioPlayerNode`.
+    private static let maxScheduledAheadSeconds: TimeInterval = 1.5
 
     var onEvent: (@MainActor (TTSPlaybackEvent) -> Void)?
 
-    private var engine: AVAudioEngine?
-    private var playerNode: AVAudioPlayerNode?
+    private let makeOutputNode: @MainActor () -> any AudioOutputNode
+
+    private var outputNode: (any AudioOutputNode)?
     private var converter: AVAudioConverter?
-    private var sourceFormat: AVAudioFormat?
-    private var outputFormat: AVAudioFormat?
+    private var converterInputFormat: TTSAudioFormat?
 
     private var currentSessionID: UUID?
-    /// Set by `stop()` before tearing playback down, so a buffer-completion callback that fires
-    /// after an explicit stop (harmless, racy) knows not to also emit `.finished`.
-    private var didStopExplicitly = false
-    /// Resumed once playback has actually started (or, if that never happens, once starting it
-    /// definitively fails) so `startPlayback` can return without waiting for a terminal state.
-    /// Resumed successfully (never throwing) by a mid-prebuffer `stop()`, mirroring how `stop()`
-    /// always lets an in-flight call return normally rather than throw. `nil` once resumed -
-    /// draining `frames` and scheduling buffers continues in `pumpTask` after that.
-    private var startContinuation: CheckedContinuation<Void, Error>?
-    /// Drains `frames`, converts and schedules buffers, and drives the terminal event - running
-    /// independently of (and outliving) the `startPlayback` call that spawned it.
+    private var activeSource: (any TTSAudioSource)?
     private var pumpTask: Task<Void, Never>?
+    private var startContinuation: CheckedContinuation<Void, Error>?
+    private var capacityWaiters: [CheckedContinuation<Void, Never>] = []
 
-    /// Buffers accumulated before the prebuffer threshold is reached and playback actually starts.
-    private var pendingBuffers: [AVAudioPCMBuffer] = []
-    private var bufferedSeconds: TimeInterval = 0
-    private var started = false
-    /// True once the frame stream has yielded its last element (successfully). Playback is only
-    /// ever considered `.finished` once this is true AND every scheduled buffer has finished
-    /// playing back.
-    private var sourceFinished = false
+    private var pending: [PendingBuffer] = []
+    private var pendingDuration: TimeInterval = 0
+    private var scheduledDuration: TimeInterval = 0
+    private var playedDuration: TimeInterval = 0
     private var scheduledCount = 0
     private var playedCount = 0
+    private var sourceFinished = false
+    private var sourceFailure: (any Error)?
+    private var started = false
+    private var explicitlyStopped = false
 
-    /// One entry per frame, in arrival order, computed by `level(forFrame:)`. Walked by
-    /// `levelTask` against elapsed playback time to emit `.level` events.
-    private var levels: [Float] = []
-    private var frameDurationSeconds: TimeInterval = Double(frameSampleCount) / 24_000
-    private var levelTask: Task<Void, Never>?
-    private var levelClockStart: Date?
-    private var levelPausedElapsed: TimeInterval = 0
-    private var levelPausedAt: Date?
+    init(makeOutputNode: @escaping @MainActor () -> any AudioOutputNode = { AVEngineOutputNode() }) {
+        self.makeOutputNode = makeOutputNode
+    }
 
-    func startPlayback(_ frames: AsyncThrowingStream<[Float], Error>, sampleRate: Double, sessionID: UUID) async throws {
+    func startPlayback(_ source: any TTSAudioSource, sessionID: UUID) async throws {
         // Guards against leaking a previous call's continuation if this player is (unexpectedly)
-        // asked to start a new session while a prior `startPlayback` is still awaiting its own
-        // start - `tearDownPlayback()` below cancels that prior session's `pumpTask` without
-        // itself resolving its continuation.
+        // asked to start a new session while a prior `startPlayback` is still awaiting its start.
         resumeStart(throwing: CancellationError())
-        tearDownPlayback()
-        try setUpEngine(sampleRate: sampleRate)
+        tearDownPlayback(cancelSource: true)
 
         currentSessionID = sessionID
-        didStopExplicitly = false
+        activeSource = source
         sourceFinished = false
+        sourceFailure = nil
+        pending = []
+        pendingDuration = 0
+        scheduledDuration = 0
+        playedDuration = 0
         scheduledCount = 0
         playedCount = 0
-        levels = []
-        pendingBuffers = []
-        bufferedSeconds = 0
         started = false
-        frameDurationSeconds = Double(Self.frameSampleCount) / sampleRate
+        explicitlyStopped = false
 
         onEvent?(.scheduled(sessionID: sessionID))
 
-        // Resumed by `beginScheduledPlayback` once audio actually starts playing, by `stop()` if
-        // playback is cancelled before that ever happens, or by `handlePumpFailure` if the source
-        // fails before that ever happens. Draining the rest of `frames` and scheduling buffers
-        // continues in `pumpTask` after this returns - `startPlayback` never waits for a terminal
-        // event.
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             startContinuation = continuation
             pumpTask = Task { @MainActor [weak self] in
-                await self?.pump(frames, sampleRate: sampleRate, sessionID: sessionID)
+                await self?.pump(source, sessionID: sessionID)
             }
         }
     }
 
-    /// Drains `frames`, converting and scheduling (or prebuffering) each one, exactly like the
-    /// old synchronous `play(_:sampleRate:sessionID:)` body did - except this runs in its own
-    /// `Task` so it can keep going after `startPlayback` has already returned to its caller.
-    private func pump(_ frames: AsyncThrowingStream<[Float], Error>, sampleRate: Double, sessionID: UUID) async {
-        do {
-            for try await samples in frames {
-                guard currentSessionID == sessionID else { return }
-                guard !samples.isEmpty else { continue }
-
-                let convertedBuffer = try convert(samples)
-                levels.append(Self.level(forFrame: samples))
-
-                if started {
-                    schedule(convertedBuffer, sessionID: sessionID)
-                } else {
-                    pendingBuffers.append(convertedBuffer)
-                    bufferedSeconds += Double(convertedBuffer.frameLength) / (outputFormat?.sampleRate ?? sampleRate)
-                    if bufferedSeconds >= Self.prebufferSeconds {
-                        try beginScheduledPlayback(sessionID: sessionID)
-                    }
-                }
-            }
-        } catch {
-            handlePumpFailure(error, sessionID: sessionID)
-            return
-        }
-
-        guard currentSessionID == sessionID else { return }
-
-        sourceFinished = true
-        if !started {
-            do {
-                try beginScheduledPlayback(sessionID: sessionID)
-            } catch {
-                handlePumpFailure(error, sessionID: sessionID)
-                return
-            }
-        }
-
-        checkForCompletion(sessionID: sessionID)
-    }
-
-    /// A `frames` failure (including `CancellationError`) or an engine-start failure encountered
-    /// by `pump`. Before playback ever started, this resolves the still-pending `startContinuation`
-    /// by throwing - the same shape `speak()`'s callers already map to a fallback-worthy error, and
-    /// no terminal event is emitted (mirroring `SynthesizedAudioPlayer`, where a decode failure
-    /// emits none either). Once playback had already started (and `startContinuation` already
-    /// resumed successfully), there is no one left awaiting a throw, so this reports the failure
-    /// as a `.failed` terminal event instead.
-    private func handlePumpFailure(_ error: Error, sessionID: UUID) {
-        guard currentSessionID == sessionID, !didStopExplicitly else {
-            // Superseded (a newer `startPlayback` already tore this session down and installed
-            // its own `startContinuation`) or already stopped (`stop()` already resolved THIS
-            // session's continuation). Either way, this session's own continuation was already
-            // resolved elsewhere - any continuation pending now belongs to a NEWER session, so it
-            // must never be touched here. Resuming it with this (stale) session's error would
-            // spuriously fail/throw for the newer session while its own pump keeps running
-            // orphaned.
-            return
-        }
-        let hadStarted = started
-        tearDownPlayback()
-        currentSessionID = nil
-        if hadStarted {
-            onEvent?(.failed(sessionID: sessionID))
-        }
-        resumeStart(throwing: error)
-    }
-
-    private func resumeStart() {
-        guard let continuation = startContinuation else { return }
-        startContinuation = nil
-        continuation.resume()
-    }
-
-    private func resumeStart(throwing error: Error) {
-        guard let continuation = startContinuation else { return }
-        startContinuation = nil
-        continuation.resume(throwing: error)
+    func startPlayback(_ frames: AsyncThrowingStream<[Float], Error>, sampleRate: Double, sessionID: UUID) async throws {
+        let source = LegacyFloatStreamAudioSource(frames: frames, sampleRate: sampleRate)
+        try await startPlayback(source, sessionID: sessionID)
     }
 
     func stop() {
         guard let sessionID = currentSessionID else { return }
-        didStopExplicitly = true
-        tearDownPlayback()
+        explicitlyStopped = true
+        let source = activeSource
+        tearDownPlayback(cancelSource: false)
         currentSessionID = nil
-        onEvent?(.cancelled(sessionID: sessionID))
-        // A stop before playback ever started still lets `startPlayback` return normally, exactly
-        // like a stop mid-playback lets it return normally rather than throw.
+        activeSource = nil
         resumeStart()
+        onEvent?(.cancelled(sessionID: sessionID))
+        if let source {
+            Task { await source.cancel() }
+        }
     }
 
     func pause() {
-        playerNode?.pause()
-        pauseLevelClock()
+        outputNode?.pause()
     }
 
     func resume() {
-        playerNode?.play()
-        resumeLevelClock()
+        outputNode?.play()
     }
 
-    // MARK: - Engine setup
+    // MARK: - Pump
 
-    private func setUpEngine(sampleRate: Double) throws {
-        guard
-            let sourceFormat = AVAudioFormat(
-                commonFormat: .pcmFormatFloat32,
-                sampleRate: sampleRate,
-                channels: 1,
-                interleaved: false
-            )
-        else {
+    private func pump(_ source: any TTSAudioSource, sessionID: UUID) async {
+        do {
+            while let frame = try await source.next() {
+                guard currentSessionID == sessionID, !explicitlyStopped else { return }
+                guard !frame.samples.isEmpty else { continue }
+
+                let converted = try convert(frame)
+                let pendingBuffer = PendingBuffer(
+                    buffer: converted,
+                    duration: Double(converted.frameLength) / converted.format.sampleRate,
+                    level: Self.level(forFrame: frame.samples)
+                )
+
+                if started {
+                    await waitForSchedulingCapacity(sessionID: sessionID)
+                    guard currentSessionID == sessionID, !explicitlyStopped else { return }
+                    schedule(pendingBuffer, sessionID: sessionID)
+                } else {
+                    pending.append(pendingBuffer)
+                    pendingDuration += pendingBuffer.duration
+                    if pendingDuration >= Self.prebufferSeconds {
+                        try beginPlayback(sessionID: sessionID)
+                    }
+                }
+            }
+        } catch is CancellationError {
+            guard currentSessionID == sessionID, !explicitlyStopped else { return }
+            handleSourceFailure(CancellationError(), sessionID: sessionID)
+            return
+        } catch {
+            guard currentSessionID == sessionID, !explicitlyStopped else { return }
+            handleSourceFailure(error, sessionID: sessionID)
+            return
+        }
+
+        guard currentSessionID == sessionID else { return }
+        sourceFinished = true
+        if !started {
+            do {
+                try beginPlayback(sessionID: sessionID)
+            } catch {
+                handleSourceFailure(error, sessionID: sessionID)
+                return
+            }
+        }
+        checkForCompletion(sessionID: sessionID)
+    }
+
+    /// A source failure (including `CancellationError`) or an engine-start failure. Before playback
+    /// started, resolves the still-pending `startContinuation` by throwing (no terminal event) - the
+    /// shape `TTSRouter` maps to a fallback-worthy error. Once playback has started there is no one
+    /// awaiting a throw, so the failure is remembered and reported as `.failed` only after already
+    /// scheduled valid audio has drained.
+    private func handleSourceFailure(_ error: any Error, sessionID: UUID) {
+        guard currentSessionID == sessionID, !explicitlyStopped else { return }
+
+        if !started {
+            tearDownPlayback(cancelSource: false)
+            currentSessionID = nil
+            activeSource = nil
+            resumeStart(throwing: error)
+            return
+        }
+
+        sourceFailure = error
+        sourceFinished = true
+        resumeCapacityWaiters()
+        checkForCompletion(sessionID: sessionID)
+    }
+
+    /// Flushes buffers accumulated during the prebuffer window, starts the output node, and emits
+    /// `.started` exactly once - the one moment `startPlayback`'s pending continuation resolves.
+    private func beginPlayback(sessionID: UUID) throws {
+        guard currentSessionID == sessionID else { return }
+
+        // An empty-but-successful source completes without ever building an audio graph.
+        if pending.isEmpty {
+            started = true
+            onEvent?(.started(sessionID: sessionID))
+            resumeStart()
+            return
+        }
+
+        guard let outputNode else { throw StreamingAudioPlayerError.invalidSourceFormat }
+        for item in pending {
+            schedule(item, sessionID: sessionID)
+        }
+        pending.removeAll(keepingCapacity: false)
+        pendingDuration = 0
+
+        try outputNode.start()
+        outputNode.play()
+        started = true
+        onEvent?(.started(sessionID: sessionID))
+        resumeStart()
+    }
+
+    private func waitForSchedulingCapacity(sessionID: UUID) async {
+        while
+            currentSessionID == sessionID,
+            started,
+            scheduledDuration - playedDuration >= Self.maxScheduledAheadSeconds
+        {
+            await withCheckedContinuation { continuation in
+                capacityWaiters.append(continuation)
+            }
+        }
+    }
+
+    private func schedule(_ item: PendingBuffer, sessionID: UUID) {
+        guard let outputNode else { return }
+        scheduledCount += 1
+        scheduledDuration += item.duration
+        onEvent?(.level(sessionID: sessionID, level: item.level))
+        let playedDuration = item.duration
+        outputNode.schedule(item.buffer) { [weak self] in
+            self?.handlePlayed(duration: playedDuration, sessionID: sessionID)
+        }
+    }
+
+    private func handlePlayed(duration: TimeInterval, sessionID: UUID) {
+        guard currentSessionID == sessionID, !explicitlyStopped else { return }
+        playedCount += 1
+        playedDuration += duration
+        if scheduledDuration - playedDuration < Self.maxScheduledAheadSeconds {
+            resumeCapacityWaiters()
+        }
+        checkForCompletion(sessionID: sessionID)
+    }
+
+    private func checkForCompletion(sessionID: UUID) {
+        guard currentSessionID == sessionID, !explicitlyStopped else { return }
+        guard sourceFinished, playedCount >= scheduledCount else { return }
+
+        let failed = sourceFailure != nil
+        tearDownPlayback(cancelSource: false)
+        currentSessionID = nil
+        activeSource = nil
+        if failed {
+            onEvent?(.failed(sessionID: sessionID))
+        } else {
+            onEvent?(.finished(sessionID: sessionID))
+        }
+    }
+
+    // MARK: - Conversion
+
+    /// Converts one incoming frame to the output device format up front - never inside the realtime
+    /// render loop. Handles per-frame sample rate and channel count, rebuilding the `AVAudioConverter`
+    /// only when the source format actually changes.
+    private func convert(_ frame: TTSAudioFrame) throws -> AVAudioPCMBuffer {
+        guard frame.format.sampleRate > 0 else { throw StreamingAudioPlayerError.invalidSourceFormat }
+        let channelCount = frame.format.channelCount
+        guard channelCount > 0 else { throw StreamingAudioPlayerError.unsupportedChannelCount(channelCount) }
+        guard frame.samples.count % channelCount == 0 else {
             throw StreamingAudioPlayerError.invalidSourceFormat
         }
 
-        let engine = AVAudioEngine()
-        let playerNode = AVAudioPlayerNode()
-        engine.attach(playerNode)
-        let outputFormat = engine.mainMixerNode.outputFormat(forBus: 0)
-        engine.connect(playerNode, to: engine.mainMixerNode, format: outputFormat)
-
-        guard let converter = AVAudioConverter(from: sourceFormat, to: outputFormat) else {
-            throw StreamingAudioPlayerError.converterCreationFailed
+        if outputNode == nil {
+            outputNode = makeOutputNode()
+        }
+        guard let outputFormat = outputNode?.outputFormat else {
+            throw StreamingAudioPlayerError.invalidSourceFormat
         }
 
-        self.engine = engine
-        self.playerNode = playerNode
-        self.sourceFormat = sourceFormat
-        self.outputFormat = outputFormat
-        self.converter = converter
-    }
-
-    /// Converts one incoming frame to the engine's output format up front - never inside the
-    /// realtime render loop. See the type-level doc comment's second lesson from
-    /// `SynthesizedAudioPlayer`'s history.
-    private func convert(_ samples: [Float]) throws -> AVAudioPCMBuffer {
-        guard let sourceFormat, let outputFormat, let converter else {
-            throw StreamingAudioPlayerError.converterCreationFailed
+        let sourceFormat: AVAudioFormat
+        if converterInputFormat != frame.format || converter == nil {
+            guard let format = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: frame.format.sampleRate,
+                channels: AVAudioChannelCount(channelCount),
+                interleaved: false
+            ) else { throw StreamingAudioPlayerError.invalidSourceFormat }
+            guard let newConverter = AVAudioConverter(from: format, to: outputFormat) else {
+                throw StreamingAudioPlayerError.converterCreationFailed
+            }
+            sourceFormat = format
+            converter = newConverter
+            converterInputFormat = frame.format
+        } else {
+            guard let format = converter?.inputFormat else { throw StreamingAudioPlayerError.converterCreationFailed }
+            sourceFormat = format
         }
 
-        guard let sourceBuffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: AVAudioFrameCount(samples.count)) else {
-            throw StreamingAudioPlayerError.bufferAllocationFailed
-        }
-        sourceBuffer.frameLength = AVAudioFrameCount(samples.count)
-        samples.withUnsafeBufferPointer { pointer in
-            guard let baseAddress = pointer.baseAddress else { return }
-            sourceBuffer.floatChannelData?[0].update(from: baseAddress, count: samples.count)
+        guard let converter else { throw StreamingAudioPlayerError.converterCreationFailed }
+
+        let framesPerChannel = frame.samples.count / channelCount
+        guard let sourceBuffer = AVAudioPCMBuffer(
+            pcmFormat: sourceFormat,
+            frameCapacity: AVAudioFrameCount(framesPerChannel)
+        ) else { throw StreamingAudioPlayerError.bufferAllocationFailed }
+        sourceBuffer.frameLength = AVAudioFrameCount(framesPerChannel)
+
+        // Deinterleave the shared interleaved Float32 samples into the non-interleaved source buffer.
+        if let channels = sourceBuffer.floatChannelData {
+            frame.samples.withUnsafeBufferPointer { pointer in
+                guard let base = pointer.baseAddress else { return }
+                if channelCount == 1 {
+                    channels[0].update(from: base, count: framesPerChannel)
+                } else {
+                    for channel in 0..<channelCount {
+                        let destination = channels[channel]
+                        for index in 0..<framesPerChannel {
+                            destination[index] = base[index * channelCount + channel]
+                        }
+                    }
+                }
+            }
         }
 
         let ratio = outputFormat.sampleRate / sourceFormat.sampleRate
-        let outputFrameCapacity = AVAudioFrameCount(Double(samples.count) * ratio) + 8
-        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outputFrameCapacity) else {
+        let capacity = AVAudioFrameCount(Double(framesPerChannel) * ratio) + 8
+        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else {
             throw StreamingAudioPlayerError.bufferAllocationFailed
         }
 
-        // `AVAudioConverterInputBlock` is imported as `@Sendable`, even though `convert(to:error:
-        // withInputFrom:)` calls it synchronously on the current thread. Boxing the mutable
-        // "already provided input" flag and the non-Sendable `AVAudioPCMBuffer` in a reference
-        // type sidesteps the resulting (spurious, given the synchronous contract) Sendable
-        // diagnostics without reaching for `nonisolated(unsafe)`.
         let inputState = ConversionInputState(sourceBuffer: sourceBuffer)
         var conversionError: NSError?
         let status = converter.convert(to: outputBuffer, error: &conversionError) { _, inputStatus in
@@ -337,133 +428,95 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
             inputStatus.pointee = .haveData
             return inputState.sourceBuffer
         }
-
         guard status != .error else {
             throw conversionError ?? StreamingAudioPlayerError.conversionFailed
         }
-
         return outputBuffer
     }
 
-    /// Flushes any buffers accumulated during the prebuffer window, starts the engine and player
-    /// node, and emits `.started` exactly once - which is also the one moment `startPlayback`'s
-    /// pending `startContinuation`, if any, resolves successfully.
-    private func beginScheduledPlayback(sessionID: UUID) throws {
-        guard let engine, let playerNode else { return }
-
-        for buffer in pendingBuffers {
-            schedule(buffer, sessionID: sessionID)
-        }
-        pendingBuffers = []
-
-        try engine.start()
-        playerNode.play()
-        started = true
-        onEvent?(.started(sessionID: sessionID))
-        startLevelTimer(sessionID: sessionID)
-        resumeStart()
-    }
-
-    private func schedule(_ buffer: AVAudioPCMBuffer, sessionID: UUID) {
-        guard let playerNode else { return }
-        scheduledCount += 1
-        playerNode.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.handleBufferPlayed(sessionID: sessionID)
-            }
-        }
-    }
-
-    private func handleBufferPlayed(sessionID: UUID) {
-        guard currentSessionID == sessionID, !didStopExplicitly else { return }
-        playedCount += 1
-        checkForCompletion(sessionID: sessionID)
-    }
-
-    private func checkForCompletion(sessionID: UUID) {
-        guard currentSessionID == sessionID, !didStopExplicitly else { return }
-        guard sourceFinished, playedCount >= scheduledCount else { return }
-        tearDownPlayback()
-        currentSessionID = nil
-        onEvent?(.finished(sessionID: sessionID))
-    }
-
-    private func tearDownPlayback() {
-        stopLevelTimer()
+    private func tearDownPlayback(cancelSource: Bool) {
+        let source = activeSource
         pumpTask?.cancel()
         pumpTask = nil
-        playerNode?.stop()
-        engine?.stop()
-        engine = nil
-        playerNode = nil
+        outputNode?.stop()
+        outputNode = nil
         converter = nil
-        sourceFormat = nil
-        outputFormat = nil
-        pendingBuffers = []
+        converterInputFormat = nil
+        pending.removeAll(keepingCapacity: false)
+        pendingDuration = 0
+        resumeCapacityWaiters()
+        if cancelSource, let source {
+            Task { await source.cancel() }
+        }
+    }
+
+    private func resumeCapacityWaiters() {
+        let waiters = capacityWaiters
+        capacityWaiters.removeAll(keepingCapacity: false)
+        for waiter in waiters { waiter.resume() }
+    }
+
+    private func resumeStart() {
+        guard let continuation = startContinuation else { return }
+        startContinuation = nil
+        continuation.resume()
+    }
+
+    private func resumeStart(throwing error: any Error) {
+        guard let continuation = startContinuation else { return }
+        startContinuation = nil
+        continuation.resume(throwing: error)
     }
 
     // MARK: - Levels
 
-    /// Computes a single frame's `.level` value: RMS scaled by `levelGain`, clamped to `0...1` -
-    /// the same scaling `SynthesizedAudioPlayer.levelEnvelope` uses, so the pill's waveform reads
-    /// identically regardless of which player is driving it. Pure and `nonisolated` so it can be
-    /// unit tested without a working audio output device.
+    /// Computes a single frame's `.level` value: RMS scaled by `levelGain`, clamped to `0...1` - the
+    /// same scaling the pill's waveform expects regardless of which source is driving it. Pure and
+    /// `nonisolated` so it can be unit tested without a working audio output device.
     nonisolated static func level(forFrame samples: [Float]) -> Float {
         guard !samples.isEmpty else { return 0 }
         var sumOfSquares: Float = 0
         for sample in samples {
             sumOfSquares += sample * sample
         }
-        let meanSquare = sumOfSquares / Float(samples.count)
-        let rms = sqrt(meanSquare)
-        return min(max(rms * levelGain, 0), 1)
+        return min(max(sqrt(sumOfSquares / Float(samples.count)) * levelGain, 0), 1)
     }
+}
 
-    /// Starts a `MainActor` loop that maps elapsed playback time to a frame index into `levels`
-    /// and emits `.level` for it, at `frameDurationSeconds` cadence (80ms for PocketTTS's 24kHz
-    /// frames). No realtime audio thread involved - nothing here can glitch the render path.
-    private func startLevelTimer(sessionID: UUID) {
-        stopLevelTimer()
-        levelClockStart = Date()
-        levelPausedElapsed = 0
-        levelPausedAt = nil
+/// Adapts the legacy raw-frame streaming API onto `TTSAudioSource` by feeding the stream into a
+/// `TTSAudioPipe` from a background task (keeping the non-`Sendable` stream iterator wholly inside
+/// that task). Removed with the legacy `startPlayback` overload once every backend produces a
+/// `TTSAudioSource` directly.
+private final class LegacyFloatStreamAudioSource: TTSAudioSource {
+    private let source: TTSAudioPipe.Source
+    private let feeder: Task<Void, Never>
 
-        let intervalNanoseconds = UInt64(max(frameDurationSeconds, 0.01) * 1_000_000_000)
-        levelTask = Task { @MainActor [weak self] in
-            while let self, !Task.isCancelled, self.currentSessionID == sessionID {
-                let frameIndex = Int(self.elapsedLevelClock() / self.frameDurationSeconds)
-                if frameIndex >= 0, frameIndex < self.levels.count {
-                    self.onEvent?(.level(sessionID: sessionID, level: self.levels[frameIndex]))
-                } else if self.sourceFinished, frameIndex >= self.levels.count {
-                    return
+    init(frames: AsyncThrowingStream<[Float], Error>, sampleRate: Double) {
+        let (sink, source) = TTSAudioPipe.make()
+        self.source = source
+        feeder = Task {
+            do {
+                for try await samples in frames {
+                    try await sink.yield(TTSAudioFrame(
+                        samples: samples,
+                        format: TTSAudioFormat(sampleRate: sampleRate, channelCount: 1)
+                    ))
                 }
-                try? await Task.sleep(nanoseconds: intervalNanoseconds)
+                await sink.finish()
+            } catch is CancellationError {
+                await sink.cancel()
+            } catch {
+                await sink.fail(error)
             }
         }
     }
 
-    private func stopLevelTimer() {
-        levelTask?.cancel()
-        levelTask = nil
-        levelClockStart = nil
-        levelPausedElapsed = 0
-        levelPausedAt = nil
+    func next() async throws -> TTSAudioFrame? {
+        try await source.next()
     }
 
-    private func pauseLevelClock() {
-        guard levelPausedAt == nil, levelClockStart != nil else { return }
-        levelPausedAt = Date()
-    }
-
-    private func resumeLevelClock() {
-        guard let pausedAt = levelPausedAt else { return }
-        levelPausedElapsed += Date().timeIntervalSince(pausedAt)
-        levelPausedAt = nil
-    }
-
-    private func elapsedLevelClock() -> TimeInterval {
-        guard let levelClockStart else { return 0 }
-        let pausedExtra = levelPausedAt.map { Date().timeIntervalSince($0) } ?? 0
-        return Date().timeIntervalSince(levelClockStart) - levelPausedElapsed - pausedExtra
+    func cancel() async {
+        feeder.cancel()
+        await source.cancel()
     }
 }
