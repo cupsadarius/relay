@@ -136,9 +136,9 @@ Terminal-specific and multiplexer-specific focus detection is handled through se
 Relay's settings are organized into tabs:
 
 - **General** — live-transcription pill, Activity Overlay style, launch-at-login
-- **Dictation** — speech-to-text behavior
+- **Dictation** — speech-to-text behavior plus expandable providers with shared Download, Select, and Remove model controls
 - **Keybinds** — configurable hotkeys
-- **TTS** — text-to-speech backends and voices
+- **TTS** — expandable providers using the same model controls, with Select and Test actions for each provider's voices
 - **Integrations** — coding-agent auto-read
 - **Permissions** — microphone and accessibility grants, plus microphone diagnostics (an Open Microphone Settings button and the last capture's frame count / sample rate) to help recover a stale mic grant after a rebuild
 

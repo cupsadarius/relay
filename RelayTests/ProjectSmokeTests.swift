@@ -31,12 +31,13 @@ final class ProjectSmokeTests: XCTestCase {
         // backend -- including Apple Speech, via `AppleSpeechModelManager`'s always-downloaded
         // one-model façade -- has a registered manager, so the settings UI can render all three
         // through the same collapsible-provider + nested-model-list code path.
-        XCTAssertTrue(model.canDownloadTTSModel("kokoro"))
-        XCTAssertTrue(model.canDownloadTTSModel("pocket-tts"))
-        XCTAssertFalse(model.canDownloadTTSModel("apple-tts"))
-        XCTAssertTrue(model.canDownloadSpeechModel("parakeet"))
-        XCTAssertTrue(model.canDownloadSpeechModel("whisper"))
-        XCTAssertTrue(model.canDownloadSpeechModel("apple-speech"))
+        let keys = model.modelController.backendKeys
+        XCTAssertTrue(keys.contains(.init(domain: .textToSpeech, backendID: "kokoro")))
+        XCTAssertTrue(keys.contains(.init(domain: .textToSpeech, backendID: "pocket-tts")))
+        XCTAssertFalse(keys.contains(.init(domain: .textToSpeech, backendID: "apple-tts")))
+        XCTAssertTrue(keys.contains(.init(domain: .dictation, backendID: "parakeet")))
+        XCTAssertTrue(keys.contains(.init(domain: .dictation, backendID: "whisper")))
+        XCTAssertTrue(keys.contains(.init(domain: .dictation, backendID: "apple-speech")))
 
         // Backend status refresh actually runs against the real registries and produces rows.
         await model.initialSpeechBackendRefresh?.value

@@ -1,5 +1,9 @@
 # Relay Unified TTS Migration Design
 
+> Settings presentation and model-lifecycle guidance in this document is superseded by
+> [Unified Speech Model Settings Design](2026-09-21-unified-speech-model-settings-design.md).
+> The audio pipeline and playback architecture below remain current.
+
 **Date:** 2026-09-19  
 **Status:** Approved design  
 **Repository baseline:** `main` after Whisper merge `7db5e0d`  

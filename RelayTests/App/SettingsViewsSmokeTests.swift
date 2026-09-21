@@ -184,8 +184,8 @@ final class SpeechVoiceRowPresentationTests: XCTestCase {
 }
 
 final class SpeechBackendModelDisplayModeTests: XCTestCase {
-    /// Zero models means the async `refreshSpeechModels()` hasn't populated `speechModels` for
-    /// this backend yet, or the backend genuinely has no `SpeechModelManaging` registered at all
+    /// Zero models means the shared model controller has not populated this backend yet, or the
+    /// backend genuinely has no `SpeechModelManaging` registered at all
     /// -- no disclosure control and no nested list should render, since showing either before the
     /// real model count is known risks the same "acts on the wrong model" class of bug this
     /// gating originally existed to prevent.

@@ -33,8 +33,7 @@ enum BackendEnableOutcome: Equatable {
 }
 
 /// The shared algorithm behind `SpeechBackendCatalog.swift` and `TTSBackendCatalog.swift`:
-/// generation-counter race-safe merging, sorting, enable/disable, reorder, and download-progress
-/// monotonicity. Generic only over `Backend` — the registry's element type (`any
+/// sorting, enable/disable, reorder, and availability mapping. Generic only over `Backend` — the registry's element type (`any
 /// SpeechToTextBackend` vs. `any TextToSpeechBackend`) — and only for structural membership
 /// checks (`registry[id] != nil`), never for calling a method on a backend: `SpeechToTextBackend`
 /// is `Sendable` and callable off the main actor, while `TextToSpeechBackend` is `@MainActor`, so
@@ -45,32 +44,10 @@ enum BackendEnableOutcome: Equatable {
 /// duplicated algorithm — while every id/order/state transition (the actual race-safety-bearing
 /// logic) lives here exactly once.
 ///
-/// This type is deliberately stateless: `AppModel` keeps owning `sttBackends`/`ttsBackends`,
-/// `downloadingBackendIDs`/`downloadingTTSBackendIDs`, and `refreshGeneration`/
-/// `ttsRefreshGeneration` as its own stored (and therefore `@Observable`-tracked) properties, and
-/// calls into these functions at each mutation point. That keeps the load-bearing invariant — a
-/// stale in-flight refresh must never clobber a newer one's results, with the generation-counter
-/// increment/compare bracketing the exact same `await` gap it always did — entirely in the
-/// adapter's hands, where it's one straight-line function, easy to audit, rather than hidden
-/// behind a second layer of async indirection.
+/// This type is deliberately stateless. `AppModel` owns the visible backend rows and refresh
+/// generations, while `SpeechModelController` exclusively owns model lifecycle state.
 @MainActor
 enum BackendCatalog<Backend> {
-    /// Merges a freshly computed status list with the currently visible one: a backend with an
-    /// in-flight (or just-failed) download keeps its live state instead of being reset by the now-
-    /// stale fresh snapshot. Does not sort — callers apply `sorted(_:)` afterward.
-    static func merged(fresh: [BackendStatus], live: [BackendStatus], downloadingIDs: Set<String>) -> [BackendStatus] {
-        let liveByID = Dictionary(uniqueKeysWithValues: live.map { ($0.id, $0) })
-        return fresh.map { candidate in
-            guard let liveStatus = liveByID[candidate.id] else { return candidate }
-            guard downloadingIDs.contains(candidate.id) || isDownloadInFlightOrFailed(liveStatus.state) else {
-                return candidate
-            }
-            var merged = candidate
-            merged.state = liveStatus.state
-            return merged
-        }
-    }
-
     /// Enabled backends first (in their configured order), then disabled backends alphabetically
     /// by id.
     static func sorted(_ statuses: [BackendStatus]) -> [BackendStatus] {
@@ -134,61 +111,6 @@ enum BackendCatalog<Backend> {
             return updated
         }
         return sorted(updated)
-    }
-
-    /// Updates the state for `id`, inserting a new row if one doesn't exist yet — e.g. a Download
-    /// click that lands before the first refresh has populated `statuses`. `displayName` is only
-    /// evaluated for that insert path (a Download click always targets an id the caller's registry
-    /// actually has, but if it doesn't, no row is inserted). Sorts only when inserting; an
-    /// in-place state update preserves the existing row's position.
-    static func insertingOrUpdating(
-        _ statuses: [BackendStatus],
-        id: String,
-        state: BackendStatus.State,
-        displayName: @autoclosure () -> String?,
-        order: [String]
-    ) -> [BackendStatus] {
-        if let index = statuses.firstIndex(where: { $0.id == id }) {
-            var updated = statuses
-            updated[index].state = state
-            return updated
-        }
-        guard let displayName = displayName() else { return statuses }
-        var updated = statuses
-        updated.append(
-            BackendStatus(
-                id: id,
-                displayName: displayName,
-                state: state,
-                isEnabled: order.contains(id),
-                position: order.firstIndex(of: id) ?? Int.max
-            )
-        )
-        return sorted(updated)
-    }
-
-    /// Whether a progress tick for `id` should be applied: ignored if the download already
-    /// finished (or was never the one running) and ignored if it's an out-of-order tick reporting
-    /// less progress than what's already shown, so a late or reordered callback can never move the
-    /// UI backwards or resurrect a finished download.
-    static func shouldApplyProgress(
-        _ statuses: [BackendStatus],
-        id: String,
-        progress: Double,
-        downloadingIDs: Set<String>
-    ) -> Bool {
-        guard downloadingIDs.contains(id) else { return false }
-        guard case let .downloading(current)? = statuses.first(where: { $0.id == id })?.state,
-              progress >= current
-        else { return false }
-        return true
-    }
-
-    static func isDownloadInFlightOrFailed(_ state: BackendStatus.State) -> Bool {
-        switch state {
-        case .downloading, .downloadFailed: true
-        case .ready, .modelNotDownloaded, .unsupported, .unavailable: false
-        }
     }
 
     static func mapAvailability(_ availability: BackendAvailability) -> BackendStatus.State {

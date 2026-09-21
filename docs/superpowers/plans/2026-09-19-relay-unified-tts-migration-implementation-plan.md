@@ -1,5 +1,9 @@
 # Relay Unified TTS Migration Implementation Plan
 
+> The completed TTS model-management and Settings steps in this historical plan are superseded by
+> [Unified Speech Model Settings Implementation Plan](2026-09-21-unified-speech-model-settings-implementation-plan.md)
+> and its [design](../specs/2026-09-21-unified-speech-model-settings-design.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Finish Relay's post-Whisper speech unification by moving Kokoro and PocketTTS onto `SpeechModelManaging`, introducing one provider-neutral PCM source/player pipeline, adding production-grade long-form Kokoro phoneme chunking, migrating Apple TTS to generated PCM, and deleting the legacy TTS download/playback paths.
@@ -2272,4 +2276,3 @@ The two highest-risk reviewer gates are:
 2. **After Task 11:** do not cut Apple over merely because unit tests are green. The real `AVSpeechSynthesizer.write` behavior must pass the owner-Mac quality gate first.
 
 If Apple fails its quality gate, stop before Task 12 and revise the design/plan for the documented temporary Apple-native compatibility exception rather than forcing Apple through an unreliable adapter.
-
