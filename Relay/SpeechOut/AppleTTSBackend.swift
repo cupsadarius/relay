@@ -10,6 +10,7 @@ protocol AppleSpeechSynthesizing: AnyObject {
     /// owns its synthesizer (like `AppleTTSBackend`) does not retain-cycle.
     var delegate: AVSpeechSynthesizerDelegate? { get set }
     func speak(_ utterance: AVSpeechUtterance)
+    func write(_ utterance: AVSpeechUtterance, toBufferCallback bufferCallback: @escaping AVSpeechSynthesizer.BufferCallback)
     func stopSpeaking(at boundary: AVSpeechBoundary) -> Bool
     func pauseSpeaking(at boundary: AVSpeechBoundary) -> Bool
     func continueSpeaking() -> Bool
@@ -18,7 +19,7 @@ protocol AppleSpeechSynthesizing: AnyObject {
 extension AVSpeechSynthesizer: AppleSpeechSynthesizing {}
 
 @MainActor
-final class AppleTTSBackend: NSObject, TextToSpeechBackend {
+final class AppleTTSBackend: NSObject, TextToSpeechBackend, TTSAudioSourceProducing {
     let id = "apple-tts"
     let displayName = "Apple System Voice"
     let capabilities = TTSCapabilities([
@@ -28,20 +29,43 @@ final class AppleTTSBackend: NSObject, TextToSpeechBackend {
     ])
 
     private let synthesizer: any AppleSpeechSynthesizing
+    /// Builds a fresh synthesizer per `makeAudioSource` call so each speech attempt's Apple
+    /// callbacks are isolated - a cancelled attempt's late buffers cannot leak into a later one.
+    private let makeSynthesizer: @MainActor () -> any AppleSpeechSynthesizing
+    private let bufferConverter: any AppleSpeechBufferConverting
     private var playbackEventHandler: (@MainActor (TTSPlaybackEvent) -> Void)?
     /// Retains the utterance alongside its session so the `ObjectIdentifier`
     /// key cannot be recycled by a deallocated-then-reallocated utterance
     /// while it is still tracked.
     private var sessionsByUtterance: [ObjectIdentifier: (utterance: AVSpeechUtterance, session: UUID)] = [:]
 
-    init(synthesizer: any AppleSpeechSynthesizing = AVSpeechSynthesizer()) {
+    init(
+        synthesizer: any AppleSpeechSynthesizing = AVSpeechSynthesizer(),
+        makeSynthesizer: @escaping @MainActor () -> any AppleSpeechSynthesizing = { AVSpeechSynthesizer() },
+        bufferConverter: any AppleSpeechBufferConverting = AVAudioPCMBufferConverter()
+    ) {
         self.synthesizer = synthesizer
+        self.makeSynthesizer = makeSynthesizer
+        self.bufferConverter = bufferConverter
         super.init()
         self.synthesizer.delegate = self
     }
 
     func availability() async -> BackendAvailability {
         .available
+    }
+
+    func makeAudioSource(text: String, options: TTSOptions) async throws -> any TTSAudioSource {
+        if let identifier = options.voiceIdentifier, AVSpeechSynthesisVoice(identifier: identifier) == nil {
+            throw SpeechBackendError.invalidInput
+        }
+        return AppleTTSAudioSource(
+            text: text,
+            rate: options.rate,
+            voiceIdentifier: options.voiceIdentifier,
+            synthesizer: makeSynthesizer(),
+            converter: bufferConverter
+        )
     }
 
     func setPlaybackEventHandler(_ handler: @escaping @MainActor (TTSPlaybackEvent) -> Void) {

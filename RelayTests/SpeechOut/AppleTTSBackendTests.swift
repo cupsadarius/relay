@@ -205,6 +205,8 @@ private final class FakeAppleSpeechSynthesizing: AppleSpeechSynthesizing {
         onSpeak?()
     }
 
+    func write(_ utterance: AVSpeechUtterance, toBufferCallback bufferCallback: @escaping AVSpeechSynthesizer.BufferCallback) {}
+
     func stopSpeaking(at boundary: AVSpeechBoundary) -> Bool {
         stopCount += 1
         return true
