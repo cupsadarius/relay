@@ -14,9 +14,6 @@ final class PocketTTSBackend: TextToSpeechBackend {
     let capabilities = TTSCapabilities([
         .fullyOffline,
         .voiceSelection,
-        .pauseResume,
-        .outputLevel,
-        .streaming,
     ])
 
     private let engine: any PocketTTSEngine

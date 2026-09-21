@@ -16,9 +16,6 @@ final class PocketTTSBackendTests: XCTestCase {
 
         XCTAssertTrue(backend.capabilities.contains(.fullyOffline))
         XCTAssertTrue(backend.capabilities.contains(.voiceSelection))
-        XCTAssertTrue(backend.capabilities.contains(.pauseResume))
-        XCTAssertTrue(backend.capabilities.contains(.outputLevel))
-        XCTAssertTrue(backend.capabilities.contains(.streaming))
     }
 
     func testAvailabilityIsAvailableWhenModelsArePresent() async {

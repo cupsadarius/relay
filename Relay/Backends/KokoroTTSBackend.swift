@@ -13,8 +13,6 @@ final class KokoroTTSBackend: TextToSpeechBackend {
     let capabilities = TTSCapabilities([
         .fullyOffline,
         .voiceSelection,
-        .pauseResume,
-        .outputLevel,
     ])
 
     private let engine: any KokoroEngine

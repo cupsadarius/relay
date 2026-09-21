@@ -130,7 +130,6 @@
 		9756AF051A9C26FDF8B4BA30 /* RulesSpeechPreprocessorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75A5D0DD6ECBB171B17FC747 /* RulesSpeechPreprocessorTests.swift */; };
 		97BBF047A631155332E9FB06 /* HookEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0007CFDD668AB6C9B6207607 /* HookEnvelope.swift */; };
 		9933F35CA7C64B513FAC5966 /* HerdrHostOwnership.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBABB87F78A5D75EB1569320 /* HerdrHostOwnership.swift */; };
-		9A2E7133F5C199C2A5CE9DEF /* SynthesizedAudioPlayerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D1367D86F5DB24EEC0865E5 /* SynthesizedAudioPlayerTests.swift */; };
 		9BBA5EDA12BC819F71FCA950 /* AppleSpeechModelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0666BAE3F72D0A76CDBAF8C0 /* AppleSpeechModelManager.swift */; };
 		9DEDED0E43E753BCE3E9414B /* ParakeetBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0426F6B17538598D1ECA3EB8 /* ParakeetBackendTests.swift */; };
 		9E0C7944EDBB2859454D8F58 /* AppleTTSAudioSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CF4B385AF5C43F12EC514DB /* AppleTTSAudioSource.swift */; };
@@ -139,7 +138,6 @@
 		9F4340F141218B792C4792F0 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54E4B351A16CE237218FE5C0 /* SettingsView.swift */; };
 		9FE03DC36147EFCCF7FD4D45 /* FocusModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3332E401CE6B77C9E9402E3 /* FocusModels.swift */; };
 		A6E1A60876F04F0F1C465F34 /* SpeechModelManaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1051DD5EB76A94B3E60AA1D /* SpeechModelManaging.swift */; };
-		A81AECAA6FC7AB0F87F442DE /* SynthesizedAudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E5FC6AD7B609779FB7B0A48 /* SynthesizedAudioPlayer.swift */; };
 		AC049B62E4684DDDE0ABB970 /* ClaudeCodeIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C055D5BF893F187719EF44 /* ClaudeCodeIntegration.swift */; };
 		AC21C5CAF0A02A9029C1127C /* UnixSocketServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91ED1D7A6F95F0D69DB81AEF /* UnixSocketServer.swift */; };
 		ACDE15917036721CB1E97F72 /* WhisperModelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CBE40EFE5F3963B9976AA13 /* WhisperModelStore.swift */; };
@@ -280,7 +278,6 @@
 		3772B7BC9E1856FB2551A9D4 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		3897DB8BC3EDE939835ACEDF /* BoundedProcessRunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoundedProcessRunnerTests.swift; sourceTree = "<group>"; };
 		3C4378331FFB24C3F3B1B46B /* WhisperRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperRuntimeTests.swift; sourceTree = "<group>"; };
-		3E5FC6AD7B609779FB7B0A48 /* SynthesizedAudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SynthesizedAudioPlayer.swift; sourceTree = "<group>"; };
 		3E764C660DC8753D838587C8 /* HerdrFocusResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HerdrFocusResolver.swift; sourceTree = "<group>"; };
 		3FEA7F12EBADD824A6D473D8 /* TextInsertionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextInsertionService.swift; sourceTree = "<group>"; };
 		42058F34DF427937788E3B32 /* AgentSessionRegistryPruneTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSessionRegistryPruneTests.swift; sourceTree = "<group>"; };
@@ -356,7 +353,6 @@
 		9A2D71436EB216912EA0F366 /* RelayWindowTagger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayWindowTagger.swift; sourceTree = "<group>"; };
 		9C46EAD4AC1F68BEB21F494D /* CodexHookPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexHookPayload.swift; sourceTree = "<group>"; };
 		9C81ED5851D60E63A6A62C0B /* PocketTTSAudioSourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PocketTTSAudioSourceTests.swift; sourceTree = "<group>"; };
-		9D1367D86F5DB24EEC0865E5 /* SynthesizedAudioPlayerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SynthesizedAudioPlayerTests.swift; sourceTree = "<group>"; };
 		9F9345EEDE9FA0BA054B69BC /* RulesTranscriptProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RulesTranscriptProcessor.swift; sourceTree = "<group>"; };
 		A0354860CB30156236B9B877 /* TmuxClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxClient.swift; sourceTree = "<group>"; };
 		A31863012B9508704CEEE90C /* TmuxFocusResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxFocusResolver.swift; sourceTree = "<group>"; };
@@ -626,7 +622,6 @@
 				6B541411E315249B0E88DAE3 /* SpeechCoordinatorTests.swift */,
 				A5BACFD43E570A4F8E383E3E /* SpeechCoordinatorWatchdogTests.swift */,
 				713C20F092B5FD9DB2257B5E /* StreamingAudioPlayerTests.swift */,
-				9D1367D86F5DB24EEC0865E5 /* SynthesizedAudioPlayerTests.swift */,
 				6CA4CB5A5518D77795A055C2 /* TTSAudioPipeTests.swift */,
 				264D3B761DD35FEF92E86BAC /* TTSRouterTests.swift */,
 			);
@@ -761,7 +756,6 @@
 				D01700458AA3E57B79695FD7 /* RulesSpeechPreprocessor.swift */,
 				E2E464DE9B8D3EF3FBAF0A9E /* SpeechCoordinator.swift */,
 				ED7F4126C70AC7872DBFD520 /* StreamingAudioPlayer.swift */,
-				3E5FC6AD7B609779FB7B0A48 /* SynthesizedAudioPlayer.swift */,
 				A7357E0F76AF76DF9C69ACD1 /* TextToSpeechBackend.swift */,
 				DCE828C9DB3F9860FC01EF8E /* TTSAudioPipe.swift */,
 				CBA5DA718718ED8DDFD2D7BE /* TTSAudioSource.swift */,
@@ -1115,7 +1109,6 @@
 				7D04E84081221327DDB31323 /* SpeechModelManagingTests.swift in Sources */,
 				4E17960F53595769C23FFCC5 /* StreamingAudioPlayerTests.swift in Sources */,
 				4755E91C42C75F1349BA5D68 /* StreamingTranscriberTests.swift in Sources */,
-				9A2E7133F5C199C2A5CE9DEF /* SynthesizedAudioPlayerTests.swift in Sources */,
 				2BAB683C31484F315ABA0FAC /* TTSAudioPipeTests.swift in Sources */,
 				7C370FEEA779CE901DA9C8AF /* TTSBackendCatalogTests.swift in Sources */,
 				E5EA2201C19089E03D772E38 /* TTSMigrationProductionWiringTests.swift in Sources */,
@@ -1241,7 +1234,6 @@
 				010EFDE2D6C4A73206572BBE /* SpeechToTextBackend.swift in Sources */,
 				6C55C510C67B13D5610DF133 /* StreamingAudioPlayer.swift in Sources */,
 				54B5A77BB9086D0CBE4DE404 /* StreamingTranscriber.swift in Sources */,
-				A81AECAA6FC7AB0F87F442DE /* SynthesizedAudioPlayer.swift in Sources */,
 				52790886EBD3F77C6D64B208 /* TTSAudioPipe.swift in Sources */,
 				399AB7501EDFBEB937C75A75 /* TTSAudioSource.swift in Sources */,
 				0B604089F852B83304D81658 /* TTSBackendCatalog.swift in Sources */,

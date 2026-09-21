@@ -26,7 +26,6 @@ final class AppleTTSBackend: TextToSpeechBackend {
     let displayName = "Apple System Voice"
     let capabilities = TTSCapabilities([
         .voiceSelection,
-        .pauseResume,
         .fullyOffline,
     ])
 

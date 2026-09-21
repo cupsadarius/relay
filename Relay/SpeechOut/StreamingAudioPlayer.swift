@@ -17,11 +17,6 @@ import Foundation
 protocol StreamingAudioPlaying: AnyObject {
     var onEvent: (@MainActor (TTSPlaybackEvent) -> Void)? { get set }
     func startPlayback(_ source: any TTSAudioSource, sessionID: UUID) async throws
-    /// Legacy raw-frame entry point retained during the migration for the PocketTTS streaming
-    /// call site and its real-engine tests. It is a thin adapter over `startPlayback(_:sessionID:)`
-    /// and carries no playback logic of its own; it is removed once every backend produces a
-    /// `TTSAudioSource`.
-    func startPlayback(_ frames: AsyncThrowingStream<[Float], Error>, sampleRate: Double, sessionID: UUID) async throws
     func stop()
     func pause()
     func resume()
@@ -103,8 +98,8 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
         let level: Float
     }
 
-    /// Matches `SynthesizedAudioPlayer.levelGain` so the pill's speaking waveform behaves
-    /// identically whichever backend is feeding it.
+    /// Empirical gain applied to the RMS level so the pill's speaking waveform reads well across
+    /// backends; it is deliberately shared by every source feeding this one player.
     private static nonisolated let levelGain: Float = 4
     /// How much audio to buffer before starting playback, trading a little latency for headroom
     /// against synthesis briefly falling behind real time.
@@ -170,11 +165,6 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
                 await self?.pump(source, sessionID: sessionID)
             }
         }
-    }
-
-    func startPlayback(_ frames: AsyncThrowingStream<[Float], Error>, sampleRate: Double, sessionID: UUID) async throws {
-        let source = LegacyFloatStreamAudioSource(frames: frames, sampleRate: sampleRate)
-        try await startPlayback(source, sessionID: sessionID)
     }
 
     func stop() {
@@ -483,40 +473,3 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
     }
 }
 
-/// Adapts the legacy raw-frame streaming API onto `TTSAudioSource` by feeding the stream into a
-/// `TTSAudioPipe` from a background task (keeping the non-`Sendable` stream iterator wholly inside
-/// that task). Removed with the legacy `startPlayback` overload once every backend produces a
-/// `TTSAudioSource` directly.
-private final class LegacyFloatStreamAudioSource: TTSAudioSource {
-    private let source: TTSAudioPipe.Source
-    private let feeder: Task<Void, Never>
-
-    init(frames: AsyncThrowingStream<[Float], Error>, sampleRate: Double) {
-        let (sink, source) = TTSAudioPipe.make()
-        self.source = source
-        feeder = Task {
-            do {
-                for try await samples in frames {
-                    try await sink.yield(TTSAudioFrame(
-                        samples: samples,
-                        format: TTSAudioFormat(sampleRate: sampleRate, channelCount: 1)
-                    ))
-                }
-                await sink.finish()
-            } catch is CancellationError {
-                await sink.cancel()
-            } catch {
-                await sink.fail(error)
-            }
-        }
-    }
-
-    func next() async throws -> TTSAudioFrame? {
-        try await source.next()
-    }
-
-    func cancel() async {
-        feeder.cancel()
-        await source.cancel()
-    }
-}

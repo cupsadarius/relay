@@ -4,8 +4,8 @@ import XCTest
 
 /// `level(forFrame:)` tests run unconditionally: they're pure and never touch `AVAudioEngine`.
 /// Tests that exercise real playback are gated behind `requireAudioOutput()` and skip themselves
-/// with `XCTSkip` on a host with no usable audio output device, mirroring
-/// `SynthesizedAudioPlayerTests`'s "keep audio-producing assertions capability-gated" approach.
+/// with `XCTSkip` on a host with no usable audio output device: keep audio-producing assertions
+/// capability-gated.
 @MainActor
 final class StreamingAudioPlayerTests: XCTestCase {
     // MARK: - Unconditional: level(forFrame:)
@@ -28,7 +28,7 @@ final class StreamingAudioPlayerTests: XCTestCase {
 
     func testLevelOfMidAmplitudeFrameScalesByGainFour() {
         // RMS of a constant-amplitude signal equals the amplitude itself, so the result should be
-        // exactly amplitude * 4 (the same gain SynthesizedAudioPlayer.levelEnvelope applies).
+        // exactly amplitude * 4 (the level gain the player applies).
         let amplitude: Float = 0.2
         let level = StreamingAudioPlayer.level(forFrame: [Float](repeating: amplitude, count: 1_920))
 
@@ -445,7 +445,7 @@ final class StreamingAudioPlayerTests: XCTestCase {
     /// above): a source that fails before playback ever starts (never crosses the prebuffer
     /// threshold or reaches stream end) must make `startPlayback` throw directly, with NO
     /// `.failed`/`.started` event ever emitted - there is nothing else left to report a terminal
-    /// event through, mirroring `SynthesizedAudioPlayer`'s decode-failure contract. `engine.start()`
+    /// event through. `engine.start()`
     /// throwing inside `beginScheduledPlayback` (reached from `pump`'s own do/catch once the
     /// source stream ends or crosses the prebuffer threshold) is caught by this exact same
     /// `handlePumpFailure` call, with `started` still `false` at that point - so this test
@@ -489,9 +489,9 @@ final class StreamingAudioPlayerTests: XCTestCase {
         XCTAssertTrue(events.values.isEmpty)
     }
 
-    /// Skips the calling test unless explicitly opted in via an environment variable. See
-    /// `SynthesizedAudioPlayerTests.requireAudioOutput` for why: starting a real `AVAudioEngine`
-    /// can hard-crash (not throw) a sandboxed test host with no usable audio output device.
+    /// Skips the calling test unless explicitly opted in via an environment variable. Starting a
+    /// real `AVAudioEngine` can hard-crash (not throw) a sandboxed test host with no usable audio
+    /// output device.
     private func requireAudioOutput() throws {
         guard ProcessInfo.processInfo.environment["RELAY_TEST_REAL_AUDIO_ENGINE"] == "1" else {
             throw XCTSkip(
@@ -697,4 +697,55 @@ private extension TTSPlaybackEvent {
 private final class EventBox {
     private(set) var values: [TTSPlaybackEvent] = []
     func append(_ event: TTSPlaybackEvent) { values.append(event) }
+}
+
+extension StreamingAudioPlayer {
+    /// Test convenience mirroring the raw-frame `startPlayback` overload that production carried
+    /// during the migration: wrap a `[Float]` frame stream in a `TTSAudioSource` and play it. Kept
+    /// only in tests so the player's stream-draining characterization (prebuffer threshold,
+    /// supersession, pre-/post-start failure) reads exactly as before the overload was removed.
+    func startPlayback(
+        _ frames: AsyncThrowingStream<[Float], Error>,
+        sampleRate: Double,
+        sessionID: UUID
+    ) async throws {
+        try await startPlayback(FloatStreamTestSource(frames: frames, sampleRate: sampleRate), sessionID: sessionID)
+    }
+}
+
+/// Feeds a raw `[Float]` frame stream into a `TTSAudioPipe` from a background task, keeping the
+/// non-`Sendable` stream iterator wholly inside that task. Test-only replacement for the production
+/// `LegacyFloatStreamAudioSource` deleted when every backend began producing a `TTSAudioSource`.
+private final class FloatStreamTestSource: TTSAudioSource {
+    private let source: TTSAudioPipe.Source
+    private let feeder: Task<Void, Never>
+
+    init(frames: AsyncThrowingStream<[Float], Error>, sampleRate: Double) {
+        let (sink, source) = TTSAudioPipe.make()
+        self.source = source
+        feeder = Task {
+            do {
+                for try await samples in frames {
+                    try await sink.yield(TTSAudioFrame(
+                        samples: samples,
+                        format: TTSAudioFormat(sampleRate: sampleRate, channelCount: 1)
+                    ))
+                }
+                await sink.finish()
+            } catch is CancellationError {
+                await sink.cancel()
+            } catch {
+                await sink.fail(error)
+            }
+        }
+    }
+
+    func next() async throws -> TTSAudioFrame? {
+        try await source.next()
+    }
+
+    func cancel() async {
+        feeder.cancel()
+        await source.cancel()
+    }
 }

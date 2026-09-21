@@ -69,11 +69,8 @@ struct STTCapabilities: Equatable, Sendable {
 }
 
 enum TTSCapability: Sendable {
-    case pauseResume
     case voiceSelection
     case fullyOffline
-    case outputLevel
-    case streaming
 }
 
 struct TTSCapabilities: Equatable, Sendable {

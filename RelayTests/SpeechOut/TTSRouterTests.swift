@@ -299,12 +299,6 @@ final class FakePlayer: StreamingAudioPlaying {
         }
     }
 
-    func startPlayback(
-        _ frames: AsyncThrowingStream<[Float], Error>,
-        sampleRate: Double,
-        sessionID: UUID
-    ) async throws {}
-
     func stop() {
         guard activeSessionID != nil else { return }
         activeSessionID = nil

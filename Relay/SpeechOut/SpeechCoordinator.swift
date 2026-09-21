@@ -34,14 +34,12 @@ final class SpeechCoordinator: SpeechCoordinating {
     /// self-heal, not a normal control-flow path.
     ///
     /// Why this exists: `isSpeaking` is otherwise only ever cleared by a terminal
-    /// `.finished`/`.cancelled`/`.failed` event reaching `handle(_:)`. Tracing every real
-    /// playback path (`AppleTTSBackend` via `AVSpeechSynthesizerDelegate`'s didFinish/didCancel,
-    /// `SynthesizedAudioPlayer` via `AVAudioPlayerDelegate`'s didFinishPlaying,
-    /// `StreamingAudioPlayer` via `AVAudioPlayerNode` buffer-completion callbacks, and
-    /// `TTSRouter.speak(...)`'s synchronous `.failed` emission on a start failure) shows each one
-    /// *should* always deliver exactly one terminal event per session. But that guarantee rests on
-    /// AVFoundation delegate/completion contracts under conditions this codebase can't fully
-    /// exercise from tests (a mid-playback decode error, an audio route change interrupting
+    /// `.finished`/`.cancelled`/`.failed` event reaching `handle(_:)`. Every backend now feeds the
+    /// one shared `StreamingAudioPlayer`, which emits the terminal event from its `AVAudioPlayerNode`
+    /// buffer-completion callbacks, plus `TTSRouter.speak(...)`'s synchronous `.failed` emission on a
+    /// start failure - each *should* always deliver exactly one terminal event per session. But that
+    /// guarantee rests on AVFoundation completion contracts under conditions this codebase can't
+    /// fully exercise from tests (a mid-playback decode error, an audio route change interrupting
     /// `AVAudioEngine`, or a rare OS bug) — if any of those ever silently drops a terminal event,
     /// `isSpeaking` would otherwise stay `true` forever and every future `.automatic` response
     /// would queue silently, permanently killing auto-read until a manual Stop. This bound makes

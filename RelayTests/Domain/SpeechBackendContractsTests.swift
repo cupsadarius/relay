@@ -38,37 +38,30 @@ final class SpeechBackendContractsTests: XCTestCase {
 
     func testTTSCapabilityMembership() {
         let capabilities = TTSCapabilities([
-            .pauseResume,
             .voiceSelection,
             .fullyOffline,
-            .outputLevel,
-            .streaming,
         ])
 
-        XCTAssertTrue(capabilities.contains(.pauseResume))
         XCTAssertTrue(capabilities.contains(.voiceSelection))
         XCTAssertTrue(capabilities.contains(.fullyOffline))
-        XCTAssertTrue(capabilities.contains(.outputLevel))
-        XCTAssertTrue(capabilities.contains(.streaming))
 
         let fixedVoice = TTSCapabilities([.fullyOffline])
         XCTAssertFalse(fixedVoice.contains(.voiceSelection))
-        XCTAssertFalse(fixedVoice.contains(.outputLevel))
-        XCTAssertFalse(fixedVoice.contains(.streaming))
     }
 
-    func testStreamingCapabilityIsExclusiveToPocketTTS() async {
+    /// Pause/resume, output levels, and streaming are now guaranteed by the shared Relay playback
+    /// pipeline rather than advertised per provider, so every backend exposes the same synthesis
+    /// capabilities: voice selection and fully-offline operation.
+    func testEveryTTSBackendExposesTheSameSynthesisCapabilities() async {
         let pocket = await MainActor.run { PocketTTSBackend() }
         let kokoro = await MainActor.run { KokoroTTSBackend() }
         let apple = await MainActor.run { AppleTTSBackend() }
 
-        let pocketSupportsStreaming = await MainActor.run { pocket.capabilities.contains(.streaming) }
-        let kokoroSupportsStreaming = await MainActor.run { kokoro.capabilities.contains(.streaming) }
-        let appleSupportsStreaming = await MainActor.run { apple.capabilities.contains(.streaming) }
-
-        XCTAssertTrue(pocketSupportsStreaming, "PocketTTSBackend streams synthesized audio as it arrives")
-        XCTAssertFalse(kokoroSupportsStreaming, "KokoroTTSBackend synthesizes a complete WAV before playback")
-        XCTAssertFalse(appleSupportsStreaming, "AppleTTSBackend hands the whole utterance to AVSpeechSynthesizer")
+        for backend in [pocket as any TextToSpeechBackend, kokoro, apple] {
+            let capabilities = await MainActor.run { backend.capabilities }
+            XCTAssertTrue(capabilities.contains(.voiceSelection))
+            XCTAssertTrue(capabilities.contains(.fullyOffline))
+        }
     }
 
     func testBackendsExposeCapabilitiesThroughProviderNeutralContracts() async {
@@ -76,10 +69,10 @@ final class SpeechBackendContractsTests: XCTestCase {
         XCTAssertTrue(stt.capabilities.contains(.partialResults))
 
         let tts = await MainActor.run { ContractTTSBackend() }
-        let supportsPauseResume = await MainActor.run {
-            tts.capabilities.contains(.pauseResume)
+        let supportsVoiceSelection = await MainActor.run {
+            tts.capabilities.contains(.voiceSelection)
         }
-        XCTAssertTrue(supportsPauseResume)
+        XCTAssertTrue(supportsVoiceSelection)
     }
 }
 
@@ -100,7 +93,7 @@ private struct ContractSTTBackend: SpeechToTextBackend {
 private final class ContractTTSBackend: TextToSpeechBackend {
     let id = "contract-tts"
     let displayName = "Contract TTS"
-    let capabilities = TTSCapabilities([.pauseResume])
+    let capabilities = TTSCapabilities([.voiceSelection])
 
     func availability() async -> BackendAvailability { .available }
 
