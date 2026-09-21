@@ -94,6 +94,26 @@ Relay separates speech processing from integrations.
 
 Integrations feed normalized events into Relay. They do not implement speech themselves.
 
+### Text-to-Speech pipeline
+
+TTS backends are pure audio producers. The `TTS Router` selects a backend and asks it for a
+`TTSAudioSource`; a single shared `StreamingAudioPlayer` owns all playback (start, pause/resume,
+stop, and level metering). No backend owns its own speaker.
+
+```text
+TTS Router
+   ↓
+Apple / PocketTTS / Kokoro
+   ↓
+TTSAudioSource
+   ↓
+StreamingAudioPlayer
+```
+
+Kokoro handles long responses by phonemizing the whole text once and synthesizing it as a sequence
+of phoneme-safe chunks, so the first segment starts playing before the entire response is
+synthesized and speech crosses chunk boundaries without dropped or repeated sentences.
+
 ## Terminal and Session Support
 
 Relay is designed to work independently of any particular terminal or multiplexer.

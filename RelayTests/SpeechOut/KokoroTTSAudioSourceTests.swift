@@ -48,6 +48,52 @@ final class KokoroTTSAudioSourceTests: XCTestCase {
         XCTAssertEqual(calls.dropFirst().joined(), "abcdefgh")
         XCTAssertEqual(produced, [4, 4])
     }
+
+    /// Task 14 regression: 100 long-form runs against a fake engine (no CoreML). Alternating
+    /// full-drain and early-cancel runs prove every run terminates, the bounded pipe never leaves a
+    /// blocked producer on teardown, synthesis stays strictly serial, and segment order is stable.
+    /// A tight high/low watermark forces real producer backpressure on the drain runs. Real-model
+    /// memory behavior is the owner-Mac acceptance step; this covers the source's own lifecycle.
+    func testHundredLongFormRunsTerminateWithStableOrderAndSerialSynthesis() async throws {
+        let chunks = ["alpha", "beta", "gamma", "delta", "epsilon"]
+        let expectedSamples: [Float] = chunks.map { Float($0.count) }
+
+        for run in 0..<100 {
+            let engine = FakeLongFormKokoroEngine()
+            let source = KokoroTTSAudioSource(
+                engine: engine,
+                chunks: chunks,
+                voice: "af_heart",
+                speed: 1,
+                highWatermark: 2,
+                lowWatermark: 1
+            )
+
+            if run.isMultiple(of: 3) {
+                // Early-cancel path: pull one frame (leaving the producer mid-flight, likely
+                // suspended on a full pipe), then tear down. Teardown must unblock the producer
+                // and make the consumer terminate promptly rather than hang.
+                _ = try? await source.next()
+                await source.cancel()
+                do {
+                    while try await source.next() != nil {}
+                } catch is CancellationError {
+                    // Acceptable: the pipe reports cancellation to its consumer after teardown.
+                }
+            } else {
+                var samples: [Float] = []
+                while let frame = try await source.next() {
+                    samples.append(contentsOf: frame.samples)
+                }
+                XCTAssertEqual(samples, expectedSamples, "sample order must stay stable on run \(run)")
+                let calls = await engine.phonemeCalls
+                XCTAssertEqual(calls, chunks, "segment order must stay stable on run \(run)")
+            }
+
+            let maxConcurrent = await engine.maxConcurrentSynthesis
+            XCTAssertLessThanOrEqual(maxConcurrent, 1, "synthesis must stay serial on run \(run)")
+        }
+    }
 }
 
 private actor FakeLongFormKokoroEngine: KokoroEngine {

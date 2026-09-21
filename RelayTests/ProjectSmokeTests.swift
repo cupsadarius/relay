@@ -90,4 +90,20 @@ final class ProjectSmokeTests: XCTestCase {
         XCTAssertTrue(runtime.speechOut.ttsModelManagers["pocket-tts"] is PocketTTSModelManager)
         XCTAssertNil(runtime.speechOut.ttsModelManagers["apple-tts"])
     }
+
+    /// Task 14 final graph assertion for the unified TTS migration: every TTS backend is the
+    /// concrete pure-producer type and each model-backed one has its unified `SpeechModelManaging`
+    /// (Apple has none - it downloads nothing). The absence of backend-owned players is a
+    /// compile-time invariant of the final `TextToSpeechBackend` protocol and constructors.
+    @MainActor
+    func testProductionTTSGraphUsesUnifiedModelManagersAndSharedSourceBackends() {
+        let runtime = RelayRuntime.makeProduction()
+
+        XCTAssertTrue(runtime.speechOut.ttsRegistry["pocket-tts"] is PocketTTSBackend)
+        XCTAssertTrue(runtime.speechOut.ttsRegistry["kokoro"] is KokoroTTSBackend)
+        XCTAssertTrue(runtime.speechOut.ttsRegistry["apple-tts"] is AppleTTSBackend)
+        XCTAssertTrue(runtime.speechOut.ttsModelManagers["pocket-tts"] is PocketTTSModelManager)
+        XCTAssertTrue(runtime.speechOut.ttsModelManagers["kokoro"] is KokoroModelManager)
+        XCTAssertNil(runtime.speechOut.ttsModelManagers["apple-tts"])
+    }
 }
