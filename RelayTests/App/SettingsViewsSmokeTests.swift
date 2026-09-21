@@ -150,6 +150,21 @@ final class SpeechModelRowPresentationTests: XCTestCase {
         XCTAssertEqual(presentation.stateLabel, "Downloaded")
     }
 
+    func testDownloadedAlternativeCanBeSelectedWhileBackendIsNotReady() {
+        let status = SpeechModelStatus(
+            descriptor: descriptor(),
+            capabilities: [.download, .select, .remove],
+            installState: .downloaded,
+            isSelected: false,
+            isLoaded: false
+        )
+
+        let presentation = SpeechModelRowPresentation.make(status: status, backendReady: false)
+
+        XCTAssertTrue(presentation.canSelect)
+        XCTAssertFalse(presentation.isActive)
+    }
+
     func testUnsupportedActionsRemainRepresentedButDisabled() {
         let status = SpeechModelStatus(
             descriptor: descriptor(),

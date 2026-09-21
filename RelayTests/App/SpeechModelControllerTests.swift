@@ -122,6 +122,27 @@ final class SpeechModelControllerTests: XCTestCase {
         XCTAssertEqual(controller.messages[.textToSpeech], "Kokoro model removal failed. Try again.")
     }
 
+    func testPartialRemovalFailureReconcilesModelsAndBackendReadiness() async {
+        let key = SpeechModelBackendKey(domain: .textToSpeech, backendID: "kokoro")
+        let downloaded = status("model", state: .downloaded, selected: true)
+        let absent = status("model", state: .notDownloaded, selected: true)
+        let manager = ControllerModelManager(statuses: [downloaded])
+        var refreshedDomains: [SpeechModelDomain] = []
+        let controller = SpeechModelController(managers: [key: manager], diagnostics: DiagnosticsRecorder())
+        controller.configureHooks(
+            refreshBackends: { refreshedDomains.append($0) },
+            beforeRemoval: { _ in }
+        )
+        await controller.refresh(domain: .textToSpeech)
+        await manager.setRemoveFailure(TestFailure(), resultingStatuses: [absent])
+
+        await controller.remove("model", in: key)
+
+        XCTAssertEqual(controller.models[key], [absent])
+        XCTAssertEqual(refreshedDomains, [.textToSpeech])
+        XCTAssertEqual(controller.messages[.textToSpeech], "Kokoro model removal failed. Try again.")
+    }
+
     private func waitUntil(
         timeout: Duration = .seconds(1),
         condition: @escaping @Sendable () async -> Bool
@@ -173,6 +194,7 @@ private actor ControllerModelManager: SpeechModelManaging {
     private(set) var modelsCount = 0
     private var selectError: Error?
     private var removeError: Error?
+    private var removeFailureStatuses: [SpeechModelStatus]?
     private let events: ControllerEventLog?
 
     init(statuses: [SpeechModelStatus], events: ControllerEventLog? = nil) {
@@ -186,6 +208,10 @@ private actor ControllerModelManager: SpeechModelManaging {
     func setBlockDownload(_ value: Bool) { blockDownload = value }
     func setSelectError(_ error: Error?) { selectError = error }
     func setRemoveError(_ error: Error?) { removeError = error }
+    func setRemoveFailure(_ error: Error, resultingStatuses: [SpeechModelStatus]) {
+        removeError = error
+        removeFailureStatuses = resultingStatuses
+    }
 
     func resumeFirstModels() {
         firstModelsContinuation?.resume()
@@ -221,6 +247,9 @@ private actor ControllerModelManager: SpeechModelManaging {
     }
 
     func removeModel(_ id: String) async throws {
+        if let removeFailureStatuses {
+            statuses = removeFailureStatuses
+        }
         if let removeError { throw removeError }
         await events?.append("manager-remove")
         if let index = statuses.firstIndex(where: { $0.id == id }) {

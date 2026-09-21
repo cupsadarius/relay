@@ -27,6 +27,7 @@ final class TTSRouter {
 
     private var candidate: CandidatePlayback?
     private var eventHandler: (@MainActor (TTSPlaybackEvent, (any TextToSpeechBackend)?) -> Void)?
+    private var routingGeneration = 0
 
     init(
         backends: [String: any TextToSpeechBackend],
@@ -56,6 +57,8 @@ final class TTSRouter {
         sessionID: UUID,
         preferredBackendID: String? = nil
     ) async throws {
+        routingGeneration &+= 1
+        let generation = routingGeneration
         // Emitted exactly once per Relay speech session, before any backend attempt, so fallback
         // attempts never duplicate it.
         eventHandler?(.scheduled(sessionID: sessionID), nil)
@@ -65,7 +68,9 @@ final class TTSRouter {
         let candidateIDs = preferredBackendID.map { [$0] } ?? backendOrder()
         for id in candidateIDs {
             guard let backend = backends[id] else { continue }
-            guard case .available = await backend.availability() else { continue }
+            let availability = await backend.availability()
+            guard generation == routingGeneration else { throw CancellationError() }
+            guard case .available = availability else { continue }
 
             let source: any TTSAudioSource
             do {
@@ -73,14 +78,22 @@ final class TTSRouter {
             } catch is CancellationError {
                 throw CancellationError()
             } catch let error as SpeechBackendError where error.isFallbackWorthy {
+                guard generation == routingGeneration else { throw CancellationError() }
                 lastError = error
                 continue
             } catch let error as SpeechBackendError {
+                guard generation == routingGeneration else { throw CancellationError() }
                 eventHandler?(.failed(sessionID: sessionID), nil)
                 throw error
             } catch {
+                guard generation == routingGeneration else { throw CancellationError() }
                 eventHandler?(.failed(sessionID: sessionID), nil)
                 throw error
+            }
+
+            guard generation == routingGeneration else {
+                await source.cancel()
+                throw CancellationError()
             }
 
             candidate = CandidatePlayback(
@@ -92,27 +105,35 @@ final class TTSRouter {
 
             do {
                 try await player.startPlayback(source, sessionID: sessionID)
+                guard generation == routingGeneration else {
+                    await source.cancel()
+                    clearCandidate(sessionID: sessionID)
+                    throw CancellationError()
+                }
                 return
             } catch is CancellationError {
                 await source.cancel()
-                candidate = nil
+                clearCandidate(sessionID: sessionID)
                 throw CancellationError()
             } catch {
                 // `startPlayback` only throws before `.started`; after `.started` the player reports
                 // terminal failure asynchronously. So a thrown error here is always pre-commit and
                 // safe to treat as fallback-worthy.
                 await source.cancel()
-                candidate = nil
+                clearCandidate(sessionID: sessionID)
+                guard generation == routingGeneration else { throw CancellationError() }
                 lastError = .inferenceFailed("TTS playback failed")
                 continue
             }
         }
 
+        guard generation == routingGeneration else { throw CancellationError() }
         eventHandler?(.failed(sessionID: sessionID), nil)
         throw lastError
     }
 
     func stop() {
+        routingGeneration &+= 1
         player.stop()
     }
 
@@ -131,6 +152,12 @@ final class TTSRouter {
 
     func resume() {
         player.resume()
+    }
+
+    private func clearCandidate(sessionID: UUID) {
+        if candidate?.sessionID == sessionID {
+            candidate = nil
+        }
     }
 
     private func forward(_ event: TTSPlaybackEvent) {

@@ -23,7 +23,7 @@ struct SpeechModelRowPresentation: Equatable {
         let supportsSelect = status.capabilities.contains(.select)
         let supportsRemove = status.capabilities.contains(.remove)
         let canDownload = supportsDownload && (status.installState == .notDownloaded || status.installState == .downloadFailed)
-        let canSelect = supportsSelect && downloaded && !active && backendReady
+        let canSelect = supportsSelect && downloaded && !status.isSelected
         let canRemove = supportsRemove && downloaded
         let stateLabel: String
         switch status.installState {
@@ -42,7 +42,7 @@ struct SpeechModelRowPresentation: Equatable {
             canSelect: canSelect,
             canRemove: canRemove,
             downloadHelp: supportsDownload ? (canDownload ? nil : "This model is already downloaded or busy.") : "This provider does not support model downloads.",
-            selectHelp: supportsSelect ? (canSelect ? nil : "Download the model first, or it is already active.") : "This provider does not support model selection.",
+            selectHelp: supportsSelect ? (canSelect ? nil : "Download the model first, or it is already selected.") : "This provider does not support model selection.",
             removeHelp: supportsRemove ? (canRemove ? nil : "Download the model before removing it.") : "This provider does not support model removal."
         )
     }

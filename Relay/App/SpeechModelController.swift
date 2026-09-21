@@ -108,7 +108,6 @@ final class SpeechModelController {
 
     func remove(_ modelID: String, in backend: SpeechModelBackendKey) async {
         guard let manager = managers[backend] else { return }
-        let previous = models[backend]
         do {
             await beforeRemoval(backend)
             try await manager.removeModel(modelID)
@@ -117,9 +116,10 @@ final class SpeechModelController {
             await refresh(domain: backend.domain)
             await refreshBackends(backend.domain)
         } catch {
-            models[backend] = previous
             diagnostics.record(.speechModelRemovalFailed(backendID: backend.backendID))
             messages[backend.domain] = "\(displayName(for: backend.backendID)) model removal failed. Try again."
+            await refresh(domain: backend.domain)
+            await refreshBackends(backend.domain)
         }
     }
 

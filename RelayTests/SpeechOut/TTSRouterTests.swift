@@ -52,6 +52,40 @@ final class TTSRouterTests: XCTestCase {
         XCTAssertTrue(preferred.spoken.isEmpty)
     }
 
+    func testNewRequestSupersedesOlderRequestStillCreatingItsSource() async throws {
+        let slow = FakeTTSBackend(id: "slow")
+        slow.suspendSourceCreation = true
+        let fast = FakeTTSBackend(id: "fast")
+        let player = FakePlayer()
+        let router = makeRouter([slow, fast], player: player)
+
+        let older = Task {
+            try await router.speak(
+                text: "older",
+                options: .init(),
+                sessionID: UUID(),
+                preferredBackendID: slow.id
+            )
+        }
+        await waitUntil { slow.isSourceCreationSuspended }
+
+        try await router.speak(
+            text: "newer",
+            options: .init(),
+            sessionID: UUID(),
+            preferredBackendID: fast.id
+        )
+        slow.resumeSourceCreation()
+
+        do {
+            try await older.value
+            XCTFail("Expected superseded request cancellation")
+        } catch is CancellationError {}
+
+        XCTAssertTrue(slow.spoken.isEmpty)
+        XCTAssertEqual(fast.spoken.map(\.text), ["newer"])
+    }
+
     func testUnavailableBackendIsSkipped() async throws {
         let first = FakeTTSBackend(id: "first")
         first.availabilityValue = .modelNotDownloaded
@@ -244,6 +278,18 @@ final class TTSRouterTests: XCTestCase {
             player: player
         )
     }
+
+    private func waitUntil(
+        timeout: Duration = .seconds(1),
+        condition: @escaping @MainActor () -> Bool
+    ) async {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while !condition(), clock.now < deadline {
+            await Task.yield()
+        }
+        XCTAssertTrue(condition())
+    }
 }
 
 // MARK: - Shared TTS test fakes
@@ -358,6 +404,9 @@ final class FakeTTSBackend: TextToSpeechBackend {
     var availabilityValue: BackendAvailability = .available
     /// Thrown from `makeAudioSource`.
     var error: Error?
+    var suspendSourceCreation = false
+    private(set) var isSourceCreationSuspended = false
+    private var sourceCreationContinuation: CheckedContinuation<Void, Never>?
     /// The router's shared player; set by the test helper before the router is used.
     var player: FakePlayer!
 
@@ -370,7 +419,17 @@ final class FakeTTSBackend: TextToSpeechBackend {
 
     func makeAudioSource(text: String, options: TTSOptions) async throws -> any TTSAudioSource {
         if let error { throw error }
+        if suspendSourceCreation {
+            isSourceCreationSuspended = true
+            await withCheckedContinuation { sourceCreationContinuation = $0 }
+            isSourceCreationSuspended = false
+        }
         return FakeTTSAudioSource(backendID: id, text: text, options: options)
+    }
+
+    func resumeSourceCreation() {
+        sourceCreationContinuation?.resume()
+        sourceCreationContinuation = nil
     }
 
     // MARK: Playback proxies (this backend's slice of the shared player's state)
