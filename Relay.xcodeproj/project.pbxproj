@@ -111,6 +111,7 @@
 		7C370FEEA779CE901DA9C8AF /* TTSBackendCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DED03634A55B66FBCED816D /* TTSBackendCatalogTests.swift */; };
 		7D04E84081221327DDB31323 /* SpeechModelManagingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5304D584B51F37FD35A3DE82 /* SpeechModelManagingTests.swift */; };
 		7D36578865E64A7D1ACDBA52 /* AccessibilityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 483B44390B4757DC9D7B7505 /* AccessibilityService.swift */; };
+		8224B4C533B53526D3FEBF81 /* PocketTTSAudioSourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C81ED5851D60E63A6A62C0B /* PocketTTSAudioSourceTests.swift */; };
 		82EB0751E1D7DBA1BFAA2896 /* ParakeetModelManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6361D378573E4C48DC4BE9A0 /* ParakeetModelManagerTests.swift */; };
 		8352A4F3F66B4FC5015055D9 /* TmuxExecutableLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C30617862641BA93DED04F2 /* TmuxExecutableLocator.swift */; };
 		8364B21972FCCAC67036630C /* BackendAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1230C06958285AB1CAE2418A /* BackendAvailability.swift */; };
@@ -354,6 +355,7 @@
 		9591DD93C5918B2635CFBFDF /* InterimTextDiffTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterimTextDiffTests.swift; sourceTree = "<group>"; };
 		9A2D71436EB216912EA0F366 /* RelayWindowTagger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayWindowTagger.swift; sourceTree = "<group>"; };
 		9C46EAD4AC1F68BEB21F494D /* CodexHookPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexHookPayload.swift; sourceTree = "<group>"; };
+		9C81ED5851D60E63A6A62C0B /* PocketTTSAudioSourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PocketTTSAudioSourceTests.swift; sourceTree = "<group>"; };
 		9D1367D86F5DB24EEC0865E5 /* SynthesizedAudioPlayerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SynthesizedAudioPlayerTests.swift; sourceTree = "<group>"; };
 		9F9345EEDE9FA0BA054B69BC /* RulesTranscriptProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RulesTranscriptProcessor.swift; sourceTree = "<group>"; };
 		A0354860CB30156236B9B877 /* TmuxClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxClient.swift; sourceTree = "<group>"; };
@@ -619,6 +621,7 @@
 				FDF4D4CECB950A011BF002A9 /* KokoroPhonemeChunkerTests.swift */,
 				62160F3674467B4C59BD24B6 /* KokoroTTSAudioSourceTests.swift */,
 				8F7F14D5ADB15C91EA1573F9 /* PCMFramerTests.swift */,
+				9C81ED5851D60E63A6A62C0B /* PocketTTSAudioSourceTests.swift */,
 				75A5D0DD6ECBB171B17FC747 /* RulesSpeechPreprocessorTests.swift */,
 				6B541411E315249B0E88DAE3 /* SpeechCoordinatorTests.swift */,
 				A5BACFD43E570A4F8E383E3E /* SpeechCoordinatorWatchdogTests.swift */,
@@ -1093,6 +1096,7 @@
 				594DAC932E225EE2F33A29B1 /* PCMFramerTests.swift in Sources */,
 				9DEDED0E43E753BCE3E9414B /* ParakeetBackendTests.swift in Sources */,
 				82EB0751E1D7DBA1BFAA2896 /* ParakeetModelManagerTests.swift in Sources */,
+				8224B4C533B53526D3FEBF81 /* PocketTTSAudioSourceTests.swift in Sources */,
 				E9B4F43B9424CFCAFED6BD87 /* PocketTTSBackendTests.swift in Sources */,
 				59989D491FAE5CA90130C9AA /* PocketTTSModelManagerTests.swift in Sources */,
 				62C9E5019CD4CCFDE401F3AA /* ProcessInspectorTests.swift in Sources */,
