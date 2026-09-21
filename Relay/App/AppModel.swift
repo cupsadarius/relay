@@ -86,6 +86,7 @@ final class AppModel {
     @ObservationIgnored let ttsRegistry: [String: any TextToSpeechBackend]
     @ObservationIgnored let ttsModelManagers: [String: any SpeechModelManaging]
     @ObservationIgnored let modelController: SpeechModelController
+    @ObservationIgnored let voiceCatalog: SpeechVoiceCatalog
     @ObservationIgnored var downloadingBackendIDs: Set<String> = []
     @ObservationIgnored var refreshGeneration = 0
     /// Generation counter for `refreshSpeechModels()`, mirroring `refreshGeneration`'s race-safety
@@ -258,6 +259,7 @@ final class AppModel {
             managers: Self.modelManagers(dictation: speechModelManagers, textToSpeech: ttsModelManagers),
             diagnostics: diagnostics
         )
+        self.voiceCatalog = SpeechVoiceCatalog()
         self.hookEnvelopeReceiver = hookEnvelopeReceiver
         self.integrationManager = integrationManager ?? IntegrationManager(
             events: hookEnvelopeReceiver.events,
@@ -349,6 +351,7 @@ final class AppModel {
             managers: Self.modelManagers(dictation: speechModelManagers, textToSpeech: ttsModelManagers),
             diagnostics: diagnostics
         )
+        self.voiceCatalog = SpeechVoiceCatalog()
         self.hookEnvelopeReceiver = hookEnvelopeReceiver
         self.integrationManager = integrationManager
         self.claudeCodeInstaller = claudeCodeInstaller
@@ -446,6 +449,16 @@ final class AppModel {
 
     func setPocketVoice(_ voice: String?) {
         updateSettings { $0.pocketVoice = voice }
+    }
+
+    func selectVoice(backendID: String, voiceID: String) {
+        guard let value = voiceCatalog.storedValue(for: voiceID, backendID: backendID) else { return }
+        switch backendID {
+        case "apple-tts": setVoiceIdentifier(value)
+        case "kokoro": setKokoroVoice(value)
+        case "pocket-tts": setPocketVoice(value)
+        default: break
+        }
     }
 
     func setSpeechRate(_ rate: Float) {
@@ -802,6 +815,25 @@ final class AppModel {
         } catch {
             diagnostics.record(.ttsFailed)
             statusText = error.localizedDescription
+        }
+    }
+
+    func previewVoice(backendID: String, voiceID: String) async {
+        guard let options = voiceCatalog.options(
+            for: voiceID,
+            backendID: backendID,
+            settings: settings
+        ) else { return }
+        do {
+            try await speechCoordinator.previewVoice(
+                text: Self.testVoiceSampleText,
+                backendID: backendID,
+                options: options
+            )
+            diagnostics.record(.ttsSubmitted)
+        } catch {
+            diagnostics.record(.ttsFailed)
+            statusText = "Voice preview failed. Try again."
         }
     }
 

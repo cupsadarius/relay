@@ -50,14 +50,20 @@ final class TTSRouter {
         eventHandler = handler
     }
 
-    func speak(text: String, options: TTSOptions, sessionID: UUID) async throws {
+    func speak(
+        text: String,
+        options: TTSOptions,
+        sessionID: UUID,
+        preferredBackendID: String? = nil
+    ) async throws {
         // Emitted exactly once per Relay speech session, before any backend attempt, so fallback
         // attempts never duplicate it.
         eventHandler?(.scheduled(sessionID: sessionID), nil)
 
         var lastError: SpeechBackendError = .unavailable("No TTS backend is available")
 
-        for id in backendOrder() {
+        let candidateIDs = preferredBackendID.map { [$0] } ?? backendOrder()
+        for id in candidateIDs {
             guard let backend = backends[id] else { continue }
             guard case .available = await backend.availability() else { continue }
 

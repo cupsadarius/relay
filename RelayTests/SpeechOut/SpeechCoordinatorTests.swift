@@ -3,6 +3,33 @@ import XCTest
 
 @MainActor
 final class SpeechCoordinatorTests: XCTestCase {
+    func testVoicePreviewInterruptsAndUsesExactBackendOptions() async throws {
+        let first = FakeTTSBackend(id: "first")
+        let preferred = FakeTTSBackend(id: "preferred")
+        let player = FakePlayer()
+        first.player = player
+        preferred.player = player
+        let router = TTSRouter(
+            backends: [first.id: first, preferred.id: preferred],
+            backendOrder: { [first.id, preferred.id] },
+            player: player
+        )
+        let coordinator = SpeechCoordinator(
+            router: router,
+            options: { .init() },
+            overlay: ActivityOverlayModel(scheduler: FakeOverlayScheduler())
+        )
+        let options = TTSOptions(rate: 0.8, kokoroVoice: "am_adam")
+
+        try await coordinator.speak(request(text: "first", mode: .userRequested))
+        try await coordinator.previewVoice(text: "preview", backendID: "preferred", options: options)
+
+        XCTAssertEqual(first.spoken.map(\.text), ["first"])
+        XCTAssertEqual(preferred.spoken.map(\.text), ["preview"])
+        XCTAssertEqual(preferred.spoken.first?.options, options)
+        XCTAssertEqual(player.stopCount, 1)
+    }
+
     func testUserRequestedSpeechReplacesActiveSpeech() async throws {
         let backend = FakeTTSBackend(id: "apple")
         let coordinator = makeCoordinator(backend: backend)

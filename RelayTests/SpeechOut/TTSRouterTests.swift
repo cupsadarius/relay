@@ -32,6 +32,26 @@ final class TTSRouterTests: XCTestCase {
         XCTAssertEqual(second.spoken.map(\.text), ["hello"])
     }
 
+    func testPreferredBackendUsesOnlyThatBackendWithoutFallback() async {
+        let first = FakeTTSBackend(id: "first")
+        let preferred = FakeTTSBackend(id: "preferred")
+        preferred.error = SpeechBackendError.inferenceFailed("boom")
+        let router = makeRouter([first, preferred])
+
+        do {
+            try await router.speak(
+                text: "preview",
+                options: .init(kokoroVoice: "am_adam"),
+                sessionID: UUID(),
+                preferredBackendID: "preferred"
+            )
+            XCTFail("Expected preferred backend failure")
+        } catch {}
+
+        XCTAssertTrue(first.spoken.isEmpty)
+        XCTAssertTrue(preferred.spoken.isEmpty)
+    }
+
     func testUnavailableBackendIsSkipped() async throws {
         let first = FakeTTSBackend(id: "first")
         first.availabilityValue = .modelNotDownloaded

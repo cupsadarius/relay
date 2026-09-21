@@ -3,9 +3,18 @@ import Foundation
 @MainActor
 protocol SpeechCoordinating: AnyObject {
     func speak(_ request: SpeechRequest) async throws
+    func previewVoice(text: String, backendID: String, options: TTSOptions) async throws
     func stop()
     func stop(sessionID: UUID)
     func replayLast() async throws
+}
+
+enum SpeechPreviewError: Error { case unsupported }
+
+extension SpeechCoordinating {
+    func previewVoice(text: String, backendID: String, options: TTSOptions) async throws {
+        throw SpeechPreviewError.unsupported
+    }
 }
 
 /// A narrow submission-only view of `SpeechCoordinating`, used by callers (like
@@ -141,6 +150,25 @@ final class SpeechCoordinator: SpeechCoordinating {
         inFlightStartedAt = nil
         pendingAutomaticSessions.removeAll()
         isSpeaking = false
+    }
+
+    func previewVoice(text: String, backendID: String, options: TTSOptions) async throws {
+        pendingAutomaticQueue.removeAll()
+        router.stop()
+        cancelWatchdog()
+        let sessionID = UUID()
+        currentSessionID = sessionID
+        inFlightStartedAt = now()
+        isSpeaking = true
+        startWatchdog(for: sessionID)
+        overlay.begin(sessionID: sessionID)
+        overlay.prepareSpeaking(sessionID: sessionID)
+        try await router.speak(
+            text: text,
+            options: options,
+            sessionID: sessionID,
+            preferredBackendID: backendID
+        )
     }
 
     /// No-ops for a stale (already-replaced) session ID; otherwise stops the

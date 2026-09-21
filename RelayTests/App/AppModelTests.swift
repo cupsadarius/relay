@@ -531,6 +531,31 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.diagnosticsEntries.first?.event, .ttsFailed)
     }
 
+    func testPreviewVoiceUsesClickedProviderAndCurrentRateWithoutPersistingSelection() async {
+        let speech = FakeSpeechCoordinator()
+        var settings = AppSettings.defaults
+        settings.kokoroVoice = "af_heart"
+        settings.ttsRate = 0.75
+        let store = FakeSettingsStore(settings: settings)
+        let model = makeModel(store: store, speech: speech)
+
+        await model.previewVoice(backendID: "kokoro", voiceID: "kokoro:am_adam")
+
+        XCTAssertEqual(speech.previews.count, 1)
+        XCTAssertEqual(speech.previews.first?.backendID, "kokoro")
+        XCTAssertEqual(speech.previews.first?.options.kokoroVoice, "am_adam")
+        XCTAssertEqual(speech.previews.first?.options.rate, 0.75)
+        XCTAssertEqual(model.settings.kokoroVoice, "af_heart")
+    }
+
+    func testSelectVoicePersistsThroughProviderNeutralCatalogMapping() {
+        let model = makeModel()
+
+        model.selectVoice(backendID: "kokoro", voiceID: "kokoro:am_adam")
+
+        XCTAssertEqual(model.settings.kokoroVoice, "am_adam")
+    }
+
     func testHoldToTalkStartsOnPressAndFinishesOnRelease() async {
         let hotkeys = FakeHotkeyManager()
         let dictation = FakeDictationCoordinator()
@@ -2001,6 +2026,7 @@ private final class FakeSpeechCoordinator: SpeechCoordinating {
     private(set) var stopCount = 0
     private(set) var stoppedSessionIDs: [UUID] = []
     private(set) var replayCount = 0
+    private(set) var previews: [(text: String, backendID: String, options: TTSOptions)] = []
     let replayError: Error?
     let speakError: Error?
     init(replayError: Error? = nil, speakError: Error? = nil) {
@@ -2010,6 +2036,10 @@ private final class FakeSpeechCoordinator: SpeechCoordinating {
 
     func speak(_ request: SpeechRequest) async throws {
         requests.append(request)
+        if let speakError { throw speakError }
+    }
+    func previewVoice(text: String, backendID: String, options: TTSOptions) async throws {
+        previews.append((text, backendID, options))
         if let speakError { throw speakError }
     }
     func stop() { stopCount += 1 }
