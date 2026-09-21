@@ -76,7 +76,7 @@ final class SpeechModelRowPresentationTests: XCTestCase {
 
         XCTAssertTrue(presentation.isActive)
         XCTAssertEqual(presentation.stateLabel, "\u{25CF} Active")
-        XCTAssertFalse(presentation.showsRemove)
+        XCTAssertTrue(presentation.showsRemove)
     }
 
     func testDownloadableWhenNotDownloaded() {
@@ -84,7 +84,10 @@ final class SpeechModelRowPresentationTests: XCTestCase {
         let presentation = SpeechModelRowPresentation.make(status: status)
 
         XCTAssertFalse(presentation.isActive)
-        XCTAssertEqual(presentation.stateLabel, "Download")
+        XCTAssertEqual(presentation.stateLabel, "Not downloaded")
+        XCTAssertEqual(presentation.downloadTitle, "Download")
+        XCTAssertTrue(presentation.canDownload)
+        XCTAssertFalse(presentation.canSelect)
         XCTAssertFalse(presentation.showsRemove)
     }
 
@@ -101,7 +104,9 @@ final class SpeechModelRowPresentationTests: XCTestCase {
         let status = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloadFailed, isSelected: false, isLoaded: false)
         let presentation = SpeechModelRowPresentation.make(status: status)
 
-        XCTAssertEqual(presentation.stateLabel, "Failed")
+        XCTAssertEqual(presentation.stateLabel, "Download failed")
+        XCTAssertEqual(presentation.downloadTitle, "Retry")
+        XCTAssertTrue(presentation.canDownload)
         XCTAssertFalse(presentation.isActive)
         XCTAssertFalse(presentation.showsRemove)
     }
@@ -111,7 +116,7 @@ final class SpeechModelRowPresentationTests: XCTestCase {
         XCTAssertTrue(SpeechModelRowPresentation.make(status: inactiveDownloaded).showsRemove)
 
         let activeDownloaded = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloaded, isSelected: true, isLoaded: false)
-        XCTAssertFalse(SpeechModelRowPresentation.make(status: activeDownloaded).showsRemove)
+        XCTAssertTrue(SpeechModelRowPresentation.make(status: activeDownloaded).showsRemove)
 
         let notDownloaded = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .notDownloaded, isSelected: false, isLoaded: false)
         XCTAssertFalse(SpeechModelRowPresentation.make(status: notDownloaded).showsRemove)
@@ -143,6 +148,38 @@ final class SpeechModelRowPresentationTests: XCTestCase {
 
         XCTAssertFalse(presentation.isActive)
         XCTAssertEqual(presentation.stateLabel, "Downloaded")
+    }
+
+    func testUnsupportedActionsRemainRepresentedButDisabled() {
+        let status = SpeechModelStatus(
+            descriptor: descriptor(),
+            capabilities: [.select],
+            installState: .downloaded,
+            isSelected: true,
+            isLoaded: false
+        )
+        let presentation = SpeechModelRowPresentation.make(status: status)
+
+        XCTAssertEqual(presentation.downloadTitle, "Download")
+        XCTAssertFalse(presentation.canDownload)
+        XCTAssertFalse(presentation.canSelect)
+        XCTAssertFalse(presentation.canRemove)
+        XCTAssertNotNil(presentation.downloadHelp)
+        XCTAssertNotNil(presentation.removeHelp)
+    }
+}
+
+final class SpeechVoiceRowPresentationTests: XCTestCase {
+    func testSelectAndTestRemainPresentForActiveAndInactiveVoices() {
+        let active = SpeechVoiceRowPresentation(isActive: true)
+        XCTAssertEqual(active.selectTitle, "Select")
+        XCTAssertEqual(active.testTitle, "Test")
+        XCTAssertFalse(active.canSelect)
+        XCTAssertTrue(active.canTest)
+
+        let inactive = SpeechVoiceRowPresentation(isActive: false)
+        XCTAssertTrue(inactive.canSelect)
+        XCTAssertTrue(inactive.canTest)
     }
 }
 
