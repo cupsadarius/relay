@@ -2,7 +2,6 @@ import Foundation
 
 enum PocketTTSModelManagerError: Error, Equatable, Sendable {
     case unknownModel(String)
-    case removeNotSupported
 }
 
 /// One-model `SpeechModelManaging` facade for Relay's PocketTTS backend.
@@ -43,7 +42,7 @@ struct PocketTTSModelManager: SpeechModelManaging {
 
     func removeModel(_ id: String) async throws {
         try Self.validate(id)
-        throw PocketTTSModelManagerError.removeNotSupported
+        try await engine.removeModels()
     }
 
     private static let descriptor = SpeechModelDescriptor(

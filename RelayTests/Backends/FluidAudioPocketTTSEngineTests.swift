@@ -9,6 +9,47 @@ import XCTest
 /// separate regression test below exercises the real, hand-rolled presence check against a
 /// temporary directory to guard against a naive "does the cache directory exist" check.
 final class FluidAudioPocketTTSEngineTests: XCTestCase {
+    func testEngineRemovalReleasesSessionAndInvalidatesPresenceCache() async throws {
+        let loader = FakePocketTTSModelLoader()
+        await loader.setPresent(true)
+        let engine = FluidAudioPocketTTSEngine(modelLoader: loader)
+        try await engine.load(allowDownload: false)
+
+        try await engine.removeModels()
+
+        do {
+            _ = try await engine.synthesize(text: "hello", voice: "alba")
+            XCTFail("Expected released session")
+        } catch {
+            XCTAssertEqual(error as? PocketTTSEngineError, .synthesisFailed)
+        }
+        do {
+            try await engine.load(allowDownload: false)
+            XCTFail("Expected presence to be rechecked")
+        } catch {
+            XCTAssertEqual(error as? PocketTTSEngineError, .modelsNotDownloaded)
+        }
+    }
+
+    func testRemoveModelsDeletesOnlyVersionedEnglishDirectoryAndIsIdempotent() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let english = root.appendingPathComponent("Models/pocket-tts/v2.1/english")
+        let siblingLanguage = root.appendingPathComponent("Models/pocket-tts/v2.1/spanish")
+        let unrelated = root.appendingPathComponent("Models/other-provider")
+        for directory in [english, siblingLanguage, unrelated] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        defer { try? FileManager.default.removeItem(at: root) }
+        let loader = FluidAudioPocketTTSModelLoader(cacheDirectory: root)
+
+        try await loader.removeModels()
+        try await loader.removeModels()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: english.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: siblingLanguage.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: unrelated.path))
+    }
+
     func testLoadThrowsModelsNotDownloadedWhenNotPresentAndNeverDownloads() async {
         let loader = FakePocketTTSModelLoader()
         await loader.setPresent(false)
@@ -344,6 +385,8 @@ private actor FakePocketTTSModelLoader: PocketTTSModelLoading {
         modelsArePresentCallCount += 1
         return present
     }
+
+    func removeModels() async throws { present = false }
 
     func loadLocal() async throws -> any PocketTTSModelSession {
         loadLocalCallCount += 1

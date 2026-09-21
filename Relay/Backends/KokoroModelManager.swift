@@ -2,7 +2,6 @@ import Foundation
 
 enum KokoroModelManagerError: Error, Equatable, Sendable {
     case unknownModel(String)
-    case removeNotSupported
 }
 
 /// One-model `SpeechModelManaging` facade for Relay's Kokoro backend.
@@ -44,7 +43,7 @@ struct KokoroModelManager: SpeechModelManaging {
 
     func removeModel(_ id: String) async throws {
         try Self.validate(id)
-        throw KokoroModelManagerError.removeNotSupported
+        try await engine.removeModels()
     }
 
     private static let descriptor = SpeechModelDescriptor(

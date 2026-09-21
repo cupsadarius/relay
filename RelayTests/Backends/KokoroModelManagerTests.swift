@@ -26,16 +26,28 @@ final class KokoroModelManagerTests: XCTestCase {
         XCTAssertEqual(downloadCount, 1)
         XCTAssertEqual(localCount, 0)
     }
+
+    func testRemoveDelegatesToEngine() async throws {
+        let engine = FakeManagerKokoroEngine(present: true)
+        let manager = KokoroModelManager(engine: engine)
+
+        try await manager.removeModel(KokoroModelManager.modelID)
+
+        let removeCount = await engine.removeCount
+        XCTAssertEqual(removeCount, 1)
+    }
 }
 
 private actor FakeManagerKokoroEngine: KokoroEngine {
     private var present: Bool
     private(set) var downloadCount = 0
     private(set) var localCount = 0
+    private(set) var removeCount = 0
 
     init(present: Bool) { self.present = present }
     func setPresent(_ value: Bool) { present = value }
     func modelsArePresent() async -> Bool { present }
+    func removeModels() async throws { removeCount += 1; present = false }
     func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws {
         if allowDownload { downloadCount += 1; present = true; progress(1) }
         else { localCount += 1 }

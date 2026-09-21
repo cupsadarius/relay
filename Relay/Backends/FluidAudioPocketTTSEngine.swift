@@ -29,6 +29,11 @@ protocol PocketTTSModelLoading: Sendable {
     /// Downloads the model (if needed) and loads it. The only *intended* network access in this
     /// type.
     func downloadAndLoad(progress: @escaping @Sendable (Double) -> Void) async throws -> any PocketTTSModelSession
+    func removeModels() async throws
+}
+
+extension PocketTTSModelLoading {
+    func removeModels() async throws { throw PocketTTSEngineError.loadFailed }
 }
 
 /// Errors surfaced by a `PocketTTSEngine` implementation. `PocketTTSBackend` maps these onto
@@ -59,6 +64,7 @@ protocol PocketTTSEngine: Sendable {
     /// a successful load are no-ops. `progress` is called with a fraction in [0, 1] while a
     /// download is in flight; it may be called from any queue.
     func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws
+    func removeModels() async throws
     /// Synthesizes `text` to a complete WAV (24 kHz mono). The engine must already be loaded.
     func synthesize(text: String, voice: String) async throws -> Data
     /// Streams synthesized audio as raw Float32 frames (24 kHz mono) instead of a complete WAV,
@@ -72,6 +78,10 @@ extension PocketTTSEngine {
     /// Convenience overload for callers that don't need download progress.
     func load(allowDownload: Bool) async throws {
         try await load(allowDownload: allowDownload, progress: { _ in })
+    }
+
+    func removeModels() async throws {
+        throw PocketTTSEngineError.loadFailed
     }
 }
 
@@ -117,6 +127,20 @@ actor FluidAudioPocketTTSEngine: PocketTTSEngine {
 
     func modelsArePresent() async -> Bool {
         await modelLoader.modelsArePresent()
+    }
+
+    func removeModels() async throws {
+        if let inFlightLoad {
+            inFlightLoad.task.cancel()
+            _ = try? await inFlightLoad.task.value
+            clearIfCurrent(inFlightLoad.task)
+        }
+        session = nil
+        validatedModelsPresent = false
+        try await modelLoader.removeModels()
+        guard await !modelLoader.modelsArePresent() else {
+            throw PocketTTSEngineError.loadFailed
+        }
     }
 
     func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws {
@@ -300,6 +324,11 @@ struct FluidAudioPocketTTSModelLoader: PocketTTSModelLoading {
             }
         }
         return true
+    }
+
+    func removeModels() async throws {
+        guard FileManager.default.fileExists(atPath: modelsDirectory.path) else { return }
+        try FileManager.default.removeItem(at: modelsDirectory)
     }
 
     func loadLocal() async throws -> any PocketTTSModelSession {

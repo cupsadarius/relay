@@ -10,6 +10,47 @@ import XCTest
 /// temporary directory to guard against `TtsModels.cacheDirectoryURL()`'s auto-created-directory
 /// trap.
 final class FluidAudioKokoroEngineTests: XCTestCase {
+    func testEngineRemovalReleasesSessionAndInvalidatesPresenceCache() async throws {
+        let loader = FakeKokoroModelLoader()
+        await loader.setPresent(true)
+        let engine = FluidAudioKokoroEngine(modelLoader: loader)
+        try await engine.load(allowDownload: false)
+
+        try await engine.removeModels()
+
+        do {
+            _ = try await engine.synthesize(text: "hello", voice: "af_heart", speed: 1)
+            XCTFail("Expected released session")
+        } catch {
+            XCTAssertEqual(error as? KokoroEngineError, .synthesisFailed)
+        }
+        do {
+            try await engine.load(allowDownload: false)
+            XCTFail("Expected presence to be rechecked")
+        } catch {
+            XCTAssertEqual(error as? KokoroEngineError, .modelsNotDownloaded)
+        }
+    }
+
+    func testRemoveModelsDeletesOnlyANEAndG2PDirectoriesAndIsIdempotent() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let ane = root.appendingPathComponent("kokoro-82m-coreml/ANE")
+        let g2p = root.appendingPathComponent("kokoro")
+        let unrelated = root.appendingPathComponent("other-provider")
+        for directory in [ane, g2p, unrelated] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        defer { try? FileManager.default.removeItem(at: root) }
+        let loader = FluidAudioKokoroModelLoader(cacheDirectory: root)
+
+        try await loader.removeModels()
+        try await loader.removeModels()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: ane.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: g2p.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: unrelated.path))
+    }
+
     func testLoadThrowsModelsNotDownloadedWhenNotPresentAndNeverDownloads() async {
         let loader = FakeKokoroModelLoader()
         await loader.setPresent(false)
@@ -383,6 +424,8 @@ private actor FakeKokoroModelLoader: KokoroModelLoading {
         modelsArePresentCallCount += 1
         return present
     }
+
+    func removeModels() async throws { present = false }
 
     func loadLocal() async throws -> any KokoroModelSession {
         loadLocalCallCount += 1

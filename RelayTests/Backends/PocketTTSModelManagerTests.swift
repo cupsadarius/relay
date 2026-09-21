@@ -21,15 +21,27 @@ final class PocketTTSModelManagerTests: XCTestCase {
         XCTAssertEqual(downloadCount, 1)
         XCTAssertEqual(localCount, 0)
     }
+
+    func testRemoveDelegatesToEngine() async throws {
+        let engine = FakeManagerPocketEngine(present: true)
+        let manager = PocketTTSModelManager(engine: engine)
+
+        try await manager.removeModel(PocketTTSModelManager.modelID)
+
+        let removeCount = await engine.removeCount
+        XCTAssertEqual(removeCount, 1)
+    }
 }
 
 private actor FakeManagerPocketEngine: PocketTTSEngine {
     private var present: Bool
     private(set) var downloadCount = 0
     private(set) var localCount = 0
+    private(set) var removeCount = 0
 
     init(present: Bool) { self.present = present }
     func modelsArePresent() async -> Bool { present }
+    func removeModels() async throws { removeCount += 1; present = false }
     func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws {
         if allowDownload { downloadCount += 1; present = true; progress(1) }
         else { localCount += 1 }

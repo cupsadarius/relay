@@ -32,6 +32,11 @@ protocol KokoroModelLoading: Sendable {
     /// Downloads the model (if needed) and loads it. The only *intended* network access in this
     /// type.
     func downloadAndLoad(progress: @escaping @Sendable (Double) -> Void) async throws -> any KokoroModelSession
+    func removeModels() async throws
+}
+
+extension KokoroModelLoading {
+    func removeModels() async throws { throw KokoroEngineError.loadFailed }
 }
 
 /// Errors surfaced by a `KokoroEngine` implementation. `KokoroTTSBackend` maps these onto
@@ -71,6 +76,7 @@ protocol KokoroEngine: Sendable {
     /// successful load are no-ops. `progress` is called with a fraction in [0, 1] while a
     /// download is in flight; it may be called from any queue.
     func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws
+    func removeModels() async throws
     /// Synthesizes `text` to a complete WAV (24 kHz mono). The engine must already be loaded.
     /// Throws `KokoroEngineError.textTooLong` if `text` phonemizes to more than KokoroAne's
     /// ~510-phoneme per-call limit - callers must not feed it chunked text themselves without
@@ -86,6 +92,10 @@ extension KokoroEngine {
     /// Convenience overload for callers that don't need download progress.
     func load(allowDownload: Bool) async throws {
         try await load(allowDownload: allowDownload, progress: { _ in })
+    }
+
+    func removeModels() async throws {
+        throw KokoroEngineError.loadFailed
     }
 
     /// Compatibility defaults keep existing engine test fakes source-compatible while the live
@@ -159,6 +169,20 @@ actor FluidAudioKokoroEngine: KokoroEngine {
 
     func modelsArePresent() async -> Bool {
         await modelLoader.modelsArePresent()
+    }
+
+    func removeModels() async throws {
+        if let inFlightLoad {
+            inFlightLoad.task.cancel()
+            _ = try? await inFlightLoad.task.value
+            clearIfCurrent(inFlightLoad.task)
+        }
+        session = nil
+        validatedModelsPresent = false
+        try await modelLoader.removeModels()
+        guard await !modelLoader.modelsArePresent() else {
+            throw KokoroEngineError.loadFailed
+        }
     }
 
     func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws {
@@ -378,6 +402,16 @@ struct FluidAudioKokoroModelLoader: KokoroModelLoading {
     func modelsArePresent() async -> Bool {
         Self.allFilesExist(ModelNames.KokoroAne.requiredModels, in: modelsDirectory)
             && Self.allFilesExist(ModelNames.G2P.requiredModels, in: g2pDirectory)
+    }
+
+    func removeModels() async throws {
+        try removeIfPresent(modelsDirectory)
+        try removeIfPresent(g2pDirectory)
+    }
+
+    private func removeIfPresent(_ url: URL) throws {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        try FileManager.default.removeItem(at: url)
     }
 
     /// `.mlmodelc` entries are directories and `.json`/other auxiliary entries are plain files,
