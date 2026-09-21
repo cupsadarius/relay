@@ -14,8 +14,17 @@ enum SpeechModelInstallState: Equatable, Sendable {
     case downloadFailed
 }
 
+struct SpeechModelCapabilities: OptionSet, Equatable, Sendable {
+    let rawValue: UInt8
+
+    static let download = Self(rawValue: 1 << 0)
+    static let select = Self(rawValue: 1 << 1)
+    static let remove = Self(rawValue: 1 << 2)
+}
+
 struct SpeechModelStatus: Identifiable, Equatable, Sendable {
     let descriptor: SpeechModelDescriptor
+    let capabilities: SpeechModelCapabilities
     var installState: SpeechModelInstallState
     var isSelected: Bool
     var isLoaded: Bool

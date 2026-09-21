@@ -519,6 +519,7 @@ private actor FakeTTSModelManager: SpeechModelManaging {
     func models() async -> [SpeechModelStatus] {
         [SpeechModelStatus(
             descriptor: .init(id: modelID, displayName: modelID, detail: nil, approximateDownloadBytes: nil),
+            capabilities: [.download, .select, .remove],
             installState: present ? .downloaded : .notDownloaded,
             isSelected: true,
             isLoaded: false

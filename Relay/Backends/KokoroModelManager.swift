@@ -22,6 +22,7 @@ struct KokoroModelManager: SpeechModelManaging {
         return [
             SpeechModelStatus(
                 descriptor: Self.descriptor,
+                capabilities: [.download, .select, .remove],
                 installState: present ? .downloaded : .notDownloaded,
                 isSelected: true,
                 isLoaded: false

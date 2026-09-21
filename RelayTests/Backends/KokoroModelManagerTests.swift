@@ -8,6 +8,7 @@ final class KokoroModelManagerTests: XCTestCase {
         let manager = KokoroModelManager(engine: engine)
         var rows = await manager.models()
         XCTAssertEqual(rows.map(\.id), [KokoroModelManager.modelID])
+        XCTAssertEqual(rows[0].capabilities, [.download, .select, .remove])
         XCTAssertEqual(rows[0].installState, .notDownloaded)
         XCTAssertTrue(rows[0].isSelected)
 

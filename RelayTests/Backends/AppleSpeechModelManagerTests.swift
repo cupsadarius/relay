@@ -12,6 +12,7 @@ final class AppleSpeechModelManagerTests: XCTestCase {
 
         XCTAssertEqual(models.count, 1)
         XCTAssertEqual(models[0].descriptor.id, "apple-on-device")
+        XCTAssertEqual(models[0].capabilities, [.select])
         XCTAssertEqual(models[0].installState, .downloaded)
         XCTAssertTrue(models[0].isSelected)
         XCTAssertFalse(models[0].isLoaded)

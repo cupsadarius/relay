@@ -116,6 +116,9 @@ final class WhisperModelManagerTests: XCTestCase {
 
         XCTAssertEqual(models.count, WhisperModelID.allCases.count)
         XCTAssertEqual(models.map(\.id), WhisperModelID.allCases.map(\.rawValue))
+        XCTAssertTrue(models.allSatisfy {
+            $0.capabilities == [.download, .select, .remove]
+        })
 
         for status in models {
             let expectedInstalled: SpeechModelInstallState = [

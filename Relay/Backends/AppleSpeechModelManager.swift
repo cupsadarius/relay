@@ -35,6 +35,7 @@ struct AppleSpeechModelManager: SpeechModelManaging {
         [
             SpeechModelStatus(
                 descriptor: Self.descriptor,
+                capabilities: [.select],
                 installState: .downloaded,
                 isSelected: true,
                 isLoaded: false

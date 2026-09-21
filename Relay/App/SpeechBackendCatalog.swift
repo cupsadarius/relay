@@ -331,6 +331,7 @@ extension AppModel {
             rows.append(
                 SpeechModelStatus(
                     descriptor: SpeechModelDescriptor(id: modelID, displayName: modelID, detail: nil, approximateDownloadBytes: nil),
+                    capabilities: [.download, .select, .remove],
                     installState: state,
                     isSelected: false,
                     isLoaded: false

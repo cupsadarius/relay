@@ -1774,6 +1774,7 @@ private func makeModelStatus(
 ) -> SpeechModelStatus {
     SpeechModelStatus(
         descriptor: SpeechModelDescriptor(id: id, displayName: id, detail: nil, approximateDownloadBytes: nil),
+        capabilities: [.download, .select, .remove],
         installState: installState,
         isSelected: isSelected,
         isLoaded: isLoaded
@@ -1929,6 +1930,7 @@ private actor FakeSpeechModelManager: SpeechModelManaging {
         [
             SpeechModelStatus(
                 descriptor: SpeechModelDescriptor(id: modelID, displayName: modelID, detail: nil, approximateDownloadBytes: nil),
+                capabilities: [.download, .select, .remove],
                 installState: .notDownloaded,
                 isSelected: true,
                 isLoaded: false

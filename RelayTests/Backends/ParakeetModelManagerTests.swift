@@ -37,6 +37,7 @@ final class ParakeetModelManagerTests: XCTestCase {
 
         XCTAssertEqual(models.count, 1)
         XCTAssertEqual(models[0].descriptor.id, "parakeet-v2")
+        XCTAssertEqual(models[0].capabilities, [.download, .select])
         XCTAssertTrue(models[0].isSelected)
     }
 

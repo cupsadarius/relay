@@ -7,6 +7,7 @@ final class PocketTTSModelManagerTests: XCTestCase {
         let manager = PocketTTSModelManager(engine: FakeManagerPocketEngine(present: true))
         let rows = await manager.models()
         XCTAssertEqual(rows.map(\.id), [PocketTTSModelManager.modelID])
+        XCTAssertEqual(rows[0].capabilities, [.download, .select, .remove])
         XCTAssertEqual(rows[0].installState, .downloaded)
         XCTAssertTrue(rows[0].isSelected)
     }

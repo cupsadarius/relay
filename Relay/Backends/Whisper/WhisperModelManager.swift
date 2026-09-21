@@ -76,6 +76,7 @@ struct WhisperModelManager: SpeechModelManaging {
         return WhisperModelID.allCases.map { id in
             SpeechModelStatus(
                 descriptor: Self.descriptor(for: id),
+                capabilities: [.download, .select, .remove],
                 installState: store.presence(of: id) ? .downloaded : .notDownloaded,
                 isSelected: selected == id,
                 isLoaded: loadedID == id

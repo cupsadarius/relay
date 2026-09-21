@@ -46,6 +46,7 @@ struct ParakeetModelManager: SpeechModelManaging {
         return [
             SpeechModelStatus(
                 descriptor: Self.descriptor,
+                capabilities: [.download, .select],
                 installState: present ? .downloaded : .notDownloaded,
                 isSelected: true,
                 isLoaded: false
