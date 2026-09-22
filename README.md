@@ -12,16 +12,12 @@ The goal is to make tools such as Claude Code and Codex feel conversational with
 
 Hold a configurable hotkey, speak, and Relay transcribes your voice locally and inserts the result at the current cursor.
 
-```text
-Hold hotkey
-    ↓
-Speak
-    ↓
-Local speech-to-text
-    ↓
-Optional transcript cleanup
-    ↓
-Insert at cursor
+```mermaid
+flowchart TD
+    A[Hold hotkey] --> B[Speak]
+    B --> C[Local speech-to-text]
+    C --> D[Optional transcript cleanup]
+    D --> E[Insert at cursor]
 ```
 
 While you speak, an on-screen pill shows live interim transcription that grows, wraps, and scrolls as more words arrive. The pill is toggleable in General settings.
@@ -30,14 +26,11 @@ While you speak, an on-screen pill shows live interim transcription that grows, 
 
 Select text anywhere on macOS, press a configurable hotkey, and Relay reads it aloud.
 
-```text
-Select text
-    ↓
-Read Selection hotkey
-    ↓
-Speech preprocessing
-    ↓
-Local text-to-speech
+```mermaid
+flowchart TD
+    A[Select text] --> B[Read Selection hotkey]
+    B --> C[Speech preprocessing]
+    C --> D[Local text-to-speech]
 ```
 
 Relay shows an **Activity Overlay** — an on-screen capsule reflecting speaking status and the active backend. Speech is serialized through an **automatic queue**, so concurrent agent responses queue rather than overlap. A session-aware **Replay Last** action replays the focused session's last reply, else the global latest reply, else the last spoken/selected text.
@@ -69,27 +62,22 @@ Background agent sessions remain silent — but the last-active session keeps re
 
 Relay separates speech processing from integrations.
 
-```text
-                    Relay Core
+```mermaid
+flowchart TD
+    Selection[Selection Reader] --> Coord[Speech Coordinator]
+    Claude[Claude Code] --> Coord
+    Codex[Codex] --> Coord
 
-       Speech In                    Speech Out
-           │                            │
-       STT Router                   TTS Router
-           │                            │
-     ┌─────┴─────┐          ┌──────┬────┴────┬────────┐
-     │           │          │      │         │        │
- Parakeet     Apple     Apple TTS Kokoro  PocketTTS  Future
-     │           │          │      │         │        │
-     └─────┬─────┘          └──────┴────┬────┴────────┘
-           │                            │
-           └───────────┬────────────────┘
-                       │
-               Speech Coordinator
-                       ▲
-         ┌─────────────┼─────────────┐
-         │             │             │
-    Selection       Claude        Codex
-     Reader          Code
+    Coord --> STT[STT Router]
+    Coord --> TTS[TTS Router]
+
+    STT --> AppleSpeech[Apple Speech]
+    STT --> Parakeet[Parakeet]
+    STT --> Whisper[Whisper]
+
+    TTS --> AppleTTS[Apple TTS]
+    TTS --> Kokoro[Kokoro]
+    TTS --> PocketTTS[PocketTTS]
 ```
 
 Integrations feed normalized events into Relay. They do not implement speech themselves.
@@ -100,14 +88,11 @@ TTS backends are pure audio producers. The `TTS Router` selects a backend and as
 `TTSAudioSource`; a single shared `StreamingAudioPlayer` owns all playback (start, pause/resume,
 stop, and level metering). No backend owns its own speaker.
 
-```text
-TTS Router
-   ↓
-Apple / PocketTTS / Kokoro
-   ↓
-TTSAudioSource
-   ↓
-StreamingAudioPlayer
+```mermaid
+flowchart TD
+    Router[TTS Router] --> Backends[Apple / PocketTTS / Kokoro]
+    Backends --> Source[TTSAudioSource]
+    Source --> Player[StreamingAudioPlayer]
 ```
 
 Kokoro handles long responses by phonemizing the whole text once and synthesizing it as a sequence
