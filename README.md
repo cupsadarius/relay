@@ -144,7 +144,9 @@ Relay's settings are organized into tabs:
 
 ## Project Status
 
-All three phases have shipped, covered by a green XCTest suite (~729 tests).
+All three phases have shipped, covered by a green XCTest suite (~880 tests).
+
+Recent work: TTS now runs as a unified source/player pipeline (backends produce a `TTSAudioSource`; one shared `StreamingAudioPlayer` owns playback), with Kokoro long-form phoneme chunking. Speech-model management is unified across STT and TTS providers — one download/select/remove flow plus in-settings voice previews. The playback watchdog is inactivity-based, so long responses are never cut off while they keep making progress.
 
 1. **Core**
    - macOS app
