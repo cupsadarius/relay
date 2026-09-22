@@ -155,6 +155,8 @@ Recent work: TTS now runs as a unified source/player pipeline (backends produce 
 
 ## Documentation
 
+Design specs, implementation plans, and feasibility spikes live under `docs/superpowers/`:
+
 ```text
 docs/
 └── superpowers/
@@ -162,16 +164,29 @@ docs/
     │   ├── 2026-09-11-relay-design.md
     │   ├── 2026-09-14-relay-activity-overlay-design.md
     │   ├── 2026-09-15-relay-settings-remodel-and-kokoro-tts-design.md
-    │   └── 2026-09-16-live-transcription-spike-findings.md
-    └── plans/
-        ├── 2026-09-11-relay-phase-1-core-implementation-plan.md
-        ├── 2026-09-11-relay-phase-2-agent-integrations-implementation-plan.md
-        ├── 2026-09-11-relay-phase-3-session-intelligence-implementation-plan.md
-        ├── 2026-09-14-relay-phase-1-5-activity-overlay-implementation-plan.md
-        ├── 2026-09-15-relay-keybinds-smart-recorder-implementation-plan.md
-        ├── 2026-09-15-relay-phase-1-6-settings-remodel-implementation-plan.md
-        ├── 2026-09-15-relay-phase-1-7-kokoro-tts-implementation-plan.md
-        └── 2026-09-15-relay-pockettts-backend-implementation-plan.md
+    │   ├── 2026-09-16-live-transcription-spike-findings.md
+    │   ├── 2026-09-18-whisper-backend-design.md
+    │   ├── 2026-09-19-relay-unified-tts-migration-design.md
+    │   └── 2026-09-21-unified-speech-model-settings-design.md
+    ├── plans/
+    │   ├── 2026-09-11-relay-phase-1-core-implementation-plan.md
+    │   ├── 2026-09-11-relay-phase-2-agent-integrations-implementation-plan.md
+    │   ├── 2026-09-11-relay-phase-3-session-intelligence-implementation-plan.md
+    │   ├── 2026-09-14-relay-phase-1-5-activity-overlay-implementation-plan.md
+    │   ├── 2026-09-15-relay-keybinds-smart-recorder-implementation-plan.md
+    │   ├── 2026-09-15-relay-phase-1-6-settings-remodel-implementation-plan.md
+    │   ├── 2026-09-15-relay-phase-1-7-kokoro-tts-implementation-plan.md
+    │   ├── 2026-09-15-relay-pockettts-backend-implementation-plan.md
+    │   ├── 2026-09-16-relay-reliability-wave-1-external-boundaries-implementation-plan.md
+    │   ├── 2026-09-16-relay-reliability-wave-2-speech-lifecycle-implementation-plan.md
+    │   ├── 2026-09-16-relay-reliability-wave-3-simplification-implementation-plan.md
+    │   ├── 2026-09-18-whisper-backend.md
+    │   ├── 2026-09-19-relay-unified-tts-migration-implementation-plan.md
+    │   └── 2026-09-21-unified-speech-model-settings-implementation-plan.md
+    └── spikes/
+        ├── 2026-09-17-hands-free-mode-feasibility-spike.md
+        ├── 2026-09-18-openai-whisper-models-feasibility-results.md
+        └── 2026-09-18-relay-openai-whisper-models-feasibility-spike.md
 ```
 
 ## Tech Stack
@@ -182,7 +197,7 @@ docs/
 - AVFoundation
 - macOS Accessibility APIs
 - XcodeGen (`project.yml` → `Relay.xcodeproj`) and XCTest
-- FluidAudio models for STT/TTS (Parakeet, Kokoro, PocketTTS)
+- On-device speech models: FluidAudio (Parakeet STT; Kokoro and PocketTTS TTS), WhisperKit (Whisper STT), and Apple's Speech / AVSpeechSynthesizer
 
 Speech backends are abstracted so models and providers can be replaced without changing the rest of Relay.
 
