@@ -64,6 +64,28 @@ final class SpeechCoordinatorWatchdogTests: XCTestCase {
         XCTAssertTrue(overlay.state.isHidden)
     }
 
+    func testPlaybackProgressExtendsWatchdogDeadline() async throws {
+        let timeout: TimeInterval = 0.2
+        let backend = FakeTTSBackend(id: "kokoro")
+        let coordinator = makeCoordinator(backend: backend, watchdogTimeout: timeout)
+
+        try await coordinator.speak(request(text: "long-form", mode: .automatic))
+        let sessionID = backend.lastSessionID!
+        backend.emit(.started(sessionID: sessionID))
+
+        // Progress arrives before the original deadline. Wait until after that original deadline,
+        // but before a fresh inactivity deadline measured from this progress event.
+        try await Task.sleep(nanoseconds: 120_000_000)
+        backend.emit(.level(sessionID: sessionID, level: 0.5))
+        try await Task.sleep(nanoseconds: 120_000_000)
+        await pumpMainActor()
+
+        XCTAssertEqual(backend.stopCount, 0)
+
+        // Retire the session normally so no watchdog task survives the test.
+        backend.emit(.finished(sessionID: sessionID))
+    }
+
     func testWatchdogDoesNotDoubleFire() async throws {
         let backend = FakeTTSBackend(id: "apple")
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
@@ -137,7 +159,8 @@ final class SpeechCoordinatorWatchdogTests: XCTestCase {
     private func makeCoordinator(
         backend: FakeTTSBackend,
         overlay: ActivityOverlayModel? = nil,
-        options: @escaping () -> TTSOptions = { .init() }
+        options: @escaping () -> TTSOptions = { .init() },
+        watchdogTimeout: TimeInterval? = nil
     ) -> SpeechCoordinator {
         let overlay = overlay ?? ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let player = FakePlayer()
@@ -151,7 +174,7 @@ final class SpeechCoordinatorWatchdogTests: XCTestCase {
             router: router,
             options: options,
             overlay: overlay,
-            watchdogTimeout: watchdogTimeout
+            watchdogTimeout: watchdogTimeout ?? self.watchdogTimeout
         )
     }
 

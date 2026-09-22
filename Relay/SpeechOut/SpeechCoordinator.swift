@@ -59,11 +59,11 @@ final class SpeechCoordinator: SpeechCoordinating {
     private let options: () -> TTSOptions
     private let overlay: ActivityOverlayModel
     private let now: () -> Date
-    /// How long the independent playback watchdog (`startWatchdog(for:)`) waits, from the moment
-    /// a session is handed to the router, before giving up on it if no terminal event has
-    /// arrived. Unlike `staleInFlightTimeout` this is a real wall-clock duration (driven by
-    /// `Task.sleep`, not the injectable `now()` clock), so tests can shorten it directly rather
-    /// than by faking time.
+    /// How long the independent playback watchdog (`startWatchdog(for:)`) allows a session to go
+    /// without playback progress. The deadline starts when the session is handed to the router
+    /// and is rearmed whenever playback starts or another audio level arrives. Unlike
+    /// `staleInFlightTimeout` this is a real wall-clock duration (driven by `Task.sleep`, not the
+    /// injectable `now()` clock), so tests can shorten it directly rather than by faking time.
     private let watchdogTimeout: TimeInterval
     private var lastRequest: SpeechRequest?
     private var currentSessionID: UUID?
@@ -225,11 +225,11 @@ final class SpeechCoordinator: SpeechCoordinating {
         return now().timeIntervalSince(inFlightStartedAt) >= Self.staleInFlightTimeout
     }
 
-    /// Starts (replacing any previous) watchdog timer for `sessionID`. Runs independently of the
-    /// router's `.started` event so a streaming backend's start timing can never gate recovery:
-    /// the clock starts the moment the session is accepted, not when playback audibly begins. If
-    /// `sessionID` is still the in-flight session once `watchdogTimeout` elapses with no terminal
-    /// event, the session is treated as abandoned - see `handleWatchdogExpiry(sessionID:)`.
+    /// Starts (replacing any previous) watchdog timer for `sessionID`. The first deadline starts
+    /// when the session is accepted, so a backend that never begins playback is still recovered.
+    /// Once playback is active, `recordPlaybackProgress(sessionID:)` rearms this timer on every
+    /// progress event. If the current session produces neither progress nor a terminal event for
+    /// `watchdogTimeout`, it is treated as abandoned - see `handleWatchdogExpiry(sessionID:)`.
     private func startWatchdog(for sessionID: UUID) {
         watchdogTask?.cancel()
         let timeout = max(watchdogTimeout, 0)
@@ -246,6 +246,13 @@ final class SpeechCoordinator: SpeechCoordinating {
     private func cancelWatchdog() {
         watchdogTask?.cancel()
         watchdogTask = nil
+    }
+
+    /// Rearms the watchdog only for the current session. A stale player's delayed `.started` or
+    /// `.level` event must never extend the replacement session's deadline.
+    private func recordPlaybackProgress(sessionID: UUID) {
+        guard sessionID == currentSessionID else { return }
+        startWatchdog(for: sessionID)
     }
 
     /// Fires when a session's watchdog timer elapses with no terminal event observed. Guards that
@@ -339,6 +346,7 @@ final class SpeechCoordinator: SpeechCoordinating {
         case .scheduled:
             break
         case let .started(sessionID):
+            recordPlaybackProgress(sessionID: sessionID)
             if pendingAutomaticSessions.remove(sessionID) != nil {
                 overlay.begin(sessionID: sessionID)
             }
@@ -347,6 +355,7 @@ final class SpeechCoordinator: SpeechCoordinating {
                 overlay.setBackendName(backend.displayName, sessionID: sessionID)
             }
         case let .level(sessionID, level):
+            recordPlaybackProgress(sessionID: sessionID)
             overlay.updateSpeakingLevel(level, sessionID: sessionID)
         case let .finished(sessionID):
             // A pending automatic session that never started was never
