@@ -1,33 +1,41 @@
 import Foundation
 
-/// Pull adapter over PocketTTS's existing native Float32 stream.
-actor PocketTTSAudioSource: TTSAudioSource {
-    private nonisolated(unsafe) var iterator: AsyncThrowingStream<[Float], Error>.AsyncIterator?
-    private let format: TTSAudioFormat
-    private var cancelled = false
+/// Pull adapter over PocketTTS's existing native Float32 stream. A producer task drains the
+/// engine stream into a bounded pipe; playback pulls frames back out independently.
+struct PocketTTSAudioSource: TTSAudioSource {
+    private let source: TTSAudioPipe.Source
+    private let producer: Task<Void, Never>
 
-    init(stream: AsyncThrowingStream<[Float], Error>, sampleRate: Double) {
-        iterator = stream.makeAsyncIterator()
-        format = TTSAudioFormat(sampleRate: sampleRate, channelCount: 1)
-    }
-
-    func next() async throws -> TTSAudioFrame? {
-        guard !cancelled, var iterator else { return nil }
-        do {
-            guard let samples = try await iterator.next() else {
-                self.iterator = nil
-                return nil
+    init(
+        stream: AsyncThrowingStream<[Float], Error>,
+        sampleRate: Double,
+        highWatermark: TimeInterval = 30,
+        lowWatermark: TimeInterval = 15
+    ) {
+        let format = TTSAudioFormat(sampleRate: sampleRate, channelCount: 1)
+        let pipe = TTSAudioPipe.make(highWatermark: highWatermark, lowWatermark: lowWatermark)
+        source = pipe.source
+        producer = Task {
+            do {
+                for try await samples in stream {
+                    try Task.checkCancellation()
+                    try await pipe.sink.yield(TTSAudioFrame(samples: samples, format: format))
+                }
+                await pipe.sink.finish()
+            } catch is CancellationError {
+                await pipe.sink.cancel()
+            } catch {
+                await pipe.sink.fail(error)
             }
-            self.iterator = iterator
-            return TTSAudioFrame(samples: samples, format: format)
-        } catch {
-            self.iterator = nil
-            throw error
         }
     }
 
-    func cancel() {
-        cancelled = true
-        iterator = nil
+    func next() async throws -> TTSAudioFrame? {
+        try await source.next()
+    }
+
+    func cancel() async {
+        producer.cancel()
+        await source.cancel()
     }
 }
