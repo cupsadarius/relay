@@ -31,7 +31,12 @@ struct PocketTTSAudioSource: TTSAudioSource {
     }
 
     func next() async throws -> TTSAudioFrame? {
-        try await source.next()
+        do {
+            return try await source.next()
+        } catch is CancellationError {
+            // A cancelled source yields no more frames rather than surfacing the cancellation.
+            return nil
+        }
     }
 
     func cancel() async {
