@@ -14,6 +14,12 @@
 
 ---
 
+## Global Constraints
+
+- **Never add `group:` entries to `project.yml`.** xcodegen 2.46 hangs on them. (The two existing `group: RelayHook` lines under the `Relay` target predate this plan; leave them alone.) New files are picked up by the directory globs; just run `xcodegen generate`.
+- **Every `xcodebuild` invocation uses `-derivedDataPath /tmp/relay-dd-cleanup5`** (all commands below already include it), so this worktree never shares DerivedData with `main` or another worktree.
+- **Worktree:** `.worktrees/cleanup-5-appmodel-split`, branched off `main` only **after plan 4 (`cleanup/4-speech-engines`) has merged** (plans 1–3 are already on `main`).
+
 ## Ground rules
 
 - Branch `cleanup/5-appmodel-split`, cut from `main` **after plans 1–4 are merged**. Execute in a git worktree:
@@ -27,11 +33,11 @@
 - Stage explicit paths only. Never `git add -A` / `git add .`.
 - Commit messages: conventional, plain. **No `Co-Authored-By`, no `Claude-Session`, no "Generated with Claude Code" line.** The message ends at its last real line.
 - Behavior-preserving except where a task says **Fix**.
-- **Re-read every file you are about to edit before each task.** Line numbers below are from `main@450b4af` and are approximate; plans 1–4 move things.
+- **Re-read every file you are about to edit before each task.** Line numbers below are from `main@6d14400` (plans 1–3 merged) plus the plan 4 branch, and are approximate. Plan 4 does not edit `Relay/App/RelayRuntime.swift` or `Relay/App/AppModel.swift`, so line numbers in those two files are exact as of `6d14400`.
 - After adding/removing/renaming any file: `xcodegen generate`.
 - Single-test command:
   ```bash
-  xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO \
+  xcodebuild test -scheme Relay -derivedDataPath /tmp/relay-dd-cleanup5 -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO \
     -only-testing:RelayTests/<Class>/<method> 2>&1 | tail -30
   ```
   Class-level: `-only-testing:RelayTests/<Class>`. Full suite: drop `-only-testing`. Success line: `** TEST SUCCEEDED **`.
@@ -45,8 +51,8 @@ Plans 1–4 are merged before Task 0 (`docs/superpowers/plans/2026-09-23-relay-c
 |---|---|
 | 1 | **Task 1:** `AppSettings.init(from:)` decodes every field through a local `field(_:default:)` helper (`try?` per field) plus `decodeHotkeys(from:)` (per entry, falls back to the default map when no saved entry is usable). The `schemaVersion` switch is **gone**; Task 6 adds the first real version check. Adds `AppSettingsDecodeTests.testWrongTypedOptionalFieldsFallBackWithoutResettingOthers` (touches the three voice keys; Task 6 converts it). **Task 8:** `AppModel.speechActionTask`; `startSpeechAction` cancels and replaces it; `.stopSpeech` cancels it; `deinit` cancels it; `readSelection`/`replayLast` check `Task.isCancelled` before speaking; every speak path catches `CancellationError` without recording `.ttsFailed`. Adds 4 hotkey tests to `AppModelTests` (`testTwoQuickReadSelectionPressesSpeakOnlyOnce`, `testTwoQuickReplayPressesReplayOnlyOnce`, `testStopSpeechCancelsAPendingReplay`, `testCancelledReadSelectionIsNotReportedAsFailure`). Tasks 7–8 move all of this into `SpeechActions`/`HotkeyController`. **Task 9:** `startIntegrations()` ends with `refreshInstalledHelperIfNeeded()`; `hooksInstalled(_:)`; `installBundledHelperIfPresent` appends `helper`/`refreshed`/`refresh-failed` entries to `integrationDiagnosticsLog`; 3 tests in `AppModelIntegrationsTests`. **Task 11:** `AppModel.hookSocketPath` (stored, init param), `socketStatusMessage`, `anotherInstanceOwnsSocketMessage`, `socketStartFailedMessage`, `socketStartFailureMessage(for:)`; `startIntegrations()` catches start errors; `AppModelIntegrationsTests.makeModel` takes `hookSocketPath: String? = nil`; `IntegrationsSettingsView` reads `model.hookSocketPath` / `model.socketStatusMessage`. **Task 13:** `speakLatestAgentResponse()` has `guard try await integrationManager.speakLatest() else { statusText = "No agent response to speak yet."; return }`; adds `testSpeakLatestAgentResponseWithNothingToSpeakRecordsNoSubmission`. |
 | 2 | Deleted: `AppModel.recordDiagnostic`, `AppModel.testVoice`, `import AVFoundation` in `AppModel`, `SpeechVoiceCataloging`, `SpeechBackendModelDisplayMode`, `SpeechModelRowPresentation.detailLabel/showsRemove`, `BackendAvailability.initializing`, `STTCapabilities`/`TTSCapabilities` and every backend `capabilities` property, `SpeechToTextBackend.prepare()`, `SpeechModelStatus.isLoaded`, `SpeechModelDescriptor.approximateDownloadBytes`, `PrivacySettingsPane.inputMonitoring`, `NativePermissionChecking.canPostEvents/requestListenForEvents/requestPostEvents`, `AgentResponseEvent.turnID`/`.transcriptPath` (init is `AgentResponseEvent(id:provider:providerSessionID:text:cwd:parentPID:environment:capturedAt:)`), `LatestAgentResponseStore.clear`, `AgentSessionRegistry.removeAll`. Test doubles in this plan use none of these. |
-| 3 | `Shared/BuildFlavor.swift`, `Shared/RelayPaths.swift` (`RelayPaths.socketPath()`, `sharedModelsDirectory()`, `stableHelperURL()`); `AppModel.integrationSocketPath` returns `RelayPaths.socketPath()` and `RelayPathsTests.testAppAndHelperDefaultsAgreeWithRelayPaths` reads it (Task 2 retargets it). `StopHookIntegration.claudeCode`/`.codex` replace `ClaudeCodeIntegration()`/`CodexIntegration()`. `StopHookConfigFile` backs both installers (installer inits unchanged: `init(baseDirectory:helperPath:)`); `IntegrationInstallerError.hooksDisabledInConfig` replaces `CodexInstallerError`. `FocusResolutionService(registry:frontmostApps:processSnapshots:resolvers:)` (actor); `SessionFocusResolving.resolveFocus(among:processSnapshot:) -> FocusResolution` (`.focused`, `.decisions`); `FocusContext.processSnapshot`; `pruneDeadSessions(in:snapshot:)`; `ProcessInspector.snapshot()` is `async throws`; `ProcessRunning.run` is `async throws` (sync fakes still conform). Deleted: `ProcessTreeReading`, `AgentProcessContextCapturing`/`AgentProcessContextCapture`, `focusedSession(among:)`. `AppModel.replayLast()` takes one snapshot, prunes with it, and calls `resolveFocus`. `RelayApp.body` uses `BuildFlavorPresentation.current`; `MenuBarContentView` has `var presentation: BuildFlavorPresentation = .current` (this plan's edits to those files leave that untouched). |
-| 4 | Speech-engine internals changed; engine constructors may differ. `SpeechBackendGraph.make` (Task 1) is a **cut-and-paste** of the backend construction lines in `makeProduction()` as they are after plan 4. |
+| 3 | `Shared/BuildFlavor.swift`, `Shared/RelayPaths.swift` (`RelayPaths.socketPath()`, `sharedModelsDirectory()`, `stableHelperURL()`); `AppModel.integrationSocketPath` returns `RelayPaths.socketPath()` and `RelayPathsTests.testAppAndHelperDefaultsAgreeWithRelayPaths` reads it (Task 2 retargets it). `StopHookIntegration.claudeCode`/`.codex` replace `ClaudeCodeIntegration()`/`CodexIntegration()`. `StopHookConfigFile` backs both installers (installer inits unchanged: `init(baseDirectory:helperPath:)`); `IntegrationInstallerError.hooksDisabledInConfig` replaces `CodexInstallerError`. `FocusResolutionService(registry:frontmostApps:processSnapshots:resolvers:)` (actor); `SessionFocusResolving.resolveFocus(among:processSnapshot:) -> FocusResolution` (`.focused`, `.decisions`); `FocusContext.processSnapshot`; `pruneDeadSessions(in:snapshot:)`; `ProcessInspector.snapshot()` is `async throws`; `ProcessRunning.run` is `async throws` (sync fakes still conform). Deleted: `ProcessTreeReading`, `AgentProcessContextCapturing`/`AgentProcessContextCapture`, `focusedSession(among:)`. `AppModel.replayLast()` takes one snapshot, prunes with it, and calls `resolveFocus`. `RelayApp.body` uses `BuildFlavorPresentation.current`; `MenuBarContentView` has `var presentation: BuildFlavorPresentation = .current` (this plan's edits to those files leave that untouched). `AgentAutoReadCoordinator(registry:focus:preprocess:speech:autoReadEnabled:diagnostics:processInspector:)` (no `processContext:`; `AgentProcessContext.resolve(for:in:)` is a static on the value type), `HerdrHostOwnershipChecker()` and `TmuxFocusResolver(runner:)` take no process inspector, and `FocusResolutionService` gets `processSnapshots: processInspector`. `HookEnvelope` has an optional `processAncestry`. `AppModel.integrationSocketPath` is `static var … { RelayPaths.socketPath() }` and the public init's `hookSocketPath:` defaults to it. |
+| 4 | Plan 4 does **not** touch `Relay/App/RelayRuntime.swift` or `AppModel.swift`; the backend construction lines in `makeProduction()` (`RelayRuntime.swift` 202–208, 232–236, 238–268, 270–274, 364–372 on `main@6d14400`) stay exactly as they are. What changes under them: `STTRouter.selectBackend() -> STTSelection?` and `transcribe(audio:options:selection:)`; `DictationCoordinator` keeps the `STTSelection` chosen at listen time (its `init(microphone:sttRouter:processor:textInserter:stopSpeech:status:activity:diagnostics:liveTranscriptionEnabled:)`, `private var status` and `setStatusHandler(_:)` are unchanged — Task 1 removes the last two). The three FluidAudio engines load through `ModelSessionLoader` and keep `init(modelLoader: … = nil, validatedModelsPresent: Bool = false)`, so `FluidAudioKokoroEngine()` / `FluidAudioPocketTTSEngine()` / `FluidAudioParakeetEngine()` still work. Plan 4 Task 20 removes the `= FluidAudioXEngine()` defaults from `KokoroTTSBackend`/`KokoroModelManager`/`PocketTTSBackend`/`PocketTTSModelManager`/`ParakeetBackend`/`ParakeetModelManager.init(engine:)`, so every construction passes `engine:` explicitly, which `makeProduction()` and `SpeechBackendGraph.make` (Task 1) already do. Kokoro and Pocket stream through `PipedTTSAudioSource`. `WhisperRuntime(engine:modelFolder:)` is unchanged; it gains `unload(ifInvolving:)`. `SpeechBackendGraph.make` (Task 1) is a **cut-and-paste** of those `makeProduction()` lines. |
 
 ---
 
@@ -120,13 +126,18 @@ grep -rn "static func socketPath\|static func sharedModelsDirectory" Shared/Rela
 grep -rn "func field<Value" Relay/Domain/AppSettings.swift
 grep -rn "recordDiagnostic\|func testVoice\|SpeechVoiceCataloging\|case initializing\|case inputMonitoring\|transcriptPath" Relay
 grep -n "func clear" Relay/Integrations/LatestAgentResponseStore.swift
+# plan 4
+grep -n "func selectBackend() async -> STTSelection?" Relay/SpeechIn/STTRouter.swift
+ls Relay/Backends/ModelSessionLoader.swift Relay/SpeechOut/PipedTTSAudioSource.swift
+grep -n "func unload(ifInvolving" Relay/Backends/Whisper/WhisperRuntime.swift
+grep -rn "engine: any [A-Za-z]*Engine = " Relay/Backends
 ```
-Expected: the first two commands print matches for every name; the third prints one line; the last two print nothing. If any check fails, stop and report — a plan is missing.
+Expected: the first two commands print matches for every name; the third prints one line; the fourth and fifth print nothing; the three plan-4 checks after the comment each print a match; the last grep prints nothing (plan 4 Task 20 removed the default engines). If any check fails, stop and report — a plan is missing.
 
 - [ ] **Step 4: Baseline**
 ```bash
 xcodegen generate
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO 2>&1 | tail -30
+xcodebuild test -scheme Relay -derivedDataPath /tmp/relay-dd-cleanup5 -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO 2>&1 | tail -30
 ```
 Expected: `** TEST SUCCEEDED **`. If not green, stop — do not start refactoring on a red suite.
 
@@ -137,12 +148,12 @@ Expected: `** TEST SUCCEEDED **`. If not green, stop — do not start refactorin
 ## Task 1: Single designated initializer, `StatusSink`, runtime retention, no `makeProduction()` in tests
 
 **Findings:**
-- Two near-identical ~85-line inits (`AppModel.swift` ~186–277 public, ~279–361 private).
-- The public init's default `focusResolution` (~211–215) builds its **own** `AgentSessionRegistry()`/`FrontmostAppMonitor()`, separate from the defaulted `sessionRegistry` — replay focus resolution and the registry disagree by default.
-- The private (production) init still carries dangerous defaults (`loginItemService`, `helperInstaller`, `bundledHelperURL`, `integrationDiagnosticsLog`); the public one defaults an `IntegrationManager` (~242–247) duplicating `RelayRuntime` ~353–359.
-- `RelayRuntime` claims to own lifetimes, but `RelayAppDelegate` (`RelayApp.swift:29`) discards it.
-- `DictationCoordinator` is re-pointed after `AppModel` exists (`setStatusHandler`, `AppModel.swift` ~176).
-- Tests call `makeProduction()` (`TTSMigrationProductionWiringTests.swift:7`, `AppModelTests.swift` ~502, `ProjectSmokeTests`, `SettingsViewsSmokeTests`) → `UserDefaults.standard`, real CGEvent tap, real backends.
+- Two near-identical ~85-line inits (`AppModel.swift` 195–288 public, 290–373 private).
+- The public init's default `focusResolution` (220–224) builds its **own** `AgentSessionRegistry()`/`FrontmostAppMonitor()`, separate from the defaulted `sessionRegistry` — replay focus resolution and the registry disagree by default.
+- The private (production) init still carries dangerous defaults (`loginItemService`, `helperInstaller`, `bundledHelperURL`, `integrationDiagnosticsLog`); the public one defaults an `IntegrationManager` (252–257) duplicating `RelayRuntime.swift` 349–355.
+- `RelayRuntime` claims to own lifetimes, but `RelayAppDelegate` (`RelayApp.swift:35`, `let model = AppModel(runtime: .makeProduction())`) discards it.
+- `DictationCoordinator` is re-pointed after `AppModel` exists (`setStatusHandler`, `AppModel.swift` 185).
+- Tests call `makeProduction()` (`TTSMigrationProductionWiringTests.swift:7`, `AppModelTests.swift` 498, `ProjectSmokeTests`, `SettingsViewsSmokeTests`) → `UserDefaults.standard`, real CGEvent tap, real backends.
 
 **Fix:** `AppModel` gets exactly one initializer, `init(runtime: RelayRuntime)`, and **retains** the runtime (`let runtime`). `RelayRuntime` already *is* the RelayRuntime-shaped dependency container (it has an explicit memberwise init), so no second parallel struct is introduced. A test-target `RelayRuntime.testing(...)` fills consistent fakes (one registry shared by focus resolution). A `StatusSink` created first in `makeProduction()` is handed to `DictationCoordinator` at construction, removing `setStatusHandler`. Registries/managers move into a side-effect-free `SpeechBackendGraph.make(...)` so tests can assert the production maps without the rest of the graph.
 
@@ -617,10 +628,10 @@ final class SpeechBackendGraphTests: XCTestCase {
 
 - [ ] **Step 4: Run to verify failure**
 
-Run: `xcodegen generate && xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/ProjectSmokeTests 2>&1 | tail -30`
+Run: `xcodegen generate && xcodebuild test -scheme Relay -derivedDataPath /tmp/relay-dd-cleanup5 -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/ProjectSmokeTests 2>&1 | tail -30`
 Expected: build FAILS — `RelayRuntime` has no `status:` parameter / `SpeechBackendGraph` not found.
 
-- [ ] **Step 5: Add `SpeechBackendGraph`** — `Relay/App/SpeechBackendGraph.swift`. Cut the backend/manager construction out of `makeProduction()` (currently `RelayRuntime.swift` ~202–213, 232–277, 368–376) and paste it here unchanged (post-plan-4 constructors):
+- [ ] **Step 5: Add `SpeechBackendGraph`** — `Relay/App/SpeechBackendGraph.swift`. Cut the backend/manager construction out of `makeProduction()` and paste it here unchanged. On `main@6d14400` those lines are `RelayRuntime.swift` 202–208 (Apple/Kokoro/Pocket TTS, one shared engine per backend+manager pair), 210–214 (`ttsRegistry`), 232–236 (Apple Speech + Parakeet; the local `sttBackend` is renamed `appleSpeech` here), 238–268 (Whisper, **except** the cache/writer-box lines 254–257, which stay in `makeProduction()`, see Step 6), 270–274 (`sttRegistry`) and 364–372 (the two manager maps). Plan 4 leaves every one of these constructor calls valid (see the table above):
 
 ```swift
 import Foundation
@@ -705,7 +716,7 @@ struct SpeechBackendGraph {
 
 - [ ] **Step 6: Update `RelayRuntime`** (`Relay/App/RelayRuntime.swift`):
 
-1. `SpeechInputServices.dictationCoordinator` becomes `let dictationCoordinator: (any DictationCoordinating)?`; replace that struct's doc comment with: `/// Speech-input services: the STT backend registry, its per-backend model managers, and the dictation coordinator built around them.`
+1. `SpeechInputServices.dictationCoordinator` (currently the concrete `let dictationCoordinator: DictationCoordinator?`, kept concrete only for `setStatusHandler`) becomes `let dictationCoordinator: (any DictationCoordinating)?`; replace that struct's doc comment with: `/// Speech-input services: the STT backend registry, its per-backend model managers, and the dictation coordinator built around them.`
 2. Add `let status: StatusSink` as the first stored property of `RelayRuntime` and `status: StatusSink,` as the first init parameter (`self.status = status`).
 3. Replace the `RelayRuntime` class doc comment with:
 ```swift
@@ -744,11 +755,11 @@ struct SpeechBackendGraph {
 6. `DictationCoordinator(... status: { _ in }, ...)` → `status: { status.post($0) },`.
 7. Final `RelayRuntime(` call: add `status: status,` first; `speechOut` uses `ttsModelManagers: graph.ttsModelManagers`; `speechIn` uses `speechModelManagers: graph.speechModelManagers`. Delete the now-unused local `speechModelManagers`/`ttsModelManagers` dictionaries.
 
-- [ ] **Step 7: Delete `setStatusHandler`** from `Relay/SpeechIn/DictationCoordinator.swift` (~line 105) and make `status` immutable: `private let status: (String) -> Void`.
+- [ ] **Step 7: Delete `setStatusHandler`** from `Relay/SpeechIn/DictationCoordinator.swift` (the one-liner `func setStatusHandler(_ handler: @escaping (String) -> Void) { status = handler }` right after `init`, ~line 103 after plan 4) and make `status` immutable: `private var status: (String) -> Void` → `private let status: (String) -> Void`. Also delete the `AppModel(runtime:)` line that called it: `runtime.speechIn.dictationCoordinator?.setStatusHandler { [weak self] in self?.statusText = $0 }` (`AppModel.swift` 185, removed with the convenience init in Step 8).
 
 - [ ] **Step 8: Collapse `AppModel` to one initializer** (`Relay/App/AppModel.swift`):
 
-1. Delete `convenience init(runtime:)`, the public `init(settingsStore:…)` and the `private init(settingsStore:…loadedSettings:…)` (~143–361).
+1. Delete `convenience init(runtime:)`, the public `init(settingsStore:…)` and the `private init(settingsStore:…loadedSettings:…)` (`AppModel.swift` 149–373).
 2. Replace every *dependency* stored property (`overlayModel`, `sttRegistry`, `ttsRegistry`, `settingsStore`, `selectionReader`, `preprocessor`, `speechCoordinator`, `dictationCoordinator`, `hotkeyManager`, `settingsState`, `permissionService`, `microphonePermissions`, `privacySettingsOpener`, `loginItemService`, `diagnostics`, `overlayPresenter`, `hookEnvelopeReceiver`, `integrationManager`, `claudeCodeInstaller`, `codexInstaller`, `helperInstaller`, `bundledHelperURL`, `sessionRegistry`, `focusResolution`, `frontmostApps`, `processInspector`, `integrationDiagnosticsLog`) and their doc comments with the block below. `statusText` becomes a forward to the sink. State stored properties (`settings`, `dictationPhase`, …, `installerStatuses`, `modelController`, `voiceCatalog`, generations, initial refresh tasks, `activationObserver`, `dictationTask`) stay.
 
 ```swift
@@ -921,7 +932,7 @@ cd ../..
 ```
 6. Delete the private `makeAgentResponseEvent` helper and replace its call sites: `sed -i '' 's/makeAgentResponseEvent(/AgentResponseEvent.fixture(/g' RelayTests/App/AppModelTests.swift`.
 
-`RelayTests/App/AppModelIntegrationsTests.swift`: delete its private `FakeSettingsStore`, `FakeSelectionReader`, `FakeHotkeyManager`, `AlwaysAliveProcessRunner` (use Support's `AllPIDsAliveProcessRunner`: `sed -i '' 's/AlwaysAliveProcessRunner/AllPIDsAliveProcessRunner/g'`). Keep its private `FakeSpeechCoordinator`. `makeModel` keeps plan 1's `hookSocketPath: String? = nil` parameter; replace its body (a `nil` path means the factory's unique temp path — never the real socket):
+`RelayTests/App/AppModelIntegrationsTests.swift`: delete its private `FakeSettingsStore`, `FakeSelectionReader`, `FakeHotkeyManager`, `AlwaysAliveProcessRunner` (use Support's `AllPIDsAliveProcessRunner`: `sed -i '' 's/AlwaysAliveProcessRunner/AllPIDsAliveProcessRunner/g'`). Keep its private `FakeSpeechCoordinator` (the speak-latest tests construct it directly), `AlwaysSucceedIntegration`, `StubWiringSessionFocusResolver`, `RecordingWiringSpeechSink` and `TestError`. `makeModel` keeps plan 1's `hookSocketPath: String? = nil` parameter and its `hookEnvelopeReceiver: HookEnvelopeReceiver = HookEnvelopeReceiver()` parameter; replace its body (a `nil` path means the factory's unique temp path — never the real socket), then delete the now-unused private `uniqueTestSocketPath()` helper and, in the file-level SAFETY doc comment, replace "`makeModel`'s default `hookSocketPath` is a unique `/tmp` path per call" with "`RelayRuntime.testing` defaults the socket path to a unique `/tmp` path per call":
 ```swift
         AppModel(runtime: .testing(
             hookEnvelopeReceiver: hookEnvelopeReceiver,
@@ -946,7 +957,7 @@ cd ../..
         ))
 ```
 
-`RelayTests/App/SettingsViewsSmokeTests.swift`: in all three tests replace `AppModel(runtime: .makeProduction())` with `AppModel(runtime: .testing())`; the zero-frame test becomes:
+`RelayTests/App/SettingsViewsSmokeTests.swift`: in `testAllSettingsTabViewsConstruct` and `testMenuBarContentViewConstructsInBothAutoReadStates` replace `AppModel(runtime: .makeProduction())` with `AppModel(runtime: .testing())`. `testPermissionsSettingsViewConstructsWithZeroFrameCaptureDiagnostics` currently calls the public init with a real `SettingsStore()`, `SelectionReader(accessibility: AccessibilityService(), clipboard: ClipboardService())`, a `SpeechCoordinator` over `TTSRouter(backends: [:], backendOrder: { [] }, player: FakePlayer())` and a real `GlobalHotkeyManager(diagnostics: diagnosticsRecorder)`; replace that whole `AppModel(settingsStore: …)` call with:
 ```swift
         let model = AppModel(runtime: .testing(diagnostics: diagnosticsRecorder))
 ```
@@ -961,7 +972,7 @@ Expected: no output.
 
 - [ ] **Step 12: Run the full suite**
 
-Run: `xcodegen generate && xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO 2>&1 | tail -30`
+Run: `xcodegen generate && xcodebuild test -scheme Relay -derivedDataPath /tmp/relay-dd-cleanup5 -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO 2>&1 | tail -30`
 Expected: `** TEST SUCCEEDED **`.
 
 - [ ] **Step 13: Commit**
@@ -1005,7 +1016,7 @@ sed -i '' \
   RelayTests/App/IntegrationSetupModelTests.swift
 sed -i '' 's/AppModel\.integrationSocketPath/IntegrationServices.productionSocketPath/g' RelayTests/Shared/RelayPathsTests.swift
 ```
-(`model.socketStatusMessage` and `model.isSocketListening` keep their names on the new model.)
+(`model.socketStatusMessage` and `model.isSocketListening` keep their names on the new model.) In `RelayPathsTests.testAppAndHelperDefaultsAgreeWithRelayPaths`, the sed rewrites both assertions (lines 49–50); also delete its now-wrong doc line "`@MainActor`: `AppModel` (and its static `integrationSocketPath`) is MainActor-isolated." and the `@MainActor` attribute on that test (`IntegrationServices` is a plain struct).
 
 Add a stored log to the test class (XCTest builds one instance per test, so it is fresh each time), and replace `makeModel` with a runtime builder plus a thin wrapper:
 ```swift
@@ -1053,11 +1064,11 @@ Add a stored log to the test class (XCTest builds one instance per test, so it i
         ))
     }
 ```
-Three tests still exercise `AppModel.speakLatestAgentResponse()` until Task 7 moves it: `testLatestAgentResponseAvailableReflectsTheInjectedManagerAndSpeakLatestDelegatesToItsCoordinator`, `testSpeakLatestAgentResponseFailureIsCaughtAndSurfacedWithoutCrashing` and plan 1's `testSpeakLatestAgentResponseWithNothingToSpeakRecordsNoSubmission`. In each, replace `let model = makeModel(integrationManager: manager)` with `let model = AppModel(runtime: makeRuntime(integrationManager: manager))`; in the first, the two availability checks read `model.integrationSetup.latestResponseAvailable`. Update the file-level doc comment: `AppModel.startIntegrations()` → `IntegrationSetupModel.start()`.
+Four tests still exercise `AppModel.speakLatestAgentResponse()` until Task 7 moves it: `testLatestAgentResponseAvailableReflectsTheInjectedManagerAndSpeakLatestDelegatesToItsCoordinator`, `testSpeakLatestAgentResponseFailureIsCaughtAndSurfacedWithoutCrashing`, plan 1's `testSpeakLatestAgentResponseWithNothingToSpeakRecordsNoSubmission`, and `testSpeakLatestAgentResponseSuccessClearsAStaleStatusText` (it sets `model.statusText = "Could not speak the latest agent response."` first; Task 1's `statusText` setter forwards to the sink, so that line compiles unchanged). In each, replace `let model = makeModel(integrationManager: manager)` with `let model = AppModel(runtime: makeRuntime(integrationManager: manager))`; in the first, the two availability checks read `model.integrationSetup.latestResponseAvailable`. Update the file-level doc comment: `AppModel.startIntegrations()` → `IntegrationSetupModel.start()`.
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `xcodegen generate && xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/IntegrationSetupModelTests 2>&1 | tail -30`
+Run: `xcodegen generate && xcodebuild test -scheme Relay -derivedDataPath /tmp/relay-dd-cleanup5 -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/IntegrationSetupModelTests 2>&1 | tail -30`
 Expected: build FAILS — `cannot find 'IntegrationSetupModel' in scope`.
 
 - [ ] **Step 3: Create `Relay/App/IntegrationSetupModel.swift`.** It carries plans 1 and 3 over unchanged; only the dependencies move (`statusText`/`AppModel` statics → this type, `hookSocketPath` → `socketPath`, stored services → `services.*`):
@@ -1285,7 +1296,7 @@ final class IntegrationSetupModel {
     }
 }
 ```
-Before deleting the `AppModel` originals, diff each moved method body against this block (`git diff` after Step 4 shows both sides). If plans 1/3 left a doc comment or log line that is not here, copy it over; behavior must be identical.
+Every method body above is verbatim from `AppModel.swift@6d14400` (848–1079, with `hookSocketPath` → `socketPath`, the stored services → `services.*`, and `checkIntegration`/`installIntegration`/`uninstallIntegration` → `check`/`install`/`uninstall`); `HelperInstallVerificationError` moves from `AppModel.swift` 5–12. Only doc comments were shortened.
 
 - [ ] **Step 4: Trim `AppModel`.** Delete `HelperInstallVerificationError`, `isSocketListening`, `socketStatusMessage`, `installerStatuses`, `installerLogger`, `integrationSocketPath`, `hookSocketPath`, `anotherInstanceOwnsSocketMessage`, `socketStartFailedMessage`, `socketStartFailureMessage(for:)`, `startIntegrations`, `stopIntegrations`, `refreshInstalledHelperIfNeeded`, `hooksInstalled(_:)`, `integrationStatus(for:)`, `latestAgentResponseAvailable`, `installIntegration`, `installBundledHelperIfPresent`, `uninstallIntegration`, `checkIntegration`, `configurationErrorStatus`, `AgentSessionSummary`, `agentSessionSummaries`, and the now-unused `hookEnvelopeReceiver`/`claudeCodeInstaller`/`codexInstaller`/`helperInstaller`/`bundledHelperURL` computed accessors. Keep `speakLatestAgentResponse()` (moves in Task 7) and `integrationDiagnosticsEntries()` (DiagnosticsView). Add the stored sub-model and build it in `init` right after `self.runtime = runtime`:
 ```swift
@@ -1317,7 +1328,7 @@ Expected: the final grep prints nothing.
 
 - [ ] **Step 6: Run the moved suite, then the full suite**
 
-Run: `xcodegen generate && xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/IntegrationSetupModelTests -only-testing:RelayTests/RelayPathsTests 2>&1 | tail -30`
+Run: `xcodegen generate && xcodebuild test -scheme Relay -derivedDataPath /tmp/relay-dd-cleanup5 -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/IntegrationSetupModelTests -only-testing:RelayTests/RelayPathsTests 2>&1 | tail -30`
 Expected: `** TEST SUCCEEDED **` (includes plan 1's socket-ownership and helper-refresh tests). Then the full suite: `** TEST SUCCEEDED **`.
 
 - [ ] **Step 7: Commit**
@@ -1555,7 +1566,7 @@ private final class HotkeyChangeRecorder {
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `xcodegen generate && xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/SettingsControllerTests 2>&1 | tail -30`
+Run: `xcodegen generate && xcodebuild test -scheme Relay -derivedDataPath /tmp/relay-dd-cleanup5 -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/SettingsControllerTests 2>&1 | tail -30`
 Expected: build FAILS — `cannot find 'SettingsController' in scope`.
 
 - [ ] **Step 3: Implement** — `Relay/App/SettingsController.swift`:
@@ -1735,7 +1746,7 @@ final class SettingsController {
 
 - [ ] **Step 4: Run the new tests**
 
-Run: `xcodegen generate && xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/SettingsControllerTests 2>&1 | tail -30`
+Run: `xcodegen generate && xcodebuild test -scheme Relay -derivedDataPath /tmp/relay-dd-cleanup5 -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/SettingsControllerTests 2>&1 | tail -30`
 Expected: `** TEST SUCCEEDED **`.
 
 - [ ] **Step 5: Rewire `RelayRuntime`.**
@@ -1808,7 +1819,7 @@ sed -i '' -e 's/model\.setHotkey(/model.settingsController.setHotkey(/' \
 sed -i '' 's/model\.setAutoReadEnabled(/model.settingsController.setAutoReadEnabled(/' Relay/App/Settings/IntegrationsSettingsView.swift
 sed -i '' 's/model\.toggleAutoRead()/model.settingsController.toggleAutoRead()/' Relay/App/MenuBarContentView.swift
 ```
-`TTSSettingsView.swift` — replace the rate `Slider` with (flushes when the drag ends):
+`TTSSettingsView.swift` — replace the rate `Slider` (lines 30–33: `Slider(value: Binding(get: { Double(model.settings.ttsRate) }, set: { model.setSpeechRate(Float($0)) }), in: 0.1...1.0, step: 0.05)`) with (flushes when the drag ends):
 ```swift
                     Slider(
                         value: Binding(
@@ -1856,7 +1867,7 @@ Expected: no output.
 
 - [ ] **Step 12: Full suite**
 
-Run: `xcodegen generate && xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO 2>&1 | tail -30`
+Run: `xcodegen generate && xcodebuild test -scheme Relay -derivedDataPath /tmp/relay-dd-cleanup5 -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO 2>&1 | tail -30`
 Expected: `** TEST SUCCEEDED **`.
 
 - [ ] **Step 13: Commit**
@@ -1965,7 +1976,7 @@ Append to `SpeechModelControllerTests`:
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `xcodegen generate && xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/BackendIDTests 2>&1 | tail -30`
+Run: `xcodegen generate && xcodebuild test -scheme Relay -derivedDataPath /tmp/relay-dd-cleanup5 -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/BackendIDTests 2>&1 | tail -30`
 Expected: build FAILS — `cannot find 'BackendID' in scope`.
 
 - [ ] **Step 3: Implement** — `Relay/Domain/BackendID.swift`:
@@ -2025,7 +2036,7 @@ struct BackendID: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiter
     static let knownTTSBackendIDs: Set<String> = Set(BackendID.allTextToSpeech.map(\.rawValue))
 ```
   and in `defaults`: `sttBackendOrder: [BackendID.appleSpeech.rawValue]`, `ttsBackendOrder: BackendID.allTextToSpeech.map(\.rawValue)` (same order: pocket-tts, apple-tts, kokoro).
-- `Diagnostics.swift`: the six `speechModel*` cases take `backendName: String`; delete `speechBackendDisplayName`; each message becomes e.g. `case let .speechModelDownloadStarted(backendName): "\(backendName) model download started"`.
+- `Diagnostics.swift`: the seven `speechModel*` cases (`DownloadStarted`, `DownloadFinished`, `DownloadFailed`, `SelectionFinished`, `SelectionFailed`, `RemovalFinished`, `RemovalFailed`) take `backendName: String`; delete `speechBackendDisplayName`; each message becomes e.g. `case let .speechModelDownloadStarted(backendName): "\(backendName) model download started"`.
 - `SpeechModelController.swift`: delete `displayName(for:)`; every `diagnostics.record(.speechModelX(backendID: backend.backendID))` → `diagnostics.record(.speechModelX(backendName: BackendID.displayName(for: backend.backendID)))`; every `"\(displayName(for: backend.backendID)) model …"` → `"\(BackendID.displayName(for: backend.backendID)) model …"`.
 - `SpeechVoiceCatalog.swift`: every `case "apple-tts":` → `case BackendID.appleTTS:`, `"kokoro"` → `BackendID.kokoro`, `"pocket-tts"` → `BackendID.pocketTTS`.
 - `AppModel.selectVoice`: same `case BackendID.…:` replacements.
@@ -2257,7 +2268,7 @@ private final class AvailabilityGate {
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `xcodegen generate && xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/BackendListModelTests 2>&1 | tail -30`
+Run: `xcodegen generate && xcodebuild test -scheme Relay -derivedDataPath /tmp/relay-dd-cleanup5 -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/BackendListModelTests 2>&1 | tail -30`
 Expected: build FAILS — `cannot find 'BackendListModel' in scope`.
 
 - [ ] **Step 3: Implement** — create `Relay/App/BackendListModel.swift`, then `git rm Relay/App/BackendCatalog.swift Relay/App/SpeechBackendCatalog.swift Relay/App/TTSBackendCatalog.swift`:
@@ -2486,6 +2497,8 @@ Replace `refreshSpeechBackendStatuses()` → `sttBackendList.refresh()` and `ref
     }
 ```
 
+Two comments name the deleted types and would trip Step 7's grep: in `Relay/Domain/AppSettings.swift` (~94–95, inside `init(from:)`) replace "`BackendCatalog.knownOrder` (the equivalent runtime-side filter in `Relay/App/BackendCatalog.swift`)" with "`BackendListModel.knownOrder()` (the equivalent runtime-side filter in `Relay/App/BackendListModel.swift`)"; in `RelayTests/App/SettingsViewsSmokeTests.swift` (~141) replace `STTBackendStatus.State` with `BackendStatus.State`. Add both files to the commit.
+
 - [ ] **Step 7: Verify deletions**
 
 Run: `grep -rn "BackendCatalog\|STTBackendStatus\|TTSBackendStatus\|refreshSpeechBackendStatuses\|refreshTTSBackendStatuses" Relay RelayTests`
@@ -2500,7 +2513,8 @@ git add Relay/App/BackendListModel.swift Relay/App/BackendCatalog.swift Relay/Ap
   Relay/App/Settings/SpeechBackendSettingsSection.swift Relay/App/Settings/DictationSettingsView.swift \
   Relay/App/Settings/TTSSettingsView.swift Relay/App/Settings/SettingsView.swift \
   RelayTests/App/BackendListModelTests.swift RelayTests/App/TTSBackendCatalogTests.swift \
-  RelayTests/App/AppModelTests.swift Relay.xcodeproj/project.pbxproj
+  RelayTests/App/AppModelTests.swift Relay/Domain/AppSettings.swift RelayTests/App/SettingsViewsSmokeTests.swift \
+  Relay.xcodeproj/project.pbxproj
 git commit -m "refactor(settings): replace duplicated backend catalogs with one BackendListModel"
 ```
 
@@ -2674,7 +2688,7 @@ Append to `SettingsControllerTests`:
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/AppSettingsTests 2>&1 | tail -30`
+Run: `xcodebuild test -scheme Relay -derivedDataPath /tmp/relay-dd-cleanup5 -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/AppSettingsTests 2>&1 | tail -30`
 Expected: build FAILS — `value of type 'AppSettings' has no member 'voiceByBackend'`.
 
 - [ ] **Step 3: Implement `AppSettings`.**
@@ -2811,7 +2825,7 @@ git commit -m "refactor(settings): store voices per backend and migrate schema v
 
 ## Task 7: `SpeechActions` + `ReplayLastResolver`
 
-**Finding:** `readSelection`, the three-tier `replayLast`, stop, `previewVoice` and `speakLatestAgentResponse` (~665–981) live in `AppModel`; the replay tier decision is only testable end-to-end through a hotkey.
+**Finding:** `readSelection`, the three-tier `replayLast`, stop, `previewVoice` and `speakLatestAgentResponse` (`AppModel.swift` 684–825 and 1043–1058; the stop case is inline in `handleHotkey`, 629–634) live in `AppModel`; the replay tier decision is only testable end-to-end through a hotkey.
 
 **Fix:** A pure `ReplayLastResolver.resolve(globalLatestAvailable:) async -> ReplayTarget` (`.focusedSession(AgentSession)` | `.globalLatest` | `.lastSpoken`), using plan 3's one-snapshot `resolveFocus(among:processSnapshot:)`, plus a stateless `SpeechActions` that acts on the target and keeps plan 1's cancellation contract: it checks `Task.isCancelled` after resolving and before every speak, and a `CancellationError` is an intentional stop (no `.ttsFailed`, no status text). The six `testReplayLast…` tests left after plan 2 move to the resolver; the failure/speak-latest tests move to `SpeechActionsTests`. (Who owns and cancels the task is Task 8's `HotkeyController`; until then `AppModel.startSpeechAction` keeps doing it.)
 
@@ -3116,6 +3130,21 @@ final class SpeechActionsTests: XCTestCase {
         XCTAssertFalse(runtime.diagnostics.entries.contains { $0.event == .ttsSubmitted })
         XCTAssertEqual(runtime.status.message, "No agent response to speak yet.")
     }
+
+    /// Moved from `AppModelIntegrationsTests`: a successful speak clears a stale failure message.
+    func testSpeakLatestAgentResponseSuccessClearsAStaleStatusText() async {
+        let store = LatestAgentResponseStore()
+        await store.set(.fixture(providerSessionID: "session-3", text: "Done."))
+        let speech = SpySpeechCoordinator()
+        let manager = IntegrationManager(events: AsyncStream { _ in }, integrations: [], store: store, speechCoordinator: speech)
+        let (actions, runtime) = makeActions(speech: speech, integrationManager: manager)
+        runtime.status.post("Could not speak the latest agent response.")
+
+        await actions.speakLatestAgentResponse()
+
+        XCTAssertEqual(speech.requests.count, 1)
+        XCTAssertEqual(runtime.status.message, "Ready")
+    }
 }
 
 private struct SpeechBoom: Error {}
@@ -3129,7 +3158,7 @@ private struct StubDecodingIntegration: RelayIntegration {
 
 - [ ] **Step 3: Run to verify failure**
 
-Run: `xcodegen generate && xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/ReplayLastResolverTests 2>&1 | tail -30`
+Run: `xcodegen generate && xcodebuild test -scheme Relay -derivedDataPath /tmp/relay-dd-cleanup5 -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/ReplayLastResolverTests 2>&1 | tail -30`
 Expected: build FAILS — `cannot find 'ReplayLastResolver' in scope`.
 
 - [ ] **Step 4: Implement the resolver** — `Relay/Sessions/ReplayLastResolver.swift`:
@@ -3285,6 +3314,8 @@ final class SpeechActions {
                 return
             }
             diagnostics.record(.ttsSubmitted)
+            // Clears a stale "Could not speak…" / "No agent response…" left by an earlier call.
+            statusSink.post(StatusSink.idleMessage)
         } catch {
             diagnostics.record(.ttsFailed)
             statusSink.post("Could not speak the latest agent response.")
@@ -3339,9 +3370,9 @@ final class SpeechActions {
     }
 }
 ```
-Diff this against the `AppModel` methods it replaces before deleting them (Step 6); any log line or doc comment plans 1/3 added that is missing here gets copied over.
+The bodies above match `AppModel.swift@6d14400` line for line (`readSelection` 684–704, `replayLast` 720–743 split into resolver + dispatch, `speakFocusedSessionReply`/`speakGlobalLatestReply`/`speakLastSpokenText` 748–802, `previewVoice` 808–825, `speakLatestAgentResponse` 1043–1058 including its success-path reset to "Ready", the `.stopSpeech` lines 632–634) with `statusText =` → `statusSink.post(…)`; only doc comments were shortened.
 
-- [ ] **Step 6: Trim `AppModel`.** Delete `readSelection`, `replayLast`, `speakFocusedSessionReply`, `speakGlobalLatestReply`, `speakLastSpokenText`, the preview sample constant, `previewVoice`, `speakLatestAgentResponse`, and the accessors only they used (`selectionReader`, `preprocessor`, `integrationManager`, `sessionRegistry`, `focusResolution`, `frontmostApps`, `processInspector`, `integrationDiagnosticsLog` if nothing else references them — let the compiler tell you). Add `@ObservationIgnored let speechActions: SpeechActions`, built in `init` after `voiceCatalog`:
+- [ ] **Step 6: Trim `AppModel`.** Delete `readSelection`, `replayLast`, `speakFocusedSessionReply`, `speakGlobalLatestReply`, `speakLastSpokenText`, the preview sample constant, `previewVoice`, `speakLatestAgentResponse`, and the accessors only they used: `selectionReader`, `preprocessor`, `integrationManager`, `sessionRegistry` (its last other user, `agentSessionSummaries`, moved in Task 2), `focusResolution`, `frontmostApps`, `processInspector`. Keep `integrationDiagnosticsLog` (`integrationDiagnosticsEntries()`/`clearIntegrationDiagnostics()` use it) and `speechCoordinator` (`configureModelController`'s `beforeRemoval` hook uses it until Task 10). Add `@ObservationIgnored let speechActions: SpeechActions`, built in `init` after `voiceCatalog`:
 ```swift
         speechActions = SpeechActions(runtime: runtime, voiceCatalog: voiceCatalog)
 ```
@@ -3362,7 +3393,7 @@ and in `handleHotkey` the `.stopSpeech` case becomes `speechActionTask?.cancel()
 
 - [ ] **Step 7: Views.** `MenuBarContentView`: `await model.speakLatestAgentResponse()` → `await model.speechActions.speakLatestAgentResponse()`. `TTSSettingsView`: `model.previewVoice(` → `model.speechActions.previewVoice(`.
 
-- [ ] **Step 8: Remove moved tests.** From `AppModelTests.swift` delete: `testReplayFailureIsLoggedAsTTSFailure`, the six `testReplayLast…` tests (plan 2 already deleted the seventh, `…GateIsTrueButStoreHasNothingToSpeak`), plan 1's `testCancelledReadSelectionIsNotReportedAsFailure` (now in `SpeechActionsTests`), `testPreviewVoiceUsesClickedProviderAndCurrentRateWithoutPersistingSelection`, and the private `StubIntegration` and `AllPIDsDead…` usages that become unused. Keep `testReadSelectionPressedPreprocessesAndSpeaksUserRequest`, `testStopAndReplayOnlyActWhenPressed` and plan 1's `testTwoQuickReadSelectionPressesSpeakOnlyOnce` / `testTwoQuickReplayPressesReplayOnlyOnce` / `testStopSpeechCancelsAPendingReplay` (hotkey wiring; they move in Task 8). From `IntegrationSetupModelTests.swift`: rewrite `testLatestAgentResponseAvailableReflects…` to keep only its availability half (`makeModel(integrationManager:)` + `model.latestResponseAvailable`, no speak assertions), and delete `testSpeakLatestAgentResponseFailureIsCaughtAndSurfacedWithoutCrashing` and plan 1's `testSpeakLatestAgentResponseWithNothingToSpeakRecordsNoSubmission` (both now in `SpeechActionsTests`).
+- [ ] **Step 8: Remove moved tests.** From `AppModelTests.swift` delete: `testReplayFailureIsLoggedAsTTSFailure`, the six `testReplayLast…` tests (plan 2 already deleted the seventh, `…GateIsTrueButStoreHasNothingToSpeak`), plan 1's `testCancelledReadSelectionIsNotReportedAsFailure` (now in `SpeechActionsTests`), `testPreviewVoiceUsesClickedProviderAndCurrentRateWithoutPersistingSelection`, and the private `StubIntegration` and `AllPIDsDead…` usages that become unused. Keep `testReadSelectionPressedPreprocessesAndSpeaksUserRequest`, `testStopAndReplayOnlyActWhenPressed` and plan 1's `testTwoQuickReadSelectionPressesSpeakOnlyOnce` / `testTwoQuickReplayPressesReplayOnlyOnce` / `testStopSpeechCancelsAPendingReplay` (hotkey wiring; they move in Task 8). From `IntegrationSetupModelTests.swift`: rewrite `testLatestAgentResponseAvailableReflects…` to keep only its availability half (`makeModel(integrationManager:)` + `model.latestResponseAvailable`, no speak assertions), and delete `testSpeakLatestAgentResponseFailureIsCaughtAndSurfacedWithoutCrashing`, plan 1's `testSpeakLatestAgentResponseWithNothingToSpeakRecordsNoSubmission` and `testSpeakLatestAgentResponseSuccessClearsAStaleStatusText` (all three now in `SpeechActionsTests`). Its private `FakeSpeechCoordinator` stays only if a remaining test still constructs it; otherwise delete it too (the compiler does not warn, so check with `grep -n FakeSpeechCoordinator RelayTests/App/IntegrationSetupModelTests.swift`).
 
 - [ ] **Step 9: Full suite** → `** TEST SUCCEEDED **`.
 
@@ -3380,7 +3411,7 @@ git commit -m "refactor(speech): extract SpeechActions and a pure ReplayLastReso
 
 ## Task 8: `HotkeyController` + stop rebuilding the matcher on activation
 
-**Findings:** Hotkey registration/dispatch/dictation queue live in `AppModel`. **Bug:** `recheckDiagnostics()` (~562–568) runs on every `didBecomeActive` and calls `registerHotkeys()`, which rebuilds `HotkeyMatcher` (`GlobalHotkeyManager.register`), dropping any in-flight chord/double-tap gesture each time Relay is activated.
+**Findings:** Hotkey registration/dispatch/dictation queue live in `AppModel`. **Bug:** `recheckDiagnostics()` (`AppModel.swift` 568–574) runs on every `didBecomeActive` and calls `registerHotkeys()`, which rebuilds `HotkeyMatcher` (`GlobalHotkeyManager.register`), dropping any in-flight chord/double-tap gesture each time Relay is activated.
 
 **Fix:** Split `HotkeyManaging` into `setHandler(_:)`, `ensureTap() -> HotkeyRegistrationStatus` and `update(definitions:)`; `GlobalHotkeyManager.update` rebuilds the matcher **only when definitions change**. Recheck calls `ensureTap()` only. `HotkeyController` owns dispatch, the dictation queue, `dictationPhase` and `eventTapStatus`.
 
@@ -3429,11 +3460,11 @@ private final class InvocationRecorder {
     var values: [HotkeyInvocation] = []
 }
 ```
-(If the test class isn't `@MainActor`, mark these two methods `@MainActor`.)
+(`GlobalHotkeyManagerTests` is already `@MainActor`.)
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/GlobalHotkeyManagerTests 2>&1 | tail -30`
+Run: `xcodebuild test -scheme Relay -derivedDataPath /tmp/relay-dd-cleanup5 -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/GlobalHotkeyManagerTests 2>&1 | tail -30`
 Expected: build FAILS — `value of type 'GlobalHotkeyManager' has no member 'setHandler'`.
 
 - [ ] **Step 3: Split the protocol** in `GlobalHotkeyManager.swift`:
@@ -3490,12 +3521,14 @@ final class SpyHotkeyManager: HotkeyManaging {
     func send(_ action: HotkeyAction, _ phase: HotkeyPhase) { handler?(action, phase) }
 }
 ```
-`AppModelHotkeySideEffectTests`: delete its private `FakeHotkeyManager` and use `SpyHotkeyManager`; `hotkeys.registrations.count` → `hotkeys.updates.count`; `hotkeys.registrations.last?.hotkeys[` → `hotkeys.updates.last?[`. Same two seds in `AppModelTests.swift`:
+`AppModelHotkeySideEffectTests`: delete its private `FakeHotkeyManager` (the `register(settings:handler:)` one recording `registrations: [AppSettings]`) and use `SpyHotkeyManager`; `hotkeys.registrations.count` → `hotkeys.updates.count`; `hotkeys.registrations.last?.hotkeys[` → `hotkeys.updates.last?[`. Its `testEventTapNotReRegisteredOnAnyChange` keeps the real `GlobalHotkeyManager(tapFactory:)` + `TapCreationSpy` and still expects `callCount == 1` (`ensureTap()` never re-creates the tap). Same two seds in `AppModelTests.swift` (whose `FakeHotkeyManager` Task 1 already renamed to `SpyHotkeyManager`):
 ```bash
+sed -i '' -e 's/FakeHotkeyManager()/SpyHotkeyManager()/g' RelayTests/App/AppModelHotkeySideEffectTests.swift
 sed -i '' -e 's/hotkeys\.registrations\.count/hotkeys.updates.count/g' \
           -e 's/hotkeys\.registrations\.last?\.hotkeys\[/hotkeys.updates.last?[/g' \
   RelayTests/App/AppModelTests.swift RelayTests/App/AppModelHotkeySideEffectTests.swift
 ```
+Update that file's class doc comment: `GlobalHotkeyManager.register`'s `eventTap != nil` guard now lives in `ensureTap()`, and the matcher is rebuilt by `update(definitions:)` only when definitions change.
 Then edit `testRecheckRetriesHotkeyRegistrationAndRefreshesPermissionSnapshot` (the **fix** regression):
 ```swift
         model.recheckDiagnostics()
@@ -3856,7 +3889,7 @@ git commit -m "fix(hotkeys): keep in-flight gestures across activation rechecks;
 
 ## Task 9: `PermissionsModel` + one observer/deinit pattern
 
-**Findings:** Permission snapshot, mic, privacy panes, login item and the activation observer live in `AppModel`. `AppModel.deinit` (~595–598) reads MainActor state (`activationObserver: NSObjectProtocol?`, non-Sendable) from a nonisolated deinit; `ActivityOverlayWindowController` (~90, ~235) works around the same problem with `nonisolated(unsafe)`.
+**Findings:** Permission snapshot, mic, privacy panes, login item and the activation observer live in `AppModel`. `AppModel.deinit` (601–605) reads MainActor state (`activationObserver: NSObjectProtocol?`, non-Sendable) from a nonisolated deinit; `ActivityOverlayWindowController` (90, 107–111, 227–238) works around the same problem with `nonisolated(unsafe)`.
 
 **Fix (one pattern for both):** a self-removing `NotificationObservation` token (`@unchecked Sendable`, removes itself in its own `deinit`). Owners just hold it; no owner `deinit`, no `nonisolated(unsafe)`. Chosen over Swift 6.2 `isolated deinit` because it doesn't depend on the toolchain's language-mode feature set (project is Swift 6.0 mode) and is directly unit-testable.
 
@@ -4035,7 +4068,7 @@ Add `import AppKit` at the top of this file (for `NSApplication`).
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `xcodegen generate && xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/NotificationObservationTests 2>&1 | tail -30`
+Run: `xcodegen generate && xcodebuild test -scheme Relay -derivedDataPath /tmp/relay-dd-cleanup5 -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/NotificationObservationTests 2>&1 | tail -30`
 Expected: build FAILS — `cannot find 'NotificationObservation' in scope`.
 
 - [ ] **Step 3: Implement** — `Relay/System/NotificationObservation.swift`:
@@ -4400,7 +4433,7 @@ private actor StubModelManager: SpeechModelManaging {
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `xcodegen generate && xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/SpeechBackendsModelTests 2>&1 | tail -30`
+Run: `xcodegen generate && xcodebuild test -scheme Relay -derivedDataPath /tmp/relay-dd-cleanup5 -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/SpeechBackendsModelTests 2>&1 | tail -30`
 Expected: build FAILS — `cannot find 'SpeechBackendsModel' in scope`.
 
 - [ ] **Step 3: Hooks become init parameters** in `SpeechModelController.swift`. Delete `configureHooks(...)`; make the two stored hooks `let`; replace `init` with:
@@ -4417,7 +4450,7 @@ Expected: build FAILS — `cannot find 'SpeechBackendsModel' in scope`.
         self.beforeRemoval = beforeRemoval
     }
 ```
-In `SpeechModelControllerTests`, the three tests that call `controller.configureHooks(refreshBackends: X, beforeRemoval: Y)` move those two closures into the constructor: `SpeechModelController(managers: [key: manager], diagnostics: DiagnosticsRecorder(), refreshBackends: X, beforeRemoval: Y)`, and the `configureHooks` call is deleted. In `testSelectRefreshesModelsAndOwningBackend` and `testPartialRemovalFailureReconcilesModelsAndBackendReadiness`, `refreshedDomains` is captured by an escaping `@Sendable` closure — replace the `var refreshedDomains` array with the file's existing `ControllerEventLog` actor (`refreshBackends: { await log.append("\($0)") }`, assert `await log.values == ["dictation"]` / `["textToSpeech"]`).
+In `SpeechModelControllerTests`, the three tests that call `controller.configureHooks(refreshBackends: X, beforeRemoval: Y)` move those two closures into the constructor: `SpeechModelController(managers: [key: manager], diagnostics: DiagnosticsRecorder(), refreshBackends: X, beforeRemoval: Y)`, and the `configureHooks` call is deleted. In `testSelectRefreshesModelsAndOwningBackend` and `testPartialRemovalFailureReconcilesModelsAndBackendReadiness`, the `var refreshedDomains` local and its `refreshBackends: { refreshedDomains.append($0) }` closure move into the constructor unchanged (this compiles today: the closure type is `@MainActor`).
 
 - [ ] **Step 4: Implement** — `Relay/App/SpeechBackendsModel.swift`:
 
@@ -4524,12 +4557,12 @@ final class SpeechBackendsModel {
     }
 }
 ```
-(`BackendRefresh`/`PreRemoval` are `@MainActor @Sendable`. The closures capture `@MainActor` classes (`BackendListModel`, the `SpeechCoordinating` existential). If Swift 6 rejects those captures as non-`Sendable`, drop `@Sendable` from the two typealiases in `SpeechModelController` — both hooks are `@MainActor` and never leave the main actor. Do **not** reach for `nonisolated(unsafe)` or `weak` workarounds.)
+(`BackendRefresh`/`PreRemoval` stay `@MainActor @Sendable (…) async -> Void`. Capturing the two `BackendListModel`s (`@MainActor` classes, so `Sendable`) and the non-`Sendable` `any SpeechCoordinating` is legal in a `@MainActor` closure built on the main actor — `SpeechModelControllerTests` already captures a mutable local `var refreshedDomains` in these same closure types. No `nonisolated(unsafe)` or `weak` needed.)
 
 - [ ] **Step 5: Rewrite `Relay/App/AppModel.swift`** as the final facade (replace the whole file). Keep plan 1's behavior anywhere this differs only by an extra line (e.g. an extra launch step in `init`):
 
 ```swift
-import AppKit
+@preconcurrency import AppKit
 import Observation
 
 /// The object every SwiftUI scene binds to. A thin facade: it builds the focused sub-models from
@@ -4629,7 +4662,26 @@ final class AppModel {
         }
     }
 }
+
+/// Default presenter for tests and any composition that doesn't host the overlay panel.
+@MainActor
+final class NoOpActivityOverlayPresenter: ActivityOverlayPresenting {
+    func update(state: ActivityOverlayState, style: ActivityOverlayStyle) {}
+}
+
+extension HotkeyAction {
+    var title: String {
+        switch self {
+        case .dictate: "Dictate"
+        case .readSelection: "Read Selection"
+        case .stopSpeech: "Stop Speech"
+        case .replayLast: "Replay Last"
+        case .toggleAutoRead: "Toggle Auto-read"
+        }
+    }
+}
 ```
+The last two declarations are carried over verbatim from the bottom of the current `AppModel.swift` (`NoOpActivityOverlayPresenter` is used by `RelayRuntime+Testing.swift`; `HotkeyAction.title` by `SettingsController`, `KeybindsSettingsView` and `Diagnostics.swift`). The file keeps `@preconcurrency import AppKit` as its AppKit import, as today.
 
 - [ ] **Step 6: Views.**
 `DictationSettingsView.swift`:
@@ -4662,7 +4714,7 @@ sed -i '' \
   -e 's/model\.selectVoice(/model.speechBackends.selectVoice(/g' \
   RelayTests/App/AppModelTests.swift RelayTests/App/SettingsViewsSmokeTests.swift
 ```
-Delete `testBackendListsReadAndPersistOrderThroughSettings` from `AppModelTests.swift` (moved to `SpeechBackendsModelTests`). If any `AppModelTests` test awaited both old init tasks back to back, the second `await model.initialBackendRefresh?.value` line is now a harmless duplicate — delete it.
+Delete `testBackendListsReadAndPersistOrderThroughSettings` from `AppModelTests.swift` (moved to `SpeechBackendsModelTests`). That test is the last `initialSpeechBackendRefresh` user in `AppModelTests` (Task 5 deleted the others; `ProjectSmokeTests`' back-to-back awaits went in Task 1, `TTSBackendCatalogTests` in Task 5), so the two `initial…Refresh` seds are a safety net and normally match nothing.
 
 - [ ] **Step 8: Check the size and the hooks**
 
@@ -4844,7 +4896,7 @@ private final class FakeClipboardWaiter: ClipboardWaiting {
 
 - [ ] **Step 3: Run to verify failure**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/ClipboardServiceTests -only-testing:RelayTests/SelectionReaderTests 2>&1 | tail -30`
+Run: `xcodebuild test -scheme Relay -derivedDataPath /tmp/relay-dd-cleanup5 -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/ClipboardServiceTests -only-testing:RelayTests/SelectionReaderTests 2>&1 | tail -30`
 Expected: build FAILS — `cannot find 'ClipboardCopyError' in scope`.
 
 - [ ] **Step 4: `ClipboardService.swift`.**
@@ -5158,12 +5210,13 @@ enum ActivityOverlayActions {
                 await ActivityOverlayActions.perform(action, dictation: dictation, speech: coordinator)
             }
 ```
-  (if the compiler flags a retain cycle concern: there is none — the runtime owns all three for the app's life).
+  (`dictation` is the concrete `DictationCoordinator` local and `coordinator` the `SpeechCoordinator` local already in scope; the runtime owns all three for the app's life, so strong captures are correct.)
+  In `RelayTests/App/AppModelTests.swift` (~107) the doc comment of `testActivityStatusTextReturnsToIdleAfterOverlayHidesFollowingPillStop` names `ActivityOverlayActionDispatcher`; change it to `ActivityOverlayActions.perform`. Then `grep -rn "ActivityOverlayActionDispatcher\|ActivityOverlayControlling" Relay RelayTests` prints nothing.
 - [ ] Class run → `** TEST SUCCEEDED **`. Commit:
 ```bash
 git add Relay/App/ActivityOverlayActions.swift Relay/App/ActivityOverlayActionDispatcher.swift Relay/App/RelayRuntime.swift \
   RelayTests/App/ActivityOverlayActionsTests.swift RelayTests/App/ActivityOverlayActionDispatcherTests.swift \
-  Relay.xcodeproj/project.pbxproj
+  RelayTests/App/AppModelTests.swift Relay.xcodeproj/project.pbxproj
 git commit -m "refactor(overlay): replace the single-conformer action dispatcher with a function"
 ```
 
@@ -5172,7 +5225,7 @@ git commit -m "refactor(overlay): replace the single-conformer action dispatcher
 **Finding:** `ActivityOverlayWindowController.swift` opens with 60 lines of protocols/value types (`ActivityOverlayPresenting`, `ActivityOverlayScreen`, `ActivityOverlayScreenProviding`, `ActivityOverlayPanelHosting`, `ActivityOverlayPlacement`) that `ActivityOverlayPanelHost.swift` and tests use independently of the controller.
 
 - [ ] Create `Relay/App/ActivityOverlayHosting.swift` starting with `import CoreGraphics` / `import Foundation` and **move** (cut, unchanged, with doc comments) those five declarations into it. Leave `NoOpActivityOverlayPresenter` wherever it currently is.
-- [ ] `xcodegen generate && xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/ActivityOverlayWindowControllerTests 2>&1 | tail -30` → `** TEST SUCCEEDED **` (pure move).
+- [ ] `xcodegen generate && xcodebuild test -scheme Relay -derivedDataPath /tmp/relay-dd-cleanup5 -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/ActivityOverlayWindowControllerTests 2>&1 | tail -30` → `** TEST SUCCEEDED **` (pure move).
 - [ ] Commit:
 ```bash
 git add Relay/App/ActivityOverlayHosting.swift Relay/App/ActivityOverlayWindowController.swift Relay.xcodeproj/project.pbxproj
@@ -5298,8 +5351,8 @@ grep -rn "convenience init" Relay/App/AppModel.swift
 - [ ] **Step 3: Full clean build and suite**
 ```bash
 xcodegen generate
-xcodebuild clean build -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO 2>&1 | grep -E "warning:|error:|BUILD" | sort -u | tail -20
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO 2>&1 | tail -30
+xcodebuild clean build -scheme Relay -derivedDataPath /tmp/relay-dd-cleanup5 -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO 2>&1 | grep -E "warning:|error:|BUILD" | sort -u | tail -20
+xcodebuild test -scheme Relay -derivedDataPath /tmp/relay-dd-cleanup5 -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO 2>&1 | tail -30
 ```
 Expected: `** BUILD SUCCEEDED **` with no warnings that aren't also on `main` (compare against the Task 0 baseline), then `** TEST SUCCEEDED **`.
 
