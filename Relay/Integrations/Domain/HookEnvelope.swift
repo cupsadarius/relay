@@ -1,3 +1,7 @@
+// This file is also compiled directly into the `RelayHook` CLI target (see
+// `project.yml`), so it must stay Foundation-only: no dependencies on
+// anything else in the Relay app target.
+
 import Foundation
 
 struct HookEnvelope: Codable, Equatable, Sendable {
