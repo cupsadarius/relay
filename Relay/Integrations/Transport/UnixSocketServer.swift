@@ -95,14 +95,32 @@ final class UnixSocketServer: @unchecked Sendable {
     private var socketPath: String?
     private var onLine: (@Sendable (String) -> Void)?
     private var connections: [Int32: UnixSocketClientConnection] = [:]
+    /// One receive buffer reused for every readable event (confined to `queue`), instead of a
+    /// fresh 256 KiB allocation per event.
+    private var readBuffer = [UInt8](repeating: 0, count: 256 * 1024)
+    /// Decides whether an accepted peer may talk to us. Production: same uid as this process.
+    private let peerCredentialCheck: @Sendable (Int32) -> Bool
 
     /// File descriptor for the single-instance lockfile (`<socketDir>/relay.lock`),
     /// held via `flock(LOCK_EX | LOCK_NB)` for the server's entire lifetime.
     /// `-1` when not held (not started, or already torn down).
     private var lockDescriptor: Int32 = -1
 
-    init(diagnostics: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog()) {
+    init(
+        diagnostics: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog(),
+        peerCredentialCheck: @escaping @Sendable (Int32) -> Bool = { UnixSocketServer.peerIsCurrentUser($0) }
+    ) {
         self.diagnostics = diagnostics
+        self.peerCredentialCheck = peerCredentialCheck
+    }
+
+    /// True when the process on the other end of connected socket `fd` runs as this process's
+    /// uid (`getpeereid`). Any failure reads as `false`.
+    static func peerIsCurrentUser(_ fd: Int32) -> Bool {
+        var uid: uid_t = 0
+        var gid: gid_t = 0
+        guard getpeereid(fd, &uid, &gid) == 0 else { return false }
+        return uid == getuid()
     }
 
     /// Whether the server currently holds an open listening socket. Reads
@@ -283,6 +301,14 @@ final class UnixSocketServer: @unchecked Sendable {
                 break // EAGAIN/EWOULDBLOCK (no more pending) or another transient error.
             }
 
+            guard peerCredentialCheck(clientFD) else {
+                // The socket is already 0600 in a 0700 directory; this is defence in depth
+                // against a different-uid peer that still reached it.
+                close(clientFD)
+                diagnostics.append(stage: "socket", outcome: "rejected-peer", detail: "uid-mismatch")
+                continue
+            }
+
             guard connections.count < Self.maxConcurrentConnections else {
                 // At the concurrent-connection cap: drop the new connection
                 // immediately rather than tracking it, so a same-user
@@ -316,20 +342,21 @@ final class UnixSocketServer: @unchecked Sendable {
     private func handleReadable(clientFD: Int32) {
         guard let connection = connections[clientFD] else { return }
 
-        var readBuffer = [UInt8](repeating: 0, count: 256 * 1024)
         let bytesRead = readBuffer.withUnsafeMutableBytes { rawBuffer -> Int in
             read(clientFD, rawBuffer.baseAddress, rawBuffer.count)
         }
 
         if bytesRead > 0 {
-            let shouldClose = connection.append(
-                bytes: readBuffer[0..<bytesRead],
-                onLine: onLine,
+            let onLine = self.onLine
+            let diagnostics = self.diagnostics
+            let shouldClose = connection.framer.append(
+                readBuffer[0..<bytesRead],
+                onLine: { onLine?($0) },
                 onOversizedLine: { byteCount in
-                    self.diagnostics.append(stage: "socket", outcome: "dropped", detail: "oversized-line (\(byteCount) bytes)")
+                    diagnostics.append(stage: "socket", outcome: "dropped", detail: "oversized-line (\(byteCount) bytes)")
                 },
                 onOversizedUnterminated: { byteCount in
-                    self.diagnostics.append(stage: "socket", outcome: "dropped", detail: "oversized-unterminated (\(byteCount) bytes)")
+                    diagnostics.append(stage: "socket", outcome: "dropped", detail: "oversized-unterminated (\(byteCount) bytes)")
                 }
             )
             if shouldClose {
@@ -339,8 +366,8 @@ final class UnixSocketServer: @unchecked Sendable {
             closeConnection(clientFD) // EOF
         } else {
             let capturedErrno = errno
-            if capturedErrno == EAGAIN || capturedErrno == EWOULDBLOCK {
-                return
+            if capturedErrno == EAGAIN || capturedErrno == EWOULDBLOCK || capturedErrno == EINTR {
+                return // Nothing to read right now, or interrupted: the read source fires again.
             }
             closeConnection(clientFD)
         }
@@ -374,8 +401,21 @@ final class UnixSocketServer: @unchecked Sendable {
                 attributes: [.posixPermissions: 0o700]
             )
         } catch {
-            throw UnixSocketServerError.directoryCreationFailed(errno)
+            throw UnixSocketServerError.directoryCreationFailed(posixCode(from: error))
         }
+    }
+
+    /// The POSIX errno behind a Foundation file error (`NSPOSIXErrorDomain` directly or as the
+    /// underlying error of a Cocoa error), else `EIO`. Never reads the global `errno`, which
+    /// Foundation may have overwritten by the time the error reaches us.
+    static func posixCode(from error: Error) -> Int32 {
+        let nsError = error as NSError
+        if nsError.domain == NSPOSIXErrorDomain { return Int32(nsError.code) }
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError,
+           underlying.domain == NSPOSIXErrorDomain {
+            return Int32(underlying.code)
+        }
+        return EIO
     }
 
     /// Removes a stale socket file at `path` only when it is verifiably a
@@ -484,52 +524,14 @@ final class UnixSocketServer: @unchecked Sendable {
     }
 }
 
-/// Per-connection buffering state, confined to `UnixSocketServer`'s serial
-/// queue. Not `Sendable`: never touch it off that queue. Internal (not
-/// private) only so tests can drive `append` directly.
+/// Per-connection state, confined to `UnixSocketServer`'s serial queue. Not `Sendable`: never
+/// touch it off that queue. Framing lives in `NewlineFramer`, which is tested directly.
 final class UnixSocketClientConnection {
     let fd: Int32
     var source: DispatchSourceRead?
-    private var buffer: [UInt8] = []
+    var framer = NewlineFramer(maxLineBytes: UnixSocketServer.maxLineBytes)
 
     init(fd: Int32) {
         self.fd = fd
-    }
-
-    /// Appends newly read bytes, emitting one `onLine` call per
-    /// newline-delimited line found. A newline-terminated line over
-    /// `UnixSocketServer.maxLineBytes` is dropped and reported through
-    /// `onOversizedLine` (with its byte count), and the lines after it still
-    /// arrive. Returns `true` when the connection must be closed because the
-    /// buffer exceeded the maximum size without a newline ever arriving,
-    /// reported through `onOversizedUnterminated`. This bounds memory growth
-    /// instead of buffering an unbounded amount of data.
-    func append(
-        bytes: ArraySlice<UInt8>,
-        onLine: (@Sendable (String) -> Void)?,
-        onOversizedLine: (Int) -> Void,
-        onOversizedUnterminated: (Int) -> Void
-    ) -> Bool {
-        buffer.append(contentsOf: bytes)
-
-        while let newlineIndex = buffer.firstIndex(of: UInt8(ascii: "\n")) {
-            let lineBytes = buffer[buffer.startIndex..<newlineIndex]
-            defer { buffer.removeSubrange(buffer.startIndex...newlineIndex) }
-
-            guard lineBytes.count <= UnixSocketServer.maxLineBytes else {
-                onOversizedLine(lineBytes.count)
-                continue
-            }
-            if let line = String(bytes: lineBytes, encoding: .utf8) {
-                onLine?(line)
-            }
-        }
-
-        if buffer.count > UnixSocketServer.maxLineBytes {
-            onOversizedUnterminated(buffer.count)
-            buffer.removeAll(keepingCapacity: false)
-            return true
-        }
-        return false
     }
 }

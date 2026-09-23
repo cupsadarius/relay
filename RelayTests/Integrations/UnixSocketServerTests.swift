@@ -261,29 +261,6 @@ final class UnixSocketServerTests: XCTestCase {
         await fulfillment(of: [receivedShortLine], timeout: 1)
     }
 
-    /// Unit-level (no socket), so the newline-terminated oversized path is deterministic
-    /// regardless of how the kernel splits reads.
-    func testOversizedTerminatedLineIsReportedAndFollowingLinesStillArrive() {
-        let connection = UnixSocketClientConnection(fd: -1)
-        let lines = LineBox()
-        var oversizedByteCounts: [Int] = []
-        var bytes = [UInt8](repeating: UInt8(ascii: "a"), count: UnixSocketServer.maxLineBytes + 1)
-        bytes.append(UInt8(ascii: "\n"))
-        bytes.append(contentsOf: Array(#"{"ok":1}"#.utf8))
-        bytes.append(UInt8(ascii: "\n"))
-
-        let shouldClose = connection.append(
-            bytes: bytes[...],
-            onLine: { lines.append($0) },
-            onOversizedLine: { oversizedByteCounts.append($0) },
-            onOversizedUnterminated: { _ in XCTFail("no unterminated oversized line in this test") }
-        )
-
-        XCTAssertFalse(shouldClose)
-        XCTAssertEqual(oversizedByteCounts, [UnixSocketServer.maxLineBytes + 1])
-        XCTAssertEqual(lines.values, [#"{"ok":1}"#])
-    }
-
     func testOversizedUnterminatedLineIsRecordedInDiagnosticsAndClosesTheConnection() async throws {
         let path = temporarySocketPath()
         let diagnostics = IntegrationDiagnosticsLog()
@@ -423,22 +400,44 @@ final class UnixSocketServerTests: XCTestCase {
         try await UnixSocketTestClient.send(#"{"schemaVersion":1}"# + "\n", to: path)
         await fulfillment(of: [receivedFollowUpLine], timeout: 1)
     }
-}
 
-/// Collects lines from `UnixSocketClientConnection`'s `@Sendable` `onLine` callback in tests.
-private final class LineBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var storage: [String] = []
+    func testPeerIsCurrentUserAcceptsASameUserSocketPair() {
+        var fds: [Int32] = [0, 0]
+        XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds), 0)
+        defer { close(fds[0]); close(fds[1]) }
 
-    func append(_ line: String) {
-        lock.lock()
-        storage.append(line)
-        lock.unlock()
+        XCTAssertTrue(UnixSocketServer.peerIsCurrentUser(fds[0]))
+        XCTAssertFalse(UnixSocketServer.peerIsCurrentUser(-1))
     }
 
-    var values: [String] {
-        lock.lock()
-        defer { lock.unlock() }
-        return storage
+    func testRejectedPeerIsClosedAndRecordedWithoutDeliveringLines() async throws {
+        let path = temporarySocketPath()
+        let diagnostics = IntegrationDiagnosticsLog()
+        let delivered = expectation(description: "no line delivered")
+        delivered.isInverted = true
+        let server = UnixSocketServer(diagnostics: diagnostics, peerCredentialCheck: { _ in false })
+        try server.start(path: path) { _ in delivered.fulfill() }
+        defer { server.stop() }
+
+        let fd = try await UnixSocketTestClient.connectAndHold(to: path)
+        defer { close(fd) }
+
+        let closedByServer = try await UnixSocketTestClient.waitForEOF(fd: fd, timeout: 1)
+        XCTAssertTrue(closedByServer)
+        await fulfillment(of: [delivered], timeout: 0.2)
+        XCTAssertTrue(diagnostics.snapshot().contains { $0.stage == "socket" && $0.outcome == "rejected-peer" })
+    }
+
+    func testDirectoryCreationFailureReportsTheRealPOSIXCode() throws {
+        let locked = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o500])
+        defer {
+            chmod(locked.path, 0o700)
+            try? FileManager.default.removeItem(at: locked)
+        }
+
+        XCTAssertThrowsError(try UnixSocketServer().start(path: locked.appendingPathComponent("sub/relay.sock").path) { _ in }) { error in
+            XCTAssertEqual(error as? UnixSocketServerError, .directoryCreationFailed(EACCES))
+        }
     }
 }

@@ -125,6 +125,7 @@
 		874B71D6563F1754868E4872 /* IntegrationManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88315C1ADD14F6767C42B75C /* IntegrationManagerTests.swift */; };
 		87AEFD2A91344DA0D3F4892B /* AppleSpeechModelManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BABED72453B9D5F6ABC95EEA /* AppleSpeechModelManagerTests.swift */; };
 		8883E0AF33FA7D86B73DA6E1 /* HerdrFocusResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29B1662107A24EA83ABA5EE5 /* HerdrFocusResolverTests.swift */; };
+		8965F7A0E86DD769BA8CF651 /* NewlineFramerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38E80D996D4E4F2813BE3D52 /* NewlineFramerTests.swift */; };
 		8C7FB013D71A83B74950862F /* GlobalHotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2499709E52B7C2AE389E0A68 /* GlobalHotkeyManager.swift */; };
 		8DFFB706EDF3C5BF8EE57406 /* FocusResolutionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1FC20A718A0939B4DDA9CB0 /* FocusResolutionService.swift */; };
 		912B483ECC93452865AC4A29 /* ClipboardServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 929A7ED797B49CEE115E1DA6 /* ClipboardServiceTests.swift */; };
@@ -198,6 +199,7 @@
 		DE03F33E6FC5E69771829711 /* AppSettingsDecodeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F33CA3EA8C64416A942FA13A /* AppSettingsDecodeTests.swift */; };
 		DE60F514AF7DB717FE878E05 /* HookEnvelopeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCAE43E0E7232A29726586EA /* HookEnvelopeTests.swift */; };
 		DEB7ABD3D2EE7EB76531B9D1 /* RelayWindowTagger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A2D71436EB216912EA0F366 /* RelayWindowTagger.swift */; };
+		E1079FED61AD57DA8CFE468C /* NewlineFramer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B4FD4B94F86E85F9A1E3CC6 /* NewlineFramer.swift */; };
 		E205528FE59A3A731FA917AE /* HerdrModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E07986CA871BE584821FE608 /* HerdrModels.swift */; };
 		E21DBC3BB9CFE1A9D933064B /* WhisperModelCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68429CF3D4EB53857BF99D80 /* WhisperModelCatalogTests.swift */; };
 		E2C6E7141B67B8F4DBA3DE7B /* HookEnvelopeReceiverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83997371307F0FA88DB5A57E /* HookEnvelopeReceiverTests.swift */; };
@@ -300,6 +302,7 @@
 		36BC1C589CC6F88B197B1EF0 /* HotkeyDefinition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyDefinition.swift; sourceTree = "<group>"; };
 		3772B7BC9E1856FB2551A9D4 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		3897DB8BC3EDE939835ACEDF /* BoundedProcessRunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoundedProcessRunnerTests.swift; sourceTree = "<group>"; };
+		38E80D996D4E4F2813BE3D52 /* NewlineFramerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewlineFramerTests.swift; sourceTree = "<group>"; };
 		3C4378331FFB24C3F3B1B46B /* WhisperRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperRuntimeTests.swift; sourceTree = "<group>"; };
 		3E764C660DC8753D838587C8 /* HerdrFocusResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HerdrFocusResolver.swift; sourceTree = "<group>"; };
 		3FEA7F12EBADD824A6D473D8 /* TextInsertionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextInsertionService.swift; sourceTree = "<group>"; };
@@ -342,6 +345,7 @@
 		68429CF3D4EB53857BF99D80 /* WhisperModelCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperModelCatalogTests.swift; sourceTree = "<group>"; };
 		6A5013145E15E5C746C59782 /* AgentProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProvider.swift; sourceTree = "<group>"; };
 		6AAA555F92CDA973E5FD1ACA /* MicrophoneCaptureStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicrophoneCaptureStateTests.swift; sourceTree = "<group>"; };
+		6B4FD4B94F86E85F9A1E3CC6 /* NewlineFramer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewlineFramer.swift; sourceTree = "<group>"; };
 		6B541411E315249B0E88DAE3 /* SpeechCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechCoordinatorTests.swift; sourceTree = "<group>"; };
 		6CA4CB5A5518D77795A055C2 /* TTSAudioPipeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSAudioPipeTests.swift; sourceTree = "<group>"; };
 		6F62FB2475A4963FC6149879 /* IntegrationStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrationStatus.swift; sourceTree = "<group>"; };
@@ -543,6 +547,7 @@
 				548BBA4EF43DAABAE6DEA7E0 /* HookTransportClientTests.swift */,
 				D4A3AE84BABE6230BCA922FB /* IntegrationDiagnosticsLogTests.swift */,
 				88315C1ADD14F6767C42B75C /* IntegrationManagerTests.swift */,
+				38E80D996D4E4F2813BE3D52 /* NewlineFramerTests.swift */,
 				4C40F3704EDE3F5A9DB5D4ED /* StopHookConfigFileTests.swift */,
 				0F3C2A4D3D7C0B013E24C026 /* StopHookIntegrationTests.swift */,
 				63B61F60EF2F1B91A7692398 /* UnixSocketServerOwnershipTests.swift */,
@@ -678,6 +683,7 @@
 			isa = PBXGroup;
 			children = (
 				5B0A9C8344C96ABA62442D91 /* HookEnvelopeReceiver.swift */,
+				6B4FD4B94F86E85F9A1E3CC6 /* NewlineFramer.swift */,
 				91ED1D7A6F95F0D69DB81AEF /* UnixSocketServer.swift */,
 			);
 			path = Transport;
@@ -1155,6 +1161,7 @@
 				122B40DA5BC1B32E59DBF00C /* KokoroTTSAudioSourceTests.swift in Sources */,
 				0C3C74A43B72D383164C555C /* KokoroTTSBackendTests.swift in Sources */,
 				30F97D8C0898E2D97E683F3F /* MicrophoneCaptureStateTests.swift in Sources */,
+				8965F7A0E86DD769BA8CF651 /* NewlineFramerTests.swift in Sources */,
 				594DAC932E225EE2F33A29B1 /* PCMFramerTests.swift in Sources */,
 				9DEDED0E43E753BCE3E9414B /* ParakeetBackendTests.swift in Sources */,
 				82EB0751E1D7DBA1BFAA2896 /* ParakeetModelManagerTests.swift in Sources */,
@@ -1283,6 +1290,7 @@
 				D13BFFB3458D91D933FF5F51 /* LoginItemController.swift in Sources */,
 				629B951FA84E58D245591D7B /* MenuBarContentView.swift in Sources */,
 				5DFE942299A26F7BEA31560A /* MicrophoneCapture.swift in Sources */,
+				E1079FED61AD57DA8CFE468C /* NewlineFramer.swift in Sources */,
 				F5F6C241001C32251E08702D /* PCMFramer.swift in Sources */,
 				ED473F93C25865ED39A16D6B /* ParakeetBackend.swift in Sources */,
 				3365563D1097A0D1FFBDBA8E /* ParakeetModelManager.swift in Sources */,
