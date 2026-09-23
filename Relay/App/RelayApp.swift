@@ -33,10 +33,10 @@ final class RelayAppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel(runtime: .makeProduction())
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        model.startIntegrations()
+        model.integrationSetup.start()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        model.stopIntegrations()
+        model.integrationSetup.stop()
     }
 }

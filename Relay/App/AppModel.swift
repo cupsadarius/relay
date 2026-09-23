@@ -1,15 +1,5 @@
 import Observation
 @preconcurrency import AppKit
-import os
-
-/// Thrown by `AppModel.installBundledHelperIfPresent` when, after attempting to refresh the
-/// bundled `RelayHook` helper at its stable Application Support path, there is still no valid
-/// (present and executable) helper there. Caught by `installIntegration`, which surfaces it as
-/// `.configurationError` instead of proceeding to write the agent config — a config pointed at
-/// a stable path with nothing runnable behind it would silently never fire.
-enum HelperInstallVerificationError: Error, Sendable {
-    case stableHelperUnavailable
-}
 
 @MainActor
 @Observable
@@ -66,17 +56,6 @@ final class AppModel {
     var speechBackendMessage: String?
     var ttsBackends: [TTSBackendStatus] = []
     var ttsBackendMessage: String?
-    /// Whether the Relay agent-hook Unix socket is currently listening. Only ever flipped by
-    /// `startIntegrations()`/`stopIntegrations()`, called from the real app lifecycle.
-    private(set) var isSocketListening = false
-    /// Why the hook socket could not be opened, when the user can act on it (e.g. another Relay
-    /// instance owns it). Shown under the socket status in Integrations settings. `nil` while
-    /// listening, and before `startIntegrations()` has run.
-    private(set) var socketStatusMessage: String?
-    /// Install-time status per provider, refreshed by `installIntegration`/`uninstallIntegration`/
-    /// `checkIntegration`. Independent of `integrationManager.status`, which tracks only runtime
-    /// (event-driven) activity; `integrationStatus(for:)` merges the two.
-    private(set) var installerStatuses: [AgentProvider: IntegrationStatus] = [:]
     var overlayModel: ActivityOverlayModel { runtime.speechOut.overlayModel }
     var sttRegistry: [String: any SpeechToTextBackend] { runtime.speechIn.sttRegistry }
     var ttsRegistry: [String: any TextToSpeechBackend] { runtime.speechOut.ttsRegistry }
@@ -93,20 +72,14 @@ final class AppModel {
     private var loginItemService: any LoginItemControlling { runtime.loginItemService }
     private var diagnostics: DiagnosticsRecorder { runtime.diagnostics }
     private var overlayPresenter: any ActivityOverlayPresenting { runtime.speechOut.overlayPresenter }
-    private var hookEnvelopeReceiver: HookEnvelopeReceiver { runtime.integrations.hookEnvelopeReceiver }
     private var integrationManager: IntegrationManager { runtime.integrations.integrationManager }
-    private var claudeCodeInstaller: ClaudeCodeInstaller { runtime.integrations.claudeCodeInstaller }
-    private var codexInstaller: CodexInstaller { runtime.integrations.codexInstaller }
-    private var helperInstaller: HelperInstaller { runtime.integrations.helperInstaller }
-    private var bundledHelperURL: URL { runtime.integrations.bundledHelperURL }
     private var sessionRegistry: AgentSessionRegistry { runtime.sessions.registry }
     private var focusResolution: any SessionFocusResolving { runtime.sessions.focusResolution }
     private var frontmostApps: any FrontmostAppMonitoring { runtime.sessions.frontmostApps }
     private var processInspector: ProcessInspector { runtime.sessions.processInspector }
     private var integrationDiagnosticsLog: IntegrationDiagnosticsLog { runtime.integrationDiagnosticsLog }
-    /// Plan 1's injectable socket path now comes from the runtime (a temp path in tests).
-    var hookSocketPath: String { runtime.integrations.socketPath }
 
+    @ObservationIgnored let integrationSetup: IntegrationSetupModel
     @ObservationIgnored let modelController: SpeechModelController
     @ObservationIgnored let voiceCatalog: SpeechVoiceCatalog
     @ObservationIgnored var refreshGeneration = 0
@@ -122,14 +95,12 @@ final class AppModel {
     /// The in-flight Read Selection / Replay Last action. Each new press of either hotkey, and
     /// Stop Speech, cancels it, so two quick presses can never both reach the speech coordinator.
     @ObservationIgnored private var speechActionTask: Task<Void, Never>?
-    /// Structural-only logging for `installBundledHelperIfPresent` (no paths, no file
-    /// contents — see that method's doc comment for what gets logged and when).
-    @ObservationIgnored private let installerLogger = Logger(subsystem: "dev.relaymac.Relay", category: "integrations")
 
     /// The only initializer. Production passes `RelayRuntime.makeProduction()`; tests pass
     /// `RelayRuntime.testing(...)`. No defaults: every dependency comes from `runtime`.
     init(runtime: RelayRuntime) {
         self.runtime = runtime
+        integrationSetup = IntegrationSetupModel(runtime: runtime)
         modelController = SpeechModelController(
             managers: Self.modelManagers(
                 dictation: runtime.speechIn.speechModelManagers,
@@ -610,218 +581,6 @@ final class AppModel {
 
     // MARK: - Agent integrations
 
-    /// This build's Unix-domain socket for agent-hook envelopes (`Relay/relay.sock` for Release,
-    /// `Relay Debug/relay.sock` for Debug). `RelayHook` derives the same path from its own
-    /// location — see `RelayPaths.socketPath(forHelperExecutablePath:)`.
-    static var integrationSocketPath: String {
-        IntegrationServices.productionSocketPath
-    }
-
-    /// Starts listening for local agent-hook envelopes on the fixed Relay socket path and begins
-    /// dispatching decoded events through `integrationManager`. Also re-reads each provider's
-    /// install status and, when any provider has hooks installed, refreshes the stable
-    /// `RelayHook` helper (see `refreshInstalledHelperIfNeeded`).
-    ///
-    /// - Important: called ONLY from the real app lifecycle (`RelayApp.applicationDidFinishLaunching`).
-    ///   Never called from any initializer, so constructing an `AppModel` in a test never opens a
-    ///   real socket. A failure to start the socket never crashes the app: `.alreadyStarted` (a
-    ///   redundant call) is ignored, and any other failure is recorded in
-    ///   `integrationDiagnosticsLog` and surfaced through `socketStatusMessage`.
-    ///   `isSocketListening` is always set from `hookEnvelopeReceiver.isListening` afterward, so
-    ///   it stays authoritative either way.
-    func startIntegrations() {
-        do {
-            try hookEnvelopeReceiver.start(path: hookSocketPath)
-            socketStatusMessage = nil
-        } catch UnixSocketServerError.alreadyStarted {
-            // A redundant call while the receiver already listens: nothing to report.
-        } catch {
-            let label = (error as? UnixSocketServerError)?.diagnosticsLabel ?? "unexpected-error"
-            integrationDiagnosticsLog.append(stage: "socket-start", outcome: "failed", detail: label)
-            socketStatusMessage = Self.socketStartFailureMessage(for: error)
-        }
-        isSocketListening = hookEnvelopeReceiver.isListening
-        integrationManager.start()
-        refreshInstalledHelperIfNeeded()
-    }
-
-    /// Keeps the stable-path `RelayHook` copy in step with the helper bundled in THIS build.
-    /// `installBundledHelperIfPresent` otherwise runs only from the Install button, so after an
-    /// app update (or `install.sh`) every hook would keep running whatever helper the last
-    /// explicit install copied. Refreshes only when at least one provider's config actually
-    /// points hooks at the stable path. Never throws: a failure is recorded in
-    /// `integrationDiagnosticsLog`, and a previously installed helper stays in place.
-    private func refreshInstalledHelperIfNeeded() {
-        for provider in AgentProvider.allCases {
-            checkIntegration(provider)
-        }
-        guard AgentProvider.allCases.contains(where: { Self.hooksInstalled(installerStatuses[$0]) }) else {
-            return
-        }
-        do {
-            try installBundledHelperIfPresent()
-        } catch {
-            integrationDiagnosticsLog.append(stage: "helper", outcome: "refresh-failed", detail: "stable-helper-unavailable")
-        }
-    }
-
-    private static func hooksInstalled(_ status: IntegrationStatus?) -> Bool {
-        switch status {
-        case .installedAwaitingFirstEvent, .installedTrustRequired, .active:
-            true
-        case .notInstalled, .configurationError, nil:
-            false
-        }
-    }
-
-    static let anotherInstanceOwnsSocketMessage =
-        "Another Relay instance is already listening for agent hooks. Quit it, then relaunch Relay."
-    static let socketStartFailedMessage =
-        "Relay could not open the agent hook socket. See Diagnostics for details."
-
-    private static func socketStartFailureMessage(for error: Error) -> String {
-        if case UnixSocketServerError.activeListenerPresent = error {
-            return anotherInstanceOwnsSocketMessage
-        }
-        return socketStartFailedMessage
-    }
-
-    /// Stops dispatching agent-hook events and stops/unlinks the Unix socket.
-    ///
-    /// - Important: called ONLY from `RelayApp.applicationWillTerminate`.
-    func stopIntegrations() {
-        integrationManager.stop()
-        hookEnvelopeReceiver.stop()
-        isSocketListening = false
-    }
-
-    /// The status shown to the user for `provider`: the manager's live `.active` runtime status
-    /// when present, else the most recently checked install-time status.
-    func integrationStatus(for provider: AgentProvider) -> IntegrationStatus {
-        if let runtimeStatus = integrationManager.status[provider], case .active = runtimeStatus {
-            return runtimeStatus
-        }
-        return installerStatuses[provider] ?? .notInstalled
-    }
-
-    /// Whether an ephemeral latest agent response is currently available to speak.
-    var latestAgentResponseAvailable: Bool {
-        integrationManager.latestResponse != nil
-    }
-
-    /// Installs the Relay `Stop` hook for `provider`, then refreshes its status. An installer
-    /// failure — including the bundled helper not being reachable at its stable path (see
-    /// `installBundledHelperIfPresent`) — is caught and surfaced as `.configurationError`
-    /// BEFORE the per-provider installer writes the agent config; it never crashes the app,
-    /// and never logs the underlying error verbatim. This ordering matters: the config must
-    /// never point at a stable path with nothing runnable there, which would silently never
-    /// fire while `status()` still reports "installed".
-    func installIntegration(_ provider: AgentProvider) {
-        do {
-            try installBundledHelperIfPresent()
-            switch provider {
-            case .claudeCode: try claudeCodeInstaller.install()
-            case .codex: try codexInstaller.install()
-            }
-            checkIntegration(provider)
-        } catch {
-            installerStatuses[provider] = Self.configurationErrorStatus(for: provider, error: error)
-        }
-    }
-
-    /// Refreshes the stable-path copy of the bundled `RelayHook` helper (see
-    /// `HelperInstaller`) before a per-provider installer runs, so the path it is about to
-    /// write into the agent's config always resolves to a real, executable file — even right
-    /// after a rebuild that produced a new bundled helper.
-    ///
-    /// Guarded on `bundledHelperURL` actually existing: in unit tests (and any host process
-    /// that isn't the real, built app bundle) it normally doesn't, so this is a silent no-op
-    /// there rather than a hard dependency on a real app bundle being present.
-    ///
-    /// When a bundled helper DOES exist, the copy is attempted and the destination is then
-    /// re-verified with `FileManager.isExecutableFile`. A copy failure is NOT always fatal: if
-    /// a valid helper from an earlier install is already sitting at the stable path,
-    /// `installBundledHelper` never touches it on failure (see that type's doc comment), so
-    /// the existing, still-working install is left alone — logged structurally, not surfaced.
-    /// It's only fatal when, after the attempt, there is NO valid helper at the stable path at
-    /// all: writing the agent config next would then point at a path nothing can ever run
-    /// from, so this throws instead, aborting `installIntegration` before that write happens.
-    private func installBundledHelperIfPresent() throws {
-        guard FileManager.default.fileExists(atPath: bundledHelperURL.path) else { return }
-
-        let fileManager = FileManager.default
-        let installedHelperPath = helperInstaller.installedHelperURL.path
-        let hadValidStableHelperBefore = fileManager.isExecutableFile(atPath: installedHelperPath)
-
-        do {
-            try helperInstaller.installBundledHelper(from: bundledHelperURL)
-            integrationDiagnosticsLog.append(stage: "helper", outcome: "refreshed", detail: "")
-        } catch {
-            if hadValidStableHelperBefore {
-                installerLogger.log("bundled RelayHook helper refresh failed; a previously installed helper is still present")
-            } else {
-                installerLogger.log("bundled RelayHook helper refresh failed")
-            }
-            integrationDiagnosticsLog.append(
-                stage: "helper",
-                outcome: "refresh-failed",
-                detail: hadValidStableHelperBefore ? "previous-helper-kept" : "copy-failed"
-            )
-        }
-
-        guard fileManager.isExecutableFile(atPath: installedHelperPath) else {
-            installerLogger.log("stable RelayHook helper unavailable after refresh; aborting hook install")
-            throw HelperInstallVerificationError.stableHelperUnavailable
-        }
-    }
-
-    /// Removes the Relay-owned `Stop` hook for `provider`, then refreshes its status. An
-    /// installer failure is caught and surfaced as `.configurationError`; it never crashes the
-    /// app, and never logs the underlying error verbatim.
-    ///
-    /// On success, also clears `provider`'s runtime status on `integrationManager` so a stale
-    /// `.active` entry from earlier this session can't keep `integrationStatus(for:)` reporting
-    /// active after the provider has just been uninstalled; `checkIntegration` then reloads the
-    /// truthful post-uninstall state straight from the installer.
-    func uninstallIntegration(_ provider: AgentProvider) {
-        do {
-            switch provider {
-            case .claudeCode: try claudeCodeInstaller.uninstall()
-            case .codex: try codexInstaller.uninstall()
-            }
-            integrationManager.clearRuntimeStatus(for: provider)
-            checkIntegration(provider)
-        } catch {
-            installerStatuses[provider] = Self.configurationErrorStatus(for: provider, error: error)
-        }
-    }
-
-    /// Refreshes `provider`'s install-time status by re-reading its agent config. A read failure
-    /// is caught and surfaced as `.configurationError`; it never crashes the app, and never logs
-    /// the underlying error verbatim.
-    func checkIntegration(_ provider: AgentProvider) {
-        do {
-            switch provider {
-            case .claudeCode: installerStatuses[provider] = try claudeCodeInstaller.status()
-            case .codex: installerStatuses[provider] = try codexInstaller.status()
-            }
-        } catch {
-            installerStatuses[provider] = Self.configurationErrorStatus(for: provider, error: error)
-        }
-    }
-
-    /// Maps a thrown installer error to a user-facing `.configurationError`, without ever
-    /// including the underlying error's text (which may carry file paths or content).
-    private static func configurationErrorStatus(for provider: AgentProvider, error: Error) -> IntegrationStatus {
-        if provider == .codex, case IntegrationInstallerError.hooksDisabledInConfig = error {
-            return .configurationError(CodexInstaller.hooksDisabledMessage)
-        }
-        switch provider {
-        case .claudeCode: return .configurationError("Could not update the Claude Code integration.")
-        case .codex: return .configurationError("Could not update the Codex integration.")
-        }
-    }
-
     /// Speaks the ephemeral latest agent response (if any) as a user-requested speech request.
     /// Never invoked automatically; only ever called from an explicit user action.
     func speakLatestAgentResponse() async {
@@ -838,27 +597,6 @@ final class AppModel {
         } catch {
             diagnostics.record(.ttsFailed)
             statusText = "Could not speak the latest agent response."
-        }
-    }
-
-    /// Compact, privacy-safe metadata for one ephemeral agent session: provider, working
-    /// directory, and last-activity time only. Never the response text, and never a resolved
-    /// focus verdict — focus is only ever resolved at speak time by
-    /// `AgentAutoReadCoordinator`/`FocusResolutionService`, not for display.
-    struct AgentSessionSummary: Identifiable, Equatable, Sendable {
-        let id: AgentSessionID
-        let cwd: String
-        let lastActivityAt: Date
-
-        var provider: AgentProvider { id.provider }
-    }
-
-    /// Snapshot of the in-memory agent sessions currently tracked by Phase 3's session registry,
-    /// most-recently-active first. Purely for diagnostics display; contents are never persisted
-    /// and never include response text.
-    func agentSessionSummaries() async -> [AgentSessionSummary] {
-        await sessionRegistry.sessions().map {
-            AgentSessionSummary(id: $0.id, cwd: $0.cwd, lastActivityAt: $0.lastActivityAt)
         }
     }
 }

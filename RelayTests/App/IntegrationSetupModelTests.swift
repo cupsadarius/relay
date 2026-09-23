@@ -7,12 +7,12 @@ import XCTest
 /// the real `~/.claude` or `~/.codex` directories. No test may open the real, fixed-path Unix
 /// socket at `~/Library/Application Support/Relay/relay.sock` either: `RelayRuntime.testing`
 /// defaults the socket path to a unique `/tmp` path per call, so even a test that calls
-/// `AppModel.startIntegrations()` without overriding it can never reach the real socket. Most
-/// tests never call `startIntegrations()` at all — runtime event flow is exercised instead by
+/// `IntegrationSetupModel.start()` without overriding it can never reach the real socket. Most
+/// tests never call `start()` at all — runtime event flow is exercised instead by
 /// constructing an `IntegrationManager` directly around a manually driven `AsyncStream`, exactly
 /// as `IntegrationManagerTests` does.
 @MainActor
-final class AppModelIntegrationsTests: XCTestCase {
+final class IntegrationSetupModelTests: XCTestCase {
     private var tempDirectory: URL!
     private let helperPath = "/Applications/Relay.app/Contents/Helpers/RelayHook"
 
@@ -60,6 +60,30 @@ final class AppModelIntegrationsTests: XCTestCase {
             .appendingPathComponent("RelayHook")
     }
 
+    /// The integration-pipeline log every runtime in this file writes to.
+    private let integrationLog = IntegrationDiagnosticsLog()
+
+    private func makeRuntime(
+        claudeCodeInstaller: ClaudeCodeInstaller? = nil,
+        codexInstaller: CodexInstaller? = nil,
+        helperInstaller: HelperInstaller? = nil,
+        bundledHelperURL: URL? = nil,
+        integrationManager: IntegrationManager? = nil,
+        hookEnvelopeReceiver: HookEnvelopeReceiver = HookEnvelopeReceiver(),
+        hookSocketPath: String? = nil
+    ) -> RelayRuntime {
+        .testing(
+            integrationDiagnosticsLog: integrationLog,
+            hookEnvelopeReceiver: hookEnvelopeReceiver,
+            integrationManager: integrationManager,
+            claudeCodeInstaller: claudeCodeInstaller ?? makeClaudeInstaller(),
+            codexInstaller: codexInstaller ?? makeCodexInstaller(),
+            helperInstaller: helperInstaller ?? makeHelperInstaller(),
+            bundledHelperURL: bundledHelperURL ?? nonexistentBundledHelperURL,
+            hookSocketPath: hookSocketPath
+        )
+    }
+
     private func makeModel(
         claudeCodeInstaller: ClaudeCodeInstaller? = nil,
         codexInstaller: CodexInstaller? = nil,
@@ -68,14 +92,14 @@ final class AppModelIntegrationsTests: XCTestCase {
         integrationManager: IntegrationManager? = nil,
         hookEnvelopeReceiver: HookEnvelopeReceiver = HookEnvelopeReceiver(),
         hookSocketPath: String? = nil
-    ) -> AppModel {
-        AppModel(runtime: .testing(
-            hookEnvelopeReceiver: hookEnvelopeReceiver,
+    ) -> IntegrationSetupModel {
+        IntegrationSetupModel(runtime: makeRuntime(
+            claudeCodeInstaller: claudeCodeInstaller,
+            codexInstaller: codexInstaller,
+            helperInstaller: helperInstaller,
+            bundledHelperURL: bundledHelperURL,
             integrationManager: integrationManager,
-            claudeCodeInstaller: claudeCodeInstaller ?? makeClaudeInstaller(),
-            codexInstaller: codexInstaller ?? makeCodexInstaller(),
-            helperInstaller: helperInstaller ?? makeHelperInstaller(),
-            bundledHelperURL: bundledHelperURL ?? nonexistentBundledHelperURL,
+            hookEnvelopeReceiver: hookEnvelopeReceiver,
             hookSocketPath: hookSocketPath
         ))
     }
@@ -86,9 +110,9 @@ final class AppModelIntegrationsTests: XCTestCase {
         let model = makeModel()
 
         XCTAssertFalse(model.isSocketListening)
-        XCTAssertEqual(model.integrationStatus(for: .claudeCode), .notInstalled)
-        XCTAssertEqual(model.integrationStatus(for: .codex), .notInstalled)
-        XCTAssertFalse(model.latestAgentResponseAvailable)
+        XCTAssertEqual(model.status(for: .claudeCode), .notInstalled)
+        XCTAssertEqual(model.status(for: .codex), .notInstalled)
+        XCTAssertFalse(model.latestResponseAvailable)
     }
 
     // MARK: - Claude Code install/uninstall/check drive the real (temp-dir) installer
@@ -96,31 +120,31 @@ final class AppModelIntegrationsTests: XCTestCase {
     func testInstallClaudeCodeIntegrationSucceedsAndRefreshesStatus() {
         let model = makeModel()
 
-        model.installIntegration(.claudeCode)
+        model.install(.claudeCode)
 
-        XCTAssertEqual(model.integrationStatus(for: .claudeCode), .installedAwaitingFirstEvent)
+        XCTAssertEqual(model.status(for: .claudeCode), .installedAwaitingFirstEvent)
     }
 
     func testUninstallClaudeCodeIntegrationRemovesEntryAndRefreshesStatus() {
         let model = makeModel()
-        model.installIntegration(.claudeCode)
-        XCTAssertEqual(model.integrationStatus(for: .claudeCode), .installedAwaitingFirstEvent)
+        model.install(.claudeCode)
+        XCTAssertEqual(model.status(for: .claudeCode), .installedAwaitingFirstEvent)
 
-        model.uninstallIntegration(.claudeCode)
+        model.uninstall(.claudeCode)
 
-        XCTAssertEqual(model.integrationStatus(for: .claudeCode), .notInstalled)
+        XCTAssertEqual(model.status(for: .claudeCode), .notInstalled)
     }
 
     func testCheckClaudeCodeIntegrationReflectsCurrentOnDiskState() throws {
         let installer = makeClaudeInstaller()
         let model = makeModel(claudeCodeInstaller: installer)
-        XCTAssertEqual(model.integrationStatus(for: .claudeCode), .notInstalled)
+        XCTAssertEqual(model.status(for: .claudeCode), .notInstalled)
 
         try installer.install() // simulate a change made outside this AppModel instance
 
-        model.checkIntegration(.claudeCode)
+        model.check(.claudeCode)
 
-        XCTAssertEqual(model.integrationStatus(for: .claudeCode), .installedAwaitingFirstEvent)
+        XCTAssertEqual(model.status(for: .claudeCode), .installedAwaitingFirstEvent)
     }
 
     func testInstallClaudeCodeIntegrationWithMalformedSettingsSurfacesConfigurationErrorWithoutCrashing() throws {
@@ -130,10 +154,10 @@ final class AppModelIntegrationsTests: XCTestCase {
             .write(to: claudeDirectory.appendingPathComponent("settings.json"))
         let model = makeModel()
 
-        model.installIntegration(.claudeCode)
+        model.install(.claudeCode)
 
-        guard case .configurationError = model.integrationStatus(for: .claudeCode) else {
-            return XCTFail("expected .configurationError, got \(model.integrationStatus(for: .claudeCode))")
+        guard case .configurationError = model.status(for: .claudeCode) else {
+            return XCTFail("expected .configurationError, got \(model.status(for: .claudeCode))")
         }
     }
 
@@ -165,10 +189,10 @@ final class AppModelIntegrationsTests: XCTestCase {
             bundledHelperURL: bundledHelperURL
         )
 
-        model.installIntegration(.claudeCode)
+        model.install(.claudeCode)
 
-        guard case .configurationError = model.integrationStatus(for: .claudeCode) else {
-            return XCTFail("expected .configurationError, got \(model.integrationStatus(for: .claudeCode))")
+        guard case .configurationError = model.status(for: .claudeCode) else {
+            return XCTFail("expected .configurationError, got \(model.status(for: .claudeCode))")
         }
         // The per-provider installer must never have run: no settings.json was written.
         let settingsURL = tempDirectory.appendingPathComponent("claude", isDirectory: true)
@@ -202,9 +226,9 @@ final class AppModelIntegrationsTests: XCTestCase {
 
         let model = makeModel(helperInstaller: helperInstaller, bundledHelperURL: bundledHelperURL)
 
-        model.installIntegration(.claudeCode)
+        model.install(.claudeCode)
 
-        XCTAssertEqual(model.integrationStatus(for: .claudeCode), .installedAwaitingFirstEvent)
+        XCTAssertEqual(model.status(for: .claudeCode), .installedAwaitingFirstEvent)
     }
 
     // MARK: - Codex install/uninstall/check, including its two special-case messages
@@ -212,19 +236,19 @@ final class AppModelIntegrationsTests: XCTestCase {
     func testInstallCodexIntegrationFlipsToTrustRequired() {
         let model = makeModel()
 
-        model.installIntegration(.codex)
+        model.install(.codex)
 
-        XCTAssertEqual(model.integrationStatus(for: .codex), .installedTrustRequired)
+        XCTAssertEqual(model.status(for: .codex), .installedTrustRequired)
     }
 
     func testUninstallCodexIntegrationRemovesEntryAndRefreshesStatus() {
         let model = makeModel()
-        model.installIntegration(.codex)
-        XCTAssertEqual(model.integrationStatus(for: .codex), .installedTrustRequired)
+        model.install(.codex)
+        XCTAssertEqual(model.status(for: .codex), .installedTrustRequired)
 
-        model.uninstallIntegration(.codex)
+        model.uninstall(.codex)
 
-        XCTAssertEqual(model.integrationStatus(for: .codex), .notInstalled)
+        XCTAssertEqual(model.status(for: .codex), .notInstalled)
     }
 
     func testCodexHooksDisabledInConfigSurfacesConfigurationErrorOnInstallWithoutCrashing() throws {
@@ -234,9 +258,9 @@ final class AppModelIntegrationsTests: XCTestCase {
             .write(to: codexDirectory.appendingPathComponent("config.toml"))
         let model = makeModel()
 
-        model.installIntegration(.codex)
+        model.install(.codex)
 
-        XCTAssertEqual(model.integrationStatus(for: .codex), .configurationError(CodexInstaller.hooksDisabledMessage))
+        XCTAssertEqual(model.status(for: .codex), .configurationError(CodexInstaller.hooksDisabledMessage))
     }
 
     func testCheckCodexIntegrationSurfacesHooksDisabledMessageWithoutInstalling() throws {
@@ -246,9 +270,9 @@ final class AppModelIntegrationsTests: XCTestCase {
             .write(to: codexDirectory.appendingPathComponent("config.toml"))
         let model = makeModel()
 
-        model.checkIntegration(.codex)
+        model.check(.codex)
 
-        XCTAssertEqual(model.integrationStatus(for: .codex), .configurationError(CodexInstaller.hooksDisabledMessage))
+        XCTAssertEqual(model.status(for: .codex), .configurationError(CodexInstaller.hooksDisabledMessage))
     }
 
     // MARK: - latestAgentResponseAvailable / speakLatestAgentResponse delegate to the injected manager
@@ -269,9 +293,9 @@ final class AppModelIntegrationsTests: XCTestCase {
         var continuation: AsyncStream<HookEnvelope>.Continuation!
         let events = AsyncStream<HookEnvelope> { continuation = $0 }
         let manager = IntegrationManager(events: events, integrations: [integration], speechCoordinator: speech)
-        let model = makeModel(integrationManager: manager)
+        let model = AppModel(runtime: makeRuntime(integrationManager: manager))
 
-        XCTAssertFalse(model.latestAgentResponseAvailable)
+        XCTAssertFalse(model.integrationSetup.latestResponseAvailable)
 
         manager.start()
         defer { manager.stop() }
@@ -284,7 +308,7 @@ final class AppModelIntegrationsTests: XCTestCase {
             capturedAt: Date(timeIntervalSince1970: 1_700_000_000)
         ))
 
-        await waitUntil { model.latestAgentResponseAvailable }
+        await waitUntil { model.integrationSetup.latestResponseAvailable }
 
         await model.speakLatestAgentResponse()
 
@@ -313,7 +337,7 @@ final class AppModelIntegrationsTests: XCTestCase {
         let speech = FakeSpeechCoordinator(speakError: TestError.boom)
         let events = AsyncStream<HookEnvelope> { _ in }
         let manager = IntegrationManager(events: events, integrations: [], store: store, speechCoordinator: speech)
-        let model = makeModel(integrationManager: manager)
+        let model = AppModel(runtime: makeRuntime(integrationManager: manager))
 
         await model.speakLatestAgentResponse()
 
@@ -329,7 +353,7 @@ final class AppModelIntegrationsTests: XCTestCase {
             store: LatestAgentResponseStore(),
             speechCoordinator: speech
         )
-        let model = makeModel(integrationManager: manager)
+        let model = AppModel(runtime: makeRuntime(integrationManager: manager))
 
         await model.speakLatestAgentResponse()
 
@@ -354,7 +378,7 @@ final class AppModelIntegrationsTests: XCTestCase {
         let speech = FakeSpeechCoordinator()
         let events = AsyncStream<HookEnvelope> { _ in }
         let manager = IntegrationManager(events: events, integrations: [], store: store, speechCoordinator: speech)
-        let model = makeModel(integrationManager: manager)
+        let model = AppModel(runtime: makeRuntime(integrationManager: manager))
         // Simulate leftover text from an earlier failed/empty attempt.
         model.statusText = "Could not speak the latest agent response."
 
@@ -382,8 +406,8 @@ final class AppModelIntegrationsTests: XCTestCase {
         let manager = IntegrationManager(events: events, integrations: [integration], speechCoordinator: FakeSpeechCoordinator())
         let model = makeModel(claudeCodeInstaller: claudeInstaller, integrationManager: manager)
 
-        model.installIntegration(.claudeCode)
-        XCTAssertEqual(model.integrationStatus(for: .claudeCode), .installedAwaitingFirstEvent)
+        model.install(.claudeCode)
+        XCTAssertEqual(model.status(for: .claudeCode), .installedAwaitingFirstEvent)
 
         manager.start()
         defer { manager.stop() }
@@ -396,7 +420,7 @@ final class AppModelIntegrationsTests: XCTestCase {
             capturedAt: event.capturedAt
         ))
 
-        await waitUntil { model.integrationStatus(for: .claudeCode) == .active(lastEventAt: event.capturedAt) }
+        await waitUntil { model.status(for: .claudeCode) == .active(lastEventAt: event.capturedAt) }
     }
 
     // MARK: - Fix 1: the socket indicator stays authoritative after start
@@ -414,14 +438,14 @@ final class AppModelIntegrationsTests: XCTestCase {
         defer { receiver.stop() }
         let model = makeModel(hookEnvelopeReceiver: receiver)
 
-        model.startIntegrations() // throws .alreadyStarted internally; caught
+        model.start() // throws .alreadyStarted internally; caught
         XCTAssertTrue(model.isSocketListening)
 
-        model.startIntegrations() // throws .alreadyStarted again
+        model.start() // throws .alreadyStarted again
         XCTAssertTrue(model.isSocketListening)
         // A redundant start is not a problem worth reporting.
         XCTAssertNil(model.socketStatusMessage)
-        XCTAssertFalse(model.integrationDiagnosticsEntries().contains { $0.stage == "socket-start" })
+        XCTAssertFalse(integrationLog.snapshot().contains { $0.stage == "socket-start" })
     }
 
     /// Uses a short `/tmp` path (a unix socket path must fit in `sun_path`, 104 bytes) that is
@@ -436,11 +460,11 @@ final class AppModelIntegrationsTests: XCTestCase {
         defer { otherInstance.stop() }
         let model = makeModel(hookSocketPath: socketPath)
 
-        model.startIntegrations()
+        model.start()
 
         XCTAssertFalse(model.isSocketListening)
-        XCTAssertEqual(model.socketStatusMessage, AppModel.anotherInstanceOwnsSocketMessage)
-        XCTAssertTrue(model.integrationDiagnosticsEntries().contains {
+        XCTAssertEqual(model.socketStatusMessage, IntegrationSetupModel.anotherInstanceOwnsSocketMessage)
+        XCTAssertTrue(integrationLog.snapshot().contains {
             $0.stage == "socket-start" && $0.outcome == "failed" && $0.detail == "active-listener-present"
         })
     }
@@ -478,13 +502,13 @@ final class AppModelIntegrationsTests: XCTestCase {
             hookEnvelopeReceiver: receiver
         )
 
-        model.startIntegrations()
+        model.start()
 
         XCTAssertEqual(
             try Data(contentsOf: helperInstaller.installedHelperURL),
             Data("#!/bin/sh\necho new\n".utf8)
         )
-        XCTAssertEqual(model.integrationStatus(for: .claudeCode), .installedAwaitingFirstEvent)
+        XCTAssertEqual(model.status(for: .claudeCode), .installedAwaitingFirstEvent)
     }
 
     func testStartIntegrationsDoesNotInstallAHelperWhenNoProviderIsInstalled() throws {
@@ -498,7 +522,7 @@ final class AppModelIntegrationsTests: XCTestCase {
             hookEnvelopeReceiver: receiver
         )
 
-        model.startIntegrations()
+        model.start()
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: helperInstaller.installedHelperURL.path))
     }
@@ -522,9 +546,9 @@ final class AppModelIntegrationsTests: XCTestCase {
             hookEnvelopeReceiver: receiver
         )
 
-        model.startIntegrations()
+        model.start()
 
-        XCTAssertTrue(model.integrationDiagnosticsEntries().contains {
+        XCTAssertTrue(integrationLog.snapshot().contains {
             $0.stage == "helper" && $0.outcome == "refresh-failed" && $0.detail == "stable-helper-unavailable"
         })
         XCTAssertTrue(model.isSocketListening)
@@ -550,8 +574,8 @@ final class AppModelIntegrationsTests: XCTestCase {
         let manager = IntegrationManager(events: events, integrations: [integration], speechCoordinator: FakeSpeechCoordinator())
         let model = makeModel(claudeCodeInstaller: claudeInstaller, integrationManager: manager)
 
-        model.installIntegration(.claudeCode)
-        XCTAssertEqual(model.integrationStatus(for: .claudeCode), .installedAwaitingFirstEvent)
+        model.install(.claudeCode)
+        XCTAssertEqual(model.status(for: .claudeCode), .installedAwaitingFirstEvent)
 
         manager.start()
         defer { manager.stop() }
@@ -563,11 +587,11 @@ final class AppModelIntegrationsTests: XCTestCase {
             environment: [:],
             capturedAt: event.capturedAt
         ))
-        await waitUntil { model.integrationStatus(for: .claudeCode) == .active(lastEventAt: event.capturedAt) }
+        await waitUntil { model.status(for: .claudeCode) == .active(lastEventAt: event.capturedAt) }
 
-        model.uninstallIntegration(.claudeCode)
+        model.uninstall(.claudeCode)
 
-        XCTAssertEqual(model.integrationStatus(for: .claudeCode), .notInstalled)
+        XCTAssertEqual(model.status(for: .claudeCode), .notInstalled)
         XCTAssertNil(manager.status[.claudeCode])
     }
 
@@ -649,7 +673,7 @@ final class AppModelIntegrationsTests: XCTestCase {
             capturedAt: harness.event.capturedAt
         ))
 
-        await waitUntil { model.latestAgentResponseAvailable }
+        await waitUntil { model.latestResponseAvailable }
 
         XCTAssertTrue(harness.speech.requests.isEmpty)
         // `latestAgentResponseAvailable` flips the moment `IntegrationManager.consume()` calls
@@ -683,7 +707,7 @@ final class AppModelIntegrationsTests: XCTestCase {
             capturedAt: harness.event.capturedAt
         ))
 
-        await waitUntil { model.latestAgentResponseAvailable }
+        await waitUntil { model.latestResponseAvailable }
 
         XCTAssertTrue(harness.speech.requests.isEmpty)
     }

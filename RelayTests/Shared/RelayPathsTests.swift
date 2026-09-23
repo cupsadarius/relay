@@ -42,12 +42,10 @@ final class RelayPathsTests: XCTestCase {
         )
     }
 
-    /// `@MainActor`: `AppModel` (and its static `integrationSocketPath`) is MainActor-isolated.
-    @MainActor
     func testAppAndHelperDefaultsAgreeWithRelayPaths() {
         // Test host is the Debug app, so the app listens on the Debug socket...
-        XCTAssertEqual(AppModel.integrationSocketPath, RelayPaths.socketPath(flavor: .debug))
-        XCTAssertNotEqual(AppModel.integrationSocketPath, RelayPaths.socketPath(flavor: .release))
+        XCTAssertEqual(IntegrationServices.productionSocketPath, RelayPaths.socketPath(flavor: .debug))
+        XCTAssertNotEqual(IntegrationServices.productionSocketPath, RelayPaths.socketPath(flavor: .release))
         // ...and HookTransportClient's default (computed from the running executable, which here
         // is not a stable helper) falls back to Release.
         XCTAssertEqual(HookTransportClient.defaultSocketPath, RelayPaths.socketPath(flavor: .release))

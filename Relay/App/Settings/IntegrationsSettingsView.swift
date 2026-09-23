@@ -2,21 +2,21 @@ import SwiftUI
 
 struct IntegrationsSettingsView: View {
     @Bindable var model: AppModel
-    @State private var agentSessions: [AppModel.AgentSessionSummary] = []
+    @State private var agentSessions: [IntegrationSetupModel.AgentSessionSummary] = []
 
     var body: some View {
         Form {
             Section("Socket") {
                 HStack {
-                    Text(model.isSocketListening ? "Listening" : "Not listening")
-                        .foregroundStyle(model.isSocketListening ? .green : .orange)
+                    Text(model.integrationSetup.isSocketListening ? "Listening" : "Not listening")
+                        .foregroundStyle(model.integrationSetup.isSocketListening ? .green : .orange)
                     Spacer()
-                    Text(model.hookSocketPath)
+                    Text(model.integrationSetup.socketPath)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                 }
-                if let message = model.socketStatusMessage {
+                if let message = model.integrationSetup.socketStatusMessage {
                     Text(message)
                         .font(.caption)
                         .foregroundStyle(.red)
@@ -67,14 +67,14 @@ struct IntegrationsSettingsView: View {
                         }
                     }
                 }
-                Button("Refresh") { Task { agentSessions = await model.agentSessionSummaries() } }
+                Button("Refresh") { Task { agentSessions = await model.integrationSetup.agentSessionSummaries() } }
             }
         }
         .formStyle(.grouped)
         .task {
-            model.checkIntegration(.claudeCode)
-            model.checkIntegration(.codex)
-            agentSessions = await model.agentSessionSummaries()
+            model.integrationSetup.check(.claudeCode)
+            model.integrationSetup.check(.codex)
+            agentSessions = await model.integrationSetup.agentSessionSummaries()
         }
     }
 
@@ -87,15 +87,15 @@ struct IntegrationsSettingsView: View {
 
     @ViewBuilder
     private func integrationRow(for provider: AgentProvider) -> some View {
-        let status = model.integrationStatus(for: provider)
+        let status = model.integrationSetup.status(for: provider)
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(Self.statusLabel(status))
                     .foregroundStyle(Self.statusColor(status))
                 Spacer()
-                Button("Install") { model.installIntegration(provider) }
-                Button("Uninstall") { model.uninstallIntegration(provider) }
-                Button("Check") { model.checkIntegration(provider) }
+                Button("Install") { model.integrationSetup.install(provider) }
+                Button("Uninstall") { model.integrationSetup.uninstall(provider) }
+                Button("Check") { model.integrationSetup.check(provider) }
             }
             if let detail = Self.statusDetail(status) {
                 Text(detail)

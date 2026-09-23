@@ -134,10 +134,10 @@ final class IntegrationManager {
     }
 
     /// Clears any runtime status recorded for `provider`, removing its entry from `status`
-    /// entirely rather than pinning it to some other value. Called by `AppModel` right after a
-    /// successful uninstall, so a stale `.active` entry from earlier this session can't keep
-    /// winning `AppModel.integrationStatus(for:)`'s merge once the provider's installer state is
-    /// reloaded as not-installed.
+    /// entirely rather than pinning it to some other value. Called by `IntegrationSetupModel`
+    /// right after a successful uninstall, so a stale `.active` entry from earlier this session
+    /// can't keep winning `IntegrationSetupModel.status(for:)`'s merge once the provider's
+    /// installer state is reloaded as not-installed.
     func clearRuntimeStatus(for provider: AgentProvider) {
         status[provider] = nil
     }
