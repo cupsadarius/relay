@@ -185,10 +185,7 @@ final class RelayRuntime {
             }),
             sttRouter: STTRouter(
                 backends: sttRegistry,
-                backendOrder: {
-                    let configured = settings.value.sttBackendOrder.filter { sttRegistry[$0] != nil }
-                    return configured.isEmpty ? [BackendID.appleSpeech.rawValue] : configured
-                }
+                backendOrder: { settings.value.sttBackendOrder }
             ),
             processor: RulesTranscriptProcessor(),
             textInserter: TextInsertionService(),

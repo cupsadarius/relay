@@ -335,6 +335,15 @@ final class STTRouterTests: XCTestCase {
         XCTAssertEqual(router.lastFailedBackendDisplayName, "first")
     }
 
+    func testUnknownIDsInTheOrderAreSkipped() async throws {
+        let known = FakeSTTBackend(id: "known")
+        let router = STTRouter(backends: ["known": known], backendOrder: { ["ghost", "known"] })
+
+        _ = try await router.transcribe(audio: audio, options: .init())
+
+        XCTAssertEqual(known.transcriptionCount, 1)
+    }
+
     private let audio = AudioInput(samples: [0.1], sampleRate: 16_000)
 
     private func assertFallsBack(after error: SpeechBackendError) async throws {
