@@ -43,7 +43,7 @@ final class PocketTTSAudioSourceTests: XCTestCase {
         }
     }
 
-    func testCancelStopsIteration() async throws {
+    func testCancelMakesNextThrowCancellationError() async throws {
         let stream = AsyncThrowingStream<[Float], Error> { continuation in
             continuation.yield([0.1])
             continuation.yield([0.2])
@@ -55,7 +55,11 @@ final class PocketTTSAudioSourceTests: XCTestCase {
         XCTAssertEqual(first?.samples, [0.1])
 
         await source.cancel()
-        let afterCancel = try await source.next()
-        XCTAssertNil(afterCancel, "a cancelled source yields no more frames")
+        do {
+            _ = try await source.next()
+            XCTFail("A cancelled source must throw, not end like a finished one")
+        } catch is CancellationError {
+            // Expected: the TTSAudioSource cancel contract.
+        }
     }
 }

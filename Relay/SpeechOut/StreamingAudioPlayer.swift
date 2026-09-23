@@ -218,7 +218,13 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
             }
         } catch is CancellationError {
             guard currentSessionID == sessionID, !explicitlyStopped else { return }
-            handleSourceFailure(CancellationError(), sessionID: sessionID)
+            if started {
+                endCancelled(sessionID: sessionID)
+            } else {
+                // Pre-start: `startPlayback` throws `CancellationError`, which `TTSRouter`
+                // rethrows as cancellation rather than falling back to another backend.
+                handleSourceFailure(CancellationError(), sessionID: sessionID)
+            }
             return
         } catch {
             guard currentSessionID == sessionID, !explicitlyStopped else { return }
@@ -239,7 +245,8 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
         checkForCompletion(sessionID: sessionID)
     }
 
-    /// A source failure (including `CancellationError`) or an engine-start failure. Before playback
+    /// A source failure (including a pre-start `CancellationError`; a post-start one goes through
+    /// `endCancelled`) or an engine-start failure. Before playback
     /// started, resolves the still-pending `startContinuation` by throwing (no terminal event) - the
     /// shape `TTSRouter` maps to a fallback-worthy error. Once playback has started there is no one
     /// awaiting a throw, so the failure is remembered and reported as `.failed` only after already
@@ -259,6 +266,17 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
         sourceFinished = true
         resumeCapacityWaiters()
         checkForCompletion(sessionID: sessionID)
+    }
+
+    /// The source reported cancellation after playback started, without `stop()` being called
+    /// on this player (e.g. its producer was cancelled). Per the `TTSAudioSource` contract that
+    /// is a cancellation, not a failure: stop output now, without draining, and end the session
+    /// as `.cancelled`, the same terminal event `stop()` emits.
+    private func endCancelled(sessionID: UUID) {
+        tearDownPlayback(cancelSource: false)
+        currentSessionID = nil
+        activeSource = nil
+        onEvent?(.cancelled(sessionID: sessionID))
     }
 
     /// Flushes buffers accumulated during the prebuffer window, starts the output node, and emits

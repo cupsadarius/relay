@@ -141,6 +141,56 @@ final class StreamingAudioPlayerTests: XCTestCase {
         try await waitUntilAsync { await source.wasCancelled() }
     }
 
+    /// A source cancelled by something other than `player.stop()` (e.g. its producer was
+    /// cancelled) throws `CancellationError` after playback started. That is a cancellation, not
+    /// a failure: the session ends `.cancelled` at once, never `.failed` or `.finished`.
+    func testPostStartSourceCancellationEndsSessionAsCancelledNotFailed() async throws {
+        let node = FakeOutputNode()
+        let player = StreamingAudioPlayer(makeOutputNode: { node })
+        let events = EventBox()
+        player.onEvent = { events.append($0) }
+        let sessionID = UUID()
+        // 10 * 80ms crosses the 0.6s prebuffer threshold, so .started fires before the cancel.
+        var steps: [ScriptedAudioSource.Step] = (0..<10).map { _ in .frame(Self.frame(samples: 1_920)) }
+        steps.append(.fail(CancellationError()))
+        let source = ScriptedAudioSource(steps: steps)
+
+        try await player.startPlayback(source, sessionID: sessionID)
+        XCTAssertTrue(events.values.contains(.started(sessionID: sessionID)))
+
+        // No buffers are marked played: cancellation must not wait for a drain.
+        try await waitUntilAsync { events.values.contains(.cancelled(sessionID: sessionID)) }
+        XCTAssertEqual(events.values.filter { !$0.isLevel }, [
+            .scheduled(sessionID: sessionID),
+            .started(sessionID: sessionID),
+            .cancelled(sessionID: sessionID),
+        ])
+    }
+
+    /// Before `.started`, a cancelled source makes `startPlayback` throw `CancellationError` with
+    /// no terminal event, so `TTSRouter` treats it as cancellation, not a fallback-worthy failure.
+    func testPreStartSourceCancellationThrowsCancellationErrorWithoutTerminalEvent() async {
+        let node = FakeOutputNode()
+        let player = StreamingAudioPlayer(makeOutputNode: { node })
+        let events = EventBox()
+        player.onEvent = { events.append($0) }
+        let sessionID = UUID()
+        let source = ScriptedAudioSource(steps: [
+            .frame(Self.frame(samples: 1_920)),
+            .fail(CancellationError()),
+        ])
+
+        do {
+            try await player.startPlayback(source, sessionID: sessionID)
+            XCTFail("Expected CancellationError")
+        } catch is CancellationError {
+            // Expected.
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        XCTAssertEqual(events.values.filter { !$0.isLevel }, [.scheduled(sessionID: sessionID)])
+    }
+
     func testStereoFrameDurationUsesChannelCountNotRawSampleCount() async throws {
         let node = FakeOutputNode(sampleRate: 24_000, channels: 1)
         let player = StreamingAudioPlayer(makeOutputNode: { node })

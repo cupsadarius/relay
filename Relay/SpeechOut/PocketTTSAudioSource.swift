@@ -30,13 +30,9 @@ struct PocketTTSAudioSource: TTSAudioSource {
         }
     }
 
+    /// Throws `CancellationError` after `cancel()`, per the `TTSAudioSource` contract.
     func next() async throws -> TTSAudioFrame? {
-        do {
-            return try await source.next()
-        } catch is CancellationError {
-            // A cancelled source yields no more frames rather than surfacing the cancellation.
-            return nil
-        }
+        try await source.next()
     }
 
     func cancel() async {
