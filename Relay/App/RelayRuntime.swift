@@ -216,7 +216,8 @@ final class RelayRuntime {
             host: ActivityOverlayPanelHost(),
             screens: SystemActivityOverlayScreens(),
             diagnostics: diagnostics,
-            onAction: { action in
+            onAction: { [weak dictation, weak coordinator] action in
+                guard let dictation, let coordinator else { return }
                 await ActivityOverlayActions.perform(action, dictation: dictation, speech: coordinator)
             }
         )

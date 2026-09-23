@@ -82,10 +82,13 @@ final class AppModel {
     }
 
     private func bindOverlayPresenter() {
+        // Weak: the presenter (e.g. ActivityOverlayWindowController) holds `overlayModel`
+        // strongly, so a strong capture here would cycle overlayModel -> this closure ->
+        // presenter -> overlayModel.
         let presenter = runtime.speechOut.overlayPresenter
         let settings = settingsController
-        overlayModel.setStateHandler { state in
-            presenter.update(state: state, style: settings.current.activityOverlayStyle)
+        overlayModel.setStateHandler { [weak presenter] state in
+            presenter?.update(state: state, style: settings.current.activityOverlayStyle)
         }
     }
 }
