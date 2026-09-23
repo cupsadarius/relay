@@ -114,6 +114,7 @@
 		7D36578865E64A7D1ACDBA52 /* AccessibilityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 483B44390B4757DC9D7B7505 /* AccessibilityService.swift */; };
 		7E870DBB04B1820A17BA478D /* AgentSpeech.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7717124B883B3B896F051839 /* AgentSpeech.swift */; };
 		7FDFFE6685546275FF028DE5 /* AgentSpeechTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18D90C75CC4C7D053209E1FD /* AgentSpeechTests.swift */; };
+		814CF8A550B06751EDAC4FD6 /* UnixSocketAddress.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22613B341B304BC8F1CC4A7E /* UnixSocketAddress.swift */; };
 		8224B4C533B53526D3FEBF81 /* PocketTTSAudioSourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C81ED5851D60E63A6A62C0B /* PocketTTSAudioSourceTests.swift */; };
 		82EB0751E1D7DBA1BFAA2896 /* ParakeetModelManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6361D378573E4C48DC4BE9A0 /* ParakeetModelManagerTests.swift */; };
 		8352A4F3F66B4FC5015055D9 /* TmuxExecutableLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C30617862641BA93DED04F2 /* TmuxExecutableLocator.swift */; };
@@ -167,6 +168,7 @@
 		BC63702DF7C2E67D5C8909E3 /* TmuxClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0354860CB30156236B9B877 /* TmuxClient.swift */; };
 		BD809807A2FCB7B2ECD2A9DA /* ClaudeCodeInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC232F60ABB4C877E9AFBAC8 /* ClaudeCodeInstaller.swift */; };
 		BDB3AFBC914BC5F55A9E04B9 /* Diagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2388EB91FEE36FAF3715B0FE /* Diagnostics.swift */; };
+		BDDD8776219373310E5295EC /* UnixSocketAddressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B7567057941DE7FE4654C61 /* UnixSocketAddressTests.swift */; };
 		BE570F59B904039713B5C19C /* ActivityOverlayPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A1971CFBDF8C170DD9B32F /* ActivityOverlayPresentation.swift */; };
 		BF60241DEB26DD12C9DEB812 /* DiagnosticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D52815C78FFC96732B4BC0DE /* DiagnosticsTests.swift */; };
 		C0B285306698520093026AE3 /* SpeechVoiceCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40B56135453954C6AE2A7EEE /* SpeechVoiceCatalogTests.swift */; };
@@ -205,6 +207,7 @@
 		E6B54216CADEF6964C54E936 /* UnixSocketServerOwnershipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63B61F60EF2F1B91A7692398 /* UnixSocketServerOwnershipTests.swift */; };
 		E9793749361A43D80B90C59C /* InterimTextDiff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 742664766D6CE6286EB5E819 /* InterimTextDiff.swift */; };
 		E9B4F43B9424CFCAFED6BD87 /* PocketTTSBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BD1713F6B25B17ED9F3EEA7 /* PocketTTSBackendTests.swift */; };
+		EA12CAC0D02CDF4E3704FB6C /* UnixSocketAddress.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22613B341B304BC8F1CC4A7E /* UnixSocketAddress.swift */; };
 		EAB39791025AC7188F9DD9C9 /* AgentResponseEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F32A0AB1ECF4429A4A7F818 /* AgentResponseEvent.swift */; };
 		EB5A44B3DB43C66A7A1B5D8E /* FrontmostAppMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBBA71BFC002BDCF446FAF0D /* FrontmostAppMonitor.swift */; };
 		ED473F93C25865ED39A16D6B /* ParakeetBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29EE80E2D79C7BCF9E1806A0 /* ParakeetBackend.swift */; };
@@ -266,6 +269,7 @@
 		196EAFDEDCE964071F1FD07A /* UnixSocketServerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnixSocketServerTests.swift; sourceTree = "<group>"; };
 		1A727A1F8CEB8AC9F2E1FEB9 /* DictationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationSettingsView.swift; sourceTree = "<group>"; };
 		1B6ABB9D76B40D6F416C4B0C /* DictationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationCoordinator.swift; sourceTree = "<group>"; };
+		1B7567057941DE7FE4654C61 /* UnixSocketAddressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnixSocketAddressTests.swift; sourceTree = "<group>"; };
 		1BD1713F6B25B17ED9F3EEA7 /* PocketTTSBackendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PocketTTSBackendTests.swift; sourceTree = "<group>"; };
 		1BE24F398C26E7C916733EF1 /* ClipboardService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardService.swift; sourceTree = "<group>"; };
 		1CF4B385AF5C43F12EC514DB /* AppleTTSAudioSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleTTSAudioSource.swift; sourceTree = "<group>"; };
@@ -275,6 +279,7 @@
 		1F90592F0F4CAEF1DF31EC85 /* WindowFocusCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowFocusCoordinator.swift; sourceTree = "<group>"; };
 		1FA28566E15B9DBEAB818E6B /* GenericTerminalFocusResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenericTerminalFocusResolver.swift; sourceTree = "<group>"; };
 		203E8DFFD8E671A374DB34E3 /* KokoroTTSBackendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KokoroTTSBackendTests.swift; sourceTree = "<group>"; };
+		22613B341B304BC8F1CC4A7E /* UnixSocketAddress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnixSocketAddress.swift; sourceTree = "<group>"; };
 		2388EB91FEE36FAF3715B0FE /* Diagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Diagnostics.swift; sourceTree = "<group>"; };
 		23D267BE7B2C822655C9AE70 /* GenericTerminalFocusResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenericTerminalFocusResolverTests.swift; sourceTree = "<group>"; };
 		24989B2035204427EA9ADDAA /* WhisperModelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperModelCatalog.swift; sourceTree = "<group>"; };
@@ -803,6 +808,7 @@
 			children = (
 				C77E7733BC41D1A01380A95E /* BuildFlavor.swift */,
 				44934E2CE63E18AC6B23E591 /* RelayPaths.swift */,
+				22613B341B304BC8F1CC4A7E /* UnixSocketAddress.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -812,6 +818,7 @@
 			children = (
 				FC35E2F74ED8791FA8C4CC75 /* BuildFlavorTests.swift */,
 				F40BA83A642A9A90A490AE18 /* RelayPathsTests.swift */,
+				1B7567057941DE7FE4654C61 /* UnixSocketAddressTests.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -1180,6 +1187,7 @@
 				CA5EDFFEEA88571D939A8E86 /* TextInsertionServiceTests.swift in Sources */,
 				F128E9695B4C1179C7B5FDC6 /* TmuxClientBoundsTests.swift in Sources */,
 				64FEF10D16E628C7A2F35DE5 /* TmuxFocusResolverTests.swift in Sources */,
+				BDDD8776219373310E5295EC /* UnixSocketAddressTests.swift in Sources */,
 				E6B54216CADEF6964C54E936 /* UnixSocketServerOwnershipTests.swift in Sources */,
 				416ACED506F9EC70C96DD843 /* UnixSocketServerTests.swift in Sources */,
 				B0895093AA56F05821B4493E /* WhisperBackendTests.swift in Sources */,
@@ -1202,6 +1210,7 @@
 				B34F5900EDA73F687FD7891D /* HookEnvelope.swift in Sources */,
 				41C36E1E85F8E70D46A0A087 /* HookTransportClient.swift in Sources */,
 				3F9DDE1BF42EA28BAF6654F2 /* RelayPaths.swift in Sources */,
+				814CF8A550B06751EDAC4FD6 /* UnixSocketAddress.swift in Sources */,
 				427B55EA5FEAC493E6E7C6B0 /* main.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1320,6 +1329,7 @@
 				BC63702DF7C2E67D5C8909E3 /* TmuxClient.swift in Sources */,
 				8352A4F3F66B4FC5015055D9 /* TmuxExecutableLocator.swift in Sources */,
 				47EC92CBE7FB145B22DFB7CD /* TmuxFocusResolver.swift in Sources */,
+				EA12CAC0D02CDF4E3704FB6C /* UnixSocketAddress.swift in Sources */,
 				AC21C5CAF0A02A9029C1127C /* UnixSocketServer.swift in Sources */,
 				B1B199377BCA2ADDA51CFEF0 /* WhisperBackend.swift in Sources */,
 				DBCAA2780855AF360A8B3D16 /* WhisperModelCatalog.swift in Sources */,

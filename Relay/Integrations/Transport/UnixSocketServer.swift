@@ -84,7 +84,7 @@ final class UnixSocketServer: @unchecked Sendable {
     /// a peer is actually accepting on a candidate stale socket path. Kept
     /// well under a second so `start()` never stalls noticeably even when
     /// probing a completely unresponsive path.
-    private static let probeDeadline: Int32 = 200 // milliseconds
+    private static let probeDeadline: TimeInterval = 0.2
 
     private let queue = DispatchQueue(label: "dev.relaymac.Relay.UnixSocketServer")
     private let diagnostics: IntegrationDiagnosticsLog
@@ -159,7 +159,7 @@ final class UnixSocketServer: @unchecked Sendable {
                 close(acquiredLockFD)
                 throw UnixSocketServerError.socketCreationFailed(errno)
             }
-            Self.setNonBlocking(fd)
+            UnixSocketAddress.setNonBlocking(fd, true)
 
             do {
                 try Self.bind(fd: fd, toPath: path)
@@ -293,7 +293,7 @@ final class UnixSocketServer: @unchecked Sendable {
                 continue
             }
 
-            Self.setNonBlocking(clientFD)
+            UnixSocketAddress.setNonBlocking(clientFD, true)
             Self.growReceiveBuffer(clientFD)
             beginReading(clientFD: clientFD)
         }
@@ -352,12 +352,6 @@ final class UnixSocketServer: @unchecked Sendable {
     }
 
     // MARK: - Setup helpers
-
-    private static func setNonBlocking(_ fd: Int32) {
-        let flags = fcntl(fd, F_GETFL, 0)
-        guard flags >= 0 else { return }
-        _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
-    }
 
     /// Widens the kernel receive buffer on an accepted connection so a
     /// legitimate envelope near the 2 MiB limit can arrive in a handful of
@@ -441,46 +435,7 @@ final class UnixSocketServer: @unchecked Sendable {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { return false }
         defer { close(fd) }
-        setNonBlocking(fd)
-
-        var address = sockaddr_un()
-        address.sun_family = sa_family_t(AF_UNIX)
-        let pathBytes = Array(path.utf8)
-        let capacity = MemoryLayout.size(ofValue: address.sun_path)
-        guard pathBytes.count < capacity else { return false }
-        withUnsafeMutableBytes(of: &address.sun_path) { rawPath in
-            let base = rawPath.baseAddress!.assumingMemoryBound(to: UInt8.self)
-            base.update(repeating: 0, count: rawPath.count)
-            for (index, byte) in pathBytes.enumerated() {
-                base[index] = byte
-            }
-        }
-
-        let connectResult = withUnsafePointer(to: &address) { addressPointer -> Int32 in
-            addressPointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
-                connect(fd, sockaddrPointer, socklen_t(MemoryLayout<sockaddr_un>.size))
-            }
-        }
-
-        if connectResult == 0 {
-            return true // Connected immediately: a live listener accepted us.
-        }
-        guard errno == EINPROGRESS else {
-            return false // ECONNREFUSED, ENOENT, EACCES, etc. — no live listener.
-        }
-
-        var pollDescriptor = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
-        let pollResult = poll(&pollDescriptor, 1, probeDeadline)
-        guard pollResult > 0, (pollDescriptor.revents & Int16(POLLOUT)) != 0 else {
-            return false // Timed out, or another poll error — treat as no listener.
-        }
-
-        var socketError: Int32 = 0
-        var socketErrorLength = socklen_t(MemoryLayout<Int32>.size)
-        guard getsockopt(fd, SOL_SOCKET, SO_ERROR, &socketError, &socketErrorLength) == 0 else {
-            return false
-        }
-        return socketError == 0
+        return UnixSocketAddress.connect(fd, to: path, withDeadline: Date().addingTimeInterval(probeDeadline))
     }
 
     /// Acquires the single-instance guard: an exclusive, non-blocking
@@ -516,29 +471,13 @@ final class UnixSocketServer: @unchecked Sendable {
     }
 
     private static func bind(fd: Int32, toPath path: String) throws {
-        var address = sockaddr_un()
-        address.sun_family = sa_family_t(AF_UNIX)
-
-        let pathBytes = Array(path.utf8)
-        let capacity = MemoryLayout.size(ofValue: address.sun_path)
-        guard pathBytes.count < capacity else {
+        let address: sockaddr_un
+        do {
+            address = try UnixSocketAddress.make(path: path)
+        } catch {
             throw UnixSocketServerError.pathTooLong
         }
-
-        withUnsafeMutableBytes(of: &address.sun_path) { rawPath in
-            let base = rawPath.baseAddress!.assumingMemoryBound(to: UInt8.self)
-            base.update(repeating: 0, count: rawPath.count)
-            for (index, byte) in pathBytes.enumerated() {
-                base[index] = byte
-            }
-        }
-
-        let bindResult = withUnsafePointer(to: &address) { addressPointer -> Int32 in
-            addressPointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
-                Darwin.bind(fd, sockaddrPointer, socklen_t(MemoryLayout<sockaddr_un>.size))
-            }
-        }
-
+        let bindResult = UnixSocketAddress.withSockaddr(address) { Darwin.bind(fd, $0, $1) }
         guard bindResult == 0 else {
             throw UnixSocketServerError.bindFailed(errno)
         }

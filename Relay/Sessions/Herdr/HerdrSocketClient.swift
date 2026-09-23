@@ -31,38 +31,28 @@ enum UnixLineRequest {
 
     private static func sendBlocking(path: String, line: String, timeoutMilliseconds: Int32) throws -> String {
         let deadline = DispatchTime.now() + .nanoseconds(Int(totalDeadlineNanoseconds))
-        var address = sockaddr_un()
-        let pathBytes = Array(path.utf8CString)
-        guard pathBytes.count <= MemoryLayout.size(ofValue: address.sun_path) else {
+        guard (try? UnixSocketAddress.make(path: path)) != nil else {
             throw HerdrQueryError.pathTooLong
         }
         let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw HerdrQueryError.socketFailure }
         defer { Darwin.close(fd) }
 
-        var tv = timeval(tv_sec: 0, tv_usec: timeoutMilliseconds * 1_000)
+        let connectDeadline = Date().addingTimeInterval(Double(timeoutMilliseconds) / 1_000)
+        guard UnixSocketAddress.connect(fd, to: path, withDeadline: connectDeadline) else {
+            throw HerdrQueryError.socketFailure
+        }
+        // Back to blocking I/O; each read/write below is bounded by SO_RCVTIMEO/SO_SNDTIMEO and
+        // the whole request by `deadline`.
+        UnixSocketAddress.setNonBlocking(fd, false)
+
+        var tv = receiveTimeout(milliseconds: timeoutMilliseconds)
         _ = withUnsafePointer(to: &tv) { ptr in
             Darwin.setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, ptr, socklen_t(MemoryLayout<timeval>.size))
         }
         _ = withUnsafePointer(to: &tv) { ptr in
             Darwin.setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, ptr, socklen_t(MemoryLayout<timeval>.size))
         }
-
-        address.sun_family = sa_family_t(AF_UNIX)
-        address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
-        withUnsafeMutableBytes(of: &address.sun_path) { dst in
-            dst.initializeMemory(as: UInt8.self, repeating: 0)
-            pathBytes.withUnsafeBytes { src in
-                dst.copyBytes(from: src.prefix(dst.count))
-            }
-        }
-        let addressLength = socklen_t(MemoryLayout<sockaddr_un>.size)
-        let connected = withUnsafePointer(to: &address) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                Darwin.connect(fd, $0, addressLength)
-            }
-        }
-        guard connected == 0 else { throw HerdrQueryError.socketFailure }
 
         let bytes = Array(line.utf8)
         var sent = 0
@@ -94,5 +84,11 @@ enum UnixLineRequest {
             response.append(contentsOf: chunk[0..<count])
         }
         throw HerdrQueryError.responseTooLarge
+    }
+
+    /// `SO_RCVTIMEO`/`SO_SNDTIMEO` value for `milliseconds`, split into whole seconds plus the
+    /// microsecond remainder (`tv_usec` must stay below 1_000_000).
+    static func receiveTimeout(milliseconds: Int32) -> timeval {
+        timeval(tv_sec: Int(milliseconds / 1_000), tv_usec: Int32((milliseconds % 1_000) * 1_000))
     }
 }

@@ -124,3 +124,26 @@ private enum LoopbackServer {
         return written == bytes.count
     }
 }
+
+extension HerdrSocketClientTests {
+    func testReceiveTimeoutSplitsMillisecondsIntoSecondsAndMicroseconds() {
+        let long = UnixLineRequest.receiveTimeout(milliseconds: 1_500)
+        XCTAssertEqual(long.tv_sec, 1)
+        XCTAssertEqual(long.tv_usec, 500_000)
+
+        let short = UnixLineRequest.receiveTimeout(milliseconds: 400)
+        XCTAssertEqual(short.tv_sec, 0)
+        XCTAssertEqual(short.tv_usec, 400_000)
+    }
+
+    func testSendRejectsAnOverlongSocketPath() async {
+        do {
+            _ = try await UnixLineRequest.send(path: "/" + String(repeating: "a", count: 200), line: "x\n", timeoutMilliseconds: 400)
+            XCTFail("expected pathTooLong")
+        } catch HerdrQueryError.pathTooLong {
+            // expected
+        } catch {
+            XCTFail("unexpected \(error)")
+        }
+    }
+}
