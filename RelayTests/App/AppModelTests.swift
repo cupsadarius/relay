@@ -4,7 +4,7 @@ import XCTest
 @MainActor
 final class AppModelTests: XCTestCase {
     func testChangingActivityOverlayStylePersistsImmediately() {
-        let store = FakeSettingsStore(settings: .defaults)
+        let store = SpySettingsStore(settings: .defaults)
         let model = makeModel(store: store)
 
         model.setActivityOverlayStyle(.minimal)
@@ -14,7 +14,7 @@ final class AppModelTests: XCTestCase {
     }
 
     func testOverlayLifecycleReachesInjectedPresenter() {
-        let presenter = FakeOverlayPresenter()
+        let presenter = SpyOverlayPresenter()
         let overlayModel = ActivityOverlayModel()
         let model = makeModel(overlayModel: overlayModel, overlayPresenter: presenter)
         let sessionID = UUID()
@@ -27,7 +27,7 @@ final class AppModelTests: XCTestCase {
     }
 
     func testActiveOverlayStyleChangeUpdatesPresenterImmediately() {
-        let presenter = FakeOverlayPresenter()
+        let presenter = SpyOverlayPresenter()
         let overlayModel = ActivityOverlayModel()
         let model = makeModel(overlayModel: overlayModel, overlayPresenter: presenter)
         let sessionID = UUID()
@@ -41,7 +41,7 @@ final class AppModelTests: XCTestCase {
     }
 
     func testSubsequentOverlayTransitionUsesNewlyPersistedStyle() {
-        let presenter = FakeOverlayPresenter()
+        let presenter = SpyOverlayPresenter()
         let overlayModel = ActivityOverlayModel()
         let model = makeModel(overlayModel: overlayModel, overlayPresenter: presenter)
         let sessionID = UUID()
@@ -106,7 +106,7 @@ final class AppModelTests: XCTestCase {
     /// Regression for the stale menu-bar label bug: the pill's Stop button routes through
     /// `ActivityOverlayActionDispatcher` to `SpeechCoordinator.stop(sessionID:)`, and the real
     /// (non-fake) coordinator hides the overlay itself by calling `overlay.cancel(sessionID:)` —
-    /// it never touches `AppModel.statusText`. `FakeSpeechCoordinator.stop(sessionID:)` only
+    /// it never touches `AppModel.statusText`. `SpySpeechCoordinator.stop(sessionID:)` only
     /// records the call, so this drives the same overlay transition directly to exercise what
     /// happens once the overlay actually hides. Before the fix, the speak methods left a
     /// "Speaking…"-style string sitting in `statusText`, which `activityStatusText` fell back to
@@ -114,7 +114,7 @@ final class AppModelTests: XCTestCase {
     /// clean idle status instead.
     func testActivityStatusTextReturnsToIdleAfterOverlayHidesFollowingPillStop() {
         let overlayModel = ActivityOverlayModel()
-        let speech = FakeSpeechCoordinator()
+        let speech = SpySpeechCoordinator()
         let model = makeModel(speech: speech, overlayModel: overlayModel)
         let sessionID = UUID()
 
@@ -155,9 +155,9 @@ final class AppModelTests: XCTestCase {
     }
 
     func testReadSelectionPressedPreprocessesAndSpeaksUserRequest() async {
-        let selection = FakeSelectionReader(text: "Intro\n```swift\nsecret()\n```\nEnd")
-        let speech = FakeSpeechCoordinator()
-        let hotkeys = FakeHotkeyManager()
+        let selection = SpySelectionReader(text: "Intro\n```swift\nsecret()\n```\nEnd")
+        let speech = SpySpeechCoordinator()
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(selection: selection, speech: speech, hotkeys: hotkeys)
 
         hotkeys.send(.readSelection, .pressed)
@@ -182,9 +182,9 @@ final class AppModelTests: XCTestCase {
     }
 
     func testReadSelectionReleasedDoesNothing() async {
-        let selection = FakeSelectionReader(text: "selected")
-        let speech = FakeSpeechCoordinator()
-        let hotkeys = FakeHotkeyManager()
+        let selection = SpySelectionReader(text: "selected")
+        let speech = SpySpeechCoordinator()
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(selection: selection, speech: speech, hotkeys: hotkeys)
 
         hotkeys.send(.readSelection, .released)
@@ -198,8 +198,8 @@ final class AppModelTests: XCTestCase {
     }
 
     func testStopAndReplayOnlyActWhenPressed() async {
-        let speech = FakeSpeechCoordinator()
-        let hotkeys = FakeHotkeyManager()
+        let speech = SpySpeechCoordinator()
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(speech: speech, hotkeys: hotkeys)
 
         hotkeys.send(.stopSpeech, .released)
@@ -217,8 +217,8 @@ final class AppModelTests: XCTestCase {
     }
 
     func testReplayFailureIsLoggedAsTTSFailure() async {
-        let speech = FakeSpeechCoordinator(replayError: TestError.saveFailed)
-        let hotkeys = FakeHotkeyManager()
+        let speech = SpySpeechCoordinator(replayError: TestError.saveFailed)
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(speech: speech, hotkeys: hotkeys)
         hotkeys.send(.replayLast, .pressed)
         // See `testStopAndReplayOnlyActWhenPressed` for why this polls rather than yielding once.
@@ -227,9 +227,9 @@ final class AppModelTests: XCTestCase {
     }
 
     func testTwoQuickReadSelectionPressesSpeakOnlyOnce() async {
-        let selection = FakeSelectionReader(text: "selected")
-        let speech = FakeSpeechCoordinator()
-        let hotkeys = FakeHotkeyManager()
+        let selection = SpySelectionReader(text: "selected")
+        let speech = SpySpeechCoordinator()
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(selection: selection, speech: speech, hotkeys: hotkeys)
 
         hotkeys.send(.readSelection, .pressed)
@@ -242,8 +242,8 @@ final class AppModelTests: XCTestCase {
     }
 
     func testTwoQuickReplayPressesReplayOnlyOnce() async {
-        let speech = FakeSpeechCoordinator()
-        let hotkeys = FakeHotkeyManager()
+        let speech = SpySpeechCoordinator()
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(speech: speech, hotkeys: hotkeys)
 
         hotkeys.send(.replayLast, .pressed)
@@ -256,8 +256,8 @@ final class AppModelTests: XCTestCase {
     }
 
     func testStopSpeechCancelsAPendingReplay() async {
-        let speech = FakeSpeechCoordinator()
-        let hotkeys = FakeHotkeyManager()
+        let speech = SpySpeechCoordinator()
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(speech: speech, hotkeys: hotkeys)
 
         hotkeys.send(.replayLast, .pressed)
@@ -270,8 +270,8 @@ final class AppModelTests: XCTestCase {
     }
 
     func testCancelledReadSelectionIsNotReportedAsFailure() async {
-        let speech = FakeSpeechCoordinator(speakError: CancellationError())
-        let hotkeys = FakeHotkeyManager()
+        let speech = SpySpeechCoordinator(speakError: CancellationError())
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(speech: speech, hotkeys: hotkeys)
 
         hotkeys.send(.readSelection, .pressed)
@@ -287,17 +287,17 @@ final class AppModelTests: XCTestCase {
     func testReplayLastWithFocusedHighConfidenceSessionSpeaksThatSessionsLatestReply() async {
         let registry = AgentSessionRegistry()
         let sessionA = await registry.upsert(
-            response: makeAgentResponseEvent(providerSessionID: "session-a", text: "Reply A"),
+            response: AgentResponseEvent.fixture(providerSessionID: "session-a", text: "Reply A"),
             processAncestry: [],
             tty: nil
         )
         _ = await registry.upsert(
-            response: makeAgentResponseEvent(providerSessionID: "session-b", text: "Reply B"),
+            response: AgentResponseEvent.fixture(providerSessionID: "session-b", text: "Reply B"),
             processAncestry: [],
             tty: nil
         )
-        let speech = FakeSpeechCoordinator()
-        let hotkeys = FakeHotkeyManager()
+        let speech = SpySpeechCoordinator()
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(
             speech: speech,
             hotkeys: hotkeys,
@@ -325,19 +325,19 @@ final class AppModelTests: XCTestCase {
     func testReplayLastSkipsDeadProcessSessionBeforeFocusResolution() async {
         let registry = AgentSessionRegistry()
         let deadSession = await registry.upsert(
-            response: makeAgentResponseEvent(providerSessionID: "dead-session", text: "Reply from a dead process"),
+            response: AgentResponseEvent.fixture(providerSessionID: "dead-session", text: "Reply from a dead process"),
             processAncestry: [1_234_567],
             tty: nil
         )
-        let speech = FakeSpeechCoordinator()
-        let hotkeys = FakeHotkeyManager()
+        let speech = SpySpeechCoordinator()
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(
             speech: speech,
             hotkeys: hotkeys,
             sessionRegistry: registry,
             focusResolution: StubSessionFocusResolver(focusedSessionID: deadSession.id),
             frontmostApps: StubFrontmostAppMonitor(pid: nil),
-            processInspector: ProcessInspector(runner: AllProcessesDeadRunner())
+            processInspector: ProcessInspector(runner: AllPIDsDeadProcessRunner())
         )
 
         hotkeys.send(.replayLast, .pressed)
@@ -351,13 +351,13 @@ final class AppModelTests: XCTestCase {
     func testReplayLastWithAmbiguousFocusButFrontmostHostsASessionSpeaksGlobalLatest() async {
         let registry = AgentSessionRegistry()
         _ = await registry.upsert(
-            response: makeAgentResponseEvent(providerSessionID: "session-a", text: "Reply A"),
+            response: AgentResponseEvent.fixture(providerSessionID: "session-a", text: "Reply A"),
             processAncestry: [4242],
             tty: nil
         )
-        let speech = FakeSpeechCoordinator()
+        let speech = SpySpeechCoordinator()
         let store = LatestAgentResponseStore()
-        let latest = makeAgentResponseEvent(providerSessionID: "global-latest", text: "Global reply")
+        let latest = AgentResponseEvent.fixture(providerSessionID: "global-latest", text: "Global reply")
         await store.set(latest)
         // Drive one accepted event through a stub integration so `latestResponse` (the MainActor
         // property `AppModel.replayLast()` reads to decide whether a global latest is available)
@@ -383,7 +383,7 @@ final class AppModelTests: XCTestCase {
         await waitUntil { drivenManager.latestResponse != nil }
         drivenManager.stop()
 
-        let hotkeys = FakeHotkeyManager()
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(
             speech: speech,
             hotkeys: hotkeys,
@@ -406,12 +406,12 @@ final class AppModelTests: XCTestCase {
     func testReplayLastFallsBackToLastSpokenWhenFrontmostHostsNoSession() async {
         let registry = AgentSessionRegistry()
         _ = await registry.upsert(
-            response: makeAgentResponseEvent(providerSessionID: "session-a", text: "Reply A"),
+            response: AgentResponseEvent.fixture(providerSessionID: "session-a", text: "Reply A"),
             processAncestry: [4242],
             tty: nil
         )
-        let speech = FakeSpeechCoordinator()
-        let hotkeys = FakeHotkeyManager()
+        let speech = SpySpeechCoordinator()
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(
             speech: speech,
             hotkeys: hotkeys,
@@ -431,12 +431,12 @@ final class AppModelTests: XCTestCase {
     func testReplayLastFallsBackToLastSpokenWhenNoFrontmostApplication() async {
         let registry = AgentSessionRegistry()
         _ = await registry.upsert(
-            response: makeAgentResponseEvent(providerSessionID: "session-a", text: "Reply A"),
+            response: AgentResponseEvent.fixture(providerSessionID: "session-a", text: "Reply A"),
             processAncestry: [4242],
             tty: nil
         )
-        let speech = FakeSpeechCoordinator()
-        let hotkeys = FakeHotkeyManager()
+        let speech = SpySpeechCoordinator()
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(
             speech: speech,
             hotkeys: hotkeys,
@@ -456,12 +456,12 @@ final class AppModelTests: XCTestCase {
     func testReplayLastFallsBackToLastSpokenWhenGlobalStoreIsEmptyEvenIfFrontmostHostsASession() async {
         let registry = AgentSessionRegistry()
         _ = await registry.upsert(
-            response: makeAgentResponseEvent(providerSessionID: "session-a", text: "Reply A"),
+            response: AgentResponseEvent.fixture(providerSessionID: "session-a", text: "Reply A"),
             processAncestry: [4242],
             tty: nil
         )
-        let speech = FakeSpeechCoordinator()
-        let hotkeys = FakeHotkeyManager()
+        let speech = SpySpeechCoordinator()
+        let hotkeys = SpyHotkeyManager()
         // `integrationManager` left nil: `makeModel`'s underlying `AppModel` init builds a fresh
         // `IntegrationManager` around an empty, never-fed `AsyncStream`, so `latestResponse` stays
         // `nil` — exactly the "empty global store" case.
@@ -481,33 +481,13 @@ final class AppModelTests: XCTestCase {
         withExtendedLifetime(model) {}
     }
 
-    private func makeAgentResponseEvent(
-        provider: AgentProvider = .claudeCode,
-        providerSessionID: String,
-        text: String,
-        parentPID: Int32 = 900
-    ) -> AgentResponseEvent {
-        .init(
-            id: UUID(), provider: provider, providerSessionID: providerSessionID,
-            text: text, cwd: "/tmp/repo",
-            parentPID: parentPID, environment: [:], capturedAt: Date()
-        )
-    }
-
-    func testRealAppModelRegistersExpectedTTSModelManagers() {
-        let model = AppModel(runtime: .makeProduction())
-
-        XCTAssertTrue(model.modelController.backendKeys.contains(.init(domain: .textToSpeech, backendID: "kokoro")))
-        XCTAssertTrue(model.modelController.backendKeys.contains(.init(domain: .textToSpeech, backendID: "pocket-tts")))
-        XCTAssertFalse(model.modelController.backendKeys.contains(.init(domain: .textToSpeech, backendID: "apple-tts")))
-    }
 
     func testPreviewVoiceUsesClickedProviderAndCurrentRateWithoutPersistingSelection() async {
-        let speech = FakeSpeechCoordinator()
+        let speech = SpySpeechCoordinator()
         var settings = AppSettings.defaults
         settings.kokoroVoice = "af_heart"
         settings.ttsRate = 0.75
-        let store = FakeSettingsStore(settings: settings)
+        let store = SpySettingsStore(settings: settings)
         let model = makeModel(store: store, speech: speech)
 
         await model.previewVoice(backendID: "kokoro", voiceID: "kokoro:am_adam")
@@ -528,8 +508,8 @@ final class AppModelTests: XCTestCase {
     }
 
     func testHoldToTalkStartsOnPressAndFinishesOnRelease() async {
-        let hotkeys = FakeHotkeyManager()
-        let dictation = FakeDictationCoordinator()
+        let hotkeys = SpyHotkeyManager()
+        let dictation = SpyDictationCoordinator()
         let model = makeModel(hotkeys: hotkeys, dictation: dictation)
 
         hotkeys.send(.dictate, .pressed)
@@ -541,8 +521,8 @@ final class AppModelTests: XCTestCase {
     }
 
     func testToggleDictationAlternatesOnPressAndIgnoresRelease() async {
-        let hotkeys = FakeHotkeyManager()
-        let dictation = FakeDictationCoordinator()
+        let hotkeys = SpyHotkeyManager()
+        let dictation = SpyDictationCoordinator()
         let model = makeModel(hotkeys: hotkeys, dictation: dictation)
         model.setDictationMode(.toggle)
 
@@ -555,8 +535,8 @@ final class AppModelTests: XCTestCase {
     }
 
     func testHoldToTalkQueuesReleaseUntilBlockedStartCompletes() async {
-        let hotkeys = FakeHotkeyManager()
-        let dictation = FakeDictationCoordinator(blockStart: true)
+        let hotkeys = SpyHotkeyManager()
+        let dictation = SpyDictationCoordinator(blockStart: true)
         let model = makeModel(hotkeys: hotkeys, dictation: dictation)
 
         hotkeys.send(.dictate, .pressed)
@@ -571,8 +551,8 @@ final class AppModelTests: XCTestCase {
     }
 
     func testToggleQueuesNewPressUntilBlockedFinishCompletes() async {
-        let hotkeys = FakeHotkeyManager()
-        let dictation = FakeDictationCoordinator(blockFinish: true)
+        let hotkeys = SpyHotkeyManager()
+        let dictation = SpyDictationCoordinator(blockFinish: true)
         let model = makeModel(hotkeys: hotkeys, dictation: dictation)
         model.setDictationMode(.toggle)
 
@@ -592,8 +572,8 @@ final class AppModelTests: XCTestCase {
     /// without rebuilding the hotkey matcher (see `AppModelHotkeySideEffectTests` for the
     /// general rule this is one instance of).
     func testToggleAutoReadPersistsWithoutReregisteringHotkeys() {
-        let store = FakeSettingsStore(settings: .defaults)
-        let hotkeys = FakeHotkeyManager()
+        let store = SpySettingsStore(settings: .defaults)
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(store: store, hotkeys: hotkeys)
 
         hotkeys.send(.toggleAutoRead, .pressed)
@@ -607,7 +587,7 @@ final class AppModelTests: XCTestCase {
     /// above) and the menu bar's auto-read control — calling it directly exercises the same path
     /// the menu item invokes.
     func testToggleAutoReadMethodTogglesSettingAndStatusText() {
-        let store = FakeSettingsStore(settings: .defaults)
+        let store = SpySettingsStore(settings: .defaults)
         let model = makeModel(store: store)
         XCTAssertTrue(model.settings.autoReadEnabled)
 
@@ -623,8 +603,8 @@ final class AppModelTests: XCTestCase {
     }
 
     func testChangingASettingPersistsAndReregistersImmediately() {
-        let store = FakeSettingsStore(settings: .defaults)
-        let hotkeys = FakeHotkeyManager()
+        let store = SpySettingsStore(settings: .defaults)
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(store: store, hotkeys: hotkeys)
         let replacement = HotkeyDefinition.chord(keyCode: 49, modifiers: [.command])
 
@@ -636,8 +616,8 @@ final class AppModelTests: XCTestCase {
     }
 
     func testDuplicateHotkeyIsRejectedWithoutPersistenceOrReregistration() {
-        let store = FakeSettingsStore(settings: .defaults)
-        let hotkeys = FakeHotkeyManager()
+        let store = SpySettingsStore(settings: .defaults)
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(store: store, hotkeys: hotkeys)
         let existing = try! XCTUnwrap(model.settings.hotkeys[.replayLast])
 
@@ -649,7 +629,7 @@ final class AppModelTests: XCTestCase {
     }
 
     func testDuplicateHotkeyRejectionSurfacesActionableConflictMessage() {
-        let hotkeys = FakeHotkeyManager()
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(hotkeys: hotkeys)
         let existing = try! XCTUnwrap(model.settings.hotkeys[.replayLast])
 
@@ -661,8 +641,8 @@ final class AppModelTests: XCTestCase {
     }
 
     func testRemoveHotkeyClearsTheBindingAndPersists() {
-        let store = FakeSettingsStore(settings: .defaults)
-        let hotkeys = FakeHotkeyManager()
+        let store = SpySettingsStore(settings: .defaults)
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(store: store, hotkeys: hotkeys)
 
         model.removeHotkey(for: .readSelection)
@@ -673,7 +653,7 @@ final class AppModelTests: XCTestCase {
     }
 
     func testRemoveHotkeyClearsAnExistingConflictMessage() {
-        let hotkeys = FakeHotkeyManager()
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(hotkeys: hotkeys)
         let existing = try! XCTUnwrap(model.settings.hotkeys[.replayLast])
         model.setHotkey(existing, for: .readSelection)
@@ -685,8 +665,8 @@ final class AppModelTests: XCTestCase {
     }
 
     func testModifierOnlyAndDoubleTapModifierConflictIsRejected() {
-        let store = FakeSettingsStore(settings: .defaults)
-        let hotkeys = FakeHotkeyManager()
+        let store = SpySettingsStore(settings: .defaults)
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(store: store, hotkeys: hotkeys)
 
         model.setHotkey(.doubleTapModifier(.function), for: .readSelection)
@@ -697,7 +677,7 @@ final class AppModelTests: XCTestCase {
     }
 
     func testRegistrationFailureSurfacesActionableStatus() {
-        let hotkeys = FakeHotkeyManager(
+        let hotkeys = SpyHotkeyManager(
             status: .unavailable("Enable Accessibility permission, then reopen Relay.")
         )
 
@@ -707,8 +687,8 @@ final class AppModelTests: XCTestCase {
     }
 
     func testRecheckRetriesHotkeyRegistrationAndRefreshesPermissionSnapshot() {
-        let hotkeys = FakeHotkeyManager()
-        let permissions = FakePermissionService(snapshot: .init(inputMonitoringGranted: false, accessibilityGranted: false))
+        let hotkeys = SpyHotkeyManager()
+        let permissions = SpyPermissionService(snapshot: .init(inputMonitoringGranted: false, accessibilityGranted: false))
         let model = makeModel(hotkeys: hotkeys, permissions: permissions)
 
         model.recheckDiagnostics()
@@ -719,7 +699,7 @@ final class AppModelTests: XCTestCase {
     }
 
     func testRecheckRefreshesObservableMicrophonePermissionAfterExternalChange() {
-        let microphone = FakeMicrophonePermissionStatus(granted: false)
+        let microphone = SpyMicrophonePermission(granted: false)
         let model = makeModel(microphone: microphone)
 
         XCTAssertFalse(model.microphonePermissionGranted)
@@ -733,7 +713,7 @@ final class AppModelTests: XCTestCase {
     }
 
     func testRequestMicrophonePermissionRefreshesObservableState() async {
-        let microphone = FakeMicrophonePermissionStatus(granted: false, requestResult: true)
+        let microphone = SpyMicrophonePermission(granted: false, requestResult: true)
         let model = makeModel(microphone: microphone)
 
         await model.requestMicrophonePermission()
@@ -744,7 +724,7 @@ final class AppModelTests: XCTestCase {
     }
 
     func testOpenPrivacySettingsDelegatesToInjectedOpener() {
-        let opener = FakePrivacySettingsOpener()
+        let opener = SpyPrivacyOpener()
         let model = makeModel(opener: opener)
 
         model.openPrivacySettings(.microphone)
@@ -756,7 +736,7 @@ final class AppModelTests: XCTestCase {
     /// "Open Microphone Settings" (Security tab) must call the injectable opener seam exactly
     /// once per click — never a real `NSWorkspace` in tests.
     func testOpenMicrophoneSettingsDelegatesToInjectedOpenerExactlyOnce() {
-        let opener = FakePrivacySettingsOpener()
+        let opener = SpyPrivacyOpener()
         let model = makeModel(opener: opener)
 
         model.openMicrophoneSettings()
@@ -786,21 +766,21 @@ final class AppModelTests: XCTestCase {
     }
 
     func testLaunchAtLoginEnabledReflectsServiceInitialStatusWhenEnabled() {
-        let loginItem = FakeLoginItemController(enabled: true)
+        let loginItem = SpyLoginItemController(enabled: true)
         let model = makeModel(loginItem: loginItem)
 
         XCTAssertTrue(model.launchAtLoginEnabled)
     }
 
     func testLaunchAtLoginEnabledReflectsServiceInitialStatusWhenDisabled() {
-        let loginItem = FakeLoginItemController(enabled: false)
+        let loginItem = SpyLoginItemController(enabled: false)
         let model = makeModel(loginItem: loginItem)
 
         XCTAssertFalse(model.launchAtLoginEnabled)
     }
 
     func testSetLaunchAtLoginOnRegistersAndUpdatesFlag() {
-        let loginItem = FakeLoginItemController(enabled: false)
+        let loginItem = SpyLoginItemController(enabled: false)
         let model = makeModel(loginItem: loginItem)
 
         model.setLaunchAtLogin(true)
@@ -810,7 +790,7 @@ final class AppModelTests: XCTestCase {
     }
 
     func testSetLaunchAtLoginOffUnregistersAndUpdatesFlag() {
-        let loginItem = FakeLoginItemController(enabled: true)
+        let loginItem = SpyLoginItemController(enabled: true)
         let model = makeModel(loginItem: loginItem)
 
         model.setLaunchAtLogin(false)
@@ -820,7 +800,7 @@ final class AppModelTests: XCTestCase {
     }
 
     func testSetLaunchAtLoginFailureLeavesFlagMatchingActualStatusAndSurfacesMessage() {
-        let loginItem = FakeLoginItemController(enabled: false, setEnabledError: TestError.loginItemFailed)
+        let loginItem = SpyLoginItemController(enabled: false, setEnabledError: TestError.loginItemFailed)
         let model = makeModel(loginItem: loginItem)
 
         model.setLaunchAtLogin(true)
@@ -831,8 +811,8 @@ final class AppModelTests: XCTestCase {
     }
 
     func testSaveFailureStillAppliesHotkeyImmediatelyAndSurfacesError() {
-        let store = FakeSettingsStore(settings: .defaults, saveError: TestError.saveFailed)
-        let hotkeys = FakeHotkeyManager()
+        let store = SpySettingsStore(settings: .defaults, saveError: TestError.saveFailed)
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(store: store, hotkeys: hotkeys)
         let replacement = HotkeyDefinition.chord(keyCode: 49, modifiers: [.command])
 
@@ -846,7 +826,7 @@ final class AppModelTests: XCTestCase {
     func testSpeechBackendStatusesDeriveFromSettingsOrderEnabledFirstThenDisabled() async {
         var settings = AppSettings.defaults
         settings.sttBackendOrder = ["b", "a"]
-        let store = FakeSettingsStore(settings: settings)
+        let store = SpySettingsStore(settings: settings)
         let a = FakeSTTBackend(id: "a", displayName: "A")
         let b = FakeSTTBackend(id: "b", displayName: "B")
         let c = FakeSTTBackend(id: "c", displayName: "C")
@@ -862,7 +842,7 @@ final class AppModelTests: XCTestCase {
     func testEnablingBackendAppendsItToOrderAndPersists() async {
         var settings = AppSettings.defaults
         settings.sttBackendOrder = ["a"]
-        let store = FakeSettingsStore(settings: settings)
+        let store = SpySettingsStore(settings: settings)
         let a = FakeSTTBackend(id: "a", displayName: "A")
         let b = FakeSTTBackend(id: "b", displayName: "B")
         let model = makeModel(store: store, sttRegistry: ["a": a, "b": b])
@@ -879,7 +859,7 @@ final class AppModelTests: XCTestCase {
     func testMovingEnabledBackendReordersSettings() async {
         var settings = AppSettings.defaults
         settings.sttBackendOrder = ["a", "b"]
-        let store = FakeSettingsStore(settings: settings)
+        let store = SpySettingsStore(settings: settings)
         let a = FakeSTTBackend(id: "a", displayName: "A")
         let b = FakeSTTBackend(id: "b", displayName: "B")
         let model = makeModel(store: store, sttRegistry: ["a": a, "b": b])
@@ -894,7 +874,7 @@ final class AppModelTests: XCTestCase {
     func testCannotDisableTheLastEnabledBackend() async {
         var settings = AppSettings.defaults
         settings.sttBackendOrder = ["a"]
-        let store = FakeSettingsStore(settings: settings)
+        let store = SpySettingsStore(settings: settings)
         let a = FakeSTTBackend(id: "a", displayName: "A")
         let model = makeModel(store: store, sttRegistry: ["a": a])
         await model.initialSpeechBackendRefresh?.value
@@ -909,7 +889,7 @@ final class AppModelTests: XCTestCase {
     func testUnknownIDsInSettingsOrderAreIgnoredAndDroppedWhenPersisted() async {
         var settings = AppSettings.defaults
         settings.sttBackendOrder = ["ghost", "a"]
-        let store = FakeSettingsStore(settings: settings)
+        let store = SpySettingsStore(settings: settings)
         let a = FakeSTTBackend(id: "a", displayName: "A")
         let b = FakeSTTBackend(id: "b", displayName: "B")
         let model = makeModel(store: store, sttRegistry: ["a": a, "b": b])
@@ -932,7 +912,7 @@ final class AppModelTests: XCTestCase {
     func testSpeechBackendMessageIsSetOnRefusalAndClearedOnNextSuccessfulAction() async {
         var settings = AppSettings.defaults
         settings.sttBackendOrder = ["a"]
-        let store = FakeSettingsStore(settings: settings)
+        let store = SpySettingsStore(settings: settings)
         let a = FakeSTTBackend(id: "a", displayName: "A")
         let b = FakeSTTBackend(id: "b", displayName: "B")
         let model = makeModel(store: store, sttRegistry: ["a": a, "b": b])
@@ -1006,7 +986,7 @@ final class AppModelTests: XCTestCase {
     }
 
     /// Builds a real `AppModel` around a real `TTSRouter`/`SpeechCoordinator` pair (not the
-    /// `FakeSpeechCoordinator` the other tests in this file use) wired exactly like the
+    /// `SpySpeechCoordinator` the other tests in this file use) wired exactly like the
     /// production convenience `init()` wires PocketTTS, Apple, and Kokoro: `backendOrder` and the
     /// `TTSOptions.kokoroVoice`/`pocketVoice` fields all read from the same settings snapshot.
     /// This exercises the one-line options-closure edit the plan calls out as the easiest step to
@@ -1016,7 +996,7 @@ final class AppModelTests: XCTestCase {
         pocketAvailability: BackendAvailability,
         kokoroAvailability: BackendAvailability
     ) -> (
-        model: AppModel, hotkeys: FakeHotkeyManager, pocket: FakeTTSBackend, kokoro: FakeTTSBackend, apple: FakeTTSBackend
+        model: AppModel, hotkeys: SpyHotkeyManager, pocket: FakeTTSBackend, kokoro: FakeTTSBackend, apple: FakeTTSBackend
     ) {
         let pocket = FakeTTSBackend(id: "pocket-tts")
         pocket.availabilityValue = pocketAvailability
@@ -1027,7 +1007,7 @@ final class AppModelTests: XCTestCase {
         settings.ttsBackendOrder = ["pocket-tts", "kokoro", "apple-tts"]
         settings.kokoroVoice = "af_bella"
         settings.pocketVoice = "alba"
-        let store = FakeSettingsStore(settings: settings)
+        let store = SpySettingsStore(settings: settings)
         let overlay = ActivityOverlayModel()
         let player = FakePlayer()
         pocket.player = player
@@ -1050,24 +1030,15 @@ final class AppModelTests: XCTestCase {
             },
             overlay: overlay
         )
-        let hotkeys = FakeHotkeyManager()
-        let model = AppModel(
+        let hotkeys = SpyHotkeyManager()
+        let model = AppModel(runtime: .testing(
             settingsStore: store,
-            selectionReader: FakeSelectionReader(text: "hello"),
-            preprocessor: RulesSpeechPreprocessor(),
+            selectionReader: SpySelectionReader(text: "hello"),
             speechCoordinator: coordinator,
             hotkeyManager: hotkeys,
-            permissionService: FakePermissionService(snapshot: .init(inputMonitoringGranted: true, accessibilityGranted: true)),
-            diagnostics: DiagnosticsRecorder(capacity: 10),
-            dictationCoordinator: nil,
-            microphonePermissions: FakeMicrophonePermissionStatus(granted: true),
-            privacySettingsOpener: FakePrivacySettingsOpener(),
             overlayModel: overlay,
-            overlayPresenter: NoOpActivityOverlayPresenter(),
-            sttRegistry: [:],
-            speechModelManagers: [:],
             ttsRegistry: ["pocket-tts": pocket, "kokoro": kokoro, "apple-tts": apple]
-        )
+        ))
         return (model, hotkeys, pocket, kokoro, apple)
     }
 
@@ -1111,15 +1082,15 @@ final class AppModelTests: XCTestCase {
     }
 
     private func makeModel(
-        store: FakeSettingsStore? = nil,
-        selection: FakeSelectionReader? = nil,
-        speech: FakeSpeechCoordinator? = nil,
-        hotkeys: FakeHotkeyManager? = nil,
-        permissions: FakePermissionService? = nil,
-        dictation: FakeDictationCoordinator? = nil,
-        microphone: FakeMicrophonePermissionStatus? = nil,
-        opener: FakePrivacySettingsOpener? = nil,
-        loginItem: FakeLoginItemController? = nil,
+        store: SpySettingsStore? = nil,
+        selection: SpySelectionReader? = nil,
+        speech: SpySpeechCoordinator? = nil,
+        hotkeys: SpyHotkeyManager? = nil,
+        permissions: SpyPermissionService? = nil,
+        dictation: SpyDictationCoordinator? = nil,
+        microphone: SpyMicrophonePermission? = nil,
+        opener: SpyPrivacyOpener? = nil,
+        loginItem: SpyLoginItemController? = nil,
         overlayModel: ActivityOverlayModel? = nil,
         overlayPresenter: (any ActivityOverlayPresenting)? = nil,
         sttRegistry: [String: any SpeechToTextBackend] = [:],
@@ -1131,146 +1102,27 @@ final class AppModelTests: XCTestCase {
         integrationManager: IntegrationManager? = nil,
         processInspector: ProcessInspector? = nil
     ) -> AppModel {
-        AppModel(
-            settingsStore: store ?? FakeSettingsStore(settings: .defaults),
-            selectionReader: selection ?? FakeSelectionReader(text: "selected"),
-            preprocessor: RulesSpeechPreprocessor(),
-            speechCoordinator: speech ?? FakeSpeechCoordinator(),
-            hotkeyManager: hotkeys ?? FakeHotkeyManager(),
-            permissionService: permissions ?? FakePermissionService(snapshot: .init(inputMonitoringGranted: true, accessibilityGranted: true)),
+        AppModel(runtime: .testing(
+            settingsStore: store ?? SpySettingsStore(),
+            selectionReader: selection ?? SpySelectionReader(),
+            speechCoordinator: speech ?? SpySpeechCoordinator(),
+            hotkeyManager: hotkeys ?? SpyHotkeyManager(),
+            permissionService: permissions ?? SpyPermissionService(),
+            microphonePermissions: microphone ?? SpyMicrophonePermission(granted: true),
+            privacySettingsOpener: opener ?? SpyPrivacyOpener(),
+            loginItemService: loginItem ?? SpyLoginItemController(enabled: false),
             diagnostics: diagnostics ?? DiagnosticsRecorder(capacity: 10),
             dictationCoordinator: dictation,
-            microphonePermissions: microphone ?? FakeMicrophonePermissionStatus(granted: true),
-            privacySettingsOpener: opener ?? FakePrivacySettingsOpener(),
-            loginItemService: loginItem ?? FakeLoginItemController(enabled: false),
             overlayModel: overlayModel ?? ActivityOverlayModel(),
             overlayPresenter: overlayPresenter ?? NoOpActivityOverlayPresenter(),
             sttRegistry: sttRegistry,
             speechModelManagers: speechModelManagers,
             integrationManager: integrationManager,
             sessionRegistry: sessionRegistry ?? AgentSessionRegistry(),
-            focusResolution: focusResolution ?? FocusResolutionService(
-                registry: AgentSessionRegistry(),
-                frontmostApps: FrontmostAppMonitor(),
-                resolvers: []
-            ),
-            frontmostApps: frontmostApps ?? FrontmostAppMonitor(),
-            // A real `ProcessInspector()` default would shell out to `/bin/ps` and, finding no
-            // live process at this file's fabricated pids (e.g. 4242), prune `replayLast()`'s
-            // fixture sessions before focus resolution ever runs. Default to a fake reporting
-            // every fabricated pid alive; tests that specifically exercise pruning inject their
-            // own.
-            processInspector: processInspector ?? ProcessInspector(runner: AlwaysAliveProcessRunner())
-        )
-    }
-}
-
-@MainActor
-private final class FakeOverlayPresenter: ActivityOverlayPresenting {
-    private(set) var states: [ActivityOverlayState] = []
-    private(set) var styles: [ActivityOverlayStyle] = []
-
-    func update(state: ActivityOverlayState, style: ActivityOverlayStyle) {
-        states.append(state)
-        styles.append(style)
-    }
-}
-
-@MainActor
-private final class FakeDictationCoordinator: DictationCoordinating {
-    private(set) var events: [String] = []
-    private let blockStart: Bool
-    private let blockFinish: Bool
-    private var startContinuation: CheckedContinuation<Void, Never>?
-    private var finishContinuation: CheckedContinuation<Void, Never>?
-
-    init(blockStart: Bool = false, blockFinish: Bool = false) {
-        self.blockStart = blockStart
-        self.blockFinish = blockFinish
-    }
-
-    func start() async {
-        events.append("start")
-        if blockStart { await withCheckedContinuation { startContinuation = $0 } }
-    }
-    func finish() async {
-        events.append("finish")
-        if blockFinish { await withCheckedContinuation { finishContinuation = $0 } }
-    }
-    func toggle() async {
-        if events.last == "start" { await finish() }
-        else { await start() }
-    }
-    func cancel(sessionID: UUID) async {}
-    func resumeStart() { startContinuation?.resume(); startContinuation = nil }
-    func resumeFinish() { finishContinuation?.resume(); finishContinuation = nil }
-}
-
-@MainActor
-private final class FakePermissionService: GlobalPermissionAuthorizing {
-    let value: PermissionSnapshot
-    private(set) var snapshotCount = 0
-    init(snapshot: PermissionSnapshot) { value = snapshot }
-    func snapshot() -> PermissionSnapshot { snapshotCount += 1; return value }
-    func requestPermissions() {}
-}
-
-@MainActor
-private final class FakeMicrophonePermissionStatus: MicrophonePermissionStatusProviding {
-    var grantedValue: Bool
-    let requestResult: Bool
-    private(set) var requestCount = 0
-    init(granted: Bool, requestResult: Bool? = nil) {
-        grantedValue = granted
-        self.requestResult = requestResult ?? granted
-    }
-    func isGranted() -> Bool { grantedValue }
-    func requestPermission() async -> Bool {
-        requestCount += 1
-        grantedValue = requestResult
-        return requestResult
-    }
-}
-
-@MainActor
-private final class FakePrivacySettingsOpener: PrivacySettingsOpening {
-    private(set) var opened: [PrivacySettingsPane] = []
-    func open(_ pane: PrivacySettingsPane) { opened.append(pane) }
-}
-
-@MainActor
-private final class FakeLoginItemController: LoginItemControlling {
-    private(set) var isEnabled: Bool
-    private(set) var setEnabledCalls: [Bool] = []
-    private let setEnabledError: Error?
-
-    init(enabled: Bool, setEnabledError: Error? = nil) {
-        isEnabled = enabled
-        self.setEnabledError = setEnabledError
-    }
-
-    func setEnabled(_ enabled: Bool) throws {
-        setEnabledCalls.append(enabled)
-        if let setEnabledError { throw setEnabledError }
-        isEnabled = enabled
-    }
-}
-
-@MainActor
-private final class FakeSettingsStore: SettingsStoring {
-    let settings: AppSettings
-    let saveError: Error?
-    private(set) var saved: [AppSettings] = []
-
-    init(settings: AppSettings, saveError: Error? = nil) {
-        self.settings = settings
-        self.saveError = saveError
-    }
-
-    func load() -> AppSettings { settings }
-    func save(_ value: AppSettings) throws {
-        if let saveError { throw saveError }
-        saved.append(value)
+            frontmostApps: frontmostApps ?? StubFrontmostAppMonitor(pid: nil),
+            focusResolution: focusResolution,
+            processInspector: processInspector ?? ProcessInspector(runner: AllPIDsAliveProcessRunner())
+        ))
     }
 }
 
@@ -1318,299 +1170,6 @@ private actor FakeSTTBackend: SpeechToTextBackend {
     }
 }
 
-private func makeModelStatus(
-    id: String,
-    installState: SpeechModelInstallState = .notDownloaded,
-    isSelected: Bool = false
-) -> SpeechModelStatus {
-    SpeechModelStatus(
-        descriptor: SpeechModelDescriptor(id: id, displayName: id, detail: nil),
-        capabilities: [.download, .select, .remove],
-        installState: installState,
-        isSelected: isSelected
-    )
-}
-
-/// A multi-model `SpeechModelManaging` fake used by the per-model download/select/remove tests
-/// (Whisper hasn't registered as a backend yet, so these tests exercise the new per-model surface
-/// against a fake with more than one model). Mirrors `FakeSpeechModelManager`'s and
-/// `FakeSTTBackend`'s blocking/continuation style, but keyed per model id so one model's download
-/// (or `models()` call) can be held in flight independently of its siblings.
-private actor FakeMultiModelSpeechModelManager: SpeechModelManaging {
-    let backendID: String
-    private var statuses: [String: SpeechModelStatus]
-    private let order: [String]
-
-    private(set) var modelsCallCount = 0
-    private var shouldBlockModels = false
-    private var modelsContinuation: CheckedContinuation<Void, Never>?
-
-    private var downloadCallCounts: [String: Int] = [:]
-    private var progressToReport: [String: [Double]] = [:]
-    private var errorToThrow: [String: Error] = [:]
-    private var shouldBlockDownload: Set<String> = []
-    private var downloadContinuations: [String: CheckedContinuation<Void, Never>] = [:]
-    private var downloadResumeRequested: Set<String> = []
-    private var capturedProgress: [String: @Sendable (Double) -> Void] = [:]
-
-    private(set) var selectCalls: [String] = []
-    private(set) var removeCalls: [String] = []
-
-    init(backendID: String, models: [SpeechModelStatus]) {
-        self.backendID = backendID
-        order = models.map(\.id)
-        statuses = Dictionary(uniqueKeysWithValues: models.map { ($0.id, $0) })
-    }
-
-    func models() async -> [SpeechModelStatus] {
-        modelsCallCount += 1
-        if shouldBlockModels {
-            await withCheckedContinuation { modelsContinuation = $0 }
-        }
-        return order.compactMap { statuses[$0] }
-    }
-
-    /// Makes `models()` suspend on a continuation instead of returning immediately, so a test can
-    /// deterministically hold a refresh mid-flight and interleave a second refresh before calling
-    /// `resumeModels()`.
-    func setShouldBlockModels(_ value: Bool) { shouldBlockModels = value }
-
-    func resumeModels() {
-        modelsContinuation?.resume()
-        modelsContinuation = nil
-    }
-
-    func setStatus(_ id: String, installState: SpeechModelInstallState? = nil, isSelected: Bool? = nil) {
-        guard var status = statuses[id] else { return }
-        if let installState { status.installState = installState }
-        if let isSelected { status.isSelected = isSelected }
-        statuses[id] = status
-    }
-
-    func setProgressToReport(_ id: String, _ values: [Double]) { progressToReport[id] = values }
-    func setErrorToThrow(_ id: String, _ error: Error?) { errorToThrow[id] = error }
-    func setShouldBlock(_ id: String, _ value: Bool) {
-        if value { shouldBlockDownload.insert(id) } else { shouldBlockDownload.remove(id) }
-    }
-
-    func downloadModel(_ id: String, progress: @escaping @Sendable (Double) -> Void) async throws {
-        downloadCallCounts[id, default: 0] += 1
-        capturedProgress[id] = progress
-        for value in progressToReport[id] ?? [] {
-            progress(value)
-        }
-        if shouldBlockDownload.contains(id) {
-            if downloadResumeRequested.contains(id) {
-                downloadResumeRequested.remove(id)
-            } else {
-                await withCheckedContinuation { downloadContinuations[id] = $0 }
-            }
-        }
-        if let error = errorToThrow[id] {
-            throw error
-        }
-    }
-
-    /// Order-independent, per-model: resumes an already-blocked `downloadModel(id)` call, or --
-    /// if none is blocked yet -- arms a per-id resume flag so that model's next `downloadModel`
-    /// call skips blocking instead of hanging on a continuation nobody will resume.
-    func resumeDownload(_ id: String) {
-        if let continuation = downloadContinuations[id] {
-            continuation.resume()
-            downloadContinuations[id] = nil
-        } else {
-            downloadResumeRequested.insert(id)
-        }
-    }
-
-    func reportProgress(_ id: String, _ value: Double) {
-        capturedProgress[id]?(value)
-    }
-
-    func downloadCallCount(_ id: String) -> Int { downloadCallCounts[id, default: 0] }
-
-    func removeModel(_ id: String) async throws {
-        removeCalls.append(id)
-        statuses[id]?.installState = .notDownloaded
-    }
-
-    func selectModel(_ id: String) async throws {
-        selectCalls.append(id)
-        for key in statuses.keys {
-            statuses[key]?.isSelected = (key == id)
-        }
-    }
-}
-
-/// A one-model `SpeechModelManaging` fake. Both STT and TTS backends now use `SpeechModelManaging`
-/// for model management. `models()` always reports a single model under `modelID`; `downloadModel` is the
-/// method under test in every "download" test in this file, and reproduces the exact
-/// progress/blocking/failure behavior the old `FakeSpeechModelDownloader.downloadModels` had, so
-/// every existing assertion (progress ticks, retry after failure, single-flight, stale/late
-/// progress) still holds unchanged against the new manager surface.
-private actor FakeSpeechModelManager: SpeechModelManaging {
-    let backendID: String
-    private let modelID: String
-    private(set) var callCount = 0
-    private var progressToReport: [Double] = []
-    private var errorToThrow: Error?
-    private var shouldBlock = false
-    private var continuation: CheckedContinuation<Void, Never>?
-    /// True once `resume()` has been called with no `downloadModel` call currently blocked to
-    /// resume. `downloadSpeechModel` now resolves the manager's model id via `models()` before
-    /// calling `downloadModel` -- an extra actor hop versus the old direct `downloadModels` call
-    /// -- so a caller that calls `resume()` the instant it observes the "downloading" row (before
-    /// `downloadModel` has actually reached its blocking point) must not have that resume lost.
-    /// This flag makes `resume()` order-independent: called early, it makes the *next*
-    /// `downloadModel` call skip blocking entirely instead of arming a continuation nobody will
-    /// ever resume.
-    private var resumeRequested = false
-    private var capturedProgress: (@Sendable (Double) -> Void)?
-
-    init(backendID: String = "parakeet", modelID: String = "parakeet-v2") {
-        self.backendID = backendID
-        self.modelID = modelID
-    }
-
-    func setProgressToReport(_ values: [Double]) { progressToReport = values }
-    func setErrorToThrow(_ error: Error?) { errorToThrow = error }
-    func setShouldBlock(_ value: Bool) { shouldBlock = value }
-
-    func models() async -> [SpeechModelStatus] {
-        [
-            SpeechModelStatus(
-                descriptor: SpeechModelDescriptor(id: modelID, displayName: modelID, detail: nil),
-                capabilities: [.download, .select, .remove],
-                installState: .notDownloaded,
-                isSelected: true
-            ),
-        ]
-    }
-
-    func downloadModel(_ id: String, progress: @escaping @Sendable (Double) -> Void) async throws {
-        callCount += 1
-        capturedProgress = progress
-        for value in progressToReport {
-            progress(value)
-        }
-        if shouldBlock {
-            if resumeRequested {
-                resumeRequested = false
-            } else {
-                await withCheckedContinuation { continuation = $0 }
-            }
-        }
-        if let errorToThrow {
-            throw errorToThrow
-        }
-    }
-
-    func removeModel(_ id: String) async throws {}
-
-    func selectModel(_ id: String) async throws {}
-
-    /// Order-independent: resumes an already-blocked `downloadModel` call, or -- if none is
-    /// blocked yet -- arms `resumeRequested` so the next `downloadModel` call skips blocking
-    /// instead of hanging forever on a continuation nobody will resume.
-    func resume() {
-        if let continuation {
-            continuation.resume()
-            self.continuation = nil
-        } else {
-            resumeRequested = true
-        }
-    }
-
-    /// Invokes the progress closure captured from the most recent `downloadModel` call, letting
-    /// a test simulate a tick arriving at an arbitrary time — including after completion, or out
-    /// of order relative to an earlier tick.
-    func reportProgress(_ value: Double) {
-        capturedProgress?(value)
-    }
-}
-
-@MainActor
-private final class FakeSelectionReader: SelectionReading {
-    let text: String
-    private(set) var readCount = 0
-
-    init(text: String) {
-        self.text = text
-    }
-
-    func readSelection() throws -> SelectionResult {
-        readCount += 1
-        return .init(text: text, source: .accessibility)
-    }
-}
-
-@MainActor
-private final class FakeSpeechCoordinator: SpeechCoordinating {
-    private(set) var requests: [SpeechRequest] = []
-    private(set) var stopCount = 0
-    private(set) var stoppedSessionIDs: [UUID] = []
-    private(set) var replayCount = 0
-    private(set) var previews: [(text: String, backendID: String, options: TTSOptions)] = []
-    let replayError: Error?
-    let speakError: Error?
-    init(replayError: Error? = nil, speakError: Error? = nil) {
-        self.replayError = replayError
-        self.speakError = speakError
-    }
-
-    func speak(_ request: SpeechRequest) async throws {
-        requests.append(request)
-        if let speakError { throw speakError }
-    }
-    func previewVoice(text: String, backendID: String, options: TTSOptions) async throws {
-        previews.append((text, backendID, options))
-        if let speakError { throw speakError }
-    }
-    func stop() { stopCount += 1 }
-    func stop(sessionID: UUID) { stoppedSessionIDs.append(sessionID) }
-    func replayLast() async throws { replayCount += 1; if let replayError { throw replayError } }
-}
-
-/// Reports `focusedSessionID` (when set) as confidently `.focused`; every other session, and
-/// every session when `focusedSessionID` is `nil`, resolves as `.unknown`/low-confidence —
-/// exactly what `AppModel.replayLast()`'s tier-1 loop treats as "not this one".
-private struct StubSessionFocusResolver: SessionFocusResolving {
-    let focusedSessionID: AgentSessionID?
-    func resolve(session: AgentSession) async -> FocusDecision {
-        guard let focusedSessionID, session.id == focusedSessionID else {
-            return .unknown(resolverID: "stub", reason: "not the stubbed focused session")
-        }
-        return .focused(resolverID: "stub", reason: "stubbed focused session")
-    }
-}
-
-/// Reports a fixed frontmost pid (or no frontmost application at all when `pid` is `nil`).
-private struct StubFrontmostAppMonitor: FrontmostAppMonitoring {
-    let pid: Int32?
-    func current() async -> FrontmostApplication? {
-        guard let pid else { return nil }
-        return FrontmostApplication(pid: pid, bundleIdentifier: "com.test.terminal", localizedName: "TestTerminal")
-    }
-}
-
-/// Reports every pid in a wide synthetic range as alive, standing in for a live process table so
-/// this file's fabricated pids (e.g. `processAncestry: [4242]`) are never treated as dead by
-/// `AppModel.replayLast()`'s prune-before-focus step.
-private final class AlwaysAliveProcessRunner: ProcessRunning, @unchecked Sendable {
-    func run(executable: URL, arguments: [String], timeout: TimeInterval, maxOutputBytes: Int) throws -> ProcessResult {
-        let lines = (1...10_000).map { "\($0) 1 ttys001 fake" }.joined(separator: "\n")
-        return ProcessResult(stdout: Data(lines.utf8), terminationStatus: 0)
-    }
-}
-
-/// Reports an empty process table, so every pid looks dead — used to exercise
-/// `AppModel.replayLast()`'s prune-before-focus step.
-private final class AllProcessesDeadRunner: ProcessRunning, @unchecked Sendable {
-    func run(executable: URL, arguments: [String], timeout: TimeInterval, maxOutputBytes: Int) throws -> ProcessResult {
-        ProcessResult(stdout: Data(), terminationStatus: 0)
-    }
-}
-
 /// Always decodes any envelope for `provider` into a fixed `event`, regardless of `rawPayload`.
 /// Used only to drive `IntegrationManager.latestResponse` to a known value through the real
 /// consume loop, mirroring how the production socket pipeline keeps it in sync with the store.
@@ -1618,28 +1177,4 @@ private struct StubIntegration: RelayIntegration {
     let provider: AgentProvider
     let event: AgentResponseEvent
     func decode(_ envelope: HookEnvelope) throws -> AgentResponseEvent { event }
-}
-
-@MainActor
-private final class FakeHotkeyManager: HotkeyManaging {
-    private let status: HotkeyRegistrationStatus
-    private var handler: ((HotkeyAction, HotkeyPhase) -> Void)?
-    private(set) var registrations: [AppSettings] = []
-
-    init(status: HotkeyRegistrationStatus = .registered) {
-        self.status = status
-    }
-
-    func register(
-        settings: AppSettings,
-        handler: @escaping @MainActor (HotkeyAction, HotkeyPhase) -> Void
-    ) -> HotkeyRegistrationStatus {
-        registrations.append(settings)
-        self.handler = handler
-        return status
-    }
-
-    func send(_ action: HotkeyAction, _ phase: HotkeyPhase) {
-        handler?(action, phase)
-    }
 }

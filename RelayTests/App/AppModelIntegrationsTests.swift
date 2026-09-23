@@ -5,8 +5,8 @@ import XCTest
 /// SAFETY: every test in this file points `ClaudeCodeInstaller`/`CodexInstaller` at a unique
 /// temporary directory created in `setUp` and removed in `tearDown`. No test may read or write
 /// the real `~/.claude` or `~/.codex` directories. No test may open the real, fixed-path Unix
-/// socket at `~/Library/Application Support/Relay/relay.sock` either: `makeModel`'s default
-/// `hookSocketPath` is a unique `/tmp` path per call, so even a test that calls
+/// socket at `~/Library/Application Support/Relay/relay.sock` either: `RelayRuntime.testing`
+/// defaults the socket path to a unique `/tmp` path per call, so even a test that calls
 /// `AppModel.startIntegrations()` without overriding it can never reach the real socket. Most
 /// tests never call `startIntegrations()` at all — runtime event flow is exercised instead by
 /// constructing an `IntegrationManager` directly around a manually driven `AsyncStream`, exactly
@@ -60,14 +60,6 @@ final class AppModelIntegrationsTests: XCTestCase {
             .appendingPathComponent("RelayHook")
     }
 
-    /// A short, unique `/tmp` path — never the real production socket at
-    /// `~/Library/Application Support/Relay/relay.sock` — used as `makeModel`'s default
-    /// `hookSocketPath`. Kept well under the `sun_path` 104-byte limit. `UnixSocketServer.start`
-    /// creates the parent directory itself, so nothing needs to be pre-created here.
-    private func uniqueTestSocketPath() -> String {
-        "/tmp/relay-t-\(UUID().uuidString.prefix(8))/relay.sock"
-    }
-
     private func makeModel(
         claudeCodeInstaller: ClaudeCodeInstaller? = nil,
         codexInstaller: CodexInstaller? = nil,
@@ -77,20 +69,15 @@ final class AppModelIntegrationsTests: XCTestCase {
         hookEnvelopeReceiver: HookEnvelopeReceiver = HookEnvelopeReceiver(),
         hookSocketPath: String? = nil
     ) -> AppModel {
-        AppModel(
-            settingsStore: FakeSettingsStore(),
-            selectionReader: FakeSelectionReader(),
-            preprocessor: RulesSpeechPreprocessor(),
-            speechCoordinator: FakeSpeechCoordinator(),
-            hotkeyManager: FakeHotkeyManager(),
+        AppModel(runtime: .testing(
             hookEnvelopeReceiver: hookEnvelopeReceiver,
             integrationManager: integrationManager,
             claudeCodeInstaller: claudeCodeInstaller ?? makeClaudeInstaller(),
             codexInstaller: codexInstaller ?? makeCodexInstaller(),
             helperInstaller: helperInstaller ?? makeHelperInstaller(),
             bundledHelperURL: bundledHelperURL ?? nonexistentBundledHelperURL,
-            hookSocketPath: hookSocketPath ?? uniqueTestSocketPath()
-        )
+            hookSocketPath: hookSocketPath
+        ))
     }
 
     // MARK: - Baseline: no test ever touches a real socket
@@ -739,7 +726,7 @@ private func makeAutoReadWiringHarness(focus: FocusDecision, autoRead: Bool) -> 
         // process at the fabricated pid 100, prune the session before focus resolution ever runs
         // — this fake keeps liveness a non-factor for a test that's only exercising the
         // onResponse -> coordinator wiring shape.
-        processInspector: ProcessInspector(runner: AlwaysAliveProcessRunner())
+        processInspector: ProcessInspector(runner: AllPIDsAliveProcessRunner())
     )
     var continuation: AsyncStream<HookEnvelope>.Continuation!
     let events = AsyncStream<HookEnvelope> { continuation = $0 }
@@ -755,15 +742,6 @@ private func makeAutoReadWiringHarness(focus: FocusDecision, autoRead: Bool) -> 
 private struct StubWiringSessionFocusResolver: SessionFocusResolving {
     let decision: FocusDecision
     func resolve(session: AgentSession) async -> FocusDecision { decision }
-}
-
-/// Reports every pid in a wide synthetic range as alive, so this file's fabricated pids are never
-/// treated as dead by `AgentAutoReadCoordinator`'s prune-before-focus step.
-private final class AlwaysAliveProcessRunner: ProcessRunning, @unchecked Sendable {
-    func run(executable: URL, arguments: [String], timeout: TimeInterval, maxOutputBytes: Int) throws -> ProcessResult {
-        let lines = (1...2_000).map { "\($0) 1 ttys001 fake" }.joined(separator: "\n")
-        return ProcessResult(stdout: Data(lines.utf8), terminationStatus: 0)
-    }
 }
 
 /// `@unchecked Sendable`: `AgentAutoReadCoordinator` requires `any SpeechSubmitting & Sendable`
@@ -788,27 +766,6 @@ private struct AlwaysSucceedIntegration: RelayIntegration {
     let event: AgentResponseEvent
 
     func decode(_ envelope: HookEnvelope) throws -> AgentResponseEvent { event }
-}
-
-@MainActor
-private final class FakeSettingsStore: SettingsStoring {
-    func load() -> AppSettings { .defaults }
-    func save(_ value: AppSettings) throws {}
-}
-
-@MainActor
-private final class FakeSelectionReader: SelectionReading {
-    func readSelection() throws -> SelectionResult { .init(text: "selected", source: .accessibility) }
-}
-
-@MainActor
-private final class FakeHotkeyManager: HotkeyManaging {
-    func register(
-        settings: AppSettings,
-        handler: @escaping @MainActor (HotkeyAction, HotkeyPhase) -> Void
-    ) -> HotkeyRegistrationStatus {
-        .registered
-    }
 }
 
 @MainActor

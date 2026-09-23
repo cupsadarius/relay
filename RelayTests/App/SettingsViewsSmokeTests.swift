@@ -5,7 +5,7 @@ import SwiftUI
 final class SettingsViewsSmokeTests: XCTestCase {
     @MainActor
     func testAllSettingsTabViewsConstruct() {
-        let model = AppModel(runtime: .makeProduction())
+        let model = AppModel(runtime: .testing())
         _ = SettingsView(model: model)
         _ = GeneralSettingsView(model: model)
         _ = KeybindsSettingsView(model: model)
@@ -25,18 +25,7 @@ final class SettingsViewsSmokeTests: XCTestCase {
         diagnosticsRecorder.recordMicrophoneCapture(
             MicrophoneCaptureDiagnostics(inputSampleRate: 48_000, frameCount: 0, capturedAt: Date())
         )
-        let model = AppModel(
-            settingsStore: SettingsStore(),
-            selectionReader: SelectionReader(accessibility: AccessibilityService(), clipboard: ClipboardService()),
-            preprocessor: RulesSpeechPreprocessor(),
-            speechCoordinator: SpeechCoordinator(
-                router: TTSRouter(backends: [:], backendOrder: { [] }, player: FakePlayer()),
-                options: { TTSOptions() },
-                overlay: ActivityOverlayModel()
-            ),
-            hotkeyManager: GlobalHotkeyManager(diagnostics: diagnosticsRecorder),
-            diagnostics: diagnosticsRecorder
-        )
+        let model = AppModel(runtime: .testing(diagnostics: diagnosticsRecorder))
 
         _ = PermissionsSettingsView(model: model)
 
@@ -45,13 +34,10 @@ final class SettingsViewsSmokeTests: XCTestCase {
 
     /// The menu bar shows and toggles auto-read state alongside the agent-response controls;
     /// this only guards that the view still constructs with the button title reflecting
-    /// `model.settings.autoReadEnabled` in both states. `AppModel(runtime:)` loads the real,
-    /// persisted settings store, so this reads whatever `autoReadEnabled` already is rather than assuming
-    /// the shipped default, and restores it afterward so the on-disk value isn't left flipped
-    /// for whichever run reuses this store next.
+    /// `model.settings.autoReadEnabled` in both states.
     @MainActor
     func testMenuBarContentViewConstructsInBothAutoReadStates() {
-        let model = AppModel(runtime: .makeProduction())
+        let model = AppModel(runtime: .testing())
         let initial = model.settings.autoReadEnabled
         _ = MenuBarContentView(model: model)
 

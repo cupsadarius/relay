@@ -160,16 +160,12 @@ final class TTSBackendCatalogTests: XCTestCase {
         ttsModelManagers: [String: any SpeechModelManaging] = [:],
         diagnostics: DiagnosticsRecorder? = nil
     ) -> AppModel {
-        AppModel(
+        AppModel(runtime: .testing(
             settingsStore: store ?? FakeSettingsStore(settings: .defaults),
-            selectionReader: NoOpSelectionReader(),
-            preprocessor: RulesSpeechPreprocessor(),
-            speechCoordinator: NoOpSpeechCoordinator(),
-            hotkeyManager: NoOpHotkeyManager(),
             diagnostics: diagnostics ?? DiagnosticsRecorder(capacity: 10),
             ttsRegistry: ttsRegistry,
             ttsModelManagers: ttsModelManagers
-        )
+        ))
     }
 }
 
@@ -294,26 +290,3 @@ private final class FakeSettingsStore: SettingsStoring {
     func save(_ value: AppSettings) throws { saved.append(value) }
 }
 
-@MainActor
-private final class NoOpSelectionReader: SelectionReading {
-    func readSelection() throws -> SelectionResult { .init(text: "", source: .accessibility) }
-}
-
-@MainActor
-private final class NoOpSpeechCoordinator: SpeechCoordinating {
-    func speak(_ request: SpeechRequest) async throws {}
-    func previewVoice(text: String, backendID: String, options: TTSOptions) async throws {}
-    func stop() {}
-    func stop(sessionID: UUID) {}
-    func replayLast() async throws {}
-}
-
-@MainActor
-private final class NoOpHotkeyManager: HotkeyManaging {
-    func register(
-        settings: AppSettings,
-        handler: @escaping @MainActor (HotkeyAction, HotkeyPhase) -> Void
-    ) -> HotkeyRegistrationStatus {
-        .registered
-    }
-}

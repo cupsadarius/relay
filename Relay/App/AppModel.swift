@@ -14,7 +14,14 @@ enum HelperInstallVerificationError: Error, Sendable {
 @MainActor
 @Observable
 final class AppModel {
-    var statusText = "Ready"
+    /// The graph this model was built from. Retained for the model's (= the app's) lifetime.
+    @ObservationIgnored let runtime: RelayRuntime
+
+    var statusText: String {
+        get { runtime.status.message }
+        set { runtime.status.post(newValue) }
+    }
+
     /// Menu-bar status that tracks live activity (same source as the overlay pill) and falls
     /// back to the last transient message when idle, so it never shows a stale "Speaking…"
     /// after speech ends. Reads `overlayModel.state`, which is `@Observable`-tracked, so this
@@ -70,10 +77,36 @@ final class AppModel {
     /// `checkIntegration`. Independent of `integrationManager.status`, which tracks only runtime
     /// (event-driven) activity; `integrationStatus(for:)` merges the two.
     private(set) var installerStatuses: [AgentProvider: IntegrationStatus] = [:]
-    @ObservationIgnored let overlayModel: ActivityOverlayModel
+    var overlayModel: ActivityOverlayModel { runtime.speechOut.overlayModel }
+    var sttRegistry: [String: any SpeechToTextBackend] { runtime.speechIn.sttRegistry }
+    var ttsRegistry: [String: any TextToSpeechBackend] { runtime.speechOut.ttsRegistry }
+    private var settingsStore: any SettingsStoring { runtime.settingsStore }
+    private var selectionReader: any SelectionReading { runtime.selectionReader }
+    private var preprocessor: RulesSpeechPreprocessor { runtime.preprocessor }
+    private var speechCoordinator: any SpeechCoordinating { runtime.speechOut.speechCoordinator }
+    private var dictationCoordinator: (any DictationCoordinating)? { runtime.speechIn.dictationCoordinator }
+    private var hotkeyManager: any HotkeyManaging { runtime.hotkeyManager }
+    private var settingsState: SettingsBox { runtime.settingsBox }
+    private var permissionService: any GlobalPermissionAuthorizing { runtime.permissionService }
+    private var microphonePermissions: any MicrophonePermissionStatusProviding { runtime.microphonePermissions }
+    private var privacySettingsOpener: any PrivacySettingsOpening { runtime.privacySettingsOpener }
+    private var loginItemService: any LoginItemControlling { runtime.loginItemService }
+    private var diagnostics: DiagnosticsRecorder { runtime.diagnostics }
+    private var overlayPresenter: any ActivityOverlayPresenting { runtime.speechOut.overlayPresenter }
+    private var hookEnvelopeReceiver: HookEnvelopeReceiver { runtime.integrations.hookEnvelopeReceiver }
+    private var integrationManager: IntegrationManager { runtime.integrations.integrationManager }
+    private var claudeCodeInstaller: ClaudeCodeInstaller { runtime.integrations.claudeCodeInstaller }
+    private var codexInstaller: CodexInstaller { runtime.integrations.codexInstaller }
+    private var helperInstaller: HelperInstaller { runtime.integrations.helperInstaller }
+    private var bundledHelperURL: URL { runtime.integrations.bundledHelperURL }
+    private var sessionRegistry: AgentSessionRegistry { runtime.sessions.registry }
+    private var focusResolution: any SessionFocusResolving { runtime.sessions.focusResolution }
+    private var frontmostApps: any FrontmostAppMonitoring { runtime.sessions.frontmostApps }
+    private var processInspector: ProcessInspector { runtime.sessions.processInspector }
+    private var integrationDiagnosticsLog: IntegrationDiagnosticsLog { runtime.integrationDiagnosticsLog }
+    /// Plan 1's injectable socket path now comes from the runtime (a temp path in tests).
+    var hookSocketPath: String { runtime.integrations.socketPath }
 
-    @ObservationIgnored let sttRegistry: [String: any SpeechToTextBackend]
-    @ObservationIgnored let ttsRegistry: [String: any TextToSpeechBackend]
     @ObservationIgnored let modelController: SpeechModelController
     @ObservationIgnored let voiceCatalog: SpeechVoiceCatalog
     @ObservationIgnored var refreshGeneration = 0
@@ -84,284 +117,39 @@ final class AppModel {
     /// The fire-and-forget initial TTS status refresh kicked off from `init`. Exposed so tests
     /// can await it instead of racing an explicit `refreshTTSBackendStatuses()` call against it.
     @ObservationIgnored var initialTTSBackendRefresh: Task<Void, Never>?
-    @ObservationIgnored private let settingsStore: any SettingsStoring
-    @ObservationIgnored private let selectionReader: any SelectionReading
-    @ObservationIgnored private let preprocessor: RulesSpeechPreprocessor
-    @ObservationIgnored private let speechCoordinator: any SpeechCoordinating
-    @ObservationIgnored private let dictationCoordinator: (any DictationCoordinating)?
-    @ObservationIgnored private let hotkeyManager: any HotkeyManaging
-    @ObservationIgnored private let settingsState: SettingsBox
-    @ObservationIgnored private let permissionService: any GlobalPermissionAuthorizing
-    @ObservationIgnored private let microphonePermissions: any MicrophonePermissionStatusProviding
-    @ObservationIgnored private let privacySettingsOpener: any PrivacySettingsOpening
-    @ObservationIgnored private let loginItemService: any LoginItemControlling
-    @ObservationIgnored private let diagnostics: DiagnosticsRecorder
-    @ObservationIgnored private let overlayPresenter: any ActivityOverlayPresenting
     @ObservationIgnored private var activationObserver: NSObjectProtocol?
     @ObservationIgnored private var dictationTask: Task<Void, Never>?
     /// The in-flight Read Selection / Replay Last action. Each new press of either hotkey, and
     /// Stop Speech, cancels it, so two quick presses can never both reach the speech coordinator.
     @ObservationIgnored private var speechActionTask: Task<Void, Never>?
-    @ObservationIgnored private let hookEnvelopeReceiver: HookEnvelopeReceiver
-    @ObservationIgnored private let integrationManager: IntegrationManager
-    @ObservationIgnored private let claudeCodeInstaller: ClaudeCodeInstaller
-    @ObservationIgnored private let codexInstaller: CodexInstaller
-    /// Copies the bundled `RelayHook` helper to its stable Application Support location
-    /// before each `installIntegration` call, so the stable path the installers reference
-    /// always exists. Injectable so tests never touch the real `~/Library/Application
-    /// Support`.
-    @ObservationIgnored private let helperInstaller: HelperInstaller
-    /// The bundled helper's location inside the running app bundle — the SOURCE
-    /// `helperInstaller` copies from. Injectable so tests can point it at a path that never
-    /// exists (the default is a no-op guard: see `installBundledHelperIfPresent`).
-    @ObservationIgnored private let bundledHelperURL: URL
     /// Structural-only logging for `installBundledHelperIfPresent` (no paths, no file
     /// contents — see that method's doc comment for what gets logged and when).
     @ObservationIgnored private let installerLogger = Logger(subsystem: "dev.relaymac.Relay", category: "integrations")
-    /// Ephemeral, memory-only registry of agent sessions observed from hook events. Shared with
-    /// the production `AgentAutoReadCoordinator`/`FocusResolutionService` graph built in the
-    /// `RelayRuntime.makeProduction()` graph. Exposed read-only for compact diagnostics
-    /// (`agentSessionSummaries()`) — never for response text or live focus resolution.
-    @ObservationIgnored private let sessionRegistry: AgentSessionRegistry
-    /// Shared focus-resolution service consulted by `replayLast()` to find a confidently-focused
-    /// agent session. The SAME instance shared with the production `AgentAutoReadCoordinator`
-    /// graph built by `RelayRuntime.makeProduction()` — never a second instance.
-    @ObservationIgnored private let focusResolution: any SessionFocusResolving
-    /// Shared frontmost-application monitor consulted by `replayLast()`'s tier-2 check (does the
-    /// frontmost app host at least one agent session). The SAME instance shared with the
-    /// production dictation/auto-read graph built by `RelayRuntime.makeProduction()`.
-    @ObservationIgnored private let frontmostApps: any FrontmostAppMonitoring
-    /// Shared process inspector consulted by `replayLast()` to prune dead-process sessions from
-    /// `sessionRegistry` before resolving focus. The SAME instance shared with the production
-    /// `AgentAutoReadCoordinator`/resolver graph built by `RelayRuntime.makeProduction()`.
-    @ObservationIgnored private let processInspector: ProcessInspector
-    /// Shared in-memory diagnostics log for the integration pipeline (socket receive -> envelope
-    /// decode -> adapter decode -> registry upsert -> focus gate), independent of `os_log`. The
-    /// SAME instance is passed into `hookEnvelopeReceiver`, `integrationManager`, and the
-    /// production `AgentAutoReadCoordinator` so their entries interleave in one timeline. Exposed
-    /// read-only via `integrationDiagnosticsEntries()`/`clearIntegrationDiagnostics()` for the
-    /// Diagnostics window.
-    @ObservationIgnored private let integrationDiagnosticsLog: IntegrationDiagnosticsLog
-    /// Where `startIntegrations()` opens the hook socket. Always `integrationSocketPath` in
-    /// production; injectable so tests can use a temp path.
-    @ObservationIgnored let hookSocketPath: String
 
-    /// Builds the real production `AppModel` around `RelayRuntime`'s freshly constructed
-    /// dependency graph. `AppModel` itself never builds that graph — see `RelayRuntime
-    /// .makeProduction()` for where every subsystem in it is actually constructed.
-    convenience init(runtime: RelayRuntime) {
-        self.init(
-            settingsStore: runtime.settingsStore,
-            selectionReader: runtime.selectionReader,
-            preprocessor: runtime.preprocessor,
-            speechCoordinator: runtime.speechOut.speechCoordinator,
-            hotkeyManager: runtime.hotkeyManager,
-            loadedSettings: runtime.settings,
-            settingsState: runtime.settingsBox,
-            permissionService: runtime.permissionService,
-            diagnostics: runtime.diagnostics,
-            dictationCoordinator: runtime.speechIn.dictationCoordinator,
-            microphonePermissions: runtime.microphonePermissions,
-            privacySettingsOpener: runtime.privacySettingsOpener,
-            loginItemService: runtime.loginItemService,
-            overlayModel: runtime.speechOut.overlayModel,
-            overlayPresenter: runtime.speechOut.overlayPresenter,
-            sttRegistry: runtime.speechIn.sttRegistry,
-            speechModelManagers: runtime.speechIn.speechModelManagers,
-            ttsRegistry: runtime.speechOut.ttsRegistry,
-            ttsModelManagers: runtime.speechOut.ttsModelManagers,
-            hookEnvelopeReceiver: runtime.integrations.hookEnvelopeReceiver,
-            integrationManager: runtime.integrations.integrationManager,
-            claudeCodeInstaller: runtime.integrations.claudeCodeInstaller,
-            codexInstaller: runtime.integrations.codexInstaller,
-            helperInstaller: runtime.integrations.helperInstaller,
-            bundledHelperURL: runtime.integrations.bundledHelperURL,
-            sessionRegistry: runtime.sessions.registry,
-            focusResolution: runtime.sessions.focusResolution,
-            frontmostApps: runtime.sessions.frontmostApps,
-            processInspector: runtime.sessions.processInspector,
-            integrationDiagnosticsLog: runtime.integrationDiagnosticsLog
+    /// The only initializer. Production passes `RelayRuntime.makeProduction()`; tests pass
+    /// `RelayRuntime.testing(...)`. No defaults: every dependency comes from `runtime`.
+    init(runtime: RelayRuntime) {
+        self.runtime = runtime
+        modelController = SpeechModelController(
+            managers: Self.modelManagers(
+                dictation: runtime.speechIn.speechModelManagers,
+                textToSpeech: runtime.speechOut.ttsModelManagers
+            ),
+            diagnostics: runtime.diagnostics
         )
-        runtime.speechIn.dictationCoordinator?.setStatusHandler { [weak self] in self?.statusText = $0 }
-        // Postponed wiring (see `WhisperSelectionWriterBox`'s doc comment): `RelayRuntime
-        // .makeProduction()` builds `WhisperModelManager`'s selection writer before `AppModel`
-        // exists, so it starts as a no-op; re-point it at `setSelectedSpeechModel` now that
-        // `AppModel` -- the app's sole settings writer -- does exist.
+        voiceCatalog = SpeechVoiceCatalog()
+        permissionSnapshot = runtime.permissionService.snapshot()
+        microphonePermissionGranted = runtime.microphonePermissions.isGranted()
+        launchAtLoginEnabled = runtime.loginItemService.isEnabled
+        settings = runtime.settings
+        configureModelController()
+        registerHotkeys()
+        observeAppActivation()
+        bindOverlayPresenter()
+        // Remaining post-init wiring; removed in Task 3 when settings get their own owner.
         runtime.speechIn.whisperSelectionWriter.persist = { [weak self] modelID in
             self?.setSelectedSpeechModel(backendID: "whisper", modelID: modelID?.rawValue)
         }
-    }
-
-    init(
-        settingsStore: any SettingsStoring,
-        selectionReader: any SelectionReading,
-        preprocessor: RulesSpeechPreprocessor,
-        speechCoordinator: any SpeechCoordinating,
-        hotkeyManager: any HotkeyManaging,
-        permissionService: any GlobalPermissionAuthorizing = PermissionService(),
-        diagnostics: DiagnosticsRecorder = DiagnosticsRecorder(),
-        dictationCoordinator: (any DictationCoordinating)? = nil,
-        microphonePermissions: any MicrophonePermissionStatusProviding = SystemMicrophonePermissionStatusProvider(),
-        privacySettingsOpener: any PrivacySettingsOpening = SystemPrivacySettingsOpener(),
-        loginItemService: any LoginItemControlling = SystemLoginItemController(),
-        overlayModel: ActivityOverlayModel = ActivityOverlayModel(),
-        overlayPresenter: any ActivityOverlayPresenting = NoOpActivityOverlayPresenter(),
-        sttRegistry: [String: any SpeechToTextBackend] = [:],
-        speechModelManagers: [String: any SpeechModelManaging] = [:],
-        ttsRegistry: [String: any TextToSpeechBackend] = [:],
-        ttsModelManagers: [String: any SpeechModelManaging] = [:],
-        hookEnvelopeReceiver: HookEnvelopeReceiver = HookEnvelopeReceiver(),
-        integrationManager: IntegrationManager? = nil,
-        claudeCodeInstaller: ClaudeCodeInstaller = ClaudeCodeInstaller(),
-        codexInstaller: CodexInstaller = CodexInstaller(),
-        helperInstaller: HelperInstaller = HelperInstaller(),
-        bundledHelperURL: URL = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/RelayHook"),
-        sessionRegistry: AgentSessionRegistry = AgentSessionRegistry(),
-        focusResolution: any SessionFocusResolving = FocusResolutionService(
-            registry: AgentSessionRegistry(),
-            frontmostApps: FrontmostAppMonitor(),
-            resolvers: []
-        ),
-        frontmostApps: any FrontmostAppMonitoring = FrontmostAppMonitor(),
-        processInspector: ProcessInspector = ProcessInspector(),
-        integrationDiagnosticsLog: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog(),
-        hookSocketPath: String = AppModel.integrationSocketPath
-    ) {
-        let settings = settingsStore.load()
-        self.settingsStore = settingsStore
-        self.selectionReader = selectionReader
-        self.preprocessor = preprocessor
-        self.speechCoordinator = speechCoordinator
-        self.dictationCoordinator = dictationCoordinator
-        self.hotkeyManager = hotkeyManager
-        self.permissionService = permissionService
-        self.microphonePermissions = microphonePermissions
-        self.privacySettingsOpener = privacySettingsOpener
-        self.loginItemService = loginItemService
-        self.diagnostics = diagnostics
-        self.overlayModel = overlayModel
-        self.overlayPresenter = overlayPresenter
-        self.sttRegistry = sttRegistry
-        self.ttsRegistry = ttsRegistry
-        self.modelController = SpeechModelController(
-            managers: Self.modelManagers(dictation: speechModelManagers, textToSpeech: ttsModelManagers),
-            diagnostics: diagnostics
-        )
-        self.voiceCatalog = SpeechVoiceCatalog()
-        self.hookEnvelopeReceiver = hookEnvelopeReceiver
-        self.integrationManager = integrationManager ?? IntegrationManager(
-            events: hookEnvelopeReceiver.events,
-            integrations: [StopHookIntegration.claudeCode, StopHookIntegration.codex],
-            speechCoordinator: speechCoordinator,
-            diagnostics: integrationDiagnosticsLog
-        )
-        self.claudeCodeInstaller = claudeCodeInstaller
-        self.codexInstaller = codexInstaller
-        self.helperInstaller = helperInstaller
-        self.bundledHelperURL = bundledHelperURL
-        self.sessionRegistry = sessionRegistry
-        self.focusResolution = focusResolution
-        self.frontmostApps = frontmostApps
-        self.processInspector = processInspector
-        self.integrationDiagnosticsLog = integrationDiagnosticsLog
-        self.hookSocketPath = hookSocketPath
-        activationObserver = nil
-        dictationTask = nil
-        permissionSnapshot = permissionService.snapshot()
-        microphonePermissionGranted = microphonePermissions.isGranted()
-        launchAtLoginEnabled = loginItemService.isEnabled
-        self.settings = settings
-        let state = SettingsBox(settings)
-        settingsState = state
-        configureModelController()
-        registerHotkeys()
-        observeAppActivation()
-        bindOverlayPresenter()
-        initialSpeechBackendRefresh = Task { [weak self] in
-            await self?.refreshSpeechBackendStatuses()
-            await self?.modelController.refresh(domain: .dictation)
-        }
-        initialTTSBackendRefresh = Task { [weak self] in
-            await self?.refreshTTSBackendStatuses()
-            await self?.modelController.refresh(domain: .textToSpeech)
-        }
-    }
-
-    private init(
-        settingsStore: any SettingsStoring,
-        selectionReader: any SelectionReading,
-        preprocessor: RulesSpeechPreprocessor,
-        speechCoordinator: any SpeechCoordinating,
-        hotkeyManager: any HotkeyManaging,
-        loadedSettings: AppSettings,
-        settingsState: SettingsBox,
-        permissionService: any GlobalPermissionAuthorizing,
-        diagnostics: DiagnosticsRecorder,
-        dictationCoordinator: (any DictationCoordinating)?,
-        microphonePermissions: any MicrophonePermissionStatusProviding,
-        privacySettingsOpener: any PrivacySettingsOpening,
-        loginItemService: any LoginItemControlling = SystemLoginItemController(),
-        overlayModel: ActivityOverlayModel,
-        overlayPresenter: any ActivityOverlayPresenting,
-        sttRegistry: [String: any SpeechToTextBackend],
-        speechModelManagers: [String: any SpeechModelManaging],
-        ttsRegistry: [String: any TextToSpeechBackend],
-        ttsModelManagers: [String: any SpeechModelManaging],
-        hookEnvelopeReceiver: HookEnvelopeReceiver,
-        integrationManager: IntegrationManager,
-        claudeCodeInstaller: ClaudeCodeInstaller,
-        codexInstaller: CodexInstaller,
-        helperInstaller: HelperInstaller = HelperInstaller(),
-        bundledHelperURL: URL = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/RelayHook"),
-        sessionRegistry: AgentSessionRegistry,
-        focusResolution: any SessionFocusResolving,
-        frontmostApps: any FrontmostAppMonitoring,
-        processInspector: ProcessInspector,
-        integrationDiagnosticsLog: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog()
-    ) {
-        self.settingsStore = settingsStore
-        self.selectionReader = selectionReader
-        self.preprocessor = preprocessor
-        self.speechCoordinator = speechCoordinator
-        self.dictationCoordinator = dictationCoordinator
-        self.hotkeyManager = hotkeyManager
-        self.permissionService = permissionService
-        self.microphonePermissions = microphonePermissions
-        self.privacySettingsOpener = privacySettingsOpener
-        self.loginItemService = loginItemService
-        self.diagnostics = diagnostics
-        self.overlayModel = overlayModel
-        self.overlayPresenter = overlayPresenter
-        self.sttRegistry = sttRegistry
-        self.ttsRegistry = ttsRegistry
-        self.modelController = SpeechModelController(
-            managers: Self.modelManagers(dictation: speechModelManagers, textToSpeech: ttsModelManagers),
-            diagnostics: diagnostics
-        )
-        self.voiceCatalog = SpeechVoiceCatalog()
-        self.hookEnvelopeReceiver = hookEnvelopeReceiver
-        self.integrationManager = integrationManager
-        self.claudeCodeInstaller = claudeCodeInstaller
-        self.codexInstaller = codexInstaller
-        self.helperInstaller = helperInstaller
-        self.bundledHelperURL = bundledHelperURL
-        self.sessionRegistry = sessionRegistry
-        self.focusResolution = focusResolution
-        self.frontmostApps = frontmostApps
-        self.processInspector = processInspector
-        self.integrationDiagnosticsLog = integrationDiagnosticsLog
-        hookSocketPath = Self.integrationSocketPath
-        activationObserver = nil
-        dictationTask = nil
-        permissionSnapshot = permissionService.snapshot()
-        microphonePermissionGranted = microphonePermissions.isGranted()
-        launchAtLoginEnabled = loginItemService.isEnabled
-        settings = loadedSettings
-        self.settingsState = settingsState
-        configureModelController()
-        registerHotkeys()
-        observeAppActivation()
-        bindOverlayPresenter()
         initialSpeechBackendRefresh = Task { [weak self] in
             await self?.refreshSpeechBackendStatuses()
             await self?.modelController.refresh(domain: .dictation)
@@ -517,12 +305,8 @@ final class AppModel {
     }
 
     /// Persists a multi-model STT backend's currently-selected model id (e.g. Whisper's). Never
-    /// called directly by `SpeechBackendCatalog.swift`; `RelayRuntime.makeProduction()` wires
-    /// `WhisperSelectionWriterBox.persist` to this method right after constructing `AppModel`
-    /// (see `AppModel(runtime:)` below), so `WhisperModelManager.selectModel` -- which runs
-    /// before `AppModel` exists in `RelayRuntime.makeProduction()`'s own construction order --
-    /// still ultimately routes its persistence through `updateSettings`, `AppModel`'s sole write
-    /// path, instead of a production service writing `SettingsBox`/disk directly.
+    /// called directly by `SpeechBackendCatalog.swift`; reached from Whisper's model manager
+    /// through the writer wired in init.
     func setSelectedSpeechModel(backendID: String, modelID: String?) {
         updateSettings { $0.selectedSpeechModelByBackend[backendID] = modelID }
     }
@@ -830,7 +614,7 @@ final class AppModel {
     /// `Relay Debug/relay.sock` for Debug). `RelayHook` derives the same path from its own
     /// location — see `RelayPaths.socketPath(forHelperExecutablePath:)`.
     static var integrationSocketPath: String {
-        RelayPaths.socketPath()
+        IntegrationServices.productionSocketPath
     }
 
     /// Starts listening for local agent-hook envelopes on the fixed Relay socket path and begins

@@ -25,11 +25,9 @@ struct RelayApp: App {
     }
 }
 
-/// Owns the single production `AppModel` instance and drives its agent-integration socket
-/// lifecycle from real app-launch/termination events. Never used by tests: every test
-/// constructs its own `AppModel` directly and never calls `startIntegrations()`/
-/// `stopIntegrations()`, so no test ever opens a real socket or touches real `~/.claude`/
-/// `~/.codex` config.
+/// Owns the single production `AppModel`, which retains the `RelayRuntime` it is built from, and
+/// drives the agent-integration socket from real launch/termination events. Tests never use this
+/// type and never call `makeProduction()`.
 @MainActor
 final class RelayAppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel(runtime: .makeProduction())

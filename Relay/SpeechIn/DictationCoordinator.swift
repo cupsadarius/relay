@@ -46,7 +46,7 @@ final class DictationCoordinator: DictationCoordinating {
     private let stopSpeech: () -> Void
     private let activity: any DictationActivityPublishing
     private let diagnostics: DiagnosticsRecorder?
-    private var status: (String) -> Void
+    private let status: (String) -> Void
     private var state: State = .idle
     private var finishRequested = false
     private var processingTask: Task<Void, Never>?
@@ -103,9 +103,6 @@ final class DictationCoordinator: DictationCoordinating {
         self.diagnostics = diagnostics
         self.liveTranscriptionEnabled = liveTranscriptionEnabled
     }
-
-
-    func setStatusHandler(_ handler: @escaping (String) -> Void) { status = handler }
 
     func start() async {
         guard case .idle = state else { return }

@@ -65,13 +65,7 @@ final class AppModelHotkeySideEffectTests: XCTestCase {
     }
 
     private func makeModel(hotkeys: any HotkeyManaging) -> AppModel {
-        AppModel(
-            settingsStore: FakeSettingsStore(),
-            selectionReader: FakeSelectionReader(),
-            preprocessor: RulesSpeechPreprocessor(),
-            speechCoordinator: FakeSpeechCoordinator(),
-            hotkeyManager: hotkeys
-        )
+        AppModel(runtime: .testing(hotkeyManager: hotkeys))
     }
 }
 

@@ -38,14 +38,12 @@ struct SpeechOutputServices {
     let overlayPresenter: any ActivityOverlayPresenting
 }
 
-/// Speech-input services: the STT backend registry, its per-backend model managers (Parakeet,
-/// Whisper), and the dictation coordinator built around them. Kept as the CONCRETE
-/// `DictationCoordinator` type (rather than only `any DictationCoordinating`) since `AppModel`
-/// still needs to call `setStatusHandler` on it once `AppModel` itself exists.
+/// Speech-input services: the STT backend registry, its per-backend model managers, and the
+/// dictation coordinator built around them.
 struct SpeechInputServices {
     let sttRegistry: [String: any SpeechToTextBackend]
     let speechModelManagers: [String: any SpeechModelManaging]
-    let dictationCoordinator: DictationCoordinator?
+    let dictationCoordinator: (any DictationCoordinating)?
     /// The write half of Whisper's model-selection seam, exposed so `AppModel(runtime:)` can
     /// re-point it at `AppModel.setSelectedSpeechModel` once `AppModel` exists -- see
     /// `WhisperSelectionWriterBox`'s own doc comment for why this postponed-wiring step exists.
@@ -91,8 +89,8 @@ final class WhisperSelectionCache: @unchecked Sendable {
 /// `setSelectedModel` wraps) before `AppModel` -- the app's sole settings writer, via
 /// `updateSettings` (see `SettingsBox`'s own doc comment) -- exists to give that write a home.
 /// `AppModel(runtime:)` re-points `persist` at `AppModel.setSelectedSpeechModel` immediately after
-/// constructing `AppModel`, mirroring the same postponed-wiring pattern already used just below it
-/// for `DictationCoordinator.setStatusHandler`.
+/// constructing `AppModel` (`DictationCoordinator`'s status closure, by contrast, is wired once at
+/// construction time via the shared `StatusSink` and never re-pointed).
 ///
 /// `write(_:)` always updates `WhisperSelectionCache` synchronously first (so `WhisperBackend`/
 /// `WhisperModelManager` see the new selection immediately, from any actor, regardless of whether
@@ -118,22 +116,29 @@ final class WhisperSelectionWriterBox {
 /// dispatches hook events (wired to auto-read), the per-provider installers, and the bundled
 /// `RelayHook` helper installer/location.
 struct IntegrationServices {
+    /// Where `IntegrationSetupModel.start()` opens the hook socket. `productionSocketPath` in the
+    /// app; a short temp path in tests (`RelayRuntime.testing`), so tests never bind the real one.
+    let socketPath: String
     let hookEnvelopeReceiver: HookEnvelopeReceiver
     let integrationManager: IntegrationManager
     let claudeCodeInstaller: ClaudeCodeInstaller
     let codexInstaller: CodexInstaller
     let helperInstaller: HelperInstaller
     let bundledHelperURL: URL
+
+    /// This build's socket (`Relay/relay.sock` for Release, `Relay Debug/relay.sock` for Debug).
+    /// `RelayHook` derives the same path from its own location.
+    static var productionSocketPath: String { RelayPaths.socketPath() }
 }
 
-/// The composition root for Relay's production dependency graph. Constructs and OWNS every
-/// subsystem's lifetime; `AppModel` (built via `AppModel(runtime:)`) reads services off this
-/// instead of building them itself. Explicit initializer, no DI framework — see
-/// `makeProduction()` for the real production graph and `RelayApp` for where it's constructed.
-/// Never used by tests: every test constructs `AppModel` directly through its fakes-injecting
-/// initializer instead.
+/// The composition root for Relay's dependency graph. Constructs every subsystem; `AppModel`
+/// retains the runtime (`AppModel.runtime`) for its whole life, which is what keeps every service
+/// alive. Explicit initializer, no DI framework. Production uses `makeProduction()`; tests use
+/// `RelayRuntime.testing(...)` in `RelayTests/Support/RelayRuntime+Testing.swift` and never
+/// call `makeProduction()`.
 @MainActor
 final class RelayRuntime {
+    let status: StatusSink
     let settingsStore: any SettingsStoring
     let settings: AppSettings
     let settingsBox: SettingsBox
@@ -152,6 +157,7 @@ final class RelayRuntime {
     let preprocessor: RulesSpeechPreprocessor
 
     init(
+        status: StatusSink,
         settingsStore: any SettingsStoring,
         settings: AppSettings,
         settingsBox: SettingsBox,
@@ -169,6 +175,7 @@ final class RelayRuntime {
         selectionReader: any SelectionReading,
         preprocessor: RulesSpeechPreprocessor
     ) {
+        self.status = status
         self.settingsStore = settingsStore
         self.settings = settings
         self.settingsBox = settingsBox
@@ -187,31 +194,28 @@ final class RelayRuntime {
         self.preprocessor = preprocessor
     }
 
-    /// Builds Relay's real production dependency graph — exactly the graph `AppModel`'s
-    /// production initializer used to build inline before `RelayRuntime` existed (see git
-    /// history for `AppModel.swift` prior to Reliability Wave 3). Never call this from a test;
-    /// construct fakes and pass them directly to `AppModel`'s fakes-injecting initializer
-    /// instead.
+    /// Builds Relay's real production dependency graph. Touches UserDefaults, the CGEvent tap and
+    /// real backends — never call from tests.
     static func makeProduction() -> RelayRuntime {
+        let status = StatusSink()
         let diagnostics = DiagnosticsRecorder()
         let settingsStore = SettingsStore(diagnostics: diagnostics)
         let settings = settingsStore.load()
         let settingsBox = SettingsBox(settings)
         let overlayModel = ActivityOverlayModel()
 
-        let appleTTS = AppleTTSBackend()
-        let kokoroEngine: any KokoroEngine = FluidAudioKokoroEngine()
-        let kokoroTTS = KokoroTTSBackend(engine: kokoroEngine)
-        let kokoroModelManager = KokoroModelManager(engine: kokoroEngine)
-        let pocketEngine: any PocketTTSEngine = FluidAudioPocketTTSEngine()
-        let pocketTTS = PocketTTSBackend(engine: pocketEngine)
-        let pocketModelManager = PocketTTSModelManager(engine: pocketEngine)
+        let whisperSelectionCache = WhisperSelectionCache(
+            settings.selectedSpeechModelByBackend["whisper"].flatMap(WhisperModelID.init(rawValue:))
+        )
+        let whisperSelectionWriter = WhisperSelectionWriterBox(cache: whisperSelectionCache)
+        let graph = SpeechBackendGraph.make(
+            whisperSelection: { whisperSelectionCache.read() },
+            setWhisperSelection: { whisperSelectionWriter.write($0) }
+        )
+        let ttsRegistry = graph.ttsRegistry
+        let sttRegistry = graph.sttRegistry
+
         let ttsPlayer = StreamingAudioPlayer()
-        let ttsRegistry: [String: any TextToSpeechBackend] = [
-            appleTTS.id: appleTTS,
-            kokoroTTS.id: kokoroTTS,
-            pocketTTS.id: pocketTTS,
-        ]
         let router = TTSRouter(
             backends: ttsRegistry,
             backendOrder: { settingsBox.value.ttsBackendOrder },
@@ -229,49 +233,6 @@ final class RelayRuntime {
             },
             overlay: overlayModel
         )
-        let sttBackend = AppleSpeechBackend()
-        let appleSpeechModelManager = AppleSpeechModelManager()
-        let parakeetEngine: any ParakeetEngine = FluidAudioParakeetEngine()
-        let parakeetBackend = ParakeetBackend(engine: parakeetEngine)
-        let parakeetModelManager = ParakeetModelManager(engine: parakeetEngine)
-
-        // Whisper: registered (Task 11) but never enabled by default -- `sttBackendOrder`'s
-        // default stays `["apple-speech"]` (`AppSettings.defaults`); the user opts in and picks a
-        // model from Settings. See `WhisperSelectionCache`/`WhisperSelectionWriterBox`'s doc
-        // comments above for why selection is threaded through a lock-protected cache plus a
-        // postponed-wiring box rather than reading/writing `SettingsBox` directly.
-        // Models are shared by Debug and Release (see `RelayPaths.sharedModelsDirectory`).
-        let whisperCacheDirectory = RelayPaths.sharedModelsDirectory()
-            .appendingPathComponent("Whisper", isDirectory: true)
-        let whisperStore = WhisperModelStore(
-            cacheDirectory: whisperCacheDirectory,
-            downloader: HuggingFaceWhisperDownloader()
-        )
-        let whisperRuntime = WhisperRuntime(
-            engine: WhisperKitEngine(),
-            modelFolder: { whisperStore.modelDirectory(for: $0) }
-        )
-        let whisperSelectionCache = WhisperSelectionCache(
-            settings.selectedSpeechModelByBackend["whisper"].flatMap(WhisperModelID.init(rawValue:))
-        )
-        let whisperSelectionWriter = WhisperSelectionWriterBox(cache: whisperSelectionCache)
-        let whisperBackend = WhisperBackend(
-            store: whisperStore,
-            runtime: whisperRuntime,
-            selectedModel: { whisperSelectionCache.read() }
-        )
-        let whisperModelManager = WhisperModelManager(
-            store: whisperStore,
-            runtime: whisperRuntime,
-            selectedModel: { whisperSelectionCache.read() },
-            setSelectedModel: { whisperSelectionWriter.write($0) }
-        )
-
-        let sttRegistry: [String: any SpeechToTextBackend] = [
-            sttBackend.id: sttBackend,
-            parakeetBackend.id: parakeetBackend,
-            whisperBackend.id: whisperBackend,
-        ]
 
         // Phase 3 session-intelligence dependency graph. Every subsystem that needs frontmost-app
         // evidence shares these SAME instances rather than constructing its own, so they all
@@ -333,13 +294,13 @@ final class RelayRuntime {
                 backends: sttRegistry,
                 backendOrder: {
                     let configured = settingsBox.value.sttBackendOrder.filter { sttRegistry[$0] != nil }
-                    return configured.isEmpty ? [sttBackend.id] : configured
+                    return configured.isEmpty ? ["apple-speech"] : configured
                 }
             ),
             processor: RulesTranscriptProcessor(),
             textInserter: TextInsertionService(),
             stopSpeech: { coordinator.stop() },
-            status: { _ in },
+            status: { status.post($0) },
             activity: overlayModel,
             diagnostics: diagnostics,
             liveTranscriptionEnabled: { @MainActor in settingsBox.value.liveTranscriptionEnabled }
@@ -361,17 +322,8 @@ final class RelayRuntime {
             diagnostics: diagnostics,
             onAction: { [actionDispatcher] action in actionDispatcher.perform(action) }
         )
-        let speechModelManagers: [String: any SpeechModelManaging] = [
-            appleSpeechModelManager.backendID: appleSpeechModelManager,
-            parakeetModelManager.backendID: parakeetModelManager,
-            whisperModelManager.backendID: whisperModelManager,
-        ]
-        let ttsModelManagers: [String: any SpeechModelManaging] = [
-            kokoroModelManager.backendID: kokoroModelManager,
-            pocketModelManager.backendID: pocketModelManager,
-        ]
-
         return RelayRuntime(
+            status: status,
             settingsStore: settingsStore,
             settings: settings,
             settingsBox: settingsBox,
@@ -389,18 +341,19 @@ final class RelayRuntime {
             ),
             speechOut: SpeechOutputServices(
                 ttsRegistry: ttsRegistry,
-                ttsModelManagers: ttsModelManagers,
+                ttsModelManagers: graph.ttsModelManagers,
                 speechCoordinator: coordinator,
                 overlayModel: overlayModel,
                 overlayPresenter: overlayPresenter
             ),
             speechIn: SpeechInputServices(
                 sttRegistry: sttRegistry,
-                speechModelManagers: speechModelManagers,
+                speechModelManagers: graph.speechModelManagers,
                 dictationCoordinator: dictation,
                 whisperSelectionWriter: whisperSelectionWriter
             ),
             integrations: IntegrationServices(
+                socketPath: IntegrationServices.productionSocketPath,
                 hookEnvelopeReceiver: hookEnvelopeReceiver,
                 integrationManager: integrationManager,
                 claudeCodeInstaller: ClaudeCodeInstaller(),
