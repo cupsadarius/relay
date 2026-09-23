@@ -51,6 +51,11 @@ enum UnixLineRequest {
         guard fd >= 0 else { throw HerdrQueryError.socketFailure }
         defer { Darwin.close(fd) }
 
+        // Prevent SIGPIPE from killing Relay if herdr closes the connection mid-write; short/
+        // failed writes are handled via return values instead (as HookTransportClient does).
+        var noSigPipe: Int32 = 1
+        _ = Darwin.setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
+
         let connectDeadline = Date().addingTimeInterval(Double(timeoutMilliseconds) / 1_000)
         guard UnixSocketAddress.connect(fd, to: path, withDeadline: connectDeadline) else {
             throw HerdrQueryError.socketFailure

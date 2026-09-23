@@ -102,11 +102,11 @@ final class HookEnvelopeReceiver: @unchecked Sendable {
         }
 
         diagnostics.append(stage: "receiver", outcome: "envelope-decoded", detail: "provider=\(envelope.provider.rawValue)")
-        if case .dropped = continuation.yield(envelope) {
+        if case .dropped(let old) = continuation.yield(envelope) {
             diagnostics.append(
                 stage: "receiver",
                 outcome: "dropped",
-                detail: "event-buffer-full provider=\(envelope.provider.rawValue)"
+                detail: "event-buffer-full provider=\(old.provider.rawValue)"
             )
         }
     }

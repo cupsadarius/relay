@@ -226,4 +226,39 @@ final class HookEnvelopeReceiverTests: XCTestCase {
         XCTAssertTrue(Set(pids).isSubset(of: Set(Int32(1)...Int32(20))))
         XCTAssertEqual(diagnostics.snapshot().filter { $0.detail.hasPrefix("event-buffer-full") }.count, 4)
     }
+
+    /// `bufferingNewest(_:)` evicts the OLDEST buffered envelope to make room for a new one, so
+    /// the "dropped" diagnostics entry must name the EVICTED envelope's provider, never the
+    /// incoming one's.
+    func testDroppedDiagnosticsReportsTheEvictedEnvelopesProviderNotTheIncomingOnes() async throws {
+        let path = temporarySocketPath()
+        let diagnostics = IntegrationDiagnosticsLog()
+        let receiver = HookEnvelopeReceiver(diagnostics: diagnostics)
+        try receiver.start(path: path)
+
+        for pid in 1...HookEnvelopeReceiver.eventBufferLimit {
+            let line = #"{"schemaVersion":1,"provider":"codex","rawPayload":"{}","#
+                + #""parentPID":\#(pid),"environment":{},"capturedAt":1700000000}"# + "\n"
+            try await UnixSocketTestClient.send(line, to: path)
+        }
+        let fillDeadline = Date().addingTimeInterval(2)
+        while diagnostics.snapshot().filter({ $0.outcome == "envelope-decoded" }).count < HookEnvelopeReceiver.eventBufferLimit,
+              Date() < fillDeadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        let incoming = #"{"schemaVersion":1,"provider":"claude-code","rawPayload":"{}","parentPID":999,"environment":{},"capturedAt":1700000000}"#
+            + "\n"
+        try await UnixSocketTestClient.send(incoming, to: path)
+
+        let dropDeadline = Date().addingTimeInterval(2)
+        while diagnostics.snapshot().filter({ $0.detail.hasPrefix("event-buffer-full") }).isEmpty, Date() < dropDeadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        receiver.stop()
+
+        let dropped = diagnostics.snapshot().first { $0.detail.hasPrefix("event-buffer-full") }
+        XCTAssertEqual(dropped?.detail, "event-buffer-full provider=codex")
+    }
 }

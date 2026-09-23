@@ -277,6 +277,36 @@ final class AgentAutoReadCoordinatorTests: XCTestCase {
         let session = await harness.registry.sessions().first
         XCTAssertEqual(session?.processAncestry, [222])
     }
+
+    /// The agent process itself may have no tty (e.g. its stdio is piped); the tty must come from
+    /// the first ancestor UP the chain that has one, not just the agent's own snapshot record.
+    func testEnvelopeAncestryTtyComesFromTheFirstAncestorThatHasOne() async {
+        let runner = FixedProcessTableRunner(table: """
+        900 800 ?? agent
+        800 700 ttys002 zsh
+        700 1 ?? Ghostty
+        """)
+        let harness = makeCoordinatorHarness(
+            focus: MutableStubFocusResolver(), speech: RecordingSpeechSink(), autoRead: true,
+            processInspector: ProcessInspector(runner: runner)
+        )
+
+        await harness.coordinator.handle(makeAutoReadEvent(text: "done", parentPID: 900, processAncestry: [900, 800, 700]))
+
+        let session = await harness.registry.sessions().first
+        XCTAssertEqual(session?.tty, "ttys002")
+    }
+}
+
+/// Reports a fixed, caller-supplied `ps`-format process table, so tests can control exactly
+/// which pids have a tty and which don't (unlike `AlwaysAliveProcessRunner`/
+/// `MutableAliveProcessRunner`, which give every pid the same fixed tty).
+private final class FixedProcessTableRunner: ProcessRunning, @unchecked Sendable {
+    let table: String
+    init(table: String) { self.table = table }
+    func run(executable: URL, arguments: [String], timeout: TimeInterval, maxOutputBytes: Int) throws -> ProcessResult {
+        ProcessResult(stdout: Data(table.utf8), terminationStatus: 0)
+    }
 }
 
 private final class MutableStubFocusResolver: SessionFocusResolving, @unchecked Sendable {

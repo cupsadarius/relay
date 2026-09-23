@@ -17,10 +17,13 @@ struct AgentProcessContext: Sendable, Equatable {
 
     /// Prefers the ancestry `RelayHook` captured itself (exact, and still correct after a
     /// wrapper shell has exited); falls back to walking `event.parentPID` in `snapshot` for
-    /// envelopes from older helpers. The tty comes from the snapshot either way.
+    /// envelopes from older helpers. The tty comes from the snapshot either way: the agent
+    /// process itself may have no tty (e.g. its stdio is piped), so this takes the first
+    /// non-nil tty found walking UP the ancestry chain, not just the agent's own entry.
     static func resolve(for event: AgentResponseEvent, in snapshot: ProcessSnapshot?) -> AgentProcessContext {
-        if let ancestry = event.processAncestry, let agentPID = ancestry.first {
-            return AgentProcessContext(ancestry: ancestry, tty: snapshot?.record(pid: agentPID)?.tty)
+        if let ancestry = event.processAncestry, !ancestry.isEmpty {
+            let tty = ancestry.lazy.compactMap { snapshot?.record(pid: $0)?.tty }.first
+            return AgentProcessContext(ancestry: ancestry, tty: tty)
         }
         return capture(parentPID: event.parentPID, in: snapshot)
     }

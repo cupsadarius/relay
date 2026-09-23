@@ -1,3 +1,4 @@
+import Darwin
 import XCTest
 @testable import Relay
 
@@ -36,6 +37,29 @@ final class BoundedProcessRunnerTests: XCTestCase {
             try await runner.run(executable: URL(fileURLWithPath: "/bin/sleep"), arguments: ["30"], timeout: 0.3, maxOutputBytes: 1024)
         }
         XCTAssertLessThan(Date().timeIntervalSince(start), 5)
+    }
+
+    /// A child that traps SIGTERM would otherwise outlive `run(_:)`'s own timeout indefinitely.
+    /// `ChildProcess.terminate()` escalates to SIGKILL ~0.2s after SIGTERM if the process is
+    /// still alive, so this asserts the pid it wrote for itself is gone shortly afterward.
+    func testHardKillsAChildThatIgnoresSIGTERM() async throws {
+        let pidFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: pidFile) }
+
+        await expectError(.timedOut) {
+            try await runner.run(
+                executable: URL(fileURLWithPath: "/bin/sh"),
+                arguments: ["-c", "echo $$ > \(pidFile.path); trap '' TERM; sleep 30"],
+                timeout: 0.3, maxOutputBytes: 1024
+            )
+        }
+
+        // Grace period (0.2s) plus margin for the kernel to actually reap the process.
+        try await Task.sleep(nanoseconds: 700_000_000)
+
+        let pidText = try String(contentsOf: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let pid = try XCTUnwrap(pid_t(pidText))
+        XCTAssertNotEqual(kill(pid, 0), 0, "child that traps SIGTERM should have been force-killed with SIGKILL")
     }
 
     func testStderrFloodDoesNotDeadlock() async throws {

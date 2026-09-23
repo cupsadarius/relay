@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 struct ProcessResult: Sendable {
@@ -76,9 +77,26 @@ struct BoundedProcessRunner: ProcessRunning {
 /// Lets the `@Sendable` drain/timeout closures terminate the child without capturing `Process`
 /// itself across isolation domains.
 private final class ChildProcess: @unchecked Sendable {
+    /// Grace period after SIGTERM before escalating to SIGKILL. Long enough for a well-behaved
+    /// child to exit on its own; short enough that a child which traps/ignores SIGTERM (e.g.
+    /// `sh -c 'trap "" TERM; ...'`) doesn't outlive `run(_:)`'s caller by much.
+    private static let hardKillGracePeriod: TimeInterval = 0.2
+
     private let process: Process
     init(_ process: Process) { self.process = process }
-    func terminate() { process.terminate() }
+
+    /// Sends SIGTERM, then — without blocking the caller — escalates to SIGKILL if the process
+    /// is still alive after `hardKillGracePeriod`. A child that traps or ignores SIGTERM would
+    /// otherwise run to completion (or forever) after `run(_:)` has already thrown timedOut or
+    /// outputTooLarge to its caller.
+    func terminate() {
+        process.terminate()
+        let pid = process.processIdentifier
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + Self.hardKillGracePeriod) { [process] in
+            guard process.isRunning else { return }
+            Darwin.kill(pid, SIGKILL)
+        }
+    }
 }
 
 /// Resumes the run's continuation exactly once: with the result once BOTH stdout has hit EOF and

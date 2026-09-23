@@ -14,7 +14,7 @@ enum ProcessAncestry {
     }
 
     /// Hard bound on hops, so a corrupt or cyclic table can never spin.
-    static let maxDepth = 16
+    static let maxDepth = 32
 
     /// Shell basenames treated as transient hook wrappers when they sit at the FRONT of the
     /// chain (below the agent). A login shell above the agent is never trimmed, because trimming
