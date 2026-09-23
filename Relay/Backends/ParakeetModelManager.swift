@@ -31,7 +31,7 @@ struct ParakeetModelManager: SpeechModelManaging {
 
     private let engine: any ParakeetEngine
 
-    init(engine: any ParakeetEngine = FluidAudioParakeetEngine()) {
+    init(engine: any ParakeetEngine) {
         self.engine = engine
     }
 

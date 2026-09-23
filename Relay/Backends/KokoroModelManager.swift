@@ -12,7 +12,7 @@ struct KokoroModelManager: SpeechModelManaging {
 
     private let engine: any KokoroEngine
 
-    init(engine: any KokoroEngine = FluidAudioKokoroEngine()) {
+    init(engine: any KokoroEngine) {
         self.engine = engine
     }
 

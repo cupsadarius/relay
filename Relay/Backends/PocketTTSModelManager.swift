@@ -11,7 +11,7 @@ struct PocketTTSModelManager: SpeechModelManaging {
 
     private let engine: any PocketTTSEngine
 
-    init(engine: any PocketTTSEngine = FluidAudioPocketTTSEngine()) {
+    init(engine: any PocketTTSEngine) {
         self.engine = engine
     }
 
