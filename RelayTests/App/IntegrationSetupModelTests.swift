@@ -547,9 +547,10 @@ final class IntegrationSetupModelTests: XCTestCase {
     //
     // NOTE: these validate the onResponse -> coordinator wiring SHAPE via this harness, not the
     // production `RelayRuntime.makeProduction()`'s real resolver graph (Herdr/tmux/generic-terminal order,
-    // shared frontmost/recent-interaction instances) — that graph is verified by inspection only;
-    // `testAllSettingsTabViewsConstruct`/`testRealAppModelRegistersAKokoroDownloaderButNoAppleDownloader`
-    // separately confirm it constructs without crashing or touching a socket.
+    // shared frontmost/recent-interaction instances) — that graph is verified by inspection only.
+    // `SpeechBackendGraphTests` separately pins the concrete speech backend/manager types
+    // `makeProduction()` wires; nothing constructs `makeProduction()` itself in tests, since doing
+    // so would touch UserDefaults, the event tap, and the hook socket.
 
     func testOnResponseWiringSpeaksOnceWhenFocusedHighAndAutoReadEnabled() async {
         let harness = makeAutoReadWiringHarness(
