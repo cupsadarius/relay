@@ -236,10 +236,52 @@ final class FluidAudioPocketTTSEngineTests: XCTestCase {
         present = await loader.modelsArePresent()
         XCTAssertTrue(present)
     }
+
+    func testFrameStreamAdapterPullsUpstreamOnlyAsTheConsumerAsks() async throws {
+        let pulls = PullCounter()
+        let upstream = AsyncThrowingStream<Int, Error>(unfolding: {
+            let pull = await pulls.increment()
+            return pull <= 5 ? pull : nil
+        })
+        let mapped = PocketTTSFrameStream.samples(from: upstream) { [Float($0)] }
+
+        var iterator = mapped.makeAsyncIterator()
+        let first = try await iterator.next()
+        for _ in 0..<50 { await Task.yield() }
+
+        XCTAssertEqual(first, [1])
+        let pulled = await pulls.value
+        XCTAssertEqual(pulled, 1, "the adapter must not drain FluidAudio's stream ahead of the consumer")
+    }
+
+    func testFrameStreamAdapterForwardsElementsThenUpstreamErrors() async {
+        let upstream = AsyncThrowingStream<Int, Error> { continuation in
+            continuation.yield(7)
+            continuation.finish(throwing: FakeLoaderError.boom)
+        }
+        let mapped = PocketTTSFrameStream.samples(from: upstream) { [Float($0)] }
+
+        var received: [[Float]] = []
+        do {
+            for try await samples in mapped { received.append(samples) }
+            XCTFail("Expected the upstream error")
+        } catch {
+            XCTAssertEqual(error as? FakeLoaderError, .boom)
+        }
+        XCTAssertEqual(received, [[7]])
+    }
 }
 
 private enum FakeLoaderError: Error, Equatable {
     case boom
+}
+
+private actor PullCounter {
+    private(set) var value = 0
+    func increment() -> Int {
+        value += 1
+        return value
+    }
 }
 
 private final class ProgressBox: @unchecked Sendable {

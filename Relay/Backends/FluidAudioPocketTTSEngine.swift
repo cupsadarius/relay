@@ -204,29 +204,48 @@ struct FluidAudioPocketTTSModelLoader: PocketTTSModelLoading {
     }
 }
 
+/// Adapts FluidAudio's PocketTTS frame stream to raw sample arrays without an intermediate buffer
+/// or task: each pull on the returned stream pulls exactly one upstream element. FluidAudio's
+/// generator still runs ahead into its own unbounded buffer (its `makeStream` yields from an eager
+/// task and `yield` never suspends), so this cannot throttle synthesis itself. It removes Relay's
+/// second copy and forwarding task; the bounded `TTSAudioPipe` downstream bounds what Relay holds.
+enum PocketTTSFrameStream {
+    static func samples<Element>(
+        from upstream: AsyncThrowingStream<Element, Error>,
+        transform: @escaping @Sendable (Element) -> [Float]
+    ) -> AsyncThrowingStream<[Float], Error> {
+        let iterator = IteratorBox(upstream.makeAsyncIterator())
+        return AsyncThrowingStream(unfolding: {
+            guard let element = try await iterator.next() else { return nil }
+            return transform(element)
+        })
+    }
+
+    /// The upstream iterator is not `Sendable`. `AsyncThrowingStream(unfolding:)` calls its
+    /// closure serially from the single consumer, so the box is never accessed concurrently.
+    private final class IteratorBox<Element>: @unchecked Sendable {
+        private var iterator: AsyncThrowingStream<Element, Error>.Iterator
+
+        init(_ iterator: AsyncThrowingStream<Element, Error>.Iterator) {
+            self.iterator = iterator
+        }
+
+        func next() async throws -> Element? {
+            try await iterator.next()
+        }
+    }
+}
+
 /// Wraps FluidAudio's `PocketTtsManager`, an `actor`, so concurrent calls into it are serialized
 /// by Swift itself.
 private struct PocketTtsManagerSession: PocketTTSModelSession {
     let manager: PocketTtsManager
 
-    /// Adapts FluidAudio's `AsyncThrowingStream<PocketTtsSynthesizer.AudioFrame, Error>` (each
-    /// frame carrying 1920 Float32 samples plus chunk/frame bookkeeping this layer doesn't need)
-    /// down to a plain `AsyncThrowingStream<[Float], Error>` of raw samples, forwarding elements
-    /// and the terminal error or finish exactly as FluidAudio produces them.
+    /// Adapts FluidAudio's `AudioFrame` stream down to raw samples, pulling lazily (see
+    /// `PocketTTSFrameStream`). Cancelling the consumer drops the upstream iterator, which ends
+    /// FluidAudio's stream and cancels its generator task.
     func synthesizeStream(text: String, voice: String) async throws -> AsyncThrowingStream<[Float], Error> {
         let frames = try await manager.synthesizeStreaming(text: text, voice: voice)
-        return AsyncThrowingStream { continuation in
-            let forwardingTask = Task {
-                do {
-                    for try await frame in frames {
-                        continuation.yield(frame.samples)
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-            continuation.onTermination = { _ in forwardingTask.cancel() }
-        }
+        return PocketTTSFrameStream.samples(from: frames) { $0.samples }
     }
 }
