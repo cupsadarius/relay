@@ -52,5 +52,8 @@ private actor FakeManagerKokoroEngine: KokoroEngine {
         if allowDownload { downloadCount += 1; present = true; progress(1) }
         else { localCount += 1 }
     }
-    func synthesize(text: String, voice: String, speed: Float) async throws -> Data { Data() }
+    func phonemes(for text: String) async throws -> String { text }
+    func synthesize(phonemes: String, voice: String, speed: Float) async throws -> KokoroPCM {
+        KokoroPCM(samples: [], sampleRate: 24_000)
+    }
 }

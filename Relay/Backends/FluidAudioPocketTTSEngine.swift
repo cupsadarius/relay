@@ -6,11 +6,9 @@ import os
 /// test seam, so `FluidAudioPocketTTSEngine`'s loading logic can be exercised against a fake
 /// without constructing real CoreML models.
 protocol PocketTTSModelSession: Sendable {
-    func synthesize(text: String, voice: String) async throws -> Data
-    /// Streams synthesized audio as raw Float32 frames instead of a complete WAV, so playback can
-    /// start before synthesis finishes. Each frame is 1920 samples (80ms) at
-    /// `PocketTtsConstants.audioSampleRate` (24kHz), matching FluidAudio's
-    /// `PocketTtsSynthesizer.AudioFrame`.
+    /// Streams synthesized audio as raw Float32 frames, so playback can start before synthesis
+    /// finishes. Each frame is 1920 samples (80ms) at `PocketTtsConstants.audioSampleRate`
+    /// (24kHz), matching FluidAudio's `PocketTtsSynthesizer.AudioFrame`.
     func synthesizeStream(text: String, voice: String) async throws -> AsyncThrowingStream<[Float], Error>
 }
 
@@ -32,10 +30,6 @@ protocol PocketTTSModelLoading: Sendable {
     func removeModels() async throws
 }
 
-extension PocketTTSModelLoading {
-    func removeModels() async throws { throw PocketTTSEngineError.loadFailed }
-}
-
 /// Errors surfaced by a `PocketTTSEngine` implementation. `PocketTTSBackend` maps these onto
 /// `SpeechBackendError` so the router can classify them the same way it classifies every other
 /// backend's failures. Deliberately carries no associated reason strings (unlike
@@ -52,9 +46,8 @@ enum PocketTTSEngineError: Error, Equatable, Sendable {
 
 /// The seam between `PocketTTSBackend` and the underlying PocketTTS runtime (FluidAudio in
 /// production, a fake in tests). Kept narrow and provider-neutral so `PocketTTSBackend` never
-/// touches FluidAudio types directly. Unlike `KokoroEngine`, PocketTTS has no speed parameter:
-/// `synthesize(text:voice:)` takes none, matching FluidAudio's
-/// `PocketTtsManager.synthesize(text:voice:)`, which has no `voiceSpeed` equivalent.
+/// touches FluidAudio types directly. Unlike `KokoroEngine`, PocketTTS has no speed parameter,
+/// matching FluidAudio's `PocketTtsManager.synthesizeStreaming(text:voice:)`.
 protocol PocketTTSEngine: Sendable {
     /// Whether the model files are already present on disk. Never triggers a download.
     func modelsArePresent() async -> Bool
@@ -65,12 +58,10 @@ protocol PocketTTSEngine: Sendable {
     /// download is in flight; it may be called from any queue.
     func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws
     func removeModels() async throws
-    /// Synthesizes `text` to a complete WAV (24 kHz mono). The engine must already be loaded.
-    func synthesize(text: String, voice: String) async throws -> Data
-    /// Streams synthesized audio as raw Float32 frames (24 kHz mono) instead of a complete WAV,
-    /// so a player can begin scheduling audio before synthesis finishes. The engine must already
-    /// be loaded - unlike `synthesize(text:voice:)`, callers are expected to call
-    /// `load(allowDownload:)` themselves first; this never triggers a load or download.
+    /// Streams synthesized audio as raw Float32 frames (24 kHz mono), so a player can begin
+    /// scheduling audio before synthesis finishes. The engine must already be loaded - callers
+    /// are expected to call `load(allowDownload:)` themselves first; this never triggers a load or
+    /// download.
     func synthesizeStream(text: String, voice: String) async throws -> AsyncThrowingStream<[Float], Error>
 }
 
@@ -78,10 +69,6 @@ extension PocketTTSEngine {
     /// Convenience overload for callers that don't need download progress.
     func load(allowDownload: Bool) async throws {
         try await load(allowDownload: allowDownload, progress: { _ in })
-    }
-
-    func removeModels() async throws {
-        throw PocketTTSEngineError.loadFailed
     }
 }
 
@@ -183,25 +170,10 @@ actor FluidAudioPocketTTSEngine: PocketTTSEngine {
         try await startLoad(allowDownload: allowDownload, progress: progress)
     }
 
-    func synthesize(text: String, voice: String) async throws -> Data {
-        guard let session else {
-            throw PocketTTSEngineError.synthesisFailed
-        }
-
-        do {
-            return try await session.synthesize(text: text, voice: voice)
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            throw PocketTTSEngineError.synthesisFailed
-        }
-    }
-
-    /// Unlike `synthesize(text:voice:)`, does not remap errors that occur while draining the
-    /// returned stream: a stream, once returned, is consumed outside of any `do`/`catch` this
-    /// method could wrap around it, so a source failure propagates to the caller as-is. The only
-    /// error this method itself throws is the same "not loaded" guard `synthesize(text:voice:)`
-    /// throws, before any session call is made.
+    /// Does not remap errors that occur while draining the returned stream: a stream, once
+    /// returned, is consumed outside of any `do`/`catch` this method could wrap around it, so a
+    /// source failure propagates to the caller as-is. The only error this method itself throws is
+    /// the "not loaded" guard (`PocketTTSEngineError.synthesisFailed`), before any session call.
     func synthesizeStream(text: String, voice: String) async throws -> AsyncThrowingStream<[Float], Error> {
         guard let session else {
             throw PocketTTSEngineError.synthesisFailed
@@ -349,16 +321,10 @@ struct FluidAudioPocketTTSModelLoader: PocketTTSModelLoading {
     }
 }
 
-/// Wraps FluidAudio's `PocketTtsManager`, which - unlike `KokoroTtsManager` - is already an
-/// `actor`, so concurrent calls into it are serialized by Swift itself without needing the extra
-/// acquire/release wrapping `KokoroTtsManagerSession` uses for Kokoro's plain, non-actor manager
-/// class.
+/// Wraps FluidAudio's `PocketTtsManager`, an `actor`, so concurrent calls into it are serialized
+/// by Swift itself.
 private struct PocketTtsManagerSession: PocketTTSModelSession {
     let manager: PocketTtsManager
-
-    func synthesize(text: String, voice: String) async throws -> Data {
-        try await manager.synthesize(text: text, voice: voice)
-    }
 
     /// Adapts FluidAudio's `AsyncThrowingStream<PocketTtsSynthesizer.AudioFrame, Error>` (each
     /// frame carrying 1920 Float32 samples plus chunk/frame bookkeeping this layer doesn't need)

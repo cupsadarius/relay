@@ -113,9 +113,7 @@ private actor FakeLongFormKokoroEngine: KokoroEngine {
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {}
 
-    func synthesize(text: String, voice: String, speed: Float) async throws -> Data {
-        Data()
-    }
+    func removeModels() async throws {}
 
     func phonemes(for text: String) async throws -> String { text }
 

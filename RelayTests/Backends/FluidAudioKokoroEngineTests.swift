@@ -19,7 +19,7 @@ final class FluidAudioKokoroEngineTests: XCTestCase {
         try await engine.removeModels()
 
         do {
-            _ = try await engine.synthesize(text: "hello", voice: "af_heart", speed: 1)
+            _ = try await engine.synthesize(phonemes: "hello", voice: "af_heart", speed: 1)
             XCTFail("Expected released session")
         } catch {
             XCTAssertEqual(error as? KokoroEngineError, .synthesisFailed)
@@ -75,22 +75,22 @@ final class FluidAudioKokoroEngineTests: XCTestCase {
         let engine = FluidAudioKokoroEngine(modelLoader: loader)
 
         try await engine.load(allowDownload: false)
-        let data = try await engine.synthesize(text: "hello", voice: "af_heart", speed: 1.0)
+        let pcm = try await engine.synthesize(phonemes: "hello", voice: "af_heart", speed: 1.0)
 
-        XCTAssertEqual(data, Data("hello".utf8))
+        XCTAssertEqual(pcm.samples.count, 5)
         let loadLocalCalls = await loader.loadLocalCallCount
         XCTAssertEqual(loadLocalCalls, 1)
         let downloadCalls = await loader.downloadCallCount
         XCTAssertEqual(downloadCalls, 0)
     }
 
-    func testSynthesizeForwardsTextVoiceAndSpeedToTheLoadedSession() async throws {
+    func testSynthesizeForwardsPhonemesVoiceAndSpeedToTheLoadedSession() async throws {
         let loader = FakeKokoroModelLoader()
         await loader.setPresent(true)
         let engine = FluidAudioKokoroEngine(modelLoader: loader)
         try await engine.load(allowDownload: false)
 
-        _ = try await engine.synthesize(text: "hello world", voice: "am_adam", speed: 1.5)
+        _ = try await engine.synthesize(phonemes: "hello world", voice: "am_adam", speed: 1.5)
 
         let received = await loader.lastSessionReceivedArgs()
         XCTAssertEqual(received?.0, "hello world")
@@ -103,7 +103,7 @@ final class FluidAudioKokoroEngineTests: XCTestCase {
         let engine = FluidAudioKokoroEngine(modelLoader: loader)
 
         do {
-            _ = try await engine.synthesize(text: "hi", voice: "af_heart", speed: 1.0)
+            _ = try await engine.synthesize(phonemes: "hi", voice: "af_heart", speed: 1.0)
             XCTFail("Expected synthesisFailed")
         } catch {
             XCTAssertEqual(error as? KokoroEngineError, .synthesisFailed)
@@ -118,7 +118,7 @@ final class FluidAudioKokoroEngineTests: XCTestCase {
         await loader.setLastSessionSynthesizeError(KokoroAneError.phonemeSequenceTooLong(600))
 
         do {
-            _ = try await engine.synthesize(text: String(repeating: "word ", count: 200), voice: "af_heart", speed: 1.0)
+            _ = try await engine.synthesize(phonemes: String(repeating: "a", count: 600), voice: "af_heart", speed: 1.0)
             XCTFail("Expected textTooLong")
         } catch {
             XCTAssertEqual(error as? KokoroEngineError, .textTooLong)
@@ -181,8 +181,8 @@ final class FluidAudioKokoroEngineTests: XCTestCase {
         await loader.setLoadError(nil)
         try await engine.load(allowDownload: false)
 
-        let data = try await engine.synthesize(text: "hi", voice: "af_heart", speed: 1.0)
-        XCTAssertEqual(data, Data("hi".utf8))
+        let pcm = try await engine.synthesize(phonemes: "hi", voice: "af_heart", speed: 1.0)
+        XCTAssertEqual(pcm.samples.count, 2)
         let presentCalls = await loader.modelsArePresentCallCount
         XCTAssertEqual(presentCalls, 2, "A failed load must not cache a positive presence result, so the retry re-checks it")
         let loadLocalCalls = await loader.loadLocalCallCount
@@ -376,12 +376,14 @@ private actor FakeKokoroSession: KokoroModelSession {
         synthesizeError = error
     }
 
-    func synthesize(text: String, voice: String, speed: Float) async throws -> Data {
-        received = (text, voice, speed)
+    func phonemes(for text: String) async throws -> String { text }
+
+    func synthesize(phonemes: String, voice: String, speed: Float) async throws -> KokoroPCM {
+        received = (phonemes, voice, speed)
         if let synthesizeError {
             throw synthesizeError
         }
-        return Data(text.utf8)
+        return KokoroPCM(samples: Array(repeating: 0, count: phonemes.count), sampleRate: 24_000)
     }
 }
 

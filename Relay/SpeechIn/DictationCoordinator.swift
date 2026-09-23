@@ -8,7 +8,7 @@ protocol DictationActivityPublishing: AnyObject {
     func begin(sessionID: UUID)
     func listen(sessionID: UUID, startedAt: Date)
     func updateLevel(_ level: Float, sessionID: UUID)
-    /// SPIKE: live, best-effort transcription text (see StreamingTranscriber). Display-only.
+    /// Live, best-effort transcription text (see StreamingTranscriber). Display-only.
     func updateInterimText(_ text: String, sessionID: UUID)
     func setBackendName(_ name: String, sessionID: UUID)
     func process(sessionID: UUID)
@@ -58,7 +58,7 @@ final class DictationCoordinator: DictationCoordinating {
     /// The STT backend display name announced to the overlay when listening began, so a later
     /// fallback to a different backend during transcription can be detected and re-announced.
     private var announcedBackendName: String?
-    /// SPIKE: live, best-effort interim transcription for the pill (see StreamingTranscriber).
+    /// Live, best-effort interim transcription for the pill (see StreamingTranscriber).
     /// Created fresh per session in `start()`, torn down in `stopStreamingTranscription()` (joining
     /// teardown: cancel/start's failure path) or `abandonStreamingTranscription()` (non-joining
     /// teardown: `finish()`, which must never wait on it).
@@ -110,7 +110,7 @@ final class DictationCoordinator: DictationCoordinating {
         state = .starting(session)
         activity.begin(sessionID: session)
         stopSpeech()
-        // SPIKE: must be wired up before microphone.start(onLevel:) below - see
+        // Must be wired up before microphone.start(onLevel:) below - see
         // MicrophoneSampleStreaming doc comment for why. Best-effort: if microphone does not
         // implement the (optional) sample-streaming capability, dictation proceeds exactly as
         // before, just without a live interim transcript.
@@ -225,7 +225,7 @@ final class DictationCoordinator: DictationCoordinating {
         return false
     }
 
-    /// SPIKE: creates a fresh `StreamingTranscriber` for this session, wires it up as the
+    /// Creates a fresh `StreamingTranscriber` for this session, wires it up as the
     /// microphone's sample observer (if the concrete `microphone` supports the optional
     /// `MicrophoneSampleStreaming` capability), and starts its periodic re-transcribe loop. Must
     /// run before `microphone.start(onLevel:)` — see that protocol's doc comment.
@@ -264,7 +264,7 @@ final class DictationCoordinator: DictationCoordinating {
         await transcriber.start()
     }
 
-    /// SPIKE: tears down this session's `StreamingTranscriber` (if any) and detaches it from the
+    /// Tears down this session's `StreamingTranscriber` (if any) and detaches it from the
     /// microphone's sample observer, so a stale observer never forwards a later session's samples
     /// to an actor nobody is reading interim text from anymore.
     ///
@@ -286,7 +286,7 @@ final class DictationCoordinator: DictationCoordinating {
         await transcriber.stop()
     }
 
-    /// SPIKE: `finish()`'s non-joining counterpart to `stopStreamingTranscription()` above. Detaches
+    /// `finish()`'s non-joining counterpart to `stopStreamingTranscription()` above. Detaches
     /// this session's `StreamingTranscriber` from the coordinator and lets it tear itself down in
     /// the background, WITHOUT awaiting any of it -- so this method itself never suspends, and
     /// `finish()` can proceed straight to building the final-transcription pipeline immediately.

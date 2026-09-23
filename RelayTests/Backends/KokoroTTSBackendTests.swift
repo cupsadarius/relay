@@ -267,11 +267,7 @@ private final class FakeKokoroEngine: KokoroEngine {
         isLoaded = true
     }
 
-    /// Legacy whole-utterance path, unused by the source-producing backend but still part of the
-    /// `KokoroEngine` protocol.
-    func synthesize(text: String, voice: String, speed: Float) async throws -> Data {
-        Data()
-    }
+    func removeModels() async throws {}
 
     func phonemes(for text: String) async throws -> String {
         phonemeTextCalls.append(text)

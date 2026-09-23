@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-// SPIKE: best-effort live interim transcription for the dictation pill, layered on top of the
+// Best-effort live interim transcription for the dictation pill, layered on top of the
 // existing batch sttRouter.transcribe path -- it never replaces it. Interim text is
 // display-only; the authoritative transcript that actually gets inserted always comes from a
 // separate, later call to that same batch path once the user stops speaking.
@@ -31,7 +31,7 @@ import os
 // independent and stateless (AsrManager's plain batch transcribe resets decoder state per call,
 // unlike the streaming-chunk API above), so there is no persisted-state invariant to violate, and
 // quality is the same as the final result would be for that much audio -- the interim text
-// degrades gracefully to "slightly stale" rather than "wrong in a new way" each second. The
+// degrades gracefully to "slightly stale" rather than "wrong in a new way" each tick. The
 // trade-off is CPU: re-transcribing a growing buffer from scratch every tick is roughly quadratic
 // over the length of an utterance, so the buffer used for the interim snapshot is capped to the
 // most recent maxWindowSamples (about 15s) -- for anything shorter than that the window is
@@ -46,7 +46,7 @@ actor StreamingTranscriber {
     static let defaultTickInterval: Duration = .milliseconds(450)
 
     private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "streaming-transcriber")
-    // How often the tick loop re-transcribes. Injectable (default about 1s) so tests can drive a
+    // How often the tick loop re-transcribes. Injectable (default 450ms) so tests can drive a
     // fast loop instead of waiting on real wall-clock time.
     private let tickInterval: Duration
     // Caps the interim snapshot to the most recent window of audio (16 kHz mono Float, default
@@ -77,7 +77,7 @@ actor StreamingTranscriber {
         self.onInterimText = onInterimText
     }
 
-    // Starts a fresh interim session: clears any leftover state and begins the about-1s tick
+    // Starts a fresh interim session: clears any leftover state and begins the 450ms tick
     // loop. Cheap and synchronous aside from the actor hop -- there is no model loading here
     // anymore, so (unlike the previous per-chunk version) there is no window where early samples
     // are lost while something loads in the background.

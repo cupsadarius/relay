@@ -11,7 +11,7 @@ protocol MicrophoneCapturing: Sendable {
     func cancel() async
 }
 
-/// SPIKE: an optional extra capability a `MicrophoneCapturing` implementation can provide — a tap
+/// An optional extra capability a `MicrophoneCapturing` implementation can provide — a tap
 /// on the same raw 16 kHz mono sample batches `MicrophoneCapture` already accumulates internally,
 /// for best-effort live features (e.g. interim transcription) layered on top of dictation without
 /// disturbing the existing accumulate+level path. Deliberately separate from `MicrophoneCapturing`
@@ -91,7 +91,7 @@ actor MicrophoneCapture: MicrophoneCapturing, MicrophoneSampleStreaming {
     private let source: any AudioCaptureSourcing
     private let accumulator = AudioSampleAccumulator()
     private var state: State = .idle
-    /// SPIKE (`MicrophoneSampleStreaming`): set by `setSampleObserver` before recording starts;
+    /// MicrophoneSampleStreaming: set by `setSampleObserver` before recording starts;
     /// read once into a local at the top of `start(onLevel:)` and captured by that call's own
     /// sample-batch closure, so a later `setSampleObserver` call mid-recording never changes who
     /// an already-running session's samples are forwarded to.
@@ -257,7 +257,7 @@ actor MicrophoneCapture: MicrophoneCapturing, MicrophoneSampleStreaming {
         for waiter in waiters { waiter.resume() }
     }
 
-    // SPIKE (MicrophoneSampleStreaming conformance): see sampleObserver doc comment for the
+    // MicrophoneSampleStreaming conformance: see sampleObserver doc comment for the
     // ordering guarantee this relies on.
     func setSampleObserver(_ observer: (@Sendable ([Float]) -> Void)?) async {
         sampleObserver = observer

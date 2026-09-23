@@ -18,7 +18,7 @@ final class FluidAudioPocketTTSEngineTests: XCTestCase {
         try await engine.removeModels()
 
         do {
-            _ = try await engine.synthesize(text: "hello", voice: "alba")
+            _ = try await engine.synthesizeStream(text: "hello", voice: "alba")
             XCTFail("Expected released session")
         } catch {
             XCTAssertEqual(error as? PocketTTSEngineError, .synthesisFailed)
@@ -74,9 +74,11 @@ final class FluidAudioPocketTTSEngineTests: XCTestCase {
         let engine = FluidAudioPocketTTSEngine(modelLoader: loader)
 
         try await engine.load(allowDownload: false)
-        let data = try await engine.synthesize(text: "hello", voice: "alba")
-
-        XCTAssertEqual(data, Data("hello".utf8))
+        let stream = try await engine.synthesizeStream(text: "hello", voice: "alba")
+        var frames: [[Float]] = []
+        for try await frame in stream { frames.append(frame) }
+        let expected = await loader.lastSessionStreamFrames()
+        XCTAssertEqual(frames, expected)
         let loadLocalCalls = await loader.loadLocalCallCount
         XCTAssertEqual(loadLocalCalls, 1)
         let downloadCalls = await loader.downloadCallCount
@@ -89,23 +91,11 @@ final class FluidAudioPocketTTSEngineTests: XCTestCase {
         let engine = FluidAudioPocketTTSEngine(modelLoader: loader)
         try await engine.load(allowDownload: false)
 
-        _ = try await engine.synthesize(text: "hello world", voice: "alba")
+        _ = try await engine.synthesizeStream(text: "hello world", voice: "alba")
 
         let received = await loader.lastSessionReceivedArgs()
         XCTAssertEqual(received?.0, "hello world")
         XCTAssertEqual(received?.1, "alba")
-    }
-
-    func testSynthesizeBeforeLoadThrowsSynthesisFailed() async {
-        let loader = FakePocketTTSModelLoader()
-        let engine = FluidAudioPocketTTSEngine(modelLoader: loader)
-
-        do {
-            _ = try await engine.synthesize(text: "hi", voice: "alba")
-            XCTFail("Expected synthesisFailed")
-        } catch {
-            XCTAssertEqual(error as? PocketTTSEngineError, .synthesisFailed)
-        }
     }
 
     func testSynthesizeStreamBeforeLoadThrowsSynthesisFailed() async {
@@ -151,8 +141,7 @@ final class FluidAudioPocketTTSEngineTests: XCTestCase {
             for try await _ in stream {}
             XCTFail("Expected the stream to throw")
         } catch {
-            // The engine forwards the source's stream error as-is rather than remapping it, so
-            // the router-facing `synthesize(text:voice:)` remains the only error-mapping seam.
+            // The engine forwards the source's stream error as-is rather than remapping it.
             XCTAssertEqual(error as? FakeLoaderError, .boom)
         }
     }
@@ -213,8 +202,7 @@ final class FluidAudioPocketTTSEngineTests: XCTestCase {
         await loader.setLoadError(nil)
         try await engine.load(allowDownload: false)
 
-        let data = try await engine.synthesize(text: "hi", voice: "alba")
-        XCTAssertEqual(data, Data("hi".utf8))
+        _ = try await engine.synthesizeStream(text: "hi", voice: "alba")
         let presentCalls = await loader.modelsArePresentCallCount
         XCTAssertEqual(presentCalls, 2, "A failed load must not cache a positive presence result, so the retry re-checks it")
         let loadLocalCalls = await loader.loadLocalCallCount
@@ -318,11 +306,6 @@ private actor FakePocketTTSSession: PocketTTSModelSession {
 
     init(text: String) {
         self.text = text
-    }
-
-    func synthesize(text: String, voice: String) async throws -> Data {
-        received = (text, voice)
-        return Data(text.utf8)
     }
 
     func synthesizeStream(text: String, voice: String) async throws -> AsyncThrowingStream<[Float], Error> {

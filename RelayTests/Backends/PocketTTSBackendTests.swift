@@ -254,15 +254,7 @@ private final class FakePocketTTSEngine: PocketTTSEngine {
         isLoaded = true
     }
 
-    /// Unused by `PocketTTSBackend` since it moved to the streaming path, but still part of the
-    /// `PocketTTSEngine` protocol.
-    func synthesize(text: String, voice: String) async throws -> Data {
-        synthesizeCalls.append((text, voice))
-        if let synthesizeError {
-            throw synthesizeError
-        }
-        return Data()
-    }
+    func removeModels() async throws {}
 
     func synthesizeStream(text: String, voice: String) async throws -> AsyncThrowingStream<[Float], Error> {
         synthesizeCalls.append((text, voice))

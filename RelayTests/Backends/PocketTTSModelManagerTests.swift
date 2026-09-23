@@ -46,7 +46,6 @@ private actor FakeManagerPocketEngine: PocketTTSEngine {
         if allowDownload { downloadCount += 1; present = true; progress(1) }
         else { localCount += 1 }
     }
-    func synthesize(text: String, voice: String) async throws -> Data { Data() }
     func synthesizeStream(text: String, voice: String) async throws -> AsyncThrowingStream<[Float], Error> {
         AsyncThrowingStream { $0.finish() }
     }

@@ -107,7 +107,7 @@ final class ActivityOverlayModel {
                 sessionID: sessionID, startedAt: startedAt, level: min(max(level, 0), 1), interimText: interimText))
     }
 
-    /// SPIKE: pushes a live, best-effort transcription update (see StreamingTranscriber) into the
+    /// Pushes a live, best-effort transcription update (see StreamingTranscriber) into the
     /// pill while still listening. A no-op once the session has moved past listening (e.g. into
     /// processing) so a late update racing the stop of dictation cannot resurrect stale text.
     func updateInterimText(_ text: String, sessionID: UUID) {
