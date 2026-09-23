@@ -140,6 +140,75 @@ final class AppleTTSAudioSourceTests: XCTestCase {
         XCTAssertTrue(source is AppleTTSAudioSource)
     }
 
+    func testCallbackNeverBlocksEvenWithFarMoreAudioThanTheHighWatermark() async throws {
+        let synth = FakeWriteSynthesizer()
+        let source = AppleTTSAudioSource(
+            text: "hi",
+            rate: 0.5,
+            voiceIdentifier: nil,
+            synthesizer: synth,
+            converter: ScriptedConverter(),
+            highWatermark: 0.1,
+            lowWatermark: 0.05
+        )
+
+        let pull = Task { try await source.next() }
+        try await waitUntil { synth.hasCallback }
+        let callback = UncheckedBufferCallback(try XCTUnwrap(synth.callbackForTesting))
+        let allReturned = expectation(description: "every Apple callback returned without blocking")
+
+        // 64 x 100 ms = 6.4 s of audio against a 0.1 s high watermark, fired from a background
+        // thread the way Apple does. The old count-based bridge blocked here after 8 buffers.
+        DispatchQueue.global().async {
+            for _ in 0..<64 {
+                callback.call(Self.backgroundBuffer(frames: 2_400))
+            }
+            callback.call(Self.backgroundBuffer(frames: 0))
+            allReturned.fulfill()
+        }
+        await fulfillment(of: [allReturned], timeout: 2)
+
+        _ = try await pull.value
+        var frames = 1
+        while try await source.next() != nil { frames += 1 }
+        XCTAssertEqual(frames, 64)
+    }
+
+    func testCancelBeforeTheFirstNextNeverStartsSynthesis() async {
+        let synth = FakeWriteSynthesizer()
+        let source = AppleTTSAudioSource(
+            text: "hi",
+            rate: 0.5,
+            voiceIdentifier: nil,
+            synthesizer: synth,
+            converter: ScriptedConverter()
+        )
+
+        await source.cancel()
+
+        do {
+            _ = try await source.next()
+            XCTFail("A source cancelled before its first pull must not produce audio")
+        } catch is CancellationError {
+            // expected
+        } catch {
+            XCTFail("Unexpected \(error)")
+        }
+        XCTAssertTrue(synth.writtenUtterances.isEmpty, "cancel before next() must not start synthesis")
+    }
+
+    nonisolated private static func backgroundBuffer(frames: Int) -> AVAudioPCMBuffer {
+        let format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 24_000,
+            channels: 1,
+            interleaved: false
+        )!
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(max(frames, 1)))!
+        buffer.frameLength = AVAudioFrameCount(frames)
+        return buffer
+    }
+
     // MARK: - Helpers
 
     private func waitUntil(
@@ -171,6 +240,13 @@ final class AppleTTSAudioSourceTests: XCTestCase {
     }
 }
 
+/// Lets a test invoke Apple's buffer callback from a background thread, as Apple does.
+private final class UncheckedBufferCallback: @unchecked Sendable {
+    private let callback: AVSpeechSynthesizer.BufferCallback
+    init(_ callback: @escaping AVSpeechSynthesizer.BufferCallback) { self.callback = callback }
+    func call(_ buffer: AVAudioBuffer) { callback(buffer) }
+}
+
 private enum ConverterTestError: Error { case boom }
 
 private struct ScriptedConverter: AppleSpeechBufferConverting {
@@ -192,6 +268,7 @@ private final class FakeWriteSynthesizer: AppleSpeechSynthesizing {
     private var callback: AVSpeechSynthesizer.BufferCallback?
 
     var hasCallback: Bool { callback != nil }
+    var callbackForTesting: AVSpeechSynthesizer.BufferCallback? { callback }
 
     func write(_ utterance: AVSpeechUtterance, toBufferCallback bufferCallback: @escaping AVSpeechSynthesizer.BufferCallback) {
         writtenUtterances.append(utterance)

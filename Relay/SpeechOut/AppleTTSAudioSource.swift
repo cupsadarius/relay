@@ -98,132 +98,42 @@ struct AVAudioPCMBufferConverter: AppleSpeechBufferConverting {
     }
 }
 
-/// A bounded, synchronous producer / asynchronous consumer bridge for Apple's push-driven
-/// `write` callback (which cannot `await`). The `write` callback deep-copies each buffer, converts
-/// it, and calls `push` - which blocks the callback thread when the queue is full, giving Apple
-/// real backpressure without spawning an unbounded number of tasks. The consumer (`TTSAudioSource`)
-/// pulls frames through `next()`.
-final class AppleSpeechBufferBridge: @unchecked Sendable {
-    private let condition = NSCondition()
-    private let capacity: Int
-    private var queue: [TTSAudioFrame] = []
-    private var waiter: CheckedContinuation<TTSAudioFrame?, Error>?
-    private var finished = false
-    private var cancelled = false
-    private var failure: SpeechBackendError?
-
-    init(capacity: Int = 8) {
-        precondition(capacity > 0)
-        self.capacity = capacity
-    }
-
-    /// Producer side. Blocks while the queue is full (and no terminal state has been reached),
-    /// applying backpressure to Apple's generation.
-    func push(_ frame: TTSAudioFrame) {
-        condition.lock()
-        while queue.count >= capacity, !cancelled, !finished, failure == nil {
-            condition.wait()
-        }
-        guard !cancelled, !finished, failure == nil else {
-            condition.unlock()
-            return
-        }
-        if let waiter {
-            self.waiter = nil
-            condition.unlock()
-            waiter.resume(returning: frame)
-        } else {
-            queue.append(frame)
-            condition.unlock()
-        }
-    }
-
-    /// Consumer side. Returns the next frame, `nil` on normal end, or throws the stored failure or
-    /// `CancellationError`.
-    func next() async throws -> TTSAudioFrame? {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<TTSAudioFrame?, Error>) in
-            condition.lock()
-            if !queue.isEmpty {
-                let frame = queue.removeFirst()
-                condition.signal()
-                condition.unlock()
-                continuation.resume(returning: frame)
-            } else if let failure {
-                condition.unlock()
-                continuation.resume(throwing: failure)
-            } else if finished {
-                condition.unlock()
-                continuation.resume(returning: nil)
-            } else if cancelled {
-                condition.unlock()
-                continuation.resume(throwing: CancellationError())
-            } else {
-                waiter = continuation
-                condition.unlock()
-            }
-        }
-    }
-
-    func finish() {
-        condition.lock()
-        guard !finished, !cancelled, failure == nil else {
-            condition.unlock()
-            return
-        }
-        finished = true
-        // A waiter only exists when the queue was empty at `next()` time; any later `push` would
-        // have resumed it. So a waiter here implies an empty queue - resume it with end-of-stream.
-        let pending = waiter
-        waiter = nil
-        condition.broadcast()
-        condition.unlock()
-        pending?.resume(returning: nil)
-    }
-
-    func fail(_ error: SpeechBackendError) {
-        condition.lock()
-        guard !finished, !cancelled, failure == nil else {
-            condition.unlock()
-            return
-        }
-        failure = error
-        let pending = waiter
-        waiter = nil
-        condition.broadcast()
-        condition.unlock()
-        pending?.resume(throwing: error)
-    }
-
-    func cancel() {
-        condition.lock()
-        guard !cancelled else {
-            condition.unlock()
-            return
-        }
-        cancelled = true
-        queue.removeAll()
-        let pending = waiter
-        waiter = nil
-        condition.broadcast()
-        condition.unlock()
-        pending?.resume(throwing: CancellationError())
-    }
-}
-
-/// Produces PCM from `AVSpeechSynthesizer.write(_:toBufferCallback:)`. Each source owns a dedicated
-/// synthesizer so a cancelled attempt's late callbacks cannot leak into a later session. Generation
-/// and playback are fully separated: this only generates PCM; the shared `StreamingAudioPlayer`
-/// owns speakers and metering.
+/// Produces PCM from `AVSpeechSynthesizer.write(_:toBufferCallback:)`. Each source owns a
+/// dedicated synthesizer, so a cancelled attempt's late callbacks cannot leak into a later
+/// session.
+///
+/// Apple's write callback is synchronous and push-driven, and it must never block (see the
+/// cleanup-4 spike). Each buffer is converted in the callback (a deep copy: Apple may reuse the
+/// buffer once the callback returns) and yielded into an unbounded `AsyncStream`. A producer
+/// inside `PipedTTSAudioSource` is that stream's single consumer (`AsyncStream` supports exactly
+/// one) and moves frames into the bounded, duration-based `TTSAudioPipe` the player pulls from.
+/// Apple cannot pause `write`, so generation runs ahead at its own pace; Relay's memory for it is
+/// bounded by the utterance (~96 KB per second of 24 kHz mono), not by playback.
+///
+/// Synthesis starts on the first `next()`. `cancel()` before that never starts it.
 final class AppleTTSAudioSource: TTSAudioSource, @unchecked Sendable {
+    private enum GenerationEvent: Sendable {
+        case frame(TTSAudioFrame)
+        case finished
+        case failed
+    }
+
+    private enum StartState {
+        case idle
+        case started
+        case cancelled
+    }
+
     private let synthesizer: any AppleSpeechSynthesizing
     private let converter: any AppleSpeechBufferConverting
-    private let bridge: AppleSpeechBufferBridge
     private let text: String
     private let rate: Float
     private let voiceIdentifier: String?
+    private let events: AsyncStream<GenerationEvent>.Continuation
+    private let piped: PipedTTSAudioSource
 
-    private let startLock = NSLock()
-    private var started = false
+    private let stateLock = NSLock()
+    private var startState: StartState = .idle
 
     init(
         text: String,
@@ -231,59 +141,93 @@ final class AppleTTSAudioSource: TTSAudioSource, @unchecked Sendable {
         voiceIdentifier: String?,
         synthesizer: any AppleSpeechSynthesizing,
         converter: any AppleSpeechBufferConverting,
-        bridgeCapacity: Int = 8
+        highWatermark: TimeInterval = 30,
+        lowWatermark: TimeInterval = 15
     ) {
         self.text = text
         self.rate = rate
         self.voiceIdentifier = voiceIdentifier
         self.synthesizer = synthesizer
         self.converter = converter
-        bridge = AppleSpeechBufferBridge(capacity: bridgeCapacity)
+
+        let (stream, continuation) = AsyncStream.makeStream(of: GenerationEvent.self)
+        events = continuation
+        piped = PipedTTSAudioSource(highWatermark: highWatermark, lowWatermark: lowWatermark) { sink in
+            for await event in stream {
+                switch event {
+                case let .frame(frame):
+                    try await sink.yield(frame)
+                case .finished:
+                    return
+                case .failed:
+                    throw SpeechBackendError.inferenceFailed("Apple speech generation failed")
+                }
+            }
+            // The event stream ended with no terminal event: the source was cancelled.
+            throw CancellationError()
+        }
     }
 
     func next() async throws -> TTSAudioFrame? {
-        await startIfNeeded()
-        return try await bridge.next()
+        if claimStart() {
+            await startGeneration()
+        }
+        return try await piped.next()
     }
 
     func cancel() async {
-        bridge.cancel()
+        stateLock.withLock { startState = .cancelled }
+        events.finish()
+        await piped.cancel()
         await MainActor.run { [synthesizer] in
             _ = synthesizer.stopSpeaking(at: .immediate)
         }
     }
 
-    private func startIfNeeded() async {
-        guard beginStartOnce() else { return }
+    private func claimStart() -> Bool {
+        stateLock.withLock {
+            guard startState == .idle else { return false }
+            startState = .started
+            return true
+        }
+    }
+
+    private func isCancelled() -> Bool {
+        stateLock.withLock { startState == .cancelled }
+    }
+
+    private func startGeneration() async {
         let text = self.text
         let rate = self.rate
         let voiceIdentifier = self.voiceIdentifier
-        await MainActor.run { [synthesizer, converter, bridge] in
+        let converter = self.converter
+        let events = self.events
+        await MainActor.run { [synthesizer] in
+            // `cancel()` may have run between `claimStart()` and this hop. It stops the
+            // synthesizer on the main actor too, so this check orders `write` strictly before
+            // or after that stop.
+            guard !self.isCancelled() else { return }
             let utterance = AVSpeechUtterance(string: text)
             utterance.rate = rate
             if let voiceIdentifier, let voice = AVSpeechSynthesisVoice(identifier: voiceIdentifier) {
                 utterance.voice = voice
             }
-            synthesizer.write(utterance) { buffer in
+            // Explicitly `@Sendable`: Apple may call this off the main thread (Task 8 spike), and
+            // a closure inferred as main-actor isolated would trap there.
+            synthesizer.write(utterance) { @Sendable buffer in
                 guard let pcm = buffer as? AVAudioPCMBuffer else { return }
                 if pcm.frameLength == 0 {
-                    bridge.finish()
+                    events.yield(.finished)
+                    events.finish()
                     return
                 }
                 do {
-                    bridge.push(try converter.frame(from: pcm))
+                    events.yield(.frame(try converter.frame(from: pcm)))
                 } catch {
-                    bridge.fail(.inferenceFailed("Apple speech generation failed"))
+                    events.yield(.failed)
+                    events.finish()
                 }
             }
         }
-    }
-
-    private func beginStartOnce() -> Bool {
-        startLock.lock()
-        defer { startLock.unlock() }
-        if started { return false }
-        started = true
-        return true
     }
 }
