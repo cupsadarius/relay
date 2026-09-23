@@ -38,7 +38,7 @@
 Code excerpts in this plan were taken from `main` at `450b4af`, then adjusted for what plans 1 and 2 are known to change. **Before you edit any file, open it and check what is actually there.** If a "replace this" excerpt no longer matches exactly, keep what the step is for and adapt the edit. Keep every behaviour plans 1 and 2 added.
 
 Plan 1 (quick fixes) is assumed to have:
-- Made `HookEnvelope` and `AgentProvider` compile into the `RelayHook` target, and deleted `WireHookEnvelope`/`WireAgentProvider` from `RelayHook/main.swift`. **Check how it did this.** If it added a shared source directory already, put this plan's `Shared/*.swift` files there and skip the `project.yml` edit in Task 4. If it listed individual files in `RelayHook.sources`, do Task 4 as written.
+- Made `HookEnvelope` and `AgentProvider` compile into the `RelayHook` target, and deleted `WireHookEnvelope`/`WireAgentProvider` from `RelayHook/main.swift`. It did this by listing `Relay/Integrations/Domain/HookEnvelope.swift` and `AgentProvider.swift` individually in `RelayHook.sources` (verified on merged main, c1c1684). Task 4 keeps those two entries and appends `Shared`.
 - Refreshed the stable `RelayHook` helper on launch.
 - Recorded socket start errors, oversized-line drops and speak failures to `IntegrationDiagnosticsLog`. The oversized-drop hook probably lives in `ClientConnection.append` or `UnixSocketServer.handleReadable`. Task 8 replaces `ClientConnection`'s buffering. Move plan 1's diagnostics call onto `NewlineFramer`'s `onOversizedLine` callback and onto its `true` ("close") return.
 - Added a hook-side input size check and `.withoutEscapingSlashes` to the envelope encoder in `RelayHook/main.swift`.
@@ -837,10 +837,11 @@ Keep: the two identification tests, the two base-directory tests, `testInstallCr
     }
 ```
 
-In `RelayTests/Integrations/CodexInstallerTests.swift`, delete the same list with Codex names (`...NoHooksFileExists` for `...NoSettingsFileExists`), and also delete `testInstallThrowsWhenTopLevelIsNotAnObjectAndLeavesFileUntouched`. Keep: identification, base directory, `testInstallCreatesHooksFileWhenNoneExists` (it covers `timeout: 3`), status, the injected-directory seam, and every `config.toml` test. Add the same `testStatusIsNotInstalledAfterUninstall` (with `CodexInstaller`). Then replace every `CodexInstallerError.hooksDisabledInConfig` with `IntegrationInstallerError.hooksDisabledInConfig`:
+In `RelayTests/Integrations/CodexInstallerTests.swift`, delete the same list with Codex names (`...NoHooksFileExists` for `...NoSettingsFileExists`), and also delete `testInstallThrowsWhenTopLevelIsNotAnObjectAndLeavesFileUntouched`. Keep: identification, base directory, `testInstallCreatesHooksFileWhenNoneExists` (it covers `timeout: 3`), status, the injected-directory seam, and every `config.toml` test. Add the same `testStatusIsNotInstalledAfterUninstall` (with `CodexInstaller`). Then retarget the remaining error casts. The kept `config.toml` tests (today at about lines 417, 432 and 496) use `XCTAssertEqual(error as? CodexInstallerError, .hooksDisabledInConfig)`:
 
 ```bash
-sed -i '' 's/CodexInstallerError\.hooksDisabledInConfig/IntegrationInstallerError.hooksDisabledInConfig/g' RelayTests/Integrations/CodexInstallerTests.swift
+sed -i '' 's/as? CodexInstallerError/as? IntegrationInstallerError/g' RelayTests/Integrations/CodexInstallerTests.swift
+sed -i '' 's/as? ClaudeCodeInstallerError/as? IntegrationInstallerError/g' RelayTests/Integrations/ClaudeCodeInstallerTests.swift
 grep -rn "ClaudeCodeInstallerError\|CodexInstallerError" Relay RelayTests
 ```
 
@@ -1363,12 +1364,21 @@ In `Relay/Integrations/IntegrationManager.swift`, replace the body of `speakResp
     }
 ```
 
-In `Relay/Sessions/AgentAutoReadCoordinator.swift`, replace `speak(session:event:reason:)` and `label(_:)` with:
+In `Relay/Sessions/AgentAutoReadCoordinator.swift`, replace `speak(session:event:reason:)` and `label(_:)` with the following. Only the request construction changes: keep plan 1's `do`/`catch` with its `speak-cancelled` and `speak-failed` diagnostics, which `testSpeechFailureRecordsSpeakFailedDiagnosticsEntry` depends on.
 
 ```swift
     private func speak(session: AgentSession, event: AgentResponseEvent, reason: String) async {
         diagnostics.append(stage: "coordinator", outcome: "spoke", detail: "provider=\(event.provider.rawValue) reason=\(reason)")
-        try? await speech.speak(event.speechRequest(text: preprocess(event.text), mode: .automatic))
+        let request = event.speechRequest(text: preprocess(event.text), mode: .automatic)
+        do {
+            try await speech.speak(request)
+        } catch is CancellationError {
+            // Superseded by newer speech or stopped by the user: expected, but still visible.
+            diagnostics.append(stage: "coordinator", outcome: "speak-cancelled", detail: "provider=\(event.provider.rawValue)")
+        } catch {
+            // Structural only: never the error's own text, which could carry content.
+            diagnostics.append(stage: "coordinator", outcome: "speak-failed", detail: "provider=\(event.provider.rawValue)")
+        }
     }
 
     private static func label(_ id: AgentSessionID) -> String {
@@ -1513,6 +1523,8 @@ final class RelayPathsTests: XCTestCase {
         )
     }
 
+    /// `@MainActor`: `AppModel` (and its static `integrationSocketPath`) is MainActor-isolated.
+    @MainActor
     func testAppAndHelperDefaultsAgreeWithRelayPaths() {
         // Test host is the Debug app, so the app listens on the Debug socket...
         XCTAssertEqual(AppModel.integrationSocketPath, RelayPaths.socketPath(flavor: .debug))
@@ -1686,14 +1698,12 @@ Create `Relay/Info.plist`. Xcode merges it with the generated plist:
 
 In `project.yml`:
 
-1. Under `targets.Relay.sources`, add `Info.plist` to the `Relay` path's `excludes`, and add a `Shared` source:
+1. Replace `targets.Relay.sources` with the block below. Today the `Relay` path has no `excludes` (plan 2 removed the dead ones), so this adds a new `excludes` holding only `Info.plist`, plus a `Shared` source:
 
 ```yaml
     sources:
       - path: Relay
         excludes:
-          - Relay.xcodeproj
-          - "**/*.xcworkspace"
           - Info.plist
       - path: Shared
         group: Shared
@@ -1716,11 +1726,13 @@ In `project.yml`:
           RELAY_BUILD_FLAVOR: debug
 ```
 
-4. Under `targets.RelayHook.sources`, add `Shared` (skip this if plan 1 already shares a directory; see Assumptions):
+4. Replace `targets.RelayHook.sources` with the block below. It keeps plan 1's two shared domain files and appends `Shared`:
 
 ```yaml
     sources:
       - path: RelayHook
+      - path: Relay/Integrations/Domain/HookEnvelope.swift
+      - path: Relay/Integrations/Domain/AgentProvider.swift
       - path: Shared
         group: Shared
 ```
@@ -2034,10 +2046,53 @@ Expected: `** TEST SUCCEEDED **`.
 - [ ] **Step 6: Manual check (Debug build)**
 
 Build and run the Debug app (`xcodebuild build -scheme Relay -configuration Debug -destination 'platform=macOS'`, then open the built `Relay.app`). Check four things:
-- The menu bar shows the waveform with "DEV", in both light and dark menu bars.
+- The menu bar shows the waveform with a small "DEV", in both light and dark menu bars. `MenuBarExtra` flattens its label into a status-item image and title, and can drop the font modifier or the `HStack` layout. If "DEV" is missing, full-size, or on a separate line, apply **Label fallback** below.
 - The menu's first line is "Relay Debug", and the last item is "Quit Relay Debug".
 - Settings opens with the title "Relay Debug Settings", and keeps it after you switch between two tabs.
 - A Release build (`-configuration Release`) shows the plain waveform only.
+
+**Label fallback (only if the check above fails).** Try the steps in order and re-check after each one:
+
+1. In `MenuBarLabel`, drop the font modifier and keep plain `Text(badge)` next to the `Image`. `MenuBarExtra` then shows it as the status item's title, in normal menu bar text size.
+2. If that is still wrong, render the badge into one template `NSImage`. Add to `Relay/App/BuildFlavorPresentation.swift`:
+
+```swift
+import AppKit
+
+/// Draws the waveform plus badge text into a single template image, for when `MenuBarExtra`
+/// will not lay out a composite SwiftUI label. Template rendering means AppKit tints it for
+/// light and dark menu bars, like any SF Symbol.
+@MainActor
+enum MenuBarBadgeImage {
+    static func make(systemImage: String, badge: String) -> NSImage? {
+        let content = HStack(spacing: 2) {
+            Image(systemName: systemImage)
+            Text(badge).font(.system(size: 9, weight: .bold))
+        }
+        .foregroundStyle(.black)
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
+        guard let image = renderer.nsImage else { return nil }
+        image.isTemplate = true
+        return image
+    }
+}
+```
+
+and change the badge branch of `MenuBarLabel.body` to:
+
+```swift
+        if let badge = presentation.menuBarBadge,
+           let image = MenuBarBadgeImage.make(systemImage: presentation.menuBarSystemImage, badge: badge) {
+            Image(nsImage: image)
+                .accessibilityLabel(presentation.menuBarTitle)
+        } else {
+            Image(systemName: presentation.menuBarSystemImage)
+                .accessibilityLabel(presentation.menuBarTitle)
+        }
+```
+
+`testMenuBarLabelConstructsForBothFlavors` (already `@MainActor`) still covers it. Re-run the manual check in both menu bar appearances.
 
 **Fallback if SwiftUI rewrites the Settings title when you switch tabs:** keep the tagger change, and also add this to `SettingsView` below the `TabView` (wrap both in a `VStack(spacing: 0)`). It shows the build name deterministically:
 
@@ -2067,7 +2122,7 @@ Also stage `Relay/App/Settings/SettingsView.swift` if you applied the fallback.
 - Modify: `Relay/Integrations/ClaudeCode/ClaudeCodeInstaller.swift`, `Relay/Integrations/Codex/CodexInstaller.swift`
 - Test: `RelayTests/Integrations/StopHookConfigFileTests.swift`, `ClaudeCodeInstallerTests.swift`, `CodexInstallerTests.swift`
 
-**Rules (Decision 8):** own = exact own helper path; other build = another `…/Application Support/Relay*/bin/RelayHook`; legacy = anything else. Install, uninstall and status touch own entries. Only Release (`migratesLegacyEntries`) adopts legacy entries: it migrates them when it has no own entry, and removes them on uninstall. Debug and Release entries coexist.
+**Rules (Decision 8):** own = exact own helper path; other build = another `…/Application Support/Relay*/bin/RelayHook`; legacy = anything else. Install, uninstall and status touch own entries. Only Release (`migratesLegacyEntries`) adopts legacy entries. When it has no own entry, it migrates the first legacy entry in place and drops any further ones, so there are no duplicates. It removes them all on uninstall. Debug and Release entries coexist.
 
 **Interfaces:**
 - Changes: `StopHookConfigFile.init(fileURL:provider:helperPath:migratesLegacyEntries:entryTimeoutSeconds:)`.
@@ -2181,6 +2236,24 @@ Append inside the class:
         let entries = hookEntries(stopGroups(try readJSON()))
         XCTAssertEqual(entries.compactMap { $0["command"] as? String }, [codexCommand(releaseHelper)])
         XCTAssertEqual(entries.first?["timeout"] as? Int, 7)
+    }
+
+    func testReleaseMigratesTheFirstOfSeveralLegacyEntriesAndDropsTheRest() throws {
+        try writeRaw(#"""
+        { "hooks": { "Stop": [
+          { "hooks": [ { "type": "command", "command": "\"/Applications/Old Relay.app/Contents/Helpers/RelayHook\" --provider codex", "timeout": 7 } ] },
+          { "hooks": [ { "type": "command", "command": "\"/Users/test/Library/Developer/Xcode/DerivedData/Relay-abc/Build/Products/Debug/Relay.app/Contents/Helpers/RelayHook\" --provider codex" } ] },
+          { "matcher": "keep", "hooks": [ { "type": "command", "command": "echo other" } ] }
+        ] } }
+        """#)
+
+        try buildFile(.release).install()
+
+        let groups = stopGroups(try readJSON())
+        XCTAssertEqual(commandStrings(groups).filter { $0.contains("RelayHook") }, [codexCommand(releaseHelper)], "no duplicate Relay entries")
+        XCTAssertEqual(hookEntries(groups).first?["timeout"] as? Int, 7, "the first legacy entry is the one migrated in place")
+        XCTAssertEqual(groups.count, 2, "the emptied legacy-only group is dropped; the unrelated group stays")
+        XCTAssertTrue(commandStrings(groups).contains("echo other"))
     }
 
     func testDebugNeverMigratesLegacyEntry() throws {
@@ -2362,19 +2435,40 @@ Expected: build fails with `extra argument 'migratesLegacyEntries' in call`, and
             Self.entries(in: group).contains { ownership(ofEntry: $0) == .own }
         }
         let adoptsLegacy = migratesLegacyEntries && !hasOwnEntry
+        func pointedAtUs(_ entry: [String: Any]) -> [String: Any] {
+            guard entry["command"] as? String != command else { return entry }
+            var updatedEntry = entry
+            updatedEntry["command"] = command
+            return updatedEntry
+        }
         var rewroteAny = false
-        stopGroups = stopGroups.map { group -> [String: Any] in
+        var migratedLegacy = false
+        stopGroups = stopGroups.compactMap { group -> [String: Any]? in
             guard let hookEntries = group["hooks"] as? [[String: Any]] else { return group }
-            var updatedGroup = group
-            updatedGroup["hooks"] = hookEntries.map { entry -> [String: Any] in
-                let owner = ownership(ofEntry: entry)
-                guard owner == .own || (owner == .legacy && adoptsLegacy) else { return entry }
-                rewroteAny = true
-                guard entry["command"] as? String != command else { return entry }
-                var updatedEntry = entry
-                updatedEntry["command"] = command
-                return updatedEntry
+            let updatedEntries = hookEntries.compactMap { entry -> [String: Any]? in
+                switch ownership(ofEntry: entry) {
+                case .own:
+                    rewroteAny = true
+                    return pointedAtUs(entry)
+                case .legacy where adoptsLegacy:
+                    // The first legacy entry becomes ours in place (keeping its timeout etc.).
+                    // Any further legacy entries would be duplicates that each fire the hook, so
+                    // they are dropped.
+                    guard !migratedLegacy else { return nil }
+                    migratedLegacy = true
+                    rewroteAny = true
+                    return pointedAtUs(entry)
+                default:
+                    return entry
+                }
             }
+            // A group emptied by dropping duplicates is removed only if it has no other keys
+            // (for example a matcher), mirroring `uninstall()`.
+            if updatedEntries.isEmpty, !hookEntries.isEmpty, group.keys.allSatisfy({ $0 == "hooks" }) {
+                return nil
+            }
+            var updatedGroup = group
+            updatedGroup["hooks"] = updatedEntries
             return updatedGroup
         }
         if !rewroteAny {
@@ -2823,7 +2917,7 @@ git commit -m "refactor(transport): share one sockaddr_un builder and bounded co
 
 **Fixes:**
 - Reuse one 256 KiB read buffer instead of allocating one per readable event.
-- `NewlineFramer` scans each byte once and compacts once per read. It replaces `ClientConnection.append`, which rescanned from the start and did `removeSubrange` at the front for every line (O(n²)).
+- `NewlineFramer` scans each byte once and compacts once per read. It replaces `UnixSocketClientConnection.append`'s loop, which rescanned from the start and did `removeSubrange` at the front for every line (O(n²)).
 - `EINTR` on `read` no longer closes the connection.
 - `directoryCreationFailed` carries the real POSIX code from the thrown error, not a stale `errno`.
 - Peers whose `getpeereid` uid is not `getuid()` are rejected at accept.
@@ -2850,7 +2944,8 @@ final class NewlineFramerTests: XCTestCase {
             let shouldClose = framer.append(
                 ArraySlice(chunk),
                 onLine: { result.lines.append($0) },
-                onOversizedLine: { result.oversized += 1 }
+                onOversizedLine: { _ in result.oversized += 1 },
+                onOversizedUnterminated: { _ in }
             )
             result.closeRequests.append(shouldClose)
         }
@@ -2871,10 +2966,40 @@ final class NewlineFramerTests: XCTestCase {
         XCTAssertEqual(result.oversized, 1)
     }
 
-    func testUnterminatedOverflowRequestsCloseAndDiscardsTheBuffer() {
+    func testUnterminatedOverflowRequestsCloseReportsItsSizeAndDiscardsTheBuffer() {
         var framer = NewlineFramer(maxLineBytes: 4)
-        XCTAssertTrue(framer.append(ArraySlice(bytes("12345")), onLine: { _ in XCTFail() }))
+        var unterminated: [Int] = []
+        XCTAssertTrue(framer.append(
+            ArraySlice(bytes("12345")),
+            onLine: { _ in XCTFail() },
+            onOversizedLine: { _ in XCTFail() },
+            onOversizedUnterminated: { unterminated.append($0) }
+        ))
+        XCTAssertEqual(unterminated, [5])
         XCTAssertEqual(framer.bufferedByteCount, 0)
+    }
+
+    /// Ported from `UnixSocketServerTests.testOversizedTerminatedLineIsReportedAndFollowingLinesStillArrive`
+    /// (which drove `UnixSocketClientConnection.append` directly) at the real limit.
+    func testOversizedTerminatedLineReportsItsByteCountAndFollowingLinesStillArrive() {
+        var framer = NewlineFramer(maxLineBytes: UnixSocketServer.maxLineBytes)
+        var lines: [String] = []
+        var oversizedByteCounts: [Int] = []
+        var chunk = [UInt8](repeating: UInt8(ascii: "a"), count: UnixSocketServer.maxLineBytes + 1)
+        chunk.append(UInt8(ascii: "\n"))
+        chunk.append(contentsOf: Array(#"{"ok":1}"#.utf8))
+        chunk.append(UInt8(ascii: "\n"))
+
+        let shouldClose = framer.append(
+            chunk[...],
+            onLine: { lines.append($0) },
+            onOversizedLine: { oversizedByteCounts.append($0) },
+            onOversizedUnterminated: { _ in XCTFail("no unterminated oversized line in this test") }
+        )
+
+        XCTAssertFalse(shouldClose)
+        XCTAssertEqual(oversizedByteCounts, [UnixSocketServer.maxLineBytes + 1])
+        XCTAssertEqual(lines, [#"{"ok":1}"#])
     }
 
     func testLongLineArrivingInManySmallReadsIsDeliveredOnce() {
@@ -2891,7 +3016,7 @@ final class NewlineFramerTests: XCTestCase {
 }
 ```
 
-Append to `UnixSocketServerTests` (inside the class):
+In `RelayTests/Integrations/UnixSocketServerTests.swift`, delete `testOversizedTerminatedLineIsReportedAndFollowingLinesStillArrive` (today at about line 266). It moves to `NewlineFramerTests` above. Keep `testOversizedUnterminatedLineIsRecordedInDiagnosticsAndClosesTheConnection` and `testOversizedLineIsDroppedAndConnectionIsClosedWithoutHangingTheServer` unchanged: they go through a real socket. Delete the `LineBox` helper if nothing else uses it. Then append inside the class:
 
 ```swift
     func testPeerIsCurrentUserAcceptsASameUserSocketPair() {
@@ -2965,13 +3090,16 @@ struct NewlineFramer {
 
     /// Appends `bytes` and calls `onLine` once per complete line (without its newline).
     /// Newline-terminated lines longer than `maxLineBytes` are skipped and reported via
-    /// `onOversizedLine`; lines that are not valid UTF-8 are skipped silently. Returns `true`
-    /// when the pending partial line already exceeds `maxLineBytes` — the buffer is discarded and
-    /// the caller must close the connection, bounding memory.
+    /// `onOversizedLine` with their byte count, and the lines after them still arrive. Lines
+    /// that are not valid UTF-8 are skipped silently. Returns `true` when the pending partial
+    /// line already exceeds `maxLineBytes`: that is reported via `onOversizedUnterminated` with
+    /// the buffered byte count, the buffer is discarded, and the caller must close the
+    /// connection, bounding memory.
     mutating func append(
         _ bytes: ArraySlice<UInt8>,
         onLine: (String) -> Void,
-        onOversizedLine: () -> Void = {}
+        onOversizedLine: (Int) -> Void,
+        onOversizedUnterminated: (Int) -> Void
     ) -> Bool {
         buffer.append(contentsOf: bytes)
 
@@ -2979,7 +3107,7 @@ struct NewlineFramer {
         var searchStart = scannedCount
         while let newlineIndex = buffer[searchStart...].firstIndex(of: UInt8(ascii: "\n")) {
             if newlineIndex - lineStart > maxLineBytes {
-                onOversizedLine()
+                onOversizedLine(newlineIndex - lineStart)
             } else if let line = String(bytes: buffer[lineStart..<newlineIndex], encoding: .utf8) {
                 onLine(line)
             }
@@ -2992,6 +3120,7 @@ struct NewlineFramer {
         scannedCount = buffer.count
 
         if buffer.count > maxLineBytes {
+            onOversizedUnterminated(buffer.count)
             buffer.removeAll(keepingCapacity: false)
             scannedCount = 0
             return true
@@ -3060,9 +3189,16 @@ In `Relay/Integrations/Transport/UnixSocketServer.swift`:
 
         if bytesRead > 0 {
             let onLine = self.onLine
+            let diagnostics = self.diagnostics
             let shouldClose = connection.framer.append(
                 readBuffer[0..<bytesRead],
-                onLine: { onLine?($0) }
+                onLine: { onLine?($0) },
+                onOversizedLine: { byteCount in
+                    diagnostics.append(stage: "socket", outcome: "dropped", detail: "oversized-line (\(byteCount) bytes)")
+                },
+                onOversizedUnterminated: { byteCount in
+                    diagnostics.append(stage: "socket", outcome: "dropped", detail: "oversized-unterminated (\(byteCount) bytes)")
+                }
             )
             if shouldClose {
                 closeConnection(clientFD)
@@ -3079,7 +3215,7 @@ In `Relay/Integrations/Transport/UnixSocketServer.swift`:
     }
 ```
 
-If plan 1 added oversized-drop diagnostics, pass them as `onOversizedLine: { [diagnostics] in diagnostics.append(…) }`, and record the `shouldClose == true` case where plan 1 recorded it.
+The two diagnostics strings are exactly the ones `handleReadable` records today, so the existing socket-level oversized tests keep passing.
 
 5. Replace `ensureParentDirectoryExists(_:)`'s `catch` block and add the helper:
 
@@ -3105,12 +3241,12 @@ If plan 1 added oversized-drop diagnostics, pass them as `onOversizedLine: { [di
 
 (`ensureParentDirectoryExists` is `private static`, so this helper is `static` too. Keep the `}` structure balanced.)
 
-6. Replace the `ClientConnection` class at the bottom of the file:
+6. Replace the `UnixSocketClientConnection` class at the bottom of the file. It stays `final class` and internal, with the same name, so `beginReading` and `connections` need no change. Only its buffer and `append` are replaced by a framer:
 
 ```swift
 /// Per-connection state, confined to `UnixSocketServer`'s serial queue. Not `Sendable`: never
-/// touch it off that queue.
-private final class ClientConnection {
+/// touch it off that queue. Framing lives in `NewlineFramer`, which is tested directly.
+final class UnixSocketClientConnection {
     let fd: Int32
     var source: DispatchSourceRead?
     var framer = NewlineFramer(maxLineBytes: UnixSocketServer.maxLineBytes)
@@ -3120,6 +3256,14 @@ private final class ClientConnection {
     }
 }
 ```
+
+Check that nothing else calls the old `append`:
+
+```bash
+grep -rn "connection.append(\|UnixSocketClientConnection(fd: -1)" Relay RelayTests
+```
+
+Expected: no output.
 
 - [ ] **Step 5: Run to verify GREEN**
 
@@ -3171,7 +3315,11 @@ Append to `HookEnvelopeReceiverTests`:
         }
 
         XCTAssertEqual(HookEnvelopeReceiver.eventBufferLimit, 16)
-        XCTAssertEqual(pids, Array(5...20))
+        // 20 separate connections are not guaranteed to be decoded in send order, so compare
+        // counts and membership, not order: 16 distinct envelopes kept, 4 dropped.
+        XCTAssertEqual(pids.count, 16)
+        XCTAssertEqual(Set(pids).count, 16)
+        XCTAssertTrue(Set(pids).isSubset(of: Set(Int32(1)...Int32(20))))
         XCTAssertEqual(diagnostics.snapshot().filter { $0.detail.hasPrefix("event-buffer-full") }.count, 4)
     }
 ```
@@ -3300,9 +3448,11 @@ final class BoundedProcessRunnerTests: XCTestCase {
 
     /// With the old semaphore-based runner, each run pinned a cooperative-pool thread, so
     /// 3x-pool-width concurrent `sleep 0.5`s took >= 3 rounds (~1.5 s). Suspending runs overlap.
+    /// Capped at 24 so that even on a many-core machine this stays well below any OS or GCD
+    /// thread limit (each run owns one drain `Thread` while its child sleeps).
     func testConcurrentRunsDoNotSerialiseOnTheCooperativePool() async throws {
         let runner = BoundedProcessRunner()
-        let count = ProcessInfo.processInfo.activeProcessorCount * 3
+        let count = min(ProcessInfo.processInfo.activeProcessorCount * 3, 24)
         let start = Date()
         try await withThrowingTaskGroup(of: Void.self) { group in
             for _ in 0..<count {
@@ -3402,9 +3552,11 @@ struct BoundedProcessRunner: ProcessRunning {
                 return
             }
 
-            // Drain stdout off the cooperative pool: `availableData` blocks until data or EOF.
-            DispatchQueue.global(qos: .utility).async {
-                let handle = stdoutPipe.fileHandleForReading
+            // Drain stdout on a dedicated thread: `availableData` blocks until data or EOF. A
+            // `Thread` rather than `DispatchQueue.global()`, so many concurrent runs never
+            // exhaust GCD's worker-thread limit (about 64) and stall each other's drains.
+            let handle = stdoutPipe.fileHandleForReading
+            let drain = Thread {
                 var accumulated = Data()
                 while true {
                     let chunk = handle.availableData
@@ -3417,6 +3569,8 @@ struct BoundedProcessRunner: ProcessRunning {
                 }
                 completion.stdoutFinished(accumulated)
             }
+            drain.name = "BoundedProcessRunner.drain"
+            drain.start()
 
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
                 if completion.fail(BoundedProcessError.timedOut) { child.terminate() }
@@ -4292,12 +4446,19 @@ In `Relay/App/AppModel.swift`, replace the start of `replayLast()`, from `await 
         let sessions = await sessionRegistry.sessions()
 
         if let focused = await focusResolution.resolveFocus(among: sessions, processSnapshot: snapshot).focused {
+            guard !Task.isCancelled else { return }
             await speakFocusedSessionReply(focused)
             return
         }
 ```
 
-Leave tier 2 and tier 3 unchanged.
+Leave tier 2 and tier 3 unchanged, including plan 1's `guard !Task.isCancelled else { return }` before each of them. After the edit, `replayLast()` must still hold three `isCancelled` guards: before tier 1, tier 2 and tier 3. The guards in `readSelection` and the replay `Task` closure are untouched. Check:
+
+```bash
+grep -n "isCancelled" Relay/App/AppModel.swift
+```
+
+Expected: the same number of lines as before this step (today 6).
 
 In `Relay/App/RelayRuntime.swift`:
 1. Delete `let agentProcessContext = AgentProcessContextCapture(processInspector: processInspector)`.
