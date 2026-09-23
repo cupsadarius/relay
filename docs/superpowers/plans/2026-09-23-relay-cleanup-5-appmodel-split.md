@@ -43,6 +43,10 @@
   Class-level: `-only-testing:RelayTests/<Class>`. Full suite: drop `-only-testing`. Success line: `** TEST SUCCEEDED **`.
 - Zero new warnings. Privacy rules unchanged: no spoken text, transcripts, paths, or raw error strings in logs/diagnostics.
 
+## Execution Notes
+
+- **Settings schema v2 has no downgrade path.** Task 6 bumps `AppSettings.currentSchemaVersion` to 2 and folds `ttsVoiceIdentifier`/`kokoroVoice`/`pocketVoice` into `voiceByBackend`. An OLDER build (still on schema 1, i.e. reading `ttsVoiceIdentifier` etc. as top-level keys) that reads a settings blob a v2+ build already saved will not find those legacy keys and falls back to the shipped default voices for every backend — every other field decodes normally (per-field resilient decode), only the voice selections are lost. This only matters if a user ever downgrades Relay itself (e.g. reinstalling an older build, or two builds sharing one `UserDefaults` domain); there is no migration in the other direction, and none is planned.
+
 ## End state of plans 1–4 this plan builds on
 
 Plans 1–4 are merged before Task 0 (`docs/superpowers/plans/2026-09-23-relay-cleanup-{1-quick-fixes,2-dead-code,3-integrations-sessions,4-speech-engines}.md`). Code in this plan is written against their end state. Task 0 Step 3 greps confirm it.
