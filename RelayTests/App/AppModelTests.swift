@@ -148,7 +148,7 @@ final class AppModelTests: XCTestCase {
         let overlayModel = ActivityOverlayModel()
         let model = makeModel(overlayModel: overlayModel)
 
-        model.statusText = "Sentinel status"
+        model.runtime.status.post("Sentinel status")
 
         XCTAssertEqual(model.activityStatusText, "Sentinel status")
         withExtendedLifetime(model) {}
@@ -184,7 +184,7 @@ final class AppModelTests: XCTestCase {
     func testSelectVoicePersistsThroughProviderNeutralCatalogMapping() {
         let model = makeModel()
 
-        model.selectVoice(backendID: "kokoro", voiceID: "kokoro:am_adam")
+        model.speechBackends.selectVoice(backendID: "kokoro", voiceID: "kokoro:am_adam")
 
         XCTAssertEqual(model.settings.voiceByBackend["kokoro"], "am_adam")
     }
@@ -263,22 +263,6 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(hotkeys.updates.count, 2)
         XCTAssertEqual(hotkeys.updates.last?[.readSelection], replacement)
         XCTAssertTrue(model.statusText.contains("Could not save settings"))
-    }
-
-    func testBackendListsReadAndPersistOrderThroughSettings() async {
-        var settings = AppSettings.defaults
-        settings.sttBackendOrder = ["a"]
-        let store = SpySettingsStore(settings: settings)
-        let model = makeModel(store: store, sttRegistry: [
-            "a": FakeSTTBackend(id: "a", displayName: "A"),
-            "b": FakeSTTBackend(id: "b", displayName: "B"),
-        ])
-        await model.initialSpeechBackendRefresh?.value
-
-        model.sttBackendList.setEnabled("b", true)
-
-        XCTAssertEqual(model.settings.sttBackendOrder, ["a", "b"])
-        XCTAssertEqual(store.saved.last?.sttBackendOrder, ["a", "b"])
     }
 
     func testReadSelectionRoutesThroughKokoroWithConfiguredVoiceWhenAvailable() async {

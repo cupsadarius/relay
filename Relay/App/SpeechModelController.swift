@@ -29,20 +29,19 @@ final class SpeechModelController {
 
     @ObservationIgnored private let managers: Managers
     @ObservationIgnored private let diagnostics: DiagnosticsRecorder
-    @ObservationIgnored private var refreshBackends: BackendRefresh = { _ in }
-    @ObservationIgnored private var beforeRemoval: PreRemoval = { _ in }
+    @ObservationIgnored private let refreshBackends: BackendRefresh
+    @ObservationIgnored private let beforeRemoval: PreRemoval
     @ObservationIgnored private var generations: [SpeechModelDomain: Int] = [:]
     @ObservationIgnored private var downloads: Set<SpeechModelOperationKey> = []
 
-    init(managers: Managers, diagnostics: DiagnosticsRecorder) {
+    init(
+        managers: Managers,
+        diagnostics: DiagnosticsRecorder,
+        refreshBackends: @escaping BackendRefresh = { _ in },
+        beforeRemoval: @escaping PreRemoval = { _ in }
+    ) {
         self.managers = managers
         self.diagnostics = diagnostics
-    }
-
-    func configureHooks(
-        refreshBackends: @escaping BackendRefresh,
-        beforeRemoval: @escaping PreRemoval
-    ) {
         self.refreshBackends = refreshBackends
         self.beforeRemoval = beforeRemoval
     }

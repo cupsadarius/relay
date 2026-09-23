@@ -73,8 +73,9 @@ final class SpeechModelControllerTests: XCTestCase {
         let key = SpeechModelBackendKey(domain: .dictation, backendID: "whisper")
         let manager = ControllerModelManager(statuses: [status("tiny")])
         var refreshedDomains: [SpeechModelDomain] = []
-        let controller = SpeechModelController(managers: [key: manager], diagnostics: DiagnosticsRecorder())
-        controller.configureHooks(
+        let controller = SpeechModelController(
+            managers: [key: manager],
+            diagnostics: DiagnosticsRecorder(),
             refreshBackends: { refreshedDomains.append($0) },
             beforeRemoval: { _ in }
         )
@@ -92,8 +93,9 @@ final class SpeechModelControllerTests: XCTestCase {
         let key = SpeechModelBackendKey(domain: .textToSpeech, backendID: "kokoro")
         let events = ControllerEventLog()
         let manager = ControllerModelManager(statuses: [status("model", state: .downloaded)], events: events)
-        let controller = SpeechModelController(managers: [key: manager], diagnostics: DiagnosticsRecorder())
-        controller.configureHooks(
+        let controller = SpeechModelController(
+            managers: [key: manager],
+            diagnostics: DiagnosticsRecorder(),
             refreshBackends: { _ in await events.append("backend-refresh") },
             beforeRemoval: { _ in await events.append("pre-remove") }
         )
@@ -128,8 +130,9 @@ final class SpeechModelControllerTests: XCTestCase {
         let absent = status("model", state: .notDownloaded, selected: true)
         let manager = ControllerModelManager(statuses: [downloaded])
         var refreshedDomains: [SpeechModelDomain] = []
-        let controller = SpeechModelController(managers: [key: manager], diagnostics: DiagnosticsRecorder())
-        controller.configureHooks(
+        let controller = SpeechModelController(
+            managers: [key: manager],
+            diagnostics: DiagnosticsRecorder(),
             refreshBackends: { refreshedDomains.append($0) },
             beforeRemoval: { _ in }
         )

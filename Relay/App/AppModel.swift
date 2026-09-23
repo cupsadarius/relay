@@ -1,183 +1,102 @@
-import Observation
 @preconcurrency import AppKit
+import Observation
 
+/// The object every SwiftUI scene binds to. A thin facade: it builds the focused sub-models from
+/// one `RelayRuntime`, retains that runtime for the app's lifetime, and exposes the sub-models
+/// for views to call (`model.speechBackends.refresh(.dictation)`, `model.permissions.recheck()`).
+/// Only values read almost everywhere (`settings`, `statusText`) and the diagnostics pass-throughs
+/// live directly on it.
 @MainActor
 @Observable
 final class AppModel {
     /// The graph this model was built from. Retained for the model's (= the app's) lifetime.
     @ObservationIgnored let runtime: RelayRuntime
-
-    var statusText: String {
-        get { runtime.status.message }
-        set { runtime.status.post(newValue) }
-    }
-
-    /// Menu-bar status that tracks live activity (same source as the overlay pill) and falls
-    /// back to the last transient message when idle, so it never shows a stale "Speaking…"
-    /// after speech ends. Reads `overlayModel.state`, which is `@Observable`-tracked, so this
-    /// updates the menu live even though `overlayModel` itself is `@ObservationIgnored` on
-    /// `AppModel` (that annotation only suppresses tracking of reassigning the reference, not
-    /// of reading properties through it).
-    var activityStatusText: String {
-        switch overlayModel.state {
-        case .listening:
-            "Listening…"
-        case .processing:
-            "Transcribing…"
-        case .preparingSpeech:
-            "Processing…"
-        case .speaking:
-            "Speaking…"
-        case let .error(_, _, message):
-            message
-        case .hidden:
-            statusText
-        }
-    }
-    var diagnosticsEntries: [DiagnosticEntry] { diagnostics.entries.reversed() }
-    var diagnosticsCounters: DiagnosticsCounters { diagnostics.counters }
-    var overlayModel: ActivityOverlayModel { runtime.speechOut.overlayModel }
-    private var speechCoordinator: any SpeechCoordinating { runtime.speechOut.speechCoordinator }
-    private var diagnostics: DiagnosticsRecorder { runtime.diagnostics }
-    private var overlayPresenter: any ActivityOverlayPresenting { runtime.speechOut.overlayPresenter }
-    private var integrationDiagnosticsLog: IntegrationDiagnosticsLog { runtime.integrationDiagnosticsLog }
-
-    @ObservationIgnored let integrationSetup: IntegrationSetupModel
     @ObservationIgnored let settingsController: SettingsController
-    /// Read-only settings for views; writes go through `settingsController`.
-    var settings: AppSettings { settingsController.current }
     @ObservationIgnored let permissions: PermissionsModel
-    @ObservationIgnored let modelController: SpeechModelController
-    @ObservationIgnored let voiceCatalog: SpeechVoiceCatalog
+    @ObservationIgnored let integrationSetup: IntegrationSetupModel
+    @ObservationIgnored let speechBackends: SpeechBackendsModel
     @ObservationIgnored let speechActions: SpeechActions
     @ObservationIgnored let hotkeys: HotkeyController
-    @ObservationIgnored let sttBackendList: BackendListModel
-    @ObservationIgnored let ttsBackendList: BackendListModel
-    /// The fire-and-forget initial status refresh kicked off from `init`. Exposed so tests can
-    /// await it instead of racing an explicit `sttBackendList.refresh()` call against it.
-    @ObservationIgnored var initialSpeechBackendRefresh: Task<Void, Never>?
-    /// The fire-and-forget initial TTS status refresh kicked off from `init`. Exposed so tests
-    /// can await it instead of racing an explicit `ttsBackendList.refresh()` call against it.
-    @ObservationIgnored var initialTTSBackendRefresh: Task<Void, Never>?
+    /// Launch-time backend/model refresh; exposed so tests can await it.
+    @ObservationIgnored private(set) var initialBackendRefresh: Task<Void, Never>?
+
+    /// Read-only settings for views; writes go through `settingsController`.
+    var settings: AppSettings { settingsController.current }
+    /// The last transient status message (`StatusSink`).
+    var statusText: String { runtime.status.message }
+    var overlayModel: ActivityOverlayModel { runtime.speechOut.overlayModel }
+
+    /// Menu-bar status: live activity (same source as the overlay pill), else the last message.
+    /// Reads `overlayModel.state`, which is itself `@Observable`, so the menu updates live.
+    var activityStatusText: String {
+        switch overlayModel.state {
+        case .listening: "Listening…"
+        case .processing: "Transcribing…"
+        case .preparingSpeech: "Processing…"
+        case .speaking: "Speaking…"
+        case let .error(_, _, message): message
+        case .hidden: statusText
+        }
+    }
+
+    // MARK: Diagnostics pass-throughs (DiagnosticsView)
+
+    var diagnosticsEntries: [DiagnosticEntry] { runtime.diagnostics.entries.reversed() }
+    var diagnosticsCounters: DiagnosticsCounters { runtime.diagnostics.counters }
+    var diagnosticsCopyText: String { runtime.diagnostics.copyText }
+    func clearDiagnostics() { runtime.diagnostics.clear() }
+
+    /// Integration-pipeline diagnostics, newest first. Structural only — never response text,
+    /// cwd, paths, environment, raw error text, or `providerSessionID`.
+    func integrationDiagnosticsEntries() -> [IntegrationDiagnosticsEntry] {
+        runtime.integrationDiagnosticsLog.snapshot()
+    }
+
+    func clearIntegrationDiagnostics() { runtime.integrationDiagnosticsLog.clear() }
+
+    // MARK: Lifecycle
 
     /// The only initializer. Production passes `RelayRuntime.makeProduction()`; tests pass
-    /// `RelayRuntime.testing(...)`. No defaults: every dependency comes from `runtime`.
+    /// `RelayRuntime.testing(...)`.
     init(runtime: RelayRuntime) {
         self.runtime = runtime
-        integrationSetup = IntegrationSetupModel(runtime: runtime)
         settingsController = runtime.settingsController
         permissions = PermissionsModel(runtime: runtime)
-        modelController = SpeechModelController(
-            managers: Self.modelManagers(
-                dictation: runtime.speechIn.speechModelManagers,
-                textToSpeech: runtime.speechOut.ttsModelManagers
-            ),
-            diagnostics: runtime.diagnostics
-        )
-        voiceCatalog = SpeechVoiceCatalog()
-        speechActions = SpeechActions(runtime: runtime, voiceCatalog: voiceCatalog)
+        integrationSetup = IntegrationSetupModel(runtime: runtime)
+        speechBackends = SpeechBackendsModel(runtime: runtime)
+        speechActions = SpeechActions(runtime: runtime, voiceCatalog: speechBackends.voices)
         hotkeys = HotkeyController(runtime: runtime, speechActions: speechActions)
-        let settings = runtime.settingsController
-        sttBackendList = BackendListModel(
-            entries: BackendListEntry.entries(runtime.speechIn.sttRegistry),
-            order: { settings.current.sttBackendOrder },
-            setOrder: { settings.setSTTBackendOrder($0) },
-            refusalMessage: "At least one speech recognition backend must stay enabled.",
-            statusSink: runtime.status
-        )
-        ttsBackendList = BackendListModel(
-            entries: BackendListEntry.entries(runtime.speechOut.ttsRegistry),
-            order: { settings.current.ttsBackendOrder },
-            setOrder: { settings.setTTSBackendOrder($0) },
-            refusalMessage: "At least one TTS backend must stay enabled.",
-            statusSink: runtime.status
-        )
-        configureModelController()
-        settingsController.onHotkeysChanged = { [weak hotkeys = self.hotkeys] definitions in
+
+        settingsController.onHotkeysChanged = { [weak hotkeys] definitions in
             hotkeys?.definitionsChanged(definitions)
         }
         hotkeys.start()
         permissions.observeActivation { [weak self] in self?.recheckDiagnostics() }
         bindOverlayPresenter()
-        initialSpeechBackendRefresh = Task { [weak self] in
-            await self?.sttBackendList.refresh()
-            await self?.modelController.refresh(domain: .dictation)
-        }
-        initialTTSBackendRefresh = Task { [weak self] in
-            await self?.ttsBackendList.refresh()
-            await self?.modelController.refresh(domain: .textToSpeech)
-        }
+        initialBackendRefresh = Task { [speechBackends] in await speechBackends.refreshAll() }
     }
 
-    private static func modelManagers(
-        dictation: [String: any SpeechModelManaging],
-        textToSpeech: [String: any SpeechModelManaging]
-    ) -> SpeechModelController.Managers {
-        var result: SpeechModelController.Managers = [:]
-        for (backendID, manager) in dictation {
-            result[SpeechModelBackendKey(domain: .dictation, backendID: backendID)] = manager
-        }
-        for (backendID, manager) in textToSpeech {
-            result[SpeechModelBackendKey(domain: .textToSpeech, backendID: backendID)] = manager
-        }
-        return result
-    }
-
-    private func configureModelController() {
-        modelController.configureHooks(
-            refreshBackends: { [weak self] domain in
-                switch domain {
-                case .dictation:
-                    await self?.sttBackendList.refresh()
-                case .textToSpeech:
-                    await self?.ttsBackendList.refresh()
-                }
-            },
-            beforeRemoval: { [weak self] key in
-                if key.domain == .textToSpeech {
-                    self?.speechCoordinator.stop()
-                }
-            }
-        )
-    }
-
-    func selectVoice(backendID: String, voiceID: String) {
-        guard let value = voiceCatalog.storedValue(for: voiceID, backendID: backendID) else { return }
-        settingsController.setVoice(value, for: backendID)
+    /// Runs on every app activation and from the Diagnostics "Recheck" button: re-reads
+    /// permissions, retries the event tap (without touching hotkey gesture state) and re-probes
+    /// speech-recognition readiness (a granted mic can make Apple Speech ready).
+    func recheckDiagnostics() {
+        permissions.recheck()
+        hotkeys.ensureTap()
+        Task { [speechBackends] in await speechBackends.refreshReadiness(.dictation) }
     }
 
     func setActivityOverlayStyle(_ style: ActivityOverlayStyle) {
         settingsController.setActivityOverlayStyle(style)
-        overlayPresenter.update(state: overlayModel.state, style: style)
+        runtime.speechOut.overlayPresenter.update(state: overlayModel.state, style: style)
     }
 
     private func bindOverlayPresenter() {
-        overlayModel.setStateHandler { [weak self] state in
-            guard let self else { return }
-            overlayPresenter.update(state: state, style: settingsController.current.activityOverlayStyle)
+        let presenter = runtime.speechOut.overlayPresenter
+        let settings = settingsController
+        overlayModel.setStateHandler { state in
+            presenter.update(state: state, style: settings.current.activityOverlayStyle)
         }
     }
-
-    func recheckDiagnostics() {
-        permissions.recheck()
-        hotkeys.ensureTap()
-        Task { [weak self] in await self?.sttBackendList.refresh() }
-    }
-
-    func clearDiagnostics() { diagnostics.clear() }
-
-    /// Snapshot of the integration-pipeline diagnostics log, newest first. Purely structural
-    /// (stage/outcome/detail) — never response text, cwd, paths, environment, raw error text, or
-    /// `providerSessionID`. Purely for diagnostics display.
-    func integrationDiagnosticsEntries() -> [IntegrationDiagnosticsEntry] {
-        integrationDiagnosticsLog.snapshot()
-    }
-
-    /// Removes all recorded integration-pipeline diagnostics entries.
-    func clearIntegrationDiagnostics() {
-        integrationDiagnosticsLog.clear()
-    }
-    var diagnosticsCopyText: String { diagnostics.copyText }
 }
 
 /// Default presenter for tests and any composition that doesn't host the overlay panel.

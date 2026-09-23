@@ -7,20 +7,20 @@ struct TTSSettingsView: View {
         Form {
             SpeechBackendSettingsSection(
                 title: "Backends",
-                backends: model.ttsBackendList.rows,
+                backends: model.speechBackends.textToSpeech.rows,
                 domain: .textToSpeech,
-                controller: model.modelController,
-                message: model.modelController.messages[.textToSpeech] ?? model.ttsBackendList.message,
-                setEnabled: model.ttsBackendList.setEnabled,
-                move: model.ttsBackendList.move,
-                hasExpandedContent: { !model.voiceCatalog.voices(for: $0).isEmpty }
+                controller: model.speechBackends.models,
+                message: model.speechBackends.models.messages[.textToSpeech] ?? model.speechBackends.textToSpeech.message,
+                setEnabled: model.speechBackends.textToSpeech.setEnabled,
+                move: model.speechBackends.textToSpeech.move,
+                hasExpandedContent: { !model.speechBackends.voices.voices(for: $0).isEmpty }
             ) { backendID in
-                let activeID = model.voiceCatalog.activeVoiceID(for: backendID, settings: model.settings)
-                ForEach(model.voiceCatalog.voices(for: backendID)) { voice in
+                let activeID = model.speechBackends.voices.activeVoiceID(for: backendID, settings: model.settings)
+                ForEach(model.speechBackends.voices.voices(for: backendID)) { voice in
                     SpeechVoiceRow(
                         voice: voice,
                         isActive: voice.id == activeID,
-                        select: { model.selectVoice(backendID: backendID, voiceID: voice.id) },
+                        select: { model.speechBackends.selectVoice(backendID: backendID, voiceID: voice.id) },
                         test: { Task { await model.speechActions.previewVoice(backendID: backendID, voiceID: voice.id) } }
                     )
                 }
@@ -45,9 +45,6 @@ struct TTSSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .task {
-            await model.ttsBackendList.refresh()
-            await model.modelController.refresh(domain: .textToSpeech)
-        }
+        .task { await model.speechBackends.refresh(.textToSpeech) }
     }
 }
