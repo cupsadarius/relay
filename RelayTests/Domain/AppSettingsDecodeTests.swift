@@ -255,4 +255,41 @@ final class AppSettingsDecodeTests: XCTestCase {
 
         XCTAssertEqual(decoded.hotkeys, [.readSelection: .chord(keyCode: 15, modifiers: [.option])])
     }
+
+    /// Every saved entry present but none usable (every action unknown) must fall back to the
+    /// shipped default hotkeys, not leave the user with zero hotkeys.
+    func testAllUnknownHotkeyActionsFallBackToDefaults() throws {
+        let saved = AppSettings.defaults
+        let encoded = try JSONEncoder().encode(saved)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        var entries = try XCTUnwrap(object["hotkeys"] as? [Any])
+        var index = 0
+        while index < entries.count {
+            entries[index] = "unknownAction\(index)"
+            index += 2
+        }
+        object["hotkeys"] = entries
+
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+
+        XCTAssertEqual(decoded.hotkeys, AppSettings.defaults.hotkeys)
+    }
+
+    /// An honestly empty `hotkeys` array (no entries at all, as opposed to entries that all fail
+    /// to decode) must still decode to an empty map, not fall back to the defaults.
+    func testEmptyHotkeysArrayDecodesToEmptyMap() throws {
+        let encoded = try JSONEncoder().encode(AppSettings.defaults)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object["hotkeys"] = [String]()
+
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+
+        XCTAssertEqual(decoded.hotkeys, [:])
+    }
 }

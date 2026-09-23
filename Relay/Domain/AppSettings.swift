@@ -65,7 +65,9 @@ struct AppSettings: Codable, Equatable, Sendable {
         // the wrong type/an invalid value" into the same fallback-to-default outcome, so one
         // malformed or absent field can never throw and reset every other field along with it.
         // Every field goes through this one helper, including optionals (`Value == String?`,
-        // where a JSON `null` still decodes to `nil`).
+        // where a JSON `null` still decodes to `nil`). For an optional field, a missing key also
+        // takes `defaultValue` (rather than `nil`) — harmless today since every optional field's
+        // default is itself `nil`.
         func field<Value: Decodable>(_ key: CodingKeys, default defaultValue: Value) -> Value {
             (try? values.decode(Value.self, forKey: key)) ?? defaultValue
         }
@@ -116,13 +118,18 @@ struct AppSettings: Codable, Equatable, Sendable {
     /// `Dictionary` encoding produces for a non-`String`/`Int`, non-`CodingKeyRepresentable` key
     /// (the format every build so far has written, and still writes), and also a keyed
     /// `{"action": definition}` object. Returns `nil` (caller falls back to the default map) when
-    /// the field is missing, is neither shape, or is a flat array with an odd element count.
+    /// the field is missing, is neither shape, is a flat array with an odd element count, or has
+    /// at least one entry but every one of them is unknown/malformed — that last case leaves the
+    /// user with zero hotkeys otherwise, which is worse than falling back to the shipped
+    /// defaults. An honestly empty array/object (no entries at all) still decodes to an empty map.
     private static func decodeHotkeys(
         from values: KeyedDecodingContainer<CodingKeys>
     ) -> [HotkeyAction: HotkeyDefinition]? {
         if var entries = try? values.nestedUnkeyedContainer(forKey: .hotkeys) {
             var result: [HotkeyAction: HotkeyDefinition] = [:]
+            var sawAnyEntry = false
             while !entries.isAtEnd {
+                sawAnyEntry = true
                 // Each element decodes through `LossyDecodable`, which never throws: a FAILED
                 // decode does not advance an unkeyed container, so decoding the raw types here
                 // would stall on the first bad element instead of skipping it.
@@ -135,7 +142,7 @@ struct AppSettings: Codable, Equatable, Sendable {
                     result[action] = definition
                 }
             }
-            return result
+            return (sawAnyEntry && result.isEmpty) ? nil : result
         }
         if let object = try? values.nestedContainer(keyedBy: HotkeyMapKey.self, forKey: .hotkeys) {
             var result: [HotkeyAction: HotkeyDefinition] = [:]
@@ -145,7 +152,7 @@ struct AppSettings: Codable, Equatable, Sendable {
                 else { continue }
                 result[action] = definition
             }
-            return result
+            return (!object.allKeys.isEmpty && result.isEmpty) ? nil : result
         }
         return nil
     }
