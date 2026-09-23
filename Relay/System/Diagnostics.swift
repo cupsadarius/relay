@@ -96,14 +96,33 @@ enum DictationDiagnostic: Equatable, Sendable {
 }
 
 struct DiagnosticsBuffer: Sendable {
-    private(set) var entries: [DiagnosticEntry] = []
+    private var storage: [DiagnosticEntry] = []
+    /// Index of the oldest entry once `storage` is full.
+    private var head = 0
     private let capacity: Int
+
     init(capacity: Int = 250) { self.capacity = max(1, capacity) }
-    mutating func append(_ event: DiagnosticsEvent) {
-        entries.append(.init(event: event))
-        if entries.count > capacity { entries.removeFirst(entries.count - capacity) }
+
+    /// Oldest first.
+    var entries: [DiagnosticEntry] {
+        storage.count < capacity ? storage : Array(storage[head...] + storage[..<head])
     }
-    mutating func clear() { entries.removeAll() }
+
+    mutating func append(_ event: DiagnosticsEvent) {
+        let entry = DiagnosticEntry(event: event)
+        if storage.count < capacity {
+            storage.append(entry)
+        } else {
+            storage[head] = entry
+            head = (head + 1) % capacity
+        }
+    }
+
+    mutating func clear() {
+        storage.removeAll()
+        head = 0
+    }
+
     var copyText: String { entries.map { $0.event.message }.joined(separator: "\n") }
 }
 

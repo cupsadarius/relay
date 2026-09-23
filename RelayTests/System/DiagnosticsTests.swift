@@ -25,6 +25,23 @@ import XCTest
         XCTAssertEqual(buffer.copyText, "")
     }
 
+    func testBufferKeepsTheNewestEntriesInOrderAcrossManyWraps() {
+        var buffer = DiagnosticsBuffer(capacity: 3)
+        for index in 0..<10 {
+            buffer.append(.settingsDecodeFailed(byteCount: index))
+        }
+        XCTAssertEqual(buffer.entries.map(\.event), [
+            .settingsDecodeFailed(byteCount: 7),
+            .settingsDecodeFailed(byteCount: 8),
+            .settingsDecodeFailed(byteCount: 9),
+        ])
+
+        buffer.clear()
+        XCTAssertTrue(buffer.entries.isEmpty)
+        buffer.append(.permissionRechecked)
+        XCTAssertEqual(buffer.entries.map(\.event), [.permissionRechecked])
+    }
+
     func testDictationLifecycleAndFailureDiagnosticsUseStablePrivacySafeMessages() {
         var buffer = DiagnosticsBuffer()
         buffer.append(.dictation(.listening))
