@@ -16,9 +16,6 @@ targets:
     platform: macOS
     sources:
       - path: Relay
-        excludes:
-          - Relay.xcodeproj
-          - "**/*.xcworkspace"
       - path: RelayHook/HookTransportClient.swift
         group: RelayHook
       - path: RelayHook/BoundedStdinReader.swift
