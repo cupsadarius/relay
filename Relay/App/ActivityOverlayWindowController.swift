@@ -87,7 +87,7 @@ final class ActivityOverlayWindowController: ActivityOverlayPresenting {
     private var lastIgnoresMouse: Bool?
     private var isPanelVisible = false
     private var hasReportedFailure = false
-    private nonisolated(unsafe) var screenParametersObserver: NSObjectProtocol?
+    private var screenParametersObservation: NotificationObservation?
 
     init(
         model: ActivityOverlayModel,
@@ -102,12 +102,6 @@ final class ActivityOverlayWindowController: ActivityOverlayPresenting {
         self.diagnostics = diagnostics
         self.onAction = onAction
         observeScreenParameterChanges()
-    }
-
-    deinit {
-        if let screenParametersObserver {
-            NotificationCenter.default.removeObserver(screenParametersObserver)
-        }
     }
 
     func update(state: ActivityOverlayState, style: ActivityOverlayStyle) {
@@ -225,16 +219,10 @@ final class ActivityOverlayWindowController: ActivityOverlayPresenting {
     }
 
     private func observeScreenParameterChanges() {
-        screenParametersObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didChangeScreenParametersNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            // The observer is registered with `queue: .main`, so this block always runs on the
-            // main thread; asserting isolation avoids an extra Task hop and its scheduling delay.
-            MainActor.assumeIsolated {
-                self?.relayoutForScreenChange()
-            }
+        screenParametersObservation = NotificationObservation(
+            name: NSApplication.didChangeScreenParametersNotification
+        ) { [weak self] in
+            self?.relayoutForScreenChange()
         }
     }
 }

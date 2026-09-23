@@ -8,27 +8,27 @@ struct PermissionsSettingsView: View {
             Section("Permissions") {
                 permissionRow(
                     title: "Microphone",
-                    granted: model.microphonePermissionGranted,
-                    request: { Task { await model.requestMicrophonePermission() } },
-                    settings: { model.openPrivacySettings(.microphone) }
+                    granted: model.permissions.microphoneGranted,
+                    request: { Task { await model.permissions.requestMicrophone() } },
+                    settings: { model.permissions.openPrivacySettings(.microphone) }
                 )
                 permissionRow(
                     title: "Accessibility",
-                    granted: model.permissionSnapshot.accessibilityGranted,
-                    settings: { model.openPrivacySettings(.accessibility) }
+                    granted: model.permissions.snapshot.accessibilityGranted,
+                    settings: { model.permissions.openPrivacySettings(.accessibility) }
                 )
-                Button("Request Accessibility") { model.requestPermissions() }
+                Button("Request Accessibility") { model.permissions.requestAccessibility() }
                     .controlSize(.small)
             }
             Section("Microphone Diagnostics") {
                 VStack(alignment: .leading, spacing: 4) {
-                    Button("Open Microphone Settings") { model.openMicrophoneSettings() }
+                    Button("Open Microphone Settings") { model.permissions.openMicrophoneSettings() }
                         .controlSize(.small)
                     Text("After a rebuild, macOS can keep the Microphone toggle on while delivering no audio. Use this to toggle Relay's grant off and back on.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                if let capture = model.lastMicrophoneCaptureDiagnostics {
+                if let capture = model.permissions.lastMicrophoneCaptureDiagnostics {
                     captureDiagnosticsRow(capture)
                 }
             }

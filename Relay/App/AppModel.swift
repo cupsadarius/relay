@@ -34,26 +34,10 @@ final class AppModel {
             statusText
         }
     }
-    private(set) var microphonePermissionGranted: Bool
-    /// Mirrors `loginItemService.isEnabled` (backed by `SMAppService.mainApp.status`), the OS's
-    /// own source of truth for login-item registration. Never persisted separately in
-    /// `AppSettings` — re-synced to the service on every write via `setLaunchAtLogin`, so it
-    /// can't drift from what's actually registered.
-    private(set) var launchAtLoginEnabled: Bool
-    private(set) var permissionSnapshot: PermissionSnapshot
     var diagnosticsEntries: [DiagnosticEntry] { diagnostics.entries.reversed() }
     var diagnosticsCounters: DiagnosticsCounters { diagnostics.counters }
-    /// The most recent dictation capture attempt's privacy-safe metadata (input sample rate,
-    /// frame count, timestamp) — never audio samples, transcript text, or file paths. Surfaced by
-    /// the Security & Permissions settings tab so a stale post-rebuild microphone grant (zero
-    /// frames captured despite the OS showing the toggle on) is visible rather than silent.
-    var lastMicrophoneCaptureDiagnostics: MicrophoneCaptureDiagnostics? { diagnostics.lastMicrophoneCaptureDiagnostics }
     var overlayModel: ActivityOverlayModel { runtime.speechOut.overlayModel }
     private var speechCoordinator: any SpeechCoordinating { runtime.speechOut.speechCoordinator }
-    private var permissionService: any GlobalPermissionAuthorizing { runtime.permissionService }
-    private var microphonePermissions: any MicrophonePermissionStatusProviding { runtime.microphonePermissions }
-    private var privacySettingsOpener: any PrivacySettingsOpening { runtime.privacySettingsOpener }
-    private var loginItemService: any LoginItemControlling { runtime.loginItemService }
     private var diagnostics: DiagnosticsRecorder { runtime.diagnostics }
     private var overlayPresenter: any ActivityOverlayPresenting { runtime.speechOut.overlayPresenter }
     private var integrationDiagnosticsLog: IntegrationDiagnosticsLog { runtime.integrationDiagnosticsLog }
@@ -62,6 +46,7 @@ final class AppModel {
     @ObservationIgnored let settingsController: SettingsController
     /// Read-only settings for views; writes go through `settingsController`.
     var settings: AppSettings { settingsController.current }
+    @ObservationIgnored let permissions: PermissionsModel
     @ObservationIgnored let modelController: SpeechModelController
     @ObservationIgnored let voiceCatalog: SpeechVoiceCatalog
     @ObservationIgnored let speechActions: SpeechActions
@@ -74,7 +59,6 @@ final class AppModel {
     /// The fire-and-forget initial TTS status refresh kicked off from `init`. Exposed so tests
     /// can await it instead of racing an explicit `ttsBackendList.refresh()` call against it.
     @ObservationIgnored var initialTTSBackendRefresh: Task<Void, Never>?
-    @ObservationIgnored private var activationObserver: NSObjectProtocol?
 
     /// The only initializer. Production passes `RelayRuntime.makeProduction()`; tests pass
     /// `RelayRuntime.testing(...)`. No defaults: every dependency comes from `runtime`.
@@ -82,6 +66,7 @@ final class AppModel {
         self.runtime = runtime
         integrationSetup = IntegrationSetupModel(runtime: runtime)
         settingsController = runtime.settingsController
+        permissions = PermissionsModel(runtime: runtime)
         modelController = SpeechModelController(
             managers: Self.modelManagers(
                 dictation: runtime.speechIn.speechModelManagers,
@@ -107,15 +92,12 @@ final class AppModel {
             refusalMessage: "At least one TTS backend must stay enabled.",
             statusSink: runtime.status
         )
-        permissionSnapshot = runtime.permissionService.snapshot()
-        microphonePermissionGranted = runtime.microphonePermissions.isGranted()
-        launchAtLoginEnabled = runtime.loginItemService.isEnabled
         configureModelController()
         settingsController.onHotkeysChanged = { [weak hotkeys = self.hotkeys] definitions in
             hotkeys?.definitionsChanged(definitions)
         }
         hotkeys.start()
-        observeAppActivation()
+        permissions.observeActivation { [weak self] in self?.recheckDiagnostics() }
         bindOverlayPresenter()
         initialSpeechBackendRefresh = Task { [weak self] in
             await self?.sttBackendList.refresh()
@@ -169,22 +151,6 @@ final class AppModel {
         overlayPresenter.update(state: overlayModel.state, style: style)
     }
 
-    /// Registers/unregisters Relay as a login item via `loginItemService`
-    /// (`SMAppService.mainApp` in production). A dev build running outside `/Applications` can
-    /// legitimately fail to register; on failure this never crashes — it re-reads the service's
-    /// actual status (so `launchAtLoginEnabled` can't drift from what's really registered) and
-    /// surfaces a non-fatal status message instead.
-    func setLaunchAtLogin(_ enabled: Bool) {
-        do {
-            try loginItemService.setEnabled(enabled)
-            launchAtLoginEnabled = enabled
-        } catch {
-            launchAtLoginEnabled = loginItemService.isEnabled
-            statusText = "Could not change launch-at-login."
-        }
-    }
-
-
     private func bindOverlayPresenter() {
         overlayModel.setStateHandler { [weak self] state in
             guard let self else { return }
@@ -192,38 +158,8 @@ final class AppModel {
         }
     }
 
-    func requestPermissions() {
-        permissionService.requestPermissions()
-        diagnostics.record(.permissionRequested)
-        permissionSnapshot = permissionService.snapshot()
-    }
-
-    func requestMicrophonePermission() async {
-        _ = await microphonePermissions.requestPermission()
-        microphonePermissionGranted = microphonePermissions.isGranted()
-        statusText = microphonePermissionGranted
-            ? "Microphone permission granted"
-            : "Allow Microphone permission in System Settings to dictate."
-    }
-
-    func openPrivacySettings(_ pane: PrivacySettingsPane) {
-        privacySettingsOpener.open(pane)
-    }
-
-    /// Opens System Settings directly to Privacy & Security -> Microphone — the one-click fix for
-    /// a stale microphone grant after a dev-signed rebuild: macOS keeps the toggle ON for the
-    /// bundle id but delivers zero audio frames to the re-signed binary until the grant is
-    /// toggled off and back on. Routes through the same injectable `privacySettingsOpener` seam
-    /// as `openPrivacySettings(_:)` (backed by `NSWorkspace.shared.open(_:)` in production), so
-    /// it's testable without touching real System Settings.
-    func openMicrophoneSettings() {
-        privacySettingsOpener.open(.microphone)
-    }
-
     func recheckDiagnostics() {
-        permissionSnapshot = permissionService.snapshot()
-        microphonePermissionGranted = microphonePermissions.isGranted()
-        diagnostics.record(.permissionRechecked)
+        permissions.recheck()
         hotkeys.ensureTap()
         Task { [weak self] in await self?.sttBackendList.refresh() }
     }
@@ -242,20 +178,6 @@ final class AppModel {
         integrationDiagnosticsLog.clear()
     }
     var diagnosticsCopyText: String { diagnostics.copyText }
-
-    private func observeAppActivation() {
-        activationObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didBecomeActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.recheckDiagnostics() }
-        }
-    }
-
-    deinit {
-        if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
-    }
 }
 
 /// Default presenter for tests and any composition that doesn't host the overlay panel.

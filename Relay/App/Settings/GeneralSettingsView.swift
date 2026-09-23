@@ -40,8 +40,8 @@ struct GeneralSettingsView: View {
 
     private var launchAtLoginBinding: Binding<Bool> {
         Binding(
-            get: { model.launchAtLoginEnabled },
-            set: { model.setLaunchAtLogin($0) }
+            get: { model.permissions.launchAtLoginEnabled },
+            set: { model.permissions.setLaunchAtLogin($0) }
         )
     }
 

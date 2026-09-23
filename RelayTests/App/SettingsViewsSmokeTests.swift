@@ -29,7 +29,7 @@ final class SettingsViewsSmokeTests: XCTestCase {
 
         _ = PermissionsSettingsView(model: model)
 
-        XCTAssertEqual(model.lastMicrophoneCaptureDiagnostics?.frameCount, 0)
+        XCTAssertEqual(model.permissions.lastMicrophoneCaptureDiagnostics?.frameCount, 0)
     }
 
     /// The menu bar shows and toggles auto-read state alongside the agent-response controls;
