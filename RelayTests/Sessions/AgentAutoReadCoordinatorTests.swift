@@ -118,6 +118,22 @@ final class AgentAutoReadCoordinatorTests: XCTestCase {
         XCTAssertTrue(entries.contains { $0.stage == "coordinator" && $0.outcome == "session-upserted" })
     }
 
+    func testSpeechFailureRecordsSpeakFailedDiagnosticsEntry() async {
+        struct SpeechBoom: Error {}
+        let speech = RecordingSpeechSink()
+        speech.error = SpeechBoom()
+        let diagnostics = IntegrationDiagnosticsLog()
+        let focus = MutableStubFocusResolver()
+        focus.focusedSessionID = .init(provider: .claudeCode, providerSessionID: "a")
+        let coordinator = makeCoordinator(focus: focus, speech: speech, autoRead: true, diagnostics: diagnostics)
+
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "a", text: "Done."))
+
+        XCTAssertTrue(diagnostics.snapshot().contains {
+            $0.stage == "coordinator" && $0.outcome == "speak-failed" && $0.detail == "provider=claude-code"
+        })
+    }
+
     func testAutoReadDisabledRecordsSilentDiagnosticsEntry() async {
         let speech = RecordingSpeechSink()
         let diagnostics = IntegrationDiagnosticsLog()
@@ -255,7 +271,12 @@ private struct StubProcessContextCapture: AgentProcessContextCapturing {
 @MainActor
 private final class RecordingSpeechSink: SpeechSubmitting, @unchecked Sendable {
     var requests: [SpeechRequest] = []
-    func speak(_ request: SpeechRequest) async throws { requests.append(request) }
+    /// Thrown from `speak` after recording the request, when set.
+    var error: Error?
+    func speak(_ request: SpeechRequest) async throws {
+        requests.append(request)
+        if let error { throw error }
+    }
 }
 
 private struct AutoReadHarness {

@@ -143,7 +143,15 @@ actor AgentAutoReadCoordinator {
             mode: .automatic,
             sessionID: "\(event.provider.rawValue):\(event.providerSessionID)"
         )
-        try? await speech.speak(request)
+        do {
+            try await speech.speak(request)
+        } catch is CancellationError {
+            // Superseded by newer speech or stopped by the user: expected, but still visible.
+            diagnostics.append(stage: "coordinator", outcome: "speak-cancelled", detail: "provider=\(event.provider.rawValue)")
+        } catch {
+            // Structural only: never the error's own text, which could carry content.
+            diagnostics.append(stage: "coordinator", outcome: "speak-failed", detail: "provider=\(event.provider.rawValue)")
+        }
     }
 
     private static func label(_ id: AgentSessionID) -> String {

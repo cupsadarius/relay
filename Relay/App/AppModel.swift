@@ -1070,7 +1070,10 @@ final class AppModel {
     /// Never invoked automatically; only ever called from an explicit user action.
     func speakLatestAgentResponse() async {
         do {
-            try await integrationManager.speakLatest()
+            guard try await integrationManager.speakLatest() else {
+                statusText = "No agent response to speak yet."
+                return
+            }
             diagnostics.record(.ttsSubmitted)
         } catch {
             diagnostics.record(.ttsFailed)

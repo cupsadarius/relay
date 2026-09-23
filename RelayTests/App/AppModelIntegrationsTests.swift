@@ -330,6 +330,24 @@ final class AppModelIntegrationsTests: XCTestCase {
         XCTAssertEqual(model.statusText, "Could not speak the latest agent response.")
     }
 
+    func testSpeakLatestAgentResponseWithNothingToSpeakRecordsNoSubmission() async {
+        let speech = FakeSpeechCoordinator()
+        let events = AsyncStream<HookEnvelope> { _ in }
+        let manager = IntegrationManager(
+            events: events,
+            integrations: [],
+            store: LatestAgentResponseStore(),
+            speechCoordinator: speech
+        )
+        let model = makeModel(integrationManager: manager)
+
+        await model.speakLatestAgentResponse()
+
+        XCTAssertTrue(speech.requests.isEmpty)
+        XCTAssertFalse(model.diagnosticsEntries.contains { $0.event == .ttsSubmitted })
+        XCTAssertEqual(model.statusText, "No agent response to speak yet.")
+    }
+
     func testIntegrationStatusPrefersActiveRuntimeStatusOverInstallerStatus() async {
         let claudeInstaller = makeClaudeInstaller()
         let event = AgentResponseEvent(
