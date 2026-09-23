@@ -50,6 +50,7 @@ logs/
 
 
 .worktrees/
+.claude/worktrees/
 
 
 .idea/
