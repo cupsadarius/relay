@@ -3,14 +3,20 @@ import SwiftUI
 @main
 struct RelayApp: App {
     @NSApplicationDelegateAdaptor(RelayAppDelegate.self) private var appDelegate
+    private let presentation = BuildFlavorPresentation.current
 
     var body: some Scene {
-        MenuBarExtra("Relay", systemImage: "waveform") {
-            MenuBarContentView(model: appDelegate.model)
+        MenuBarExtra {
+            MenuBarContentView(model: appDelegate.model, presentation: presentation)
+        } label: {
+            MenuBarLabel(presentation: presentation)
         }
         Settings {
             SettingsView(model: appDelegate.model)
-                .background(RelayWindowTagger(target: .settings).frame(width: 0, height: 0))
+                .background(
+                    RelayWindowTagger(target: .settings, title: presentation.settingsWindowTitle)
+                        .frame(width: 0, height: 0)
+                )
         }
         Window("Diagnostics", id: "diagnostics") {
             DiagnosticsView(model: appDelegate.model)
