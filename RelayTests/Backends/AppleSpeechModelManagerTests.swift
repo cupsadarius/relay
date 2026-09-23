@@ -15,7 +15,6 @@ final class AppleSpeechModelManagerTests: XCTestCase {
         XCTAssertEqual(models[0].capabilities, [.select])
         XCTAssertEqual(models[0].installState, .downloaded)
         XCTAssertTrue(models[0].isSelected)
-        XCTAssertFalse(models[0].isLoaded)
     }
 
     func testDownloadIsNoOpSuccess() async throws {

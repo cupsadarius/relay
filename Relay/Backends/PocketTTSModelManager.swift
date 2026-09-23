@@ -22,8 +22,7 @@ struct PocketTTSModelManager: SpeechModelManaging {
                 descriptor: Self.descriptor,
                 capabilities: [.download, .select, .remove],
                 installState: present ? .downloaded : .notDownloaded,
-                isSelected: true,
-                isLoaded: false
+                isSelected: true
             )
         ]
     }
@@ -48,8 +47,7 @@ struct PocketTTSModelManager: SpeechModelManaging {
     private static let descriptor = SpeechModelDescriptor(
         id: modelID,
         displayName: "PocketTTS v2.1",
-        detail: "English",
-        approximateDownloadBytes: nil
+        detail: "English"
     )
 
     private static func validate(_ id: String) throws {

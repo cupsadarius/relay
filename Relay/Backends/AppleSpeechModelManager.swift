@@ -27,18 +27,15 @@ struct AppleSpeechModelManager: SpeechModelManaging {
     let backendID = "apple-speech"
 
     /// Always exactly one status: always `.downloaded` (it ships with macOS -- there is nothing
-    /// to fetch), always selected (the one model IS the selection, mirroring
-    /// `ParakeetModelManager`), and never reported "loaded" -- Apple Speech's
-    /// `SpeechToTextBackend.prepare()`/`transcribe()` has no separate resident-model concept this
-    /// could reflect, so this mirrors `ParakeetModelManager.models()`'s always-false `isLoaded`.
+    /// to fetch) and always selected (the one model IS the selection, mirroring
+    /// `ParakeetModelManager`).
     func models() async -> [SpeechModelStatus] {
         [
             SpeechModelStatus(
                 descriptor: Self.descriptor,
                 capabilities: [.select],
                 installState: .downloaded,
-                isSelected: true,
-                isLoaded: false
+                isSelected: true
             )
         ]
     }
@@ -66,8 +63,7 @@ struct AppleSpeechModelManager: SpeechModelManaging {
     private static let descriptor = SpeechModelDescriptor(
         id: modelID,
         displayName: "On-device",
-        detail: nil,
-        approximateDownloadBytes: nil
+        detail: nil
     )
 
     private static func validate(_ id: String) throws {

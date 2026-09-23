@@ -165,11 +165,10 @@ private func status(
     selected: Bool = false
 ) -> SpeechModelStatus {
     SpeechModelStatus(
-        descriptor: .init(id: id, displayName: id, detail: nil, approximateDownloadBytes: nil),
+        descriptor: .init(id: id, displayName: id, detail: nil),
         capabilities: [.download, .select, .remove],
         installState: state,
-        isSelected: selected,
-        isLoaded: false
+        isSelected: selected
     )
 }
 

@@ -50,7 +50,7 @@ struct WhisperModelManager: SpeechModelManaging {
     /// - Parameters:
     ///   - store: owns presence/download/remove of verified local model folders.
     ///   - runtime: owns the single loaded Whisper inference context; consulted for
-    ///     `isLoaded`/unload-before-remove, never for download or presence.
+    ///     unload-before-remove only, never for download or presence.
     ///   - selectedModel: synchronously reads the currently-selected model id, or `nil`.
     ///   - setSelectedModel: writes the currently-selected model id (or clears it, given `nil`).
     init(
@@ -65,21 +65,18 @@ struct WhisperModelManager: SpeechModelManaging {
         self.setSelectedModel = setSelectedModel
     }
 
-    /// All 11 models, in catalog order, each with `installState` from the store, `isSelected`
-    /// from the selection seam, and `isLoaded` true only for the runtime's currently-loaded id.
-    /// The three are independent: a model can be downloaded without being selected, selected
-    /// without being downloaded, or loaded without being either (see `WhisperModelManagerTests
-    /// .testDownloadedSelectedLoadedAreIndependent`).
+    /// All 11 models, in catalog order, each with `installState` from the store and `isSelected`
+    /// from the selection seam. The two are independent: a model can be downloaded without being
+    /// selected, or selected without being downloaded (see `WhisperModelManagerTests
+    /// .testDownloadedAndSelectedAreIndependent`).
     func models() async -> [SpeechModelStatus] {
         let selected = selectedModel()
-        let loadedID = await runtime.currentModelID
         return WhisperModelID.allCases.map { id in
             SpeechModelStatus(
                 descriptor: Self.descriptor(for: id),
                 capabilities: [.download, .select, .remove],
                 installState: store.presence(of: id) ? .downloaded : .notDownloaded,
-                isSelected: selected == id,
-                isLoaded: loadedID == id
+                isSelected: selected == id
             )
         }
     }
@@ -119,8 +116,7 @@ struct WhisperModelManager: SpeechModelManaging {
         return SpeechModelDescriptor(
             id: whisperDescriptor.id.rawValue,
             displayName: whisperDescriptor.displayName,
-            detail: whisperDescriptor.englishOnly ? "English only" : "Multilingual",
-            approximateDownloadBytes: whisperDescriptor.approximateDiskBytes
+            detail: whisperDescriptor.englishOnly ? "English only" : "Multilingual"
         )
     }
 

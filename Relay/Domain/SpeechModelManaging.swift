@@ -4,7 +4,6 @@ struct SpeechModelDescriptor: Identifiable, Equatable, Sendable {
     let id: String
     let displayName: String
     let detail: String?
-    let approximateDownloadBytes: Int64?
 }
 
 enum SpeechModelInstallState: Equatable, Sendable {
@@ -27,7 +26,6 @@ struct SpeechModelStatus: Identifiable, Equatable, Sendable {
     let capabilities: SpeechModelCapabilities
     var installState: SpeechModelInstallState
     var isSelected: Bool
-    var isLoaded: Bool
     var id: String { descriptor.id }
 }
 

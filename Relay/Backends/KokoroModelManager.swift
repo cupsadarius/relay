@@ -23,8 +23,7 @@ struct KokoroModelManager: SpeechModelManaging {
                 descriptor: Self.descriptor,
                 capabilities: [.download, .select, .remove],
                 installState: present ? .downloaded : .notDownloaded,
-                isSelected: true,
-                isLoaded: false
+                isSelected: true
             )
         ]
     }
@@ -49,8 +48,7 @@ struct KokoroModelManager: SpeechModelManaging {
     private static let descriptor = SpeechModelDescriptor(
         id: modelID,
         displayName: "Kokoro 82M ANE",
-        detail: "English",
-        approximateDownloadBytes: nil
+        detail: "English"
     )
 
     private static func validate(_ id: String) throws {

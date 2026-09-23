@@ -13,11 +13,10 @@ final class WhisperModelCatalogTests: XCTestCase {
         XCTAssertFalse(WhisperModelCatalog.descriptor(for: .turbo).englishOnly)
     }
 
-    func testEveryModelHasNonEmptyArtifactAndPositiveSize() {
+    func testEveryModelHasNonEmptyArtifact() {
         for id in WhisperModelID.allCases {
             let d = WhisperModelCatalog.descriptor(for: id)
             XCTAssertFalse(d.runtimeArtifact.isEmpty)
-            XCTAssertGreaterThan(d.approximateDiskBytes, 0)
         }
     }
 

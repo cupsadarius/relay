@@ -1386,15 +1386,13 @@ private actor FakeSTTBackend: SpeechToTextBackend {
 private func makeModelStatus(
     id: String,
     installState: SpeechModelInstallState = .notDownloaded,
-    isSelected: Bool = false,
-    isLoaded: Bool = false
+    isSelected: Bool = false
 ) -> SpeechModelStatus {
     SpeechModelStatus(
-        descriptor: SpeechModelDescriptor(id: id, displayName: id, detail: nil, approximateDownloadBytes: nil),
+        descriptor: SpeechModelDescriptor(id: id, displayName: id, detail: nil),
         capabilities: [.download, .select, .remove],
         installState: installState,
-        isSelected: isSelected,
-        isLoaded: isLoaded
+        isSelected: isSelected
     )
 }
 
@@ -1546,11 +1544,10 @@ private actor FakeSpeechModelManager: SpeechModelManaging {
     func models() async -> [SpeechModelStatus] {
         [
             SpeechModelStatus(
-                descriptor: SpeechModelDescriptor(id: modelID, displayName: modelID, detail: nil, approximateDownloadBytes: nil),
+                descriptor: SpeechModelDescriptor(id: modelID, displayName: modelID, detail: nil),
                 capabilities: [.download, .select, .remove],
                 installState: .notDownloaded,
-                isSelected: true,
-                isLoaded: false
+                isSelected: true
             ),
         ]
     }

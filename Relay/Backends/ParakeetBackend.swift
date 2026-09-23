@@ -62,23 +62,6 @@ final class ParakeetBackend: SpeechToTextBackend {
         try await ensureLoaded()
     }
 
-    /// Downloads the model if needed, then loads it. Used by the Settings "Download" action.
-    /// `progress` is called with a fraction in [0, 1] while the download is in flight.
-    ///
-    /// Not gated on Apple Silicon here: Relay builds `ARCHS: arm64` only (see `project.yml`), so
-    /// every runtime this code executes on already is Apple Silicon. FluidAudio's own
-    /// `AsrModels.isModelValid`/`download` path still throws `ASRError.unsupportedPlatform` as a
-    /// defense-in-depth check underneath us.
-    func downloadModels(progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws {
-        do {
-            try await engine.load(allowDownload: true, progress: progress)
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            throw Self.mapLoadError(error)
-        }
-    }
-
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
         guard !audio.samples.isEmpty else {
             throw SpeechBackendError.noUsableAudio

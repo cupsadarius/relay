@@ -67,11 +67,11 @@ final class SettingsViewsSmokeTests: XCTestCase {
 
 final class SpeechModelRowPresentationTests: XCTestCase {
     private func descriptor(detail: String? = "English only") -> SpeechModelDescriptor {
-        SpeechModelDescriptor(id: "whisper-tiny", displayName: "Tiny", detail: detail, approximateDownloadBytes: 100)
+        SpeechModelDescriptor(id: "whisper-tiny", displayName: "Tiny", detail: detail)
     }
 
     func testActiveWhenSelectedAndDownloaded() {
-        let status = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloaded, isSelected: true, isLoaded: false)
+        let status = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloaded, isSelected: true)
         let presentation = SpeechModelRowPresentation.make(status: status)
 
         XCTAssertTrue(presentation.isActive)
@@ -80,7 +80,7 @@ final class SpeechModelRowPresentationTests: XCTestCase {
     }
 
     func testDownloadableWhenNotDownloaded() {
-        let status = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .notDownloaded, isSelected: false, isLoaded: false)
+        let status = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .notDownloaded, isSelected: false)
         let presentation = SpeechModelRowPresentation.make(status: status)
 
         XCTAssertFalse(presentation.isActive)
@@ -92,7 +92,7 @@ final class SpeechModelRowPresentationTests: XCTestCase {
     }
 
     func testDownloadingShowsProgress() {
-        let status = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloading(progress: 0.42), isSelected: false, isLoaded: false)
+        let status = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloading(progress: 0.42), isSelected: false)
         let presentation = SpeechModelRowPresentation.make(status: status)
 
         XCTAssertEqual(presentation.stateLabel, "Downloading 42%")
@@ -101,7 +101,7 @@ final class SpeechModelRowPresentationTests: XCTestCase {
     }
 
     func testFailedState() {
-        let status = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloadFailed, isSelected: false, isLoaded: false)
+        let status = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloadFailed, isSelected: false)
         let presentation = SpeechModelRowPresentation.make(status: status)
 
         XCTAssertEqual(presentation.stateLabel, "Download failed")
@@ -112,27 +112,27 @@ final class SpeechModelRowPresentationTests: XCTestCase {
     }
 
     func testRemoveOfferedOnlyForInactiveDownloaded() {
-        let inactiveDownloaded = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloaded, isSelected: false, isLoaded: false)
+        let inactiveDownloaded = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloaded, isSelected: false)
         XCTAssertTrue(SpeechModelRowPresentation.make(status: inactiveDownloaded).canRemove)
 
-        let activeDownloaded = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloaded, isSelected: true, isLoaded: false)
+        let activeDownloaded = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloaded, isSelected: true)
         XCTAssertTrue(SpeechModelRowPresentation.make(status: activeDownloaded).canRemove)
 
-        let notDownloaded = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .notDownloaded, isSelected: false, isLoaded: false)
+        let notDownloaded = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .notDownloaded, isSelected: false)
         XCTAssertFalse(SpeechModelRowPresentation.make(status: notDownloaded).canRemove)
 
-        let downloading = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloading(progress: 0.1), isSelected: false, isLoaded: false)
+        let downloading = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloading(progress: 0.1), isSelected: false)
         XCTAssertFalse(SpeechModelRowPresentation.make(status: downloading).canRemove)
     }
 
     func testEnglishVsMultilingualLabel() {
-        let english = SpeechModelStatus(descriptor: descriptor(detail: "English only"), capabilities: [.download, .select, .remove], installState: .notDownloaded, isSelected: false, isLoaded: false)
+        let english = SpeechModelStatus(descriptor: descriptor(detail: "English only"), capabilities: [.download, .select, .remove], installState: .notDownloaded, isSelected: false)
         XCTAssertEqual(SpeechModelRowPresentation.make(status: english).detail, "English only")
 
-        let multilingual = SpeechModelStatus(descriptor: descriptor(detail: "Multilingual"), capabilities: [.download, .select, .remove], installState: .notDownloaded, isSelected: false, isLoaded: false)
+        let multilingual = SpeechModelStatus(descriptor: descriptor(detail: "Multilingual"), capabilities: [.download, .select, .remove], installState: .notDownloaded, isSelected: false)
         XCTAssertEqual(SpeechModelRowPresentation.make(status: multilingual).detail, "Multilingual")
 
-        let missing = SpeechModelStatus(descriptor: descriptor(detail: nil), capabilities: [.download, .select, .remove], installState: .notDownloaded, isSelected: false, isLoaded: false)
+        let missing = SpeechModelStatus(descriptor: descriptor(detail: nil), capabilities: [.download, .select, .remove], installState: .notDownloaded, isSelected: false)
         XCTAssertEqual(SpeechModelRowPresentation.make(status: missing).detail, "")
     }
 
@@ -143,7 +143,7 @@ final class SpeechModelRowPresentationTests: XCTestCase {
     /// case -- a model can never show as in-use on a backend that can't run it -- falling back to
     /// the same "Downloaded" label an inactive-but-present model gets.
     func testNotActiveWhenBackendIsNotReadyEvenIfSelectedAndDownloaded() {
-        let status = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloaded, isSelected: true, isLoaded: false)
+        let status = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloaded, isSelected: true)
         let presentation = SpeechModelRowPresentation.make(status: status, backendReady: false)
 
         XCTAssertFalse(presentation.isActive)
@@ -155,8 +155,7 @@ final class SpeechModelRowPresentationTests: XCTestCase {
             descriptor: descriptor(),
             capabilities: [.download, .select, .remove],
             installState: .downloaded,
-            isSelected: false,
-            isLoaded: false
+            isSelected: false
         )
 
         let presentation = SpeechModelRowPresentation.make(status: status, backendReady: false)
@@ -170,8 +169,7 @@ final class SpeechModelRowPresentationTests: XCTestCase {
             descriptor: descriptor(),
             capabilities: [.select],
             installState: .downloaded,
-            isSelected: true,
-            isLoaded: false
+            isSelected: true
         )
         let presentation = SpeechModelRowPresentation.make(status: status)
 
@@ -199,11 +197,10 @@ final class SpeechVoiceRowPresentationTests: XCTestCase {
 final class CollapsedProviderSubtitleTests: XCTestCase {
     private func status(id: String, displayName: String, isSelected: Bool, installState: SpeechModelInstallState) -> SpeechModelStatus {
         SpeechModelStatus(
-            descriptor: SpeechModelDescriptor(id: id, displayName: displayName, detail: nil, approximateDownloadBytes: nil),
+            descriptor: SpeechModelDescriptor(id: id, displayName: displayName, detail: nil),
             capabilities: [.download, .select, .remove],
             installState: installState,
-            isSelected: isSelected,
-            isLoaded: false
+            isSelected: isSelected
         )
     }
 

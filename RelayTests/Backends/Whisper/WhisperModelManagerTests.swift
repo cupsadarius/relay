@@ -129,13 +129,12 @@ final class WhisperModelManagerTests: XCTestCase {
         }
     }
 
-    func testModelsDescriptorMapsEnglishOnlyAndSize() async {
+    func testModelsDescriptorMapsDisplayNameAndEnglishOnly() async {
         let models = await manager.models()
 
         let tinyEn = models.first { $0.id == WhisperModelID.tinyEn.rawValue }!
         XCTAssertEqual(tinyEn.descriptor.displayName, "Tiny (English)")
         XCTAssertEqual(tinyEn.descriptor.detail, "English only")
-        XCTAssertEqual(tinyEn.descriptor.approximateDownloadBytes, 76_650_906)
 
         let tiny = models.first { $0.id == WhisperModelID.tiny.rawValue }!
         XCTAssertEqual(tiny.descriptor.detail, "Multilingual")
@@ -151,7 +150,6 @@ final class WhisperModelManagerTests: XCTestCase {
         let status = modelsAfter.first { $0.id == WhisperModelID.smallEn.rawValue }!
         XCTAssertTrue(status.isSelected)
         XCTAssertEqual(status.installState, .notDownloaded)
-        XCTAssertFalse(status.isLoaded)
         XCTAssertEqual(log.all, [], "selecting must not trigger any runtime load")
     }
 
@@ -169,7 +167,6 @@ final class WhisperModelManagerTests: XCTestCase {
         let status = models.first { $0.id == WhisperModelID.tinyEn.rawValue }!
         XCTAssertEqual(status.installState, .downloaded)
         XCTAssertFalse(status.isSelected)
-        XCTAssertFalse(status.isLoaded)
     }
 
     func testRemoveLoadedModelUnloadsRuntimeFirstThenDeletes() async throws {
@@ -201,25 +198,20 @@ final class WhisperModelManagerTests: XCTestCase {
         XCTAssertEqual(stillLoaded, .baseEn)
     }
 
-    func testDownloadedSelectedLoadedAreIndependent() async throws {
-        // .baseEn: downloaded + selected, but never activated on the runtime -- not loaded.
+    func testDownloadedAndSelectedAreIndependent() async throws {
+        // .baseEn: downloaded + selected.
         try markWhisperModelPresent(.baseEn, in: tempDirectory)
         try await manager.selectModel(WhisperModelID.baseEn.rawValue)
-
-        // .smallEn: loaded on the runtime directly, but neither downloaded (per the store) nor
-        // selected -- representable because the manager never forces these three together.
-        try await runtime.activate(.smallEn)
 
         let models = await manager.models()
         let baseEn = models.first { $0.id == WhisperModelID.baseEn.rawValue }!
         XCTAssertEqual(baseEn.installState, .downloaded)
         XCTAssertTrue(baseEn.isSelected)
-        XCTAssertFalse(baseEn.isLoaded)
 
+        // .smallEn: neither downloaded nor selected.
         let smallEn = models.first { $0.id == WhisperModelID.smallEn.rawValue }!
         XCTAssertEqual(smallEn.installState, .notDownloaded)
         XCTAssertFalse(smallEn.isSelected)
-        XCTAssertTrue(smallEn.isLoaded)
     }
 
     func testRemovingSelectedModelLeavesSelectionInPlace() async throws {

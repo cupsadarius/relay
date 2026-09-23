@@ -36,11 +36,7 @@ struct ParakeetModelManager: SpeechModelManaging {
     }
 
     /// Always exactly one status. `isSelected` is always true: a one-model backend's only model
-    /// is always "the selection". `isLoaded` is always reported false -- `ParakeetEngine` exposes
-    /// no query for "is a session currently loaded in memory" (only presence, and a `load` call
-    /// that has the side effect of loading), and widening that seam purely for this cosmetic
-    /// field isn't worth it; see `WhisperModelManager.models()` for the many-model case where
-    /// loaded state is tracked for real.
+    /// is always "the selection".
     func models() async -> [SpeechModelStatus] {
         let present = await engine.modelsArePresent()
         return [
@@ -48,14 +44,12 @@ struct ParakeetModelManager: SpeechModelManaging {
                 descriptor: Self.descriptor,
                 capabilities: [.download, .select],
                 installState: present ? .downloaded : .notDownloaded,
-                isSelected: true,
-                isLoaded: false
+                isSelected: true
             )
         ]
     }
 
-    /// Validates `id`, then delegates to the engine's own download-and-load, the same path
-    /// `ParakeetBackend.downloadModels(progress:)` uses.
+    /// Validates `id`, then delegates to the engine's own download-and-load.
     func downloadModel(_ id: String, progress: @escaping @Sendable (Double) -> Void) async throws {
         try Self.validate(id)
         try await engine.load(allowDownload: true, progress: progress)
@@ -81,8 +75,7 @@ struct ParakeetModelManager: SpeechModelManaging {
     private static let descriptor = SpeechModelDescriptor(
         id: modelID,
         displayName: "Parakeet v2",
-        detail: "English only",
-        approximateDownloadBytes: nil
+        detail: "English only"
     )
 
     private static func validate(_ id: String) throws {

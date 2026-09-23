@@ -161,11 +161,10 @@ final class SpeechModelController {
         } else {
             rows.append(
                 SpeechModelStatus(
-                    descriptor: .init(id: modelID, displayName: modelID, detail: nil, approximateDownloadBytes: nil),
+                    descriptor: .init(id: modelID, displayName: modelID, detail: nil),
                     capabilities: [.download, .select, .remove],
                     installState: state,
-                    isSelected: false,
-                    isLoaded: false
+                    isSelected: false
                 )
             )
         }
