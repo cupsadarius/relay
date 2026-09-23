@@ -27,6 +27,9 @@ protocol StreamingAudioPlaying: AnyObject {
 @MainActor
 protocol AudioOutputNode: AnyObject {
     var outputFormat: AVAudioFormat { get }
+    /// Set by the player. Called on the main actor when the device configuration changes under the
+    /// node (a route change); nothing already scheduled will ever play.
+    var onConfigurationChange: (@MainActor () -> Void)? { get set }
     func start() throws
     func play()
     func stop()
@@ -41,11 +44,16 @@ final class AVEngineOutputNode: AudioOutputNode {
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
     let outputFormat: AVAudioFormat
+    var onConfigurationChange: (@MainActor () -> Void)?
+    private var configurationObserver: AudioEngineConfigurationObserver?
 
-    init() {
+    init(notificationCenter: NotificationCenter = .default) {
         engine.attach(playerNode)
         outputFormat = engine.mainMixerNode.outputFormat(forBus: 0)
         engine.connect(playerNode, to: engine.mainMixerNode, format: outputFormat)
+        configurationObserver = AudioEngineConfigurationObserver(engine: engine, center: notificationCenter) { [weak self] in
+            Task { @MainActor in self?.onConfigurationChange?() }
+        }
     }
 
     func start() throws { try engine.start() }
@@ -71,6 +79,7 @@ enum StreamingAudioPlayerError: Error, Equatable, Sendable {
     case converterCreationFailed
     case bufferAllocationFailed
     case conversionFailed
+    case outputConfigurationChanged
 }
 
 @MainActor
@@ -238,6 +247,24 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
         checkForCompletion(sessionID: sessionID)
     }
 
+    /// The output device changed under the node. Nothing scheduled will play and no played-back
+    /// callback will arrive, so waiting would stall until the speech watchdog fires. End now:
+    /// - Before `.started`, `startPlayback` throws, so the router may fall back.
+    /// - After it, the session ends `.failed`.
+    /// Either way the healthy source is cancelled.
+    private func handleOutputConfigurationChange() {
+        guard let sessionID = currentSessionID, !explicitlyStopped else { return }
+        let wasStarted = started
+        tearDownPlayback(cancelSource: true)
+        currentSessionID = nil
+        activeSource = nil
+        if wasStarted {
+            onEvent?(.failed(sessionID: sessionID))
+        } else {
+            resumeStart(throwing: StreamingAudioPlayerError.outputConfigurationChanged)
+        }
+    }
+
     /// The source reported cancellation after playback started, without `stop()` being called
     /// on this player (e.g. its producer was cancelled). Per the `TTSAudioSource` contract that
     /// is a cancellation, not a failure: stop output now, without draining, and end the session
@@ -343,7 +370,12 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
         }
 
         if outputNode == nil {
-            outputNode = makeOutputNode()
+            let node = makeOutputNode()
+            node.onConfigurationChange = { [weak self, weak node] in
+                guard let self, let node, self.outputNode === node else { return }
+                self.handleOutputConfigurationChange()
+            }
+            outputNode = node
         }
         guard let outputFormat = outputNode?.outputFormat else {
             throw StreamingAudioPlayerError.invalidSourceFormat

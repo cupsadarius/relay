@@ -55,6 +55,51 @@ final class StreamingAudioPlayerTests: XCTestCase {
         XCTAssertEqual(events.values.filter(\.isLevel).count, 3, "one level per buffer that actually played")
     }
 
+    func testRouteChangeAfterStartFailsTheSessionOnceAndCancelsTheSource() async throws {
+        let node = FakeOutputNode()
+        let player = StreamingAudioPlayer(makeOutputNode: { node })
+        let events = EventBox()
+        player.onEvent = { events.append($0) }
+        let sessionID = UUID()
+        let source = ScriptedAudioSource(repeating: Self.frame(samples: 1_920))
+        try await player.startPlayback(source, sessionID: sessionID)
+        XCTAssertTrue(events.values.contains(.started(sessionID: sessionID)))
+
+        node.simulateConfigurationChange()
+
+        let terminal = events.values.filter { !$0.isLevel && $0 != .started(sessionID: sessionID) }
+        XCTAssertEqual(terminal, [.failed(sessionID: sessionID)])
+        try await waitUntilAsync { await source.wasCancelled() }
+        node.firePlayed(node.scheduledCount)
+        XCTAssertFalse(events.values.contains(.finished(sessionID: sessionID)))
+    }
+
+    func testRouteChangeBeforeStartThrowsFromStartPlaybackWithoutATerminalEvent() async throws {
+        let nodes = NodeBox()
+        let player = StreamingAudioPlayer(makeOutputNode: {
+            let node = FakeOutputNode()
+            nodes.append(node)
+            return node
+        })
+        let events = EventBox()
+        player.onEvent = { events.append($0) }
+        let sessionID = UUID()
+        let source = FirstFrameThenHangSource(frame: Self.frame(samples: 1_920))
+
+        let start = Task { try await player.startPlayback(source, sessionID: sessionID) }
+        try await waitUntilAsync { !nodes.values.isEmpty }
+        nodes.values[0].simulateConfigurationChange()
+
+        do {
+            try await start.value
+            XCTFail("Expected startPlayback to throw")
+        } catch {
+            XCTAssertEqual(error as? StreamingAudioPlayerError, .outputConfigurationChanged)
+        }
+        XCTAssertFalse(events.values.contains(.failed(sessionID: sessionID)))
+        try await waitUntilAsync { await source.cancelled }
+    }
+
     func testSourceFailureBeforeStartThrowsAndEmitsNoTerminalEvent() async {
         let node = FakeOutputNode()
         let player = StreamingAudioPlayer(makeOutputNode: { node })
@@ -646,6 +691,31 @@ private actor ScriptedAudioSource: TTSAudioSource {
     func wasCancelled() -> Bool { cancelled }
 }
 
+/// Yields one frame, then suspends until cancelled, so playback stays in its prebuffer window.
+private actor FirstFrameThenHangSource: TTSAudioSource {
+    private let frame: TTSAudioFrame
+    private var delivered = false
+    private var waiter: CheckedContinuation<TTSAudioFrame?, Error>?
+    private(set) var cancelled = false
+
+    init(frame: TTSAudioFrame) { self.frame = frame }
+
+    func next() async throws -> TTSAudioFrame? {
+        if cancelled { throw CancellationError() }
+        if !delivered {
+            delivered = true
+            return frame
+        }
+        return try await withCheckedThrowingContinuation { waiter = $0 }
+    }
+
+    func cancel() {
+        cancelled = true
+        waiter?.resume(throwing: CancellationError())
+        waiter = nil
+    }
+}
+
 /// A fake `AudioOutputNode`: reports a real `AVAudioFormat` (so conversion runs headless) and holds
 /// buffer-played callbacks so a test can fire them deterministically, driving the player's
 /// demand-bounded scheduling without a real audio device.
@@ -656,6 +726,11 @@ private final class FakeOutputNode: AudioOutputNode {
     private(set) var stopCount = 0
     private(set) var scheduledDurations: [TimeInterval] = []
     private var playedCallbacks: [@Sendable @MainActor () -> Void] = []
+    var onConfigurationChange: (@MainActor () -> Void)?
+
+    func simulateConfigurationChange() {
+        onConfigurationChange?()
+    }
 
     init(sampleRate: Double = 24_000, channels: AVAudioChannelCount = 1) {
         outputFormat = AVAudioFormat(
