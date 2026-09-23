@@ -58,6 +58,9 @@ final class DictationCoordinator: DictationCoordinating {
     /// The STT backend display name announced to the overlay when listening began, so a later
     /// fallback to a different backend during transcription can be detected and re-announced.
     private var announcedBackendName: String?
+    /// The backend chosen when listening began. `finish()` passes it to the final transcription,
+    /// so backends ruled out at listen time are not probed again.
+    private var sttSelection: STTSelection?
     /// Live, best-effort interim transcription for the pill (see StreamingTranscriber).
     /// Created fresh per session in `start()`, torn down in `stopStreamingTranscription()` (joining
     /// teardown: cancel/start's failure path) or `abandonStreamingTranscription()` (non-joining
@@ -146,9 +149,11 @@ final class DictationCoordinator: DictationCoordinating {
         status("Listening…")
         diagnostics?.record(.dictation(.listening))
         announcedBackendName = nil
-        if let name = await sttRouter.preferredBackendDisplayName(), isRecording(session) {
-            announcedBackendName = name
-            activity.setBackendName(name, sessionID: session)
+        sttSelection = nil
+        if let selection = await sttRouter.selectBackend(), isRecording(session) {
+            sttSelection = selection
+            announcedBackendName = selection.displayName
+            activity.setBackendName(selection.displayName, sessionID: session)
         }
         if finishRequested {
             finishRequested = false
@@ -199,6 +204,7 @@ final class DictationCoordinator: DictationCoordinating {
             processingSession = nil
         }
         finishRequested = false
+        sttSelection = nil
         state = .cancelling(sessionID)
         // Published before awaiting `microphone.cancel()` so the capsule hides instantly, and so
         // a `start()` admitted mid-teardown (which the `.cancelling` state above already blocks)
@@ -340,7 +346,9 @@ final class DictationCoordinator: DictationCoordinating {
 
         let transcript: Transcript
         do {
-            transcript = try await sttRouter.transcribe(audio: audio, options: .init())
+            let selection = sttSelection
+            sttSelection = nil
+            transcript = try await sttRouter.transcribe(audio: audio, options: .init(), selection: selection)
         } catch {
             guard !Task.isCancelled, isFinishing(session) else { return }
             fail(error, at: .transcription, session: session)

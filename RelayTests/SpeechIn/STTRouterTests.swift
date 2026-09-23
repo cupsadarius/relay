@@ -116,44 +116,44 @@ final class STTRouterTests: XCTestCase {
         XCTAssertEqual(secondTranscript, Transcript(text: "second", backendID: "second"))
     }
 
-    func testPreferredBackendDisplayNameReturnsFirstAvailableBackend() async {
+    func testSelectBackendReturnsFirstAvailableBackend() async {
         let first = FakeSTTBackend(id: "first")
         let second = FakeSTTBackend(id: "second")
         let router = makeRouter([first, second])
 
-        let name = await router.preferredBackendDisplayName()
+        let name = await router.selectBackend()?.displayName
 
         XCTAssertEqual(name, "first")
     }
 
-    func testPreferredBackendDisplayNameSkipsUnavailableBackends() async {
+    func testSelectBackendSkipsUnavailableBackends() async {
         let first = FakeSTTBackend(id: "first")
         first.availabilityValue = .unavailable("offline")
         let second = FakeSTTBackend(id: "second")
         let router = makeRouter([first, second])
 
-        let name = await router.preferredBackendDisplayName()
+        let name = await router.selectBackend()?.displayName
 
         XCTAssertEqual(name, "second")
     }
 
-    func testPreferredBackendDisplayNameIsNilWhenNoneAreAvailable() async {
+    func testSelectBackendIsNilWhenNoneAreAvailable() async {
         let first = FakeSTTBackend(id: "first")
         first.availabilityValue = .unavailable("offline")
         let router = makeRouter([first])
 
-        let name = await router.preferredBackendDisplayName()
+        let name = await router.selectBackend()?.displayName
 
         XCTAssertNil(name)
     }
 
-    func testPreferredBackendDisplayNameTreatsPermissionDeniedAsTerminal() async {
+    func testSelectBackendTreatsPermissionDeniedAsTerminal() async {
         let first = FakeSTTBackend(id: "first")
         first.availabilityValue = .permissionDenied
         let second = FakeSTTBackend(id: "second")
         let router = makeRouter([first, second])
 
-        let name = await router.preferredBackendDisplayName()
+        let name = await router.selectBackend()?.displayName
 
         XCTAssertNil(name)
         XCTAssertEqual(second.availabilityCallCount, 0)
@@ -169,77 +169,89 @@ final class STTRouterTests: XCTestCase {
         XCTAssertNil(router.displayName(forBackendID: "missing"))
     }
 
-    func testTranscribeReusesTheSelectionCachedByPreferredBackendDisplayNameWithoutReprobingSkippedBackends() async throws {
+    func testSelectBackendReturnsTheRemainingCandidateOrder() async {
         let first = FakeSTTBackend(id: "first")
         first.availabilityValue = .unavailable("offline")
         let second = FakeSTTBackend(id: "second")
-        let router = makeRouter([first, second])
+        let third = FakeSTTBackend(id: "third")
+        let router = makeRouter([first, second, third])
 
-        let name = await router.preferredBackendDisplayName()
-        XCTAssertEqual(name, "second")
-        XCTAssertEqual(first.availabilityCallCount, 1)
-        XCTAssertEqual(second.availabilityCallCount, 1)
+        let selection = await router.selectBackend()
 
-        let transcript = try await router.transcribe(audio: audio, options: .init())
-
-        XCTAssertEqual(transcript, Transcript(text: "second", backendID: "second"))
-        // "first" was already ruled out by the lookup above and must not be re-probed; "second"
-        // is re-checked once more (the one backend the cache actually resumes from).
-        XCTAssertEqual(first.availabilityCallCount, 1)
-        XCTAssertEqual(second.availabilityCallCount, 2)
+        XCTAssertEqual(selection, STTSelection(backendID: "second", displayName: "second", candidateOrder: ["second", "third"]))
     }
 
-    func testCachedSelectionIsClearedAfterOneTranscribeCallSoALaterCallReprobesFromScratch() async throws {
+    func testTranscribeWithASelectionStartsAtTheSelectedBackend() async throws {
         let first = FakeSTTBackend(id: "first")
         first.availabilityValue = .unavailable("offline")
         let second = FakeSTTBackend(id: "second")
         let router = makeRouter([first, second])
-
-        _ = await router.preferredBackendDisplayName()
-        _ = try await router.transcribe(audio: audio, options: .init())
-
+        let selection = await router.selectBackend()
         first.availabilityValue = .available
+
+        let transcript = try await router.transcribe(audio: audio, options: .init(), selection: selection)
+
+        XCTAssertEqual(transcript, Transcript(text: "second", backendID: "second"))
+        XCTAssertEqual(first.availabilityCallCount, 1, "the selection already ruled out 'first'")
+        XCTAssertEqual(first.transcriptionCount, 0)
+    }
+
+    func testSelectBackendLeavesNoHiddenStateForALaterTranscribe() async throws {
+        let first = FakeSTTBackend(id: "first")
+        first.availabilityValue = .unavailable("offline")
+        let second = FakeSTTBackend(id: "second")
+        let router = makeRouter([first, second])
+        _ = await router.selectBackend()
+        first.availabilityValue = .available
+
         let transcript = try await router.transcribe(audio: audio, options: .init())
 
         XCTAssertEqual(transcript, Transcript(text: "first", backendID: "first"))
     }
 
-    func testInterimTranscribeCallsDoNotConsumeOrDisturbTheCachedSelectionForTheFinalCall() async throws {
-        let first = FakeSTTBackend(id: "first")
-        first.availabilityValue = .unavailable("offline")
+    func testInterimUsesOnlyTheFirstAvailableBackendAndNeverFallsBack() async {
+        let first = FakeSTTBackend(id: "first", error: .initializationFailed("cold"))
         let second = FakeSTTBackend(id: "second")
         let router = makeRouter([first, second])
 
-        let name = await router.preferredBackendDisplayName()
-        XCTAssertEqual(name, "second")
-        XCTAssertEqual(first.availabilityCallCount, 1)
-
-        // Each interim tick does its own fresh full walk (by design, so it never touches the
-        // cache), so it re-checks "first" every time - that's expected. What matters is that
-        // none of these calls consume or clear the cache the lookup above populated.
-        for _ in 0..<3 {
-            let interim = try await router.transcribeForInterim(audio: audio, options: .init())
-            XCTAssertEqual(interim, Transcript(text: "second", backendID: "second"))
+        do {
+            _ = try await router.transcribeForInterim(audio: audio, options: .init())
+            XCTFail("Interim must surface the first backend's error")
+        } catch {
+            XCTAssertEqual(error as? SpeechBackendError, .initializationFailed("cold"))
         }
-        XCTAssertEqual(first.availabilityCallCount, 4)
-
-        let final = try await router.transcribe(audio: audio, options: .init())
-
-        XCTAssertEqual(final, Transcript(text: "second", backendID: "second"))
-        XCTAssertEqual(first.availabilityCallCount, 4)
+        XCTAssertEqual(second.transcriptionCount, 0, "a fallback would load a second model on every interim tick")
+        XCTAssertEqual(second.availabilityCallCount, 0)
     }
 
-    func testTranscribeForInterimAlwaysWalksTheFullCurrentBackendOrder() async throws {
+    func testInterimSkipsUnavailableBackendsToFindTheFirstAvailableOne() async throws {
         let first = FakeSTTBackend(id: "first")
-        first.availabilityValue = .unavailable("offline")
+        first.availabilityValue = .modelNotDownloaded
         let second = FakeSTTBackend(id: "second")
         let router = makeRouter([first, second])
 
-        let interim = try await router.transcribeForInterim(audio: audio, options: .init())
+        let transcript = try await router.transcribeForInterim(audio: audio, options: .init())
 
-        XCTAssertEqual(interim, Transcript(text: "second", backendID: "second"))
-        XCTAssertEqual(first.availabilityCallCount, 1)
-        XCTAssertEqual(second.availabilityCallCount, 1)
+        XCTAssertEqual(transcript, Transcript(text: "second", backendID: "second"))
+    }
+
+    func testTranscribeStopsAtTheNextBackendWhenTheTaskIsCancelled() async {
+        let first = FakeSTTBackend(id: "first")
+        let router = makeRouter([first])
+
+        let task = Task { @MainActor in try await router.transcribe(audio: audio, options: .init()) }
+        task.cancel()
+
+        do {
+            _ = try await task.value
+            XCTFail("Expected cancellation")
+        } catch is CancellationError {
+            // expected
+        } catch {
+            XCTFail("Unexpected \(error)")
+        }
+        XCTAssertEqual(first.availabilityCallCount, 0)
+        XCTAssertEqual(first.transcriptionCount, 0)
     }
 
     func testTranscribeWithoutAPrecedingLookupPerformsItsOwnFullWalk() async throws {
@@ -296,6 +308,16 @@ final class STTRouterTests: XCTestCase {
         _ = try? await router.transcribeForInterim(audio: audio, options: .init())
 
         XCTAssertNil(router.lastFailedBackendDisplayName)
+    }
+
+    func testTranscribeWithASelectionRecordsTheBackendWhoseErrorWasThrown() async {
+        let first = FakeSTTBackend(id: "first", error: .resourceExhausted)
+        let router = makeRouter([first])
+        let selection = await router.selectBackend()
+
+        _ = try? await router.transcribe(audio: audio, options: .init(), selection: selection)
+
+        XCTAssertEqual(router.lastFailedBackendDisplayName, "first")
     }
 
     private let audio = AudioInput(samples: [0.1], sampleRate: 16_000)

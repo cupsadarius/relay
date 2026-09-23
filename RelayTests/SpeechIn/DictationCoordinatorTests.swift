@@ -285,6 +285,23 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(statuses.last, "Dictation failed: Download the Parakeet model in Settings, then try again.")
     }
 
+    func testFinalTranscriptionUsesTheBackendSelectedWhenListeningBegan() async {
+        let events = EventLog()
+        let first = ToggleAvailabilityBackend(id: "first", events: events)
+        first.availabilityValue = .unavailable("offline")
+        let second = ToggleAvailabilityBackend(id: "second", events: events)
+        let sttRouter = STTRouter(backends: [first.id: first, second.id: second], backendOrder: { ["first", "second"] })
+        let overlay = RecordingActivityOverlay()
+        let coordinator = makeCoordinator(sttRouter: sttRouter, overlay: overlay)
+
+        await coordinator.start()
+        first.availabilityValue = .available
+        await coordinator.finish()
+
+        XCTAssertEqual(events.values, ["stt.transcribe.second"])
+        XCTAssertEqual(first.availabilityCallCount, 1, "the listen-time selection already ruled out 'first'")
+    }
+
     func testEveryMicrophoneErrorHasStableActionableStartStatus() async {
         let cases: [(MicrophoneCaptureError, String)] = [
             (.unavailable("x"), "Microphone is unavailable. Check its connection and permissions."),
@@ -1133,6 +1150,31 @@ private final class NamedFakeBackend: SpeechToTextBackend {
     }
 }
 
+@MainActor
+private final class ToggleAvailabilityBackend: SpeechToTextBackend {
+    let id: String
+    let displayName: String
+    let events: EventLog
+    var availabilityValue: BackendAvailability = .available
+    private(set) var availabilityCallCount = 0
+
+    init(id: String, events: EventLog) {
+        self.id = id
+        self.displayName = id
+        self.events = events
+    }
+
+    func availability() async -> BackendAvailability {
+        availabilityCallCount += 1
+        return availabilityValue
+    }
+
+    func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
+        events.append("stt.transcribe.\(id)")
+        return Transcript(text: "text", backendID: id)
+    }
+}
+
 /// A backend whose `transcribe` calls each suspend (FIFO) until explicitly released, so tests can
 /// observe coordinator behavior while a transcription stage is still in flight — including
 /// multiple overlapping calls across sessions, and whether the calling `Task` was genuinely
@@ -1171,7 +1213,7 @@ private final class BlockingBackend: SpeechToTextBackend, @unchecked Sendable {
 }
 
 /// A backend whose `availability()` blocks on its very first call until `release()` is invoked,
-/// then answers immediately on every later call. Simulates a `preferredBackendDisplayName()`
+/// then answers immediately on every later call. Simulates a `selectBackend()`
 /// lookup that's still in flight when a concurrent `finish()` reaches its own (separate)
 /// `transcribe()`-driven availability check on the same backend.
 private final class BlockingAvailabilityBackend: SpeechToTextBackend, @unchecked Sendable {

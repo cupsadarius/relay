@@ -1,3 +1,15 @@
+import Foundation
+
+/// The STT backend chosen for one dictation session. `STTRouter.selectBackend()` returns it when
+/// listening begins, and the caller passes it back to `transcribe(audio:options:selection:)`.
+/// `candidateOrder` starts at the chosen backend, so the final transcription skips backends
+/// already ruled out, without the router caching a candidate order between calls.
+struct STTSelection: Equatable, Sendable {
+    let backendID: String
+    let displayName: String
+    let candidateOrder: [String]
+}
+
 @MainActor
 final class STTRouter {
     private enum SelectionStep {
@@ -8,11 +20,12 @@ final class STTRouter {
 
     private let backends: [String: any SpeechToTextBackend]
     private let backendOrder: () -> [String]
-    private var cachedCandidateOrder: [String]?
-    /// Display name of the backend whose error the most recent FINAL `transcribe(audio:options:)`
-    /// threw (the one that failed, or the last one skipped as unavailable). `nil` after a
-    /// success, or when no registered backend was tried. Interim transcriptions never touch it.
-    /// Lets dictation error copy name the backend that needs attention.
+
+    /// Display name of the backend whose error the most recent FINAL
+    /// `transcribe(audio:options:selection:)` threw (the one that failed, or the last one skipped
+    /// as unavailable). `nil` after a success, when no registered backend was tried, or when the
+    /// call was cancelled. Interim transcriptions never touch it. Lets dictation error copy name
+    /// the backend that needs attention.
     private(set) var lastFailedBackendDisplayName: String?
 
     init(
@@ -27,56 +40,39 @@ final class STTRouter {
         backends[id]?.displayName
     }
 
-    func preferredBackendDisplayName() async -> String? {
+    /// The first available backend in the current order, or `nil` if none is available or a
+    /// backend reports a terminal state (permission denied).
+    func selectBackend() async -> STTSelection? {
         let order = backendOrder()
         for (index, id) in order.enumerated() {
             guard let backend = backends[id] else { continue }
             switch classify(await backend.availability()) {
             case .use:
-                cachedCandidateOrder = Array(order[index...])
-                return backend.displayName
+                return STTSelection(backendID: id, displayName: backend.displayName, candidateOrder: Array(order[index...]))
             case .terminal:
-                cachedCandidateOrder = nil
                 return nil
             case .skip:
                 continue
             }
         }
-        cachedCandidateOrder = nil
         return nil
     }
 
-    func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
-        let order = cachedCandidateOrder ?? backendOrder()
-        cachedCandidateOrder = nil
+    /// Final transcription with fallback. It walks `selection.candidateOrder` when given, else the
+    /// current backend order, and stops at the next backend once the task is cancelled.
+    func transcribe(audio: AudioInput, options: STTOptions, selection: STTSelection? = nil) async throws -> Transcript {
         lastFailedBackendDisplayName = nil
-        return try await transcribe(audio: audio, options: options, order: order) { failedName in
-            lastFailedBackendDisplayName = failedName
-        }
-    }
-
-    func transcribeForInterim(audio: AudioInput, options: STTOptions) async throws -> Transcript {
-        try await transcribe(audio: audio, options: options, order: backendOrder()) { _ in }
-    }
-
-    /// `onFailure` receives the display name of the backend whose error is about to be thrown
-    /// (`nil` when no registered backend was tried), right before the throw.
-    private func transcribe(
-        audio: AudioInput,
-        options: STTOptions,
-        order: [String],
-        onFailure: (String?) -> Void
-    ) async throws -> Transcript {
         var lastError: SpeechBackendError = .unavailable("No STT backend is available")
         var lastErrorBackendName: String?
 
-        for id in order {
+        for id in selection?.candidateOrder ?? backendOrder() {
+            try Task.checkCancellation()
             guard let backend = backends[id] else { continue }
             switch classify(await backend.availability()) {
             case .use:
                 break
             case let .terminal(error):
-                onFailure(backend.displayName)
+                lastFailedBackendDisplayName = backend.displayName
                 throw error
             case let .skip(error):
                 lastError = error
@@ -90,12 +86,34 @@ final class STTRouter {
                 lastError = error
                 lastErrorBackendName = backend.displayName
             } catch {
-                onFailure(backend.displayName)
+                lastFailedBackendDisplayName = backend.displayName
                 throw error
             }
         }
 
-        onFailure(lastErrorBackendName)
+        lastFailedBackendDisplayName = lastErrorBackendName
+        throw lastError
+    }
+
+    /// Interim (live preview) transcription runs every ~450 ms. It uses only the first
+    /// available backend and never falls back: a fallback here would load a second model on
+    /// every tick just to draw a preview. It never touches `lastFailedBackendDisplayName`.
+    func transcribeForInterim(audio: AudioInput, options: STTOptions) async throws -> Transcript {
+        var lastError: SpeechBackendError = .unavailable("No STT backend is available")
+
+        for id in backendOrder() {
+            try Task.checkCancellation()
+            guard let backend = backends[id] else { continue }
+            switch classify(await backend.availability()) {
+            case .use:
+                return try await backend.transcribe(audio: audio, options: options)
+            case let .terminal(error):
+                throw error
+            case let .skip(error):
+                lastError = error
+            }
+        }
+
         throw lastError
     }
 
