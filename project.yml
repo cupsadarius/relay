@@ -44,6 +44,8 @@ targets:
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Relay uses on-device speech recognition when the Apple Speech backend is selected."
       configs:
         debug:
+          # Debug is a separate app ("Relay Debug") with its own TCC grants, settings, socket and
+          # helper. Stable signing (below) keeps its grants across rebuilds.
           PRODUCT_BUNDLE_IDENTIFIER: dev.relaymac.Relay.debug
           INFOPLIST_KEY_CFBundleDisplayName: "Relay Debug"
     postbuildScripts:
@@ -66,7 +68,10 @@ targets:
         SWIFT_VERSION: 6.0
         ARCHS: arm64
         ONLY_ACTIVE_ARCH: YES
-        CODE_SIGN_IDENTITY: "-"
+        # Sign the embedded helper with the same stable cert as the app (not ad-hoc "-"), so its
+        # cdhash-pinned identity does not churn the app bundle's seal on every rebuild.
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Relay Local Development"
   RelayTests:
     type: bundle.unit-test
     platform: macOS

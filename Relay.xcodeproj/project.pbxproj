@@ -997,6 +997,9 @@
 					00CC2921912F47FC3C6615F8 = {
 						ProvisioningStyle = Manual;
 					};
+					7B4F067502ABA872D758B21D = {
+						ProvisioningStyle = Manual;
+					};
 				};
 			};
 			buildConfigurationList = CAE7F6E0ECA548A1858A3109 /* Build configuration list for PBXProject "Relay" */;
@@ -1383,7 +1386,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = arm64;
-				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_IDENTITY = "Relay Local Development";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1456,7 +1460,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = arm64;
-				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_IDENTITY = "Relay Local Development";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
