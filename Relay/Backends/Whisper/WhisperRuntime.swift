@@ -28,74 +28,121 @@ enum WhisperRuntimeError: Error, Equatable, Sendable {
     case notLoaded
 }
 
-/// Owns the single heavyweight Whisper inference context Relay ever keeps resident, guaranteeing
-/// at most one model is loaded at a time. `activate` switches models by unloading whatever is
-/// currently loaded (if different) *before* loading the replacement, so a load failure never
-/// leaves two contexts resident and never leaves a stale context masquerading as the active one:
-/// `loaded` is only assigned once the new context's load has actually succeeded.
+/// Owns the single heavyweight Whisper inference context Relay ever keeps resident.
 ///
-/// An `actor` because the loaded context is mutable state shared between `activate` and
-/// `transcribe` calls that may arrive from different tasks (e.g. a model-picker UI switching
-/// models while a previous transcription is still in flight).
+/// Every change of the resident model is one *transition* (activate to an id, or unload to `nil`).
+/// At most one transition runs at a time:
+/// - A caller that asks for the transition already in flight joins it, so a concurrent interim
+///   tick and final transcription load a model once instead of leaking a second multi-GB context.
+/// - A caller that asks for a different target waits for the running transition, then re-checks.
+///
+/// A transition unloads the current context strictly before loading the replacement, and first
+/// waits until no `transcribe` is still using that context. `loaded` is assigned only after a
+/// load succeeds, so a failed load leaves nothing resident.
 actor WhisperRuntime {
+    private struct Transition {
+        let target: WhisperModelID?
+        let token: UUID
+        let task: Task<Void, Error>
+    }
+
     private let engine: any WhisperEngine
     private let modelFolder: @Sendable (WhisperModelID) -> URL
     private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "whisper")
 
     private var loaded: (id: WhisperModelID, context: any LoadedWhisperContext)?
+    private var inFlightTransition: Transition?
+    private var activeTranscriptions = 0
+    private var drainWaiters: [CheckedContinuation<Void, Never>] = []
 
-    /// The currently-loaded model, if any. `nil` whenever no model has been activated yet, the
-    /// last `activate` failed, or `unload()` was called. Lets other components (e.g.
-    /// `WhisperModelManager`) decide whether a model switch or removal needs to unload first,
-    /// without duplicating `WhisperRuntime`'s own loaded-state bookkeeping.
+    /// The currently-loaded model, if any. `nil` before any activation, after a failed one, after
+    /// `unload()`, and while a transition is between unloading the old model and loading the new.
     var currentModelID: WhisperModelID? {
         loaded?.id
     }
 
-    /// - Parameters:
-    ///   - engine: the seam to a real (or fake) inference backend.
-    ///   - modelFolder: resolves a `WhisperModelID` to the local directory its verified files
-    ///     live in -- in production, `WhisperModelStore.modelDirectory(for:)`.
     init(engine: any WhisperEngine, modelFolder: @escaping @Sendable (WhisperModelID) -> URL) {
         self.engine = engine
         self.modelFolder = modelFolder
     }
 
-    /// Makes `id` the active model. A no-op if `id` is already active. Otherwise, unloads
-    /// whatever is currently loaded (strictly before loading `id`), then loads `id`. If the load
-    /// throws, `loaded` is left `nil` -- never the old context, never a half-initialized new one.
+    /// Makes `id` the active model. A no-op if `id` is already active; joins an in-flight
+    /// activation of `id`. Throws the load error if loading fails, leaving nothing loaded.
     func activate(_ id: WhisperModelID) async throws {
-        if let loaded, loaded.id == id {
-            return
-        }
-
-        if let current = loaded {
-            await current.context.unload()
-            loaded = nil
-        }
-
-        let context = try await engine.load(modelFolder: modelFolder(id))
-        loaded = (id: id, context: context)
-        logger.debug("Whisper model activated")
+        try await transition(to: id)
     }
 
-    /// Transcribes `samples` using the currently active model. Throws `WhisperRuntimeError
-    /// .notLoaded` if no model is active (nothing activated yet, or the last `activate` failed).
+    /// Transcribes with the active model. Throws `WhisperRuntimeError.notLoaded` if none is
+    /// active. The context counts as in use until this returns, so no transition unloads it
+    /// underneath the call.
     func transcribe(_ samples: [Float], options: STTOptions) async throws -> String {
         guard let loaded else {
             throw WhisperRuntimeError.notLoaded
         }
+        activeTranscriptions += 1
+        defer {
+            activeTranscriptions -= 1
+            if activeTranscriptions == 0 {
+                let waiters = drainWaiters
+                drainWaiters = []
+                for waiter in waiters { waiter.resume() }
+            }
+        }
         return try await loaded.context.transcribe(samples, options: options)
     }
 
-    /// Unloads the active model, if any. A no-op if nothing is loaded.
+    /// Unloads the active model once in-flight transcriptions finish. Waits for (and then
+    /// undoes) an in-flight activation. A no-op if nothing is loaded.
     func unload() async {
-        guard let current = loaded else {
-            return
+        try? await transition(to: nil)
+    }
+
+    private func transition(to target: WhisperModelID?) async throws {
+        while true {
+            if inFlightTransition == nil, loaded?.id == target {
+                return
+            }
+            guard let inFlight = inFlightTransition else { break }
+            if inFlight.target == target {
+                try await inFlight.task.value
+            } else {
+                _ = try? await inFlight.task.value
+            }
+            // Re-evaluate: another transition may have started while this caller waited.
         }
-        await current.context.unload()
-        loaded = nil
-        logger.debug("Whisper model unloaded")
+
+        let token = UUID()
+        let task = Task { try await self.performTransition(to: target, token: token) }
+        inFlightTransition = Transition(target: target, token: token, task: task)
+        try await task.value
+    }
+
+    private func performTransition(to target: WhisperModelID?, token: UUID) async throws {
+        // Cleared here, on the actor, before the task completes - so every waiter that resumes
+        // from `task.value` already sees no transition in flight and cannot spin on a stale one.
+        defer {
+            if inFlightTransition?.token == token {
+                inFlightTransition = nil
+            }
+        }
+
+        if let current = loaded {
+            loaded = nil
+            await waitForActiveTranscriptions()
+            await current.context.unload()
+            logger.debug("Whisper model unloaded")
+        }
+
+        guard let target else { return }
+        let context = try await engine.load(modelFolder: modelFolder(target))
+        loaded = (id: target, context: context)
+        logger.debug("Whisper model activated")
+    }
+
+    private func waitForActiveTranscriptions() async {
+        while activeTranscriptions > 0 {
+            await withCheckedContinuation { drainWaiters.append($0) }
+        }
     }
 }
 

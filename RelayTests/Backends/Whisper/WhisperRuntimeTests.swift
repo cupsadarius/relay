@@ -179,4 +179,190 @@ final class WhisperRuntimeTests: XCTestCase {
             XCTAssertEqual(error as? WhisperRuntimeError, .notLoaded)
         }
     }
+
+    private func settle() async {
+        for _ in 0..<50 { await Task.yield() }
+    }
+
+    func testConcurrentActivateOfTheSameModelLoadsOnce() async throws {
+        let gate = WhisperTestGate()
+        let gatedEngine = GatedWhisperEngine(log: log, loadGate: gate)
+        let runtime = WhisperRuntime(engine: gatedEngine, modelFolder: Self.folder(for:))
+
+        let interimTick = Task { try await runtime.activate(.baseEn) }
+        let finalTranscribe = Task { try await runtime.activate(.baseEn) }
+        await settle()
+        let loadsWhileGated = await gatedEngine.loadCount
+
+        await gate.open()
+        try await interimTick.value
+        try await finalTranscribe.value
+
+        XCTAssertEqual(loadsWhileGated, 1, "the second caller must join the in-flight load")
+        let totalLoads = await gatedEngine.loadCount
+        XCTAssertEqual(totalLoads, 1)
+        let current = await runtime.currentModelID
+        XCTAssertEqual(current, .baseEn)
+    }
+
+    func testActivatingAnotherModelWaitsForAnInUseTranscriptionBeforeUnloading() async throws {
+        let transcribeGate = WhisperTestGate()
+        let gatedEngine = GatedWhisperEngine(log: log, transcribeGateByID: [.baseEn: transcribeGate])
+        let runtime = WhisperRuntime(engine: gatedEngine, modelFolder: Self.folder(for:))
+        try await runtime.activate(.baseEn)
+        let contextOpt = await gatedEngine.lastContext
+        let context = try XCTUnwrap(contextOpt)
+
+        let transcription = Task { try await runtime.transcribe([0.1], options: STTOptions()) }
+        while await !context.transcribeStarted { await Task.yield() }
+        let switchTask = Task { try await runtime.activate(.smallEn) }
+        await settle()
+
+        XCTAssertEqual(log.all, [.loaded(.baseEn)], "the in-use context must not be unloaded mid-transcription")
+
+        await transcribeGate.open()
+        let text = try await transcription.value
+        try await switchTask.value
+
+        XCTAssertEqual(text, "gated transcript")
+        XCTAssertEqual(log.all, [.loaded(.baseEn), .transcribed(.baseEn), .unloaded(.baseEn), .loaded(.smallEn)])
+    }
+
+    func testUnloadWaitsForAnInUseTranscription() async throws {
+        let transcribeGate = WhisperTestGate()
+        let gatedEngine = GatedWhisperEngine(log: log, transcribeGateByID: [.baseEn: transcribeGate])
+        let runtime = WhisperRuntime(engine: gatedEngine, modelFolder: Self.folder(for:))
+        try await runtime.activate(.baseEn)
+        let contextOpt = await gatedEngine.lastContext
+        let context = try XCTUnwrap(contextOpt)
+
+        let transcription = Task { try await runtime.transcribe([0.1], options: STTOptions()) }
+        while await !context.transcribeStarted { await Task.yield() }
+        let unload = Task { await runtime.unload() }
+        await settle()
+        XCTAssertFalse(log.all.contains(.unloaded(.baseEn)))
+
+        await transcribeGate.open()
+        _ = try await transcription.value
+        await unload.value
+        XCTAssertEqual(log.all.last, .unloaded(.baseEn))
+        let current = await runtime.currentModelID
+        XCTAssertNil(current)
+    }
+
+    func testConcurrentActivateThatFailsLeavesNothingLoadedForEitherCaller() async {
+        let gate = WhisperTestGate()
+        let gatedEngine = GatedWhisperEngine(log: log, loadGate: gate, error: FakeWhisperEngineError.simulatedLoadFailure)
+        let runtime = WhisperRuntime(engine: gatedEngine, modelFolder: Self.folder(for:))
+
+        let first = Task { try await runtime.activate(.baseEn) }
+        let second = Task { try await runtime.activate(.baseEn) }
+        await settle()
+        await gate.open()
+
+        for task in [first, second] {
+            do {
+                try await task.value
+                XCTFail("both callers must see the load failure")
+            } catch {
+                XCTAssertEqual(error as? FakeWhisperEngineError, .simulatedLoadFailure)
+            }
+        }
+        let loadCount = await gatedEngine.loadCount
+        XCTAssertEqual(loadCount, 1)
+        let current = await runtime.currentModelID
+        XCTAssertNil(current)
+    }
+
+    func testUnloadDuringAnInFlightActivationWaitsAndLeavesNothingLoaded() async throws {
+        let gate = WhisperTestGate()
+        let gatedEngine = GatedWhisperEngine(log: log, loadGate: gate)
+        let runtime = WhisperRuntime(engine: gatedEngine, modelFolder: Self.folder(for:))
+
+        let activation = Task { try await runtime.activate(.baseEn) }
+        await settle()
+        let unload = Task { await runtime.unload() }
+        await settle()
+        await gate.open()
+
+        try await activation.value
+        await unload.value
+        XCTAssertEqual(log.all, [.loaded(.baseEn), .unloaded(.baseEn)])
+        let current = await runtime.currentModelID
+        XCTAssertNil(current)
+    }
+}
+
+/// Gate the concurrency tests below open by hand.
+private actor WhisperTestGate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        let pending = waiters
+        waiters = []
+        for waiter in pending { waiter.resume() }
+    }
+}
+
+private actor GatedWhisperContext: LoadedWhisperContext {
+    let id: WhisperModelID
+    let log: FakeWhisperEventLog
+    let transcribeGate: WhisperTestGate?
+    private(set) var transcribeStarted = false
+
+    init(id: WhisperModelID, log: FakeWhisperEventLog, transcribeGate: WhisperTestGate?) {
+        self.id = id
+        self.log = log
+        self.transcribeGate = transcribeGate
+    }
+
+    func transcribe(_ samples: [Float], options: STTOptions) async throws -> String {
+        transcribeStarted = true
+        await transcribeGate?.wait()
+        log.append(.transcribed(id))
+        return "gated transcript"
+    }
+
+    func unload() async {
+        log.append(.unloaded(id))
+    }
+}
+
+private actor GatedWhisperEngine: WhisperEngine {
+    let log: FakeWhisperEventLog
+    private let loadGate: WhisperTestGate?
+    private let transcribeGateByID: [WhisperModelID: WhisperTestGate]
+    private let error: (any Error)?
+    private(set) var loadCount = 0
+    private(set) var lastContext: GatedWhisperContext?
+
+    init(
+        log: FakeWhisperEventLog,
+        loadGate: WhisperTestGate? = nil,
+        transcribeGateByID: [WhisperModelID: WhisperTestGate] = [:],
+        error: (any Error)? = nil
+    ) {
+        self.log = log
+        self.loadGate = loadGate
+        self.transcribeGateByID = transcribeGateByID
+        self.error = error
+    }
+
+    func load(modelFolder: URL) async throws -> any LoadedWhisperContext {
+        loadCount += 1
+        await loadGate?.wait()
+        if let error { throw error }
+        let id = WhisperModelID(rawValue: modelFolder.lastPathComponent)!
+        log.append(.loaded(id))
+        let context = GatedWhisperContext(id: id, log: log, transcribeGate: transcribeGateByID[id])
+        lastContext = context
+        return context
+    }
 }
