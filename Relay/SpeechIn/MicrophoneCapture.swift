@@ -494,13 +494,14 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, AudioInputFormatR
     /// the handler closure still retained -- until whatever `start()` eventually replaces them.
     private func fail(_ error: Error) {
         guard gate.fail(error) else { return }
-        let handler = stateLock.withLock {
+        let (handler, observer) = stateLock.withLock {
             defer {
                 configurationObserver = nil
                 terminalErrorHandler = nil
             }
-            return terminalErrorHandler
+            return (terminalErrorHandler, configurationObserver)
         }
+        withExtendedLifetime(observer) {}   // released here, outside the lock -- matches stop()
         engineQueue.async { [weak self] in self?.tearDownEngine() }
         if let handler {
             Task { await handler(error) }
