@@ -86,18 +86,15 @@ protocol ClipboardRestoreScheduling {
     ) -> any ClipboardRestoreHandle
 }
 
-enum ClipboardCopyError: Error, Equatable {
-    /// Another copy is still waiting for the pasteboard; running a second one would snapshot
-    /// Relay's own temporary content as the user's "original".
-    case busy
-}
-
 @MainActor
 final class ClipboardService: ClipboardReading {
     private let pasteboard: any ClipboardPasteboard
     private let copyCommand: any CopyCommandSending
     private let waiter: any ClipboardWaiting
-    private var isCopying = false
+    /// The copy currently under way, if any. A second call arriving while one is in flight joins
+    /// this instead of starting a second ⌘C (which would snapshot Relay's own temporary content
+    /// as the user's "original") or failing outright.
+    private var inFlightCopy: Task<String?, Error>?
 
     init(
         pasteboard: any ClipboardPasteboard = GeneralClipboardPasteboard(),
@@ -110,23 +107,41 @@ final class ClipboardService: ClipboardReading {
     }
 
     /// Sends ⌘C, waits up to 200 ms for the pasteboard to change, reads the string, then puts the
-    /// user's clipboard back — but only if nothing else has written it since the copy landed.
+    /// user's clipboard back — but only if nothing else has written it since the copy landed. A
+    /// call landing while one is already in flight (e.g. a quick second Read Selection press)
+    /// awaits that same copy and returns its result, rather than failing or re-copying.
     ///
-    /// Cancellation is only honored AFTER the clipboard has been made safe again: the wait always
-    /// runs its full window (see `SleepingClipboardWaiter`), and any landed copy is restored,
-    /// before `Task.checkCancellation()` can turn this into a thrown `CancellationError`. A
-    /// cancelled caller must never leave the user's original clipboard un-restored just because it
-    /// stopped waiting for the result.
+    /// Cancellation only ever affects the calling context that requested it: the underlying copy
+    /// (`performCopy`) always runs to completion and restores the clipboard if a copy landed,
+    /// regardless of whether this or any other caller stops waiting for it — it's an unstructured
+    /// `Task`, immune to any one caller's cancellation. `Task.checkCancellation()` below runs
+    /// AFTER that work finishes, against THIS call's own task, so a cancelled caller still gets a
+    /// `CancellationError` without ever leaving the clipboard un-restored, and without disturbing
+    /// any other caller sharing the same in-flight copy.
     func copyCurrentSelection() async throws -> String? {
-        guard !isCopying else { throw ClipboardCopyError.busy }
-        isCopying = true
-        defer { isCopying = false }
+        let task: Task<String?, Error>
+        let isOwner: Bool
+        if let inFlightCopy {
+            task = inFlightCopy
+            isOwner = false
+        } else {
+            let newTask = Task { try await self.performCopy() }
+            inFlightCopy = newTask
+            task = newTask
+            isOwner = true
+        }
+        defer { if isOwner { inFlightCopy = nil } }
 
+        let result = try await task.value
+        try Task.checkCancellation()
+        return result
+    }
+
+    private func performCopy() async throws -> String? {
         let original = pasteboard.snapshot()
         let originalChangeCount = pasteboard.changeCount
         try copyCommand.sendCopy()
 
-        var result: String?
         for _ in 0..<10 {
             await waiter.wait(milliseconds: 20)
             let copiedChangeCount = pasteboard.changeCount
@@ -136,12 +151,10 @@ final class ClipboardService: ClipboardReading {
             if pasteboard.changeCount == copiedChangeCount {
                 pasteboard.restore(original)
             }
-            result = copied
-            break
+            return copied
         }
         // The copy never landed: the clipboard is still the user's; nothing to restore.
-        try Task.checkCancellation()
-        return result
+        return nil
     }
 }
 

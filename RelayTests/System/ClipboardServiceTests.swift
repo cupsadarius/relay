@@ -75,26 +75,46 @@ final class ClipboardServiceTests: XCTestCase {
         XCTAssertEqual(pasteboard.restoredSnapshots, [], "newer clipboard content must not be overwritten")
     }
 
-    func testRejectsAReentrantCopyWhileOneIsInFlight() async throws {
+/// A second call landing while one is already in flight (e.g. a quick second Read Selection
+    /// press) must join the same copy and see its result, rather than failing with a busy error
+    /// or triggering a second ⌘C.
+    func testConcurrentCopiesJoinTheSameInFlightCopyRatherThanFailingOrRepeating() async throws {
         let original = ClipboardSnapshot(items: [])
         let pasteboard = FakeClipboardPasteboard(changeCount: 1, snapshot: original, copiedString: "selected")
         let gate = WaitGate()
+        let copyCommand = FakeCopyCommand()
         let waiter = FakeClipboardWaiter(gate: gate) { pasteboard.changeCount = 2 }
-        let service = ClipboardService(pasteboard: pasteboard, copyCommand: FakeCopyCommand(), waiter: waiter)
+        let service = ClipboardService(pasteboard: pasteboard, copyCommand: copyCommand, waiter: waiter)
 
         let first = Task { try await service.copyCurrentSelection() }
         while !gate.isWaiting { await Task.yield() }
-        do {
-            _ = try await service.copyCurrentSelection()
-            XCTFail("reentrant copy must be rejected")
-        } catch {
-            XCTAssertEqual(error as? ClipboardCopyError, .busy)
-        }
+        let second = Task { try await service.copyCurrentSelection() }
         gate.open()
 
         let firstResult = try await first.value
+        let secondResult = try await second.value
         XCTAssertEqual(firstResult, "selected")
+        XCTAssertEqual(secondResult, "selected")
+        XCTAssertEqual(copyCommand.callCount, 1, "only one ⌘C must be sent for the pair")
         XCTAssertEqual(pasteboard.restoredSnapshots, [original])
+    }
+
+    /// Once an in-flight copy finishes, the NEXT call must start a fresh copy of its own rather
+    /// than replaying the finished one's result forever.
+    func testANewCopyStartsAfterThePreviousOneFinishes() async throws {
+        let original = ClipboardSnapshot(items: [])
+        let pasteboard = FakeClipboardPasteboard(changeCount: 1, snapshot: original, copiedString: "first")
+        let copyCommand = FakeCopyCommand()
+        let waiter = FakeClipboardWaiter { pasteboard.changeCount += 1 }
+        let service = ClipboardService(pasteboard: pasteboard, copyCommand: copyCommand, waiter: waiter)
+
+        let firstResult = try await service.copyCurrentSelection()
+        pasteboard.copiedString = "second"
+        let secondResult = try await service.copyCurrentSelection()
+
+        XCTAssertEqual(firstResult, "first")
+        XCTAssertEqual(secondResult, "second")
+        XCTAssertEqual(copyCommand.callCount, 2)
     }
 
     /// A cancelled caller must not lose the user's original clipboard: the restore that fires
@@ -143,7 +163,7 @@ final class ClipboardServiceTests: XCTestCase {
 private final class FakeClipboardPasteboard: ClipboardPasteboard {
     var changeCount: Int
     let snapshotValue: ClipboardSnapshot
-    let copiedString: String?
+    var copiedString: String?
     var onString: () -> Void = {}
     private(set) var restoredSnapshots: [ClipboardSnapshot] = []
 
@@ -161,14 +181,16 @@ private final class FakeClipboardPasteboard: ClipboardPasteboard {
 }
 
 @MainActor
-private struct FakeCopyCommand: CopyCommandSending {
+private final class FakeCopyCommand: CopyCommandSending {
     var error: Error?
+    private(set) var callCount = 0
 
     init(error: Error? = nil) {
         self.error = error
     }
 
     func sendCopy() throws {
+        callCount += 1
         if let error { throw error }
     }
 }
