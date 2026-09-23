@@ -52,10 +52,8 @@ struct ClaudeCodeIntegration: RelayIntegration {
             id: UUID(),
             provider: .claudeCode,
             providerSessionID: payload.sessionID,
-            turnID: nil,
             text: text,
             cwd: payload.cwd,
-            transcriptPath: payload.transcriptPath,
             parentPID: envelope.parentPID,
             environment: envelope.environment,
             capturedAt: envelope.capturedAt

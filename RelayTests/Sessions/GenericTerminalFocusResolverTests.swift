@@ -40,8 +40,8 @@ final class GenericTerminalFocusResolverTests: XCTestCase {
 
 private func makeDirectSession(id: String, ancestry: [Int32]) -> AgentSession {
     let event = AgentResponseEvent(
-        id: UUID(), provider: .claudeCode, providerSessionID: id, turnID: nil,
-        text: "done", cwd: "/tmp/\(id)", transcriptPath: nil,
+        id: UUID(), provider: .claudeCode, providerSessionID: id,
+        text: "done", cwd: "/tmp/\(id)",
         parentPID: ancestry.first ?? 0, environment: [:], capturedAt: Date()
     )
     return AgentSession(

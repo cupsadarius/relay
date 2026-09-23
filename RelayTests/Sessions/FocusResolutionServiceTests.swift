@@ -83,8 +83,8 @@ private struct SelectiveFocusResolver: FocusResolver {
 
 private func makeSession(providerSessionID: String = "a") -> AgentSession {
     let event = AgentResponseEvent(
-        id: UUID(), provider: .claudeCode, providerSessionID: providerSessionID, turnID: nil,
-        text: "done", cwd: "/tmp/repo", transcriptPath: nil,
+        id: UUID(), provider: .claudeCode, providerSessionID: providerSessionID,
+        text: "done", cwd: "/tmp/repo",
         parentPID: 900, environment: [:], capturedAt: Date()
     )
     return AgentSession(

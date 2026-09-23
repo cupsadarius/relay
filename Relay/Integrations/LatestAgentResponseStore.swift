@@ -25,19 +25,12 @@ actor LatestAgentResponseStore {
         await subscriber?(latest)
     }
 
-    /// Returns the most recently stored event, or `nil` if none has arrived yet (or it has been
-    /// cleared).
+    /// Returns the most recently stored event, or `nil` if none has arrived yet.
     func get() -> AgentResponseEvent? {
         latest
     }
 
-    /// Discards the stored event, if any, then runs the subscriber exactly as `set(_:)` does.
-    func clear() async {
-        latest = nil
-        await subscriber?(latest)
-    }
-
-    /// Registers `callback` to run on the `MainActor`, as part of every subsequent `set`/`clear`
+    /// Registers `callback` to run on the `MainActor`, as part of every subsequent `set`
     /// call — from ANY caller, not just whoever happens to be driving the primary hook-event
     /// pipeline — delivering this store's current value immediately upon registration.
     ///

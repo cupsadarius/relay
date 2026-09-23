@@ -63,8 +63,8 @@ private struct StubProcessTree: ProcessTreeReading {
 
 private func makeTmuxSession(pane: String) -> AgentSession {
     let event = AgentResponseEvent(
-        id: UUID(), provider: .claudeCode, providerSessionID: "a", turnID: nil,
-        text: "done", cwd: "/tmp/repo", transcriptPath: nil, parentPID: 900,
+        id: UUID(), provider: .claudeCode, providerSessionID: "a",
+        text: "done", cwd: "/tmp/repo", parentPID: 900,
         environment: ["TMUX": "/tmp/tmux.sock,10,0", "TMUX_PANE": pane], capturedAt: Date()
     )
     return AgentSession(

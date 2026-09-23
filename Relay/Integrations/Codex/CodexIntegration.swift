@@ -52,10 +52,8 @@ struct CodexIntegration: RelayIntegration {
             id: UUID(),
             provider: .codex,
             providerSessionID: payload.sessionID,
-            turnID: payload.turnID,
             text: text,
             cwd: payload.cwd,
-            transcriptPath: payload.transcriptPath,
             parentPID: envelope.parentPID,
             environment: envelope.environment,
             capturedAt: envelope.capturedAt

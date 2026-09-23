@@ -26,15 +26,13 @@ final class ClaudeCodeIntegrationTests: XCTestCase {
     }
     """#
 
-    func testDecodesStopEventPreservingSessionCwdTranscriptAndText() throws {
+    func testDecodesStopEventPreservingSessionCwdAndText() throws {
         let event = try integration.decode(envelope(rawPayload: fixture))
 
         XCTAssertEqual(event.provider, .claudeCode)
         XCTAssertEqual(event.providerSessionID, "abc123")
         XCTAssertEqual(event.cwd, "/Users/me/project")
-        XCTAssertEqual(event.transcriptPath, "/Users/me/.claude/projects/p/abc123.jsonl")
         XCTAssertEqual(event.text, "I've completed the refactoring.")
-        XCTAssertNil(event.turnID)
         XCTAssertEqual(event.parentPID, 4242)
         XCTAssertEqual(event.environment, ["TERM_PROGRAM": "ghostty"])
         XCTAssertEqual(event.capturedAt, Date(timeIntervalSince1970: 1_700_000_000))

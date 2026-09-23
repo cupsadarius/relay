@@ -38,7 +38,7 @@ struct CodexInstaller {
 
     /// Settings copy shown once install succeeds but Codex has not yet
     /// granted trust to the Relay hook command.
-    static let trustRequiredMessage = "Installed. Open /hooks in Codex and trust the Relay hook."
+    static let trustRequiredMessage = "Run /hooks in Codex and trust the Relay hook."
     /// Settings copy shown when `config.toml` explicitly disables hooks.
     static let hooksDisabledMessage = "Codex hooks are disabled in config.toml."
 

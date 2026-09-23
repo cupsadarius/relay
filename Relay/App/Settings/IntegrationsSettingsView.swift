@@ -130,7 +130,7 @@ struct IntegrationsSettingsView: View {
     private static func statusDetail(_ status: IntegrationStatus) -> String? {
         switch status {
         case .installedTrustRequired:
-            "Run /hooks in Codex and trust the Relay hook."
+            CodexInstaller.trustRequiredMessage
         case let .configurationError(message):
             message
         default:

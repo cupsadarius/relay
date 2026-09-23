@@ -16,8 +16,8 @@ final class AgentSessionRegistryPruneTests: XCTestCase {
     func testPruneRemovesSessionsPastTTL() async {
         let registry = AgentSessionRegistry()
         let session = await registry.upsert(response: makeEvent(session: "a", at: 0), processAncestry: [111, 20, 1], tty: nil)
-        let inserted = await registry.session(id: session.id)
-        XCTAssertNotNil(inserted)
+        let inserted = await registry.sessions()
+        XCTAssertEqual(inserted.map(\.id), [session.id])
 
         await registry.prune(
             now: Date(timeIntervalSince1970: 0).addingTimeInterval(21 * 60),
@@ -43,21 +43,10 @@ final class AgentSessionRegistryPruneTests: XCTestCase {
         XCTAssertEqual(remaining.map(\.id), [session.id])
     }
 
-    func testRemoveById() async {
-        let registry = AgentSessionRegistry()
-        let a = await registry.upsert(response: makeEvent(session: "a"), processAncestry: [111], tty: nil)
-        let b = await registry.upsert(response: makeEvent(session: "b"), processAncestry: [222], tty: nil)
-
-        await registry.remove(id: a.id)
-
-        let remaining = await registry.sessions()
-        XCTAssertEqual(remaining.map(\.id), [b.id])
-    }
-
     private func makeEvent(session: String, at: TimeInterval = 100) -> AgentResponseEvent {
         AgentResponseEvent(
-            id: UUID(), provider: .claudeCode, providerSessionID: session, turnID: nil,
-            text: "response", cwd: "/tmp/repo", transcriptPath: nil,
+            id: UUID(), provider: .claudeCode, providerSessionID: session,
+            text: "response", cwd: "/tmp/repo",
             parentPID: 42, environment: [:], capturedAt: Date(timeIntervalSince1970: at)
         )
     }

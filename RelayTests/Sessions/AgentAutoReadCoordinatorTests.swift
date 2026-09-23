@@ -319,8 +319,8 @@ private func makeCoordinator(
 
 private func makeAutoReadEvent(providerSessionID: String = "a", text: String, parentPID: Int32 = 900) -> AgentResponseEvent {
     .init(
-        id: UUID(), provider: .claudeCode, providerSessionID: providerSessionID, turnID: nil,
-        text: text, cwd: "/tmp/repo", transcriptPath: nil,
+        id: UUID(), provider: .claudeCode, providerSessionID: providerSessionID,
+        text: text, cwd: "/tmp/repo",
         parentPID: parentPID, environment: [:], capturedAt: Date()
     )
 }

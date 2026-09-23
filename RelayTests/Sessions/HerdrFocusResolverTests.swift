@@ -57,8 +57,8 @@ private struct StubHerdrHostOwnership: HerdrHostOwnershipChecking {
 
 private func makeHerdrSession(provider: AgentProvider, sessionID: String, pane: String) -> AgentSession {
     let event = AgentResponseEvent(
-        id: UUID(), provider: provider, providerSessionID: sessionID, turnID: nil,
-        text: "done", cwd: "/tmp/repo", transcriptPath: nil, parentPID: 900,
+        id: UUID(), provider: provider, providerSessionID: sessionID,
+        text: "done", cwd: "/tmp/repo", parentPID: 900,
         environment: ["HERDR_SOCKET_PATH": "/tmp/herdr.sock", "HERDR_PANE_ID": pane], capturedAt: Date()
     )
     return AgentSession(

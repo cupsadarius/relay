@@ -481,66 +481,6 @@ final class AppModelTests: XCTestCase {
         withExtendedLifetime(model) {}
     }
 
-    /// Hardens against a latent trap: tier 2 gates on `integrationManager.latestResponse != nil`
-    /// but actually speaks via `IntegrationManager.speakLatest()`, which reads its own internal
-    /// `LatestAgentResponseStore`. `latestResponse` is now a single-writer projection of that same
-    /// store (see `LatestAgentResponseStore.subscribe(_:)`), so clearing the store — even directly,
-    /// bypassing the manager's own consume loop, as done here — clears the gate too; `replayLast()`
-    /// falls through to tier 3 both because `speakLatest()` finds nothing AND because the gate
-    /// itself has already gone false. Simulated here by driving `latestResponse` to non-nil through
-    /// the real consume loop, then clearing the backing store out from under it.
-    func testReplayLastFallsBackToTierThreeWhenGlobalLatestGateIsTrueButStoreHasNothingToSpeak() async {
-        let registry = AgentSessionRegistry()
-        _ = await registry.upsert(
-            response: makeAgentResponseEvent(providerSessionID: "session-a", text: "Reply A"),
-            processAncestry: [4242],
-            tty: nil
-        )
-        let speech = FakeSpeechCoordinator()
-        let store = LatestAgentResponseStore()
-        let latest = makeAgentResponseEvent(providerSessionID: "global-latest", text: "Global reply")
-        var continuation: AsyncStream<HookEnvelope>.Continuation!
-        let events = AsyncStream<HookEnvelope> { continuation = $0 }
-        let drivenManager = IntegrationManager(
-            events: events,
-            integrations: [StubIntegration(provider: .claudeCode, event: latest)],
-            store: store,
-            speechCoordinator: speech
-        )
-        drivenManager.start()
-        continuation.yield(HookEnvelope(
-            schemaVersion: 1,
-            provider: .claudeCode,
-            rawPayload: "{}",
-            parentPID: 100,
-            environment: [:],
-            capturedAt: latest.capturedAt
-        ))
-        await waitUntil { drivenManager.latestResponse != nil }
-        drivenManager.stop()
-        // Clear the store directly, bypassing the manager's own consume loop entirely (stopped
-        // just above) — `latestResponse` is a projection of `store`, so this drives the gate back
-        // to `nil` on its own, same as `speakLatest()`'s own `store.get()` finding nothing.
-        await store.clear()
-
-        let hotkeys = FakeHotkeyManager()
-        let model = makeModel(
-            speech: speech,
-            hotkeys: hotkeys,
-            sessionRegistry: registry,
-            focusResolution: StubSessionFocusResolver(focusedSessionID: nil),
-            frontmostApps: StubFrontmostAppMonitor(pid: 4242),
-            integrationManager: drivenManager
-        )
-
-        hotkeys.send(.replayLast, .pressed)
-        await waitUntil { speech.replayCount > 0 }
-
-        XCTAssertEqual(speech.replayCount, 1)
-        XCTAssertTrue(speech.requests.isEmpty)
-        withExtendedLifetime(model) {}
-    }
-
     private func makeAgentResponseEvent(
         provider: AgentProvider = .claudeCode,
         providerSessionID: String,
@@ -548,8 +488,8 @@ final class AppModelTests: XCTestCase {
         parentPID: Int32 = 900
     ) -> AgentResponseEvent {
         .init(
-            id: UUID(), provider: provider, providerSessionID: providerSessionID, turnID: nil,
-            text: text, cwd: "/tmp/repo", transcriptPath: nil,
+            id: UUID(), provider: provider, providerSessionID: providerSessionID,
+            text: text, cwd: "/tmp/repo",
             parentPID: parentPID, environment: [:], capturedAt: Date()
         )
     }

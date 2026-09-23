@@ -27,14 +27,12 @@ final class CodexIntegrationTests: XCTestCase {
     }
     """#
 
-    func testDecodesStopEventPreservingTurnSessionCwdTranscriptAndText() throws {
+    func testDecodesStopEventPreservingSessionCwdAndText() throws {
         let event = try integration.decode(envelope(rawPayload: fixture))
 
         XCTAssertEqual(event.provider, .codex)
         XCTAssertEqual(event.providerSessionID, "thr_123")
-        XCTAssertEqual(event.turnID, "turn_456")
         XCTAssertEqual(event.cwd, "/Users/me/project")
-        XCTAssertEqual(event.transcriptPath, "/Users/me/.codex/sessions/rollout.jsonl")
         XCTAssertEqual(event.text, "The tests now pass.")
         XCTAssertEqual(event.parentPID, 4242)
         XCTAssertEqual(event.environment, ["TERM_PROGRAM": "ghostty"])
@@ -105,7 +103,6 @@ final class CodexIntegrationTests: XCTestCase {
         let event = try integration.decode(envelope(rawPayload: payload))
 
         XCTAssertEqual(event.text, "The tests now pass.")
-        XCTAssertEqual(event.turnID, "turn_456")
     }
 
     func testMissingTurnIDIsRejectedAsMalformed() {

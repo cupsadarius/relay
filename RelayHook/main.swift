@@ -15,11 +15,12 @@ import Darwin
 /// Reject stdin larger than this before building an envelope at all.
 private let maxInputBytes = 1_500 * 1_024 // 1.5 MiB
 
+/// Exactly the variables `TerminalContext` (Relay/Sessions/Domain/TerminalContext.swift) reads.
+/// Keep the two in sync: forwarding anything else widens what leaves the agent's environment
+/// with no consumer.
 private let environmentAllowlist = [
-    "TERM_PROGRAM", "TERM", "TMUX", "TMUX_PANE",
-    "HERDR_SOCKET_PATH", "HERDR_ACTIVE_WORKSPACE_ID",
-    "HERDR_ACTIVE_TAB_ID", "HERDR_ACTIVE_PANE_ID",
-    "HERDR_PANE_ID", "GHOSTTY_RESOURCES_DIR",
+    "TMUX", "TMUX_PANE",
+    "HERDR_SOCKET_PATH", "HERDR_PANE_ID", "HERDR_ACTIVE_PANE_ID",
 ]
 
 // MARK: - Debug logging

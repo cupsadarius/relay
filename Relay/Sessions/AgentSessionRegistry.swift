@@ -23,15 +23,9 @@ actor AgentSessionRegistry {
         return value
     }
 
-    func session(id: AgentSessionID) -> AgentSession? { values[id] }
-
     func sessions() -> [AgentSession] {
         values.values.sorted { $0.lastActivityAt > $1.lastActivityAt }
     }
-
-    func removeAll() { values.removeAll() }
-
-    func remove(id: AgentSessionID) { values[id] = nil }
 
     /// Default inactivity TTL before a session is considered stale.
     static let defaultTTL: TimeInterval = 20 * 60

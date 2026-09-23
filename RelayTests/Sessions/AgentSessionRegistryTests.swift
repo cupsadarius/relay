@@ -7,10 +7,8 @@ final class AgentSessionRegistryTests: XCTestCase {
             id: UUID(),
             provider: .claudeCode,
             providerSessionID: "claude-a",
-            turnID: nil,
             text: "done",
             cwd: "/tmp/repo",
-            transcriptPath: nil,
             parentPID: 101,
             environment: [
                 "TERM_PROGRAM": "ghostty",
@@ -23,7 +21,6 @@ final class AgentSessionRegistryTests: XCTestCase {
         )
 
         let context = TerminalContext(event: event)
-        XCTAssertEqual(context.termProgram, "ghostty")
         XCTAssertEqual(context.tmuxSocketPath, "/private/tmp/tmux-501/default")
         XCTAssertEqual(context.tmuxPaneID, "%7")
         XCTAssertEqual(context.herdrSocketPath, "/tmp/herdr.sock")
@@ -47,8 +44,8 @@ final class AgentSessionRegistryTests: XCTestCase {
 
     private func makeEvent(provider: AgentProvider, session: String, at: TimeInterval) -> AgentResponseEvent {
         AgentResponseEvent(
-            id: UUID(), provider: provider, providerSessionID: session, turnID: nil,
-            text: "response", cwd: "/tmp/repo", transcriptPath: nil,
+            id: UUID(), provider: provider, providerSessionID: session,
+            text: "response", cwd: "/tmp/repo",
             parentPID: 42, environment: [:], capturedAt: Date(timeIntervalSince1970: at)
         )
     }

@@ -31,10 +31,8 @@ final class IntegrationManagerTests: XCTestCase {
             id: UUID(),
             provider: provider,
             providerSessionID: providerSessionID,
-            turnID: nil,
             text: text,
             cwd: "/Users/me/project",
-            transcriptPath: nil,
             parentPID: 100,
             environment: [:],
             capturedAt: capturedAt
@@ -234,16 +232,12 @@ final class IntegrationManagerTests: XCTestCase {
 
     // MARK: - Single source of truth (gate cannot diverge from content)
 
-    /// Hardens the actual bug (not just the latent-trap simulation in `AppModelTests`): the gate
-    /// (`latestResponse`) and the spoken content (`store.get()`) must trace back to the SAME
-    /// state, so anything that mutates `store` — not only the manager's own consume loop — has to
-    /// be reflected in the gate too. Before the fix, `latestResponse` is written only from inside
-    /// `recordActive()`, which nothing but the manager's own decode path ever calls, so a direct
-    /// `store.set`/`store.clear` (exactly what a future caller, or another part of the app, might
-    /// legitimately do) leaves the gate stale: `waitUntil` below times out because
-    /// `manager.latestResponse` never becomes non-nil, and — after seeding it back to catch up —
-    /// never goes back to `nil` either. After the fix, `latestResponse` is a projection of `store`
-    /// itself, so both mutations are picked up regardless of who made them.
+    /// Hardens the actual bug: the gate (`latestResponse`) and the spoken content (`store.get()`)
+    /// must trace back to the SAME state, so anything that mutates `store` — not only the
+    /// manager's own consume loop — has to be reflected in the gate too. Before the fix,
+    /// `latestResponse` was written only from inside `recordActive()`, so a direct `store.set`
+    /// left the gate stale and `waitUntil` below would time out. After the fix, `latestResponse`
+    /// is a projection of `store` itself.
     func testGateCannotDivergeFromStoreAcrossDirectMutation() async {
         let store = LatestAgentResponseStore()
         let events = AsyncStream<HookEnvelope> { _ in }
@@ -266,16 +260,6 @@ final class IntegrationManagerTests: XCTestCase {
         )
         let stored = await store.get()
         XCTAssertEqual(stored, latest)
-
-        await store.clear()
-        await waitUntil { manager.latestResponse == nil }
-
-        XCTAssertNil(
-            manager.latestResponse,
-            "the gate must go false the moment the store is cleared, regardless of who cleared it"
-        )
-        let clearedContent = await store.get()
-        XCTAssertNil(clearedContent)
     }
 
     // MARK: - onResponse callback
