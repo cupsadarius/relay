@@ -21,7 +21,7 @@ struct TTSSettingsView: View {
                         voice: voice,
                         isActive: voice.id == activeID,
                         select: { model.selectVoice(backendID: backendID, voiceID: voice.id) },
-                        test: { Task { await model.previewVoice(backendID: backendID, voiceID: voice.id) } }
+                        test: { Task { await model.speechActions.previewVoice(backendID: backendID, voiceID: voice.id) } }
                     )
                 }
             }

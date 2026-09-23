@@ -275,9 +275,9 @@ final class IntegrationSetupModelTests: XCTestCase {
         XCTAssertEqual(model.status(for: .codex), .configurationError(CodexInstaller.hooksDisabledMessage))
     }
 
-    // MARK: - latestAgentResponseAvailable / speakLatestAgentResponse delegate to the injected manager
+    // MARK: - latestAgentResponseAvailable reflects the injected manager
 
-    func testLatestAgentResponseAvailableReflectsTheInjectedManagerAndSpeakLatestDelegatesToItsCoordinator() async {
+    func testLatestAgentResponseAvailableReflectsTheInjectedManager() async {
         let event = AgentResponseEvent(
             id: UUID(),
             provider: .claudeCode,
@@ -309,83 +309,6 @@ final class IntegrationSetupModelTests: XCTestCase {
         ))
 
         await waitUntil { model.integrationSetup.latestResponseAvailable }
-
-        await model.speakLatestAgentResponse()
-
-        XCTAssertEqual(speech.requests.count, 1)
-        XCTAssertEqual(speech.requests.first?.source, .claudeCode)
-        XCTAssertEqual(speech.requests.first?.mode, .userRequested)
-        // The success path no longer sets a "Speaking…" `statusText` — the overlay's live state
-        // drives the menu label while speech is in flight, so this leaves `statusText` at its
-        // clean default rather than a string that would go stale once speech ends.
-        XCTAssertEqual(model.statusText, "Ready")
-    }
-
-    func testSpeakLatestAgentResponseFailureIsCaughtAndSurfacedWithoutCrashing() async {
-        let event = AgentResponseEvent(
-            id: UUID(),
-            provider: .codex,
-            providerSessionID: "session-2",
-            text: "Done.",
-            cwd: "/Users/me/project",
-            parentPID: 100,
-            environment: [:],
-            capturedAt: Date(timeIntervalSince1970: 1_700_000_000)
-        )
-        let store = LatestAgentResponseStore()
-        await store.set(event)
-        let speech = FakeSpeechCoordinator(speakError: TestError.boom)
-        let events = AsyncStream<HookEnvelope> { _ in }
-        let manager = IntegrationManager(events: events, integrations: [], store: store, speechCoordinator: speech)
-        let model = AppModel(runtime: makeRuntime(integrationManager: manager))
-
-        await model.speakLatestAgentResponse()
-
-        XCTAssertEqual(model.statusText, "Could not speak the latest agent response.")
-    }
-
-    func testSpeakLatestAgentResponseWithNothingToSpeakRecordsNoSubmission() async {
-        let speech = FakeSpeechCoordinator()
-        let events = AsyncStream<HookEnvelope> { _ in }
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [],
-            store: LatestAgentResponseStore(),
-            speechCoordinator: speech
-        )
-        let model = AppModel(runtime: makeRuntime(integrationManager: manager))
-
-        await model.speakLatestAgentResponse()
-
-        XCTAssertTrue(speech.requests.isEmpty)
-        XCTAssertFalse(model.diagnosticsEntries.contains { $0.event == .ttsSubmitted })
-        XCTAssertEqual(model.statusText, "No agent response to speak yet.")
-    }
-
-    func testSpeakLatestAgentResponseSuccessClearsAStaleStatusText() async {
-        let event = AgentResponseEvent(
-            id: UUID(),
-            provider: .claudeCode,
-            providerSessionID: "session-3",
-            text: "Done.",
-            cwd: "/Users/me/project",
-            parentPID: 100,
-            environment: [:],
-            capturedAt: Date(timeIntervalSince1970: 1_700_000_000)
-        )
-        let store = LatestAgentResponseStore()
-        await store.set(event)
-        let speech = FakeSpeechCoordinator()
-        let events = AsyncStream<HookEnvelope> { _ in }
-        let manager = IntegrationManager(events: events, integrations: [], store: store, speechCoordinator: speech)
-        let model = AppModel(runtime: makeRuntime(integrationManager: manager))
-        // Simulate leftover text from an earlier failed/empty attempt.
-        model.statusText = "Could not speak the latest agent response."
-
-        await model.speakLatestAgentResponse()
-
-        XCTAssertEqual(speech.requests.count, 1)
-        XCTAssertEqual(model.statusText, "Ready")
     }
 
     func testIntegrationStatusPrefersActiveRuntimeStatusOverInstallerStatus() async {

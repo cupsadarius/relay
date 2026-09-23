@@ -16,7 +16,7 @@ struct MenuBarContentView: View {
             Text(model.activityStatusText)
             Divider()
             Button("Speak Latest Agent Response") {
-                Task { await model.speakLatestAgentResponse() }
+                Task { await model.speechActions.speakLatestAgentResponse() }
             }
             .disabled(!model.integrationSetup.latestResponseAvailable)
             Button(model.settings.autoReadEnabled ? "Auto-read: On" : "Auto-read: Off") {

@@ -51,8 +51,6 @@ final class AppModel {
     /// frames captured despite the OS showing the toggle on) is visible rather than silent.
     var lastMicrophoneCaptureDiagnostics: MicrophoneCaptureDiagnostics? { diagnostics.lastMicrophoneCaptureDiagnostics }
     var overlayModel: ActivityOverlayModel { runtime.speechOut.overlayModel }
-    private var selectionReader: any SelectionReading { runtime.selectionReader }
-    private var preprocessor: RulesSpeechPreprocessor { runtime.preprocessor }
     private var speechCoordinator: any SpeechCoordinating { runtime.speechOut.speechCoordinator }
     private var dictationCoordinator: (any DictationCoordinating)? { runtime.speechIn.dictationCoordinator }
     private var hotkeyManager: any HotkeyManaging { runtime.hotkeyManager }
@@ -62,11 +60,6 @@ final class AppModel {
     private var loginItemService: any LoginItemControlling { runtime.loginItemService }
     private var diagnostics: DiagnosticsRecorder { runtime.diagnostics }
     private var overlayPresenter: any ActivityOverlayPresenting { runtime.speechOut.overlayPresenter }
-    private var integrationManager: IntegrationManager { runtime.integrations.integrationManager }
-    private var sessionRegistry: AgentSessionRegistry { runtime.sessions.registry }
-    private var focusResolution: any SessionFocusResolving { runtime.sessions.focusResolution }
-    private var frontmostApps: any FrontmostAppMonitoring { runtime.sessions.frontmostApps }
-    private var processInspector: ProcessInspector { runtime.sessions.processInspector }
     private var integrationDiagnosticsLog: IntegrationDiagnosticsLog { runtime.integrationDiagnosticsLog }
 
     @ObservationIgnored let integrationSetup: IntegrationSetupModel
@@ -75,6 +68,7 @@ final class AppModel {
     var settings: AppSettings { settingsController.current }
     @ObservationIgnored let modelController: SpeechModelController
     @ObservationIgnored let voiceCatalog: SpeechVoiceCatalog
+    @ObservationIgnored let speechActions: SpeechActions
     @ObservationIgnored let sttBackendList: BackendListModel
     @ObservationIgnored let ttsBackendList: BackendListModel
     /// The fire-and-forget initial status refresh kicked off from `init`. Exposed so tests can
@@ -103,6 +97,7 @@ final class AppModel {
             diagnostics: runtime.diagnostics
         )
         voiceCatalog = SpeechVoiceCatalog()
+        speechActions = SpeechActions(runtime: runtime, voiceCatalog: voiceCatalog)
         let settings = runtime.settingsController
         sttBackendList = BackendListModel(
             entries: BackendListEntry.entries(runtime.speechIn.sttRegistry),
@@ -305,9 +300,7 @@ final class AppModel {
         case .stopSpeech:
             speechActionTask?.cancel()
             speechActionTask = nil
-            speechCoordinator.stop()
-            diagnostics.record(.ttsStopped)
-            statusText = "Speech stopped"
+            speechActions.stopSpeech()
         case .replayLast:
             startSpeechAction { await $0.replayLast() }
         case .toggleAutoRead:
@@ -315,13 +308,14 @@ final class AppModel {
         }
     }
 
-    /// Replaces any in-flight speech action with `action`. The cancelled one checks
+    /// Replaces any in-flight speech action with `action`. The cancelled one re-checks
     /// `Task.isCancelled` before speaking, so it never reaches the speech coordinator.
-    private func startSpeechAction(_ action: @escaping @MainActor (AppModel) async -> Void) {
+    private func startSpeechAction(_ action: @escaping @MainActor (SpeechActions) async -> Void) {
         speechActionTask?.cancel()
-        speechActionTask = Task { [weak self] in
-            guard let self, !Task.isCancelled else { return }
-            await action(self)
+        let actions = speechActions
+        speechActionTask = Task {
+            guard !Task.isCancelled else { return }
+            await action(actions)
         }
     }
 
@@ -337,169 +331,6 @@ final class AppModel {
         }
     }
 
-    private func readSelection() async {
-        do {
-            let selection = try selectionReader.readSelection()
-            diagnostics.record(selection.source == .accessibility ? .selectionAccessibility : .selectionClipboard)
-            let prepared = preprocessor.prepare(text: selection.text, mode: .userRequested)
-            let request = SpeechRequest(
-                text: prepared,
-                source: .selection,
-                mode: .userRequested,
-                sessionID: nil
-            )
-            guard !Task.isCancelled else { return }
-            try await speechCoordinator.speak(request)
-            diagnostics.record(.ttsSubmitted)
-        } catch is CancellationError {
-            // Stopped or superseded on purpose: not a failure.
-        } catch {
-            diagnostics.record(error is SelectionReadingError ? .selectionUnavailable : .ttsFailed)
-            statusText = error.localizedDescription
-        }
-    }
-
-    /// Session-aware "Replay Last", tried in strict priority order:
-    ///
-    /// 1. **Focused agent session** — if some tracked agent session (Claude Code/Codex) is
-    ///    confidently focused (`.focused` + `.high`), speak THAT session's last agent reply.
-    /// 2. **Terminal focused but session ambiguous** — else, if the frontmost app hosts at least
-    ///    one tracked agent session (by process ancestry) and a global latest agent reply exists,
-    ///    speak that global latest.
-    /// 3. **Non-agent context (e.g. Chrome) / nothing hosts a session** — fall back to replaying
-    ///    the last spoken/selected text, exactly like the pre-existing behavior.
-    ///
-    /// All three tiers speak as an explicit user action (`.userRequested`), always audible
-    /// regardless of the auto-read toggle. Iterating every tracked session's focus resolution is
-    /// fine here: the session count is tiny, and the underlying `ps`/`lsof` calls are
-    /// deadlock-hardened.
-    private func replayLast() async {
-        // One snapshot for this decision, shared by pruning and every focus resolver — the same
-        // shape as `AgentAutoReadCoordinator.handle(_:)`.
-        let snapshot = try? await processInspector.snapshot()
-        await pruneDeadSessions(in: sessionRegistry, snapshot: snapshot)
-        let sessions = await sessionRegistry.sessions()
-
-        if let focused = await focusResolution.resolveFocus(among: sessions, processSnapshot: snapshot).focused {
-            guard !Task.isCancelled else { return }
-            await speakFocusedSessionReply(focused)
-            return
-        }
-
-        guard !Task.isCancelled else { return }
-        if let frontmostPID = await frontmostApps.current()?.pid,
-           sessions.contains(where: { $0.processAncestry.contains(frontmostPID) }),
-           integrationManager.latestResponse != nil,
-           await speakGlobalLatestReply() {
-            return
-        }
-
-        guard !Task.isCancelled else { return }
-        await speakLastSpokenText()
-    }
-
-    /// Tier 1: speaks `session`'s own last agent reply via `IntegrationManager.speakResponse`, so
-    /// the request is built identically to `speakLatest()` (same preprocessing, source, and
-    /// sessionID derivation).
-    private func speakFocusedSessionReply(_ session: AgentSession) async {
-        do {
-            try await integrationManager.speakResponse(session.latestResponse)
-            diagnostics.record(.ttsSubmitted)
-            integrationDiagnosticsLog.append(
-                stage: "replay-last",
-                outcome: "focused-session",
-                detail: "provider=\(session.id.provider.rawValue)"
-            )
-        } catch is CancellationError {
-            // Stopped or superseded on purpose: not a failure.
-        } catch {
-            diagnostics.record(.ttsFailed)
-            statusText = error.localizedDescription
-        }
-    }
-
-    /// Tier 2: speaks the global latest agent reply via `IntegrationManager.speakLatest`. Called
-    /// after confirming (via `integrationManager.latestResponse`) that a global latest reply
-    /// looks available — but that check and `speakLatest()`'s own internal store read are two
-    /// separate reads of related-but-distinct state, so this still handles `speakLatest()`
-    /// reporting nothing to speak: it makes no diagnostics/statusText noise and returns `false`,
-    /// letting `replayLast()`'s caller fall through to tier 3 instead of silently speaking
-    /// nothing. Returns `true` for both an actual speak and a thrown speech failure — either way
-    /// tier 2 has "handled" the request and `replayLast()` must not also fall through to tier 3
-    /// (no double-speaking).
-    private func speakGlobalLatestReply() async -> Bool {
-        do {
-            guard try await integrationManager.speakLatest() else { return false }
-            diagnostics.record(.ttsSubmitted)
-            integrationDiagnosticsLog.append(stage: "replay-last", outcome: "global-latest", detail: "")
-            return true
-        } catch is CancellationError {
-            return true
-        } catch {
-            diagnostics.record(.ttsFailed)
-            statusText = error.localizedDescription
-            return true
-        }
-    }
-
-    /// Tier 3: the original `SpeechCoordinator.replayLast()` behavior — re-speaks the last
-    /// spoken/selected text, regardless of source.
-    private func speakLastSpokenText() async {
-        do {
-            try await speechCoordinator.replayLast()
-            diagnostics.record(.ttsReplayed)
-            integrationDiagnosticsLog.append(stage: "replay-last", outcome: "last-spoken", detail: "")
-        } catch is CancellationError {
-            // Stopped or superseded on purpose: not a failure.
-        } catch {
-            diagnostics.record(.ttsFailed)
-            statusText = error.localizedDescription
-        }
-    }
-
-    /// Fixed sample sentence spoken by each voice row's "Test" button (`previewVoice`). Never
-    /// user-authored content, so it carries no privacy risk.
-    private static let testVoiceSampleText = "This is a preview of the selected voice and speaking rate."
-
-    func previewVoice(backendID: String, voiceID: String) async {
-        guard let options = voiceCatalog.options(
-            for: voiceID,
-            backendID: backendID,
-            settings: settings
-        ) else { return }
-        do {
-            try await speechCoordinator.previewVoice(
-                text: Self.testVoiceSampleText,
-                backendID: backendID,
-                options: options
-            )
-            diagnostics.record(.ttsSubmitted)
-        } catch {
-            diagnostics.record(.ttsFailed)
-            statusText = "Voice preview failed. Try again."
-        }
-    }
-
-    // MARK: - Agent integrations
-
-    /// Speaks the ephemeral latest agent response (if any) as a user-requested speech request.
-    /// Never invoked automatically; only ever called from an explicit user action.
-    func speakLatestAgentResponse() async {
-        do {
-            guard try await integrationManager.speakLatest() else {
-                statusText = "No agent response to speak yet."
-                return
-            }
-            diagnostics.record(.ttsSubmitted)
-            // Clears a stale failure ("Could not speak…") or empty-store ("No agent response…")
-            // message left over from an earlier call, the same way a fresh success elsewhere in
-            // this file always leaves `statusText` at its clean default.
-            statusText = "Ready"
-        } catch {
-            diagnostics.record(.ttsFailed)
-            statusText = "Could not speak the latest agent response."
-        }
-    }
 }
 
 /// Default presenter for tests and any composition that doesn't host the overlay panel.
