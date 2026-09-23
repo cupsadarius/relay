@@ -138,6 +138,15 @@ final class AppleTTSAudioSource: TTSAudioSource, @unchecked Sendable {
         }
     }
 
+    /// Without this, dropping a source that was never explicitly `cancel()`-ed (generation
+    /// started, then every strong reference goes away) leaks `PipedTTSAudioSource`'s producer
+    /// task: it stays suspended in `for await event in stream` forever, since nothing else ever
+    /// finishes `events`. Finishing here ends that loop, which falls through to `throw
+    /// CancellationError()` and lets the producer (and the pipe it feeds) wind down normally.
+    deinit {
+        events.finish()
+    }
+
     func next() async throws -> TTSAudioFrame? {
         if claimStart() {
             await startGeneration()
