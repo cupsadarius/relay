@@ -183,6 +183,37 @@ final class WhisperModelManagerTests: XCTestCase {
         XCTAssertFalse(store.presence(of: .baseEn))
     }
 
+    func testRemoveModelDuringInFlightActivationOfThatModelUnloadsBeforeDeletingAndLeavesNothingLoaded() async throws {
+        try markWhisperModelPresent(.baseEn, in: tempDirectory)
+        let gate = WhisperTestGate()
+        let gatedEngine = GatedWhisperEngine(log: log, loadGate: gate)
+        let gatedRuntime = WhisperRuntime(engine: gatedEngine, modelFolder: fakeManagerModelFolder(for:))
+        let gatedManager = WhisperModelManager(
+            store: store,
+            runtime: gatedRuntime,
+            selectedModel: selection.get,
+            setSelectedModel: selection.set
+        )
+
+        let activation = Task { try await gatedRuntime.activate(.baseEn) }
+        let deadline = Date().addingTimeInterval(5)
+        while await gatedEngine.loadCount < 1, Date() < deadline { await Task.yield() }
+        for _ in 0..<20 { await Task.yield() }
+
+        let removal = Task { try await gatedManager.removeModel(WhisperModelID.baseEn.rawValue) }
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertTrue(store.presence(of: .baseEn), "must not delete while the activation this removal is waiting on is still in flight")
+
+        await gate.open()
+        try await activation.value
+        try await removal.value
+
+        XCTAssertEqual(log.all, [.loaded(.baseEn), .unloaded(.baseEn)], "unload must happen before the files are deleted")
+        let loadedAfter = await gatedRuntime.currentModelID
+        XCTAssertNil(loadedAfter)
+        XCTAssertFalse(store.presence(of: .baseEn))
+    }
+
     func testRemoveNotLoadedModelDeletesDirectly() async throws {
         try markWhisperModelPresent(.baseEn, in: tempDirectory)
         try markWhisperModelPresent(.smallEn, in: tempDirectory)

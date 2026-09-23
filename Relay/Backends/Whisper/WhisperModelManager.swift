@@ -88,17 +88,18 @@ struct WhisperModelManager: SpeechModelManaging {
         try await store.download(modelID, progress: progress)
     }
 
-    /// Deletes a downloaded model's files. If `id` is the currently-loaded model, unloads the
-    /// runtime *first* (so no stale context can be left pointing at deleted files), then deletes
-    /// from the store; a not-loaded model is deleted directly, without touching the runtime.
-    /// Removing the selected model is allowed and leaves the selection in place, pointing at a
-    /// now-absent model -- `WhisperBackend.availability()` already reports `.modelNotDownloaded`
-    /// for that state, so no special-casing is needed here.
+    /// Deletes a downloaded model's files. Unloads the runtime *first* (so no stale context can be
+    /// left pointing at deleted files), then deletes from the store; a model the runtime has no
+    /// stake in is deleted directly. `runtime.unload(ifInvolving:)` -- not a plain
+    /// `currentModelID == modelID` check -- covers this correctly even while `id` is mid-activation
+    /// or being drained by a switch away from it, both of which read `currentModelID` as `nil`
+    /// despite the runtime still needing `id`'s files. Removing the selected model is allowed and
+    /// leaves the selection in place, pointing at a now-absent model --
+    /// `WhisperBackend.availability()` already reports `.modelNotDownloaded` for that state, so no
+    /// special-casing is needed here.
     func removeModel(_ id: String) async throws {
         let modelID = try Self.modelID(for: id)
-        if await runtime.currentModelID == modelID {
-            await runtime.unload()
-        }
+        await runtime.unload(ifInvolving: modelID)
         try await store.remove(modelID)
     }
 

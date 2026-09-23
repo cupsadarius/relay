@@ -184,6 +184,17 @@ final class WhisperRuntimeTests: XCTestCase {
         for _ in 0..<50 { await Task.yield() }
     }
 
+    /// Polls (bounded) until `engine.loadCount` reaches `target`, instead of a fixed number of
+    /// yields -- `load(modelFolder:)` increments `loadCount` before awaiting its gate, so this
+    /// deterministically waits for "the gated load has been entered" rather than hoping a fixed
+    /// `settle()` was long enough on a slower machine or under load.
+    private func waitForLoadCount(_ target: Int, on engine: GatedWhisperEngine, timeout: TimeInterval = 5) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while await engine.loadCount < target, Date() < deadline {
+            await Task.yield()
+        }
+    }
+
     func testConcurrentActivateOfTheSameModelLoadsOnce() async throws {
         let gate = WhisperTestGate()
         let gatedEngine = GatedWhisperEngine(log: log, loadGate: gate)
@@ -257,6 +268,7 @@ final class WhisperRuntimeTests: XCTestCase {
 
         let first = Task { try await runtime.activate(.baseEn) }
         let second = Task { try await runtime.activate(.baseEn) }
+        await waitForLoadCount(1, on: gatedEngine)
         await settle()
         await gate.open()
 
@@ -280,6 +292,7 @@ final class WhisperRuntimeTests: XCTestCase {
         let runtime = WhisperRuntime(engine: gatedEngine, modelFolder: Self.folder(for:))
 
         let activation = Task { try await runtime.activate(.baseEn) }
+        await waitForLoadCount(1, on: gatedEngine)
         await settle()
         let unload = Task { await runtime.unload() }
         await settle()
@@ -291,10 +304,101 @@ final class WhisperRuntimeTests: XCTestCase {
         let current = await runtime.currentModelID
         XCTAssertNil(current)
     }
+
+    func testUnloadIfInvolvingWaitsForInFlightActivationOfThatModelThenUnloads() async throws {
+        let gate = WhisperTestGate()
+        let gatedEngine = GatedWhisperEngine(log: log, loadGate: gate)
+        let runtime = WhisperRuntime(engine: gatedEngine, modelFolder: Self.folder(for:))
+
+        let activation = Task { try await runtime.activate(.baseEn) }
+        await waitForLoadCount(1, on: gatedEngine)
+        await settle()
+
+        let unload = Task { await runtime.unload(ifInvolving: .baseEn) }
+        await settle()
+        XCTAssertEqual(log.all, [], "must not unload until the in-flight activation it targets resolves")
+
+        await gate.open()
+        try await activation.value
+        await unload.value
+
+        XCTAssertEqual(log.all, [.loaded(.baseEn), .unloaded(.baseEn)], "must unload the model once its activation finishes")
+        let current = await runtime.currentModelID
+        XCTAssertNil(current)
+    }
+
+    func testUnloadIfInvolvingAnUnrelatedModelDuringAnActivationLeavesTheActivationAlone() async throws {
+        let gate = WhisperTestGate()
+        let gatedEngine = GatedWhisperEngine(log: log, loadGate: gate)
+        let runtime = WhisperRuntime(engine: gatedEngine, modelFolder: Self.folder(for:))
+
+        let activation = Task { try await runtime.activate(.baseEn) }
+        await waitForLoadCount(1, on: gatedEngine)
+
+        await runtime.unload(ifInvolving: .smallEn)
+
+        await gate.open()
+        try await activation.value
+
+        XCTAssertEqual(log.all, [.loaded(.baseEn)], "an unrelated id must not disturb the in-flight activation")
+        let current = await runtime.currentModelID
+        XCTAssertEqual(current, .baseEn)
+    }
+
+    func testUnloadIfInvolvingTheCurrentlyLoadedModelUnloadsIt() async throws {
+        try await runtime.activate(.baseEn)
+
+        await runtime.unload(ifInvolving: .baseEn)
+
+        XCTAssertEqual(log.all, [.loaded(.baseEn), .unloaded(.baseEn)])
+        let current = await runtime.currentModelID
+        XCTAssertNil(current)
+    }
+
+    func testUnloadIfInvolvingAModelThatIsNeitherLoadedNorInFlightIsANoOp() async throws {
+        try await runtime.activate(.baseEn)
+
+        await runtime.unload(ifInvolving: .smallEn)
+
+        XCTAssertEqual(log.all, [.loaded(.baseEn)])
+        let current = await runtime.currentModelID
+        XCTAssertEqual(current, .baseEn)
+    }
+
+    func testUnloadIfInvolvingTheModelBeingDrainedDuringASwitchWaitsForTheDrainAndLeavesTheReplacementLoaded() async throws {
+        let transcribeGate = WhisperTestGate()
+        let gatedEngine = GatedWhisperEngine(log: log, transcribeGateByID: [.baseEn: transcribeGate])
+        let runtime = WhisperRuntime(engine: gatedEngine, modelFolder: Self.folder(for:))
+        try await runtime.activate(.baseEn)
+        let contextOpt = await gatedEngine.lastContext
+        let context = try XCTUnwrap(contextOpt)
+
+        let transcription = Task { try await runtime.transcribe([0.1], options: STTOptions()) }
+        while await !context.transcribeStarted { await Task.yield() }
+        // .baseEn is now mid-drain of a switch to .smallEn: `currentModelID` already reads `nil`,
+        // but the runtime still needs .baseEn's files until the drain finishes.
+        let switchTask = Task { try await runtime.activate(.smallEn) }
+        await settle()
+
+        let unloadBaseEn = Task { await runtime.unload(ifInvolving: .baseEn) }
+        await settle()
+        XCTAssertFalse(log.all.contains(.unloaded(.baseEn)), "must not resume the drain early")
+
+        await transcribeGate.open()
+        _ = try await transcription.value
+        try await switchTask.value
+        await unloadBaseEn.value
+
+        XCTAssertEqual(log.all, [.loaded(.baseEn), .transcribed(.baseEn), .unloaded(.baseEn), .loaded(.smallEn)])
+        let current = await runtime.currentModelID
+        XCTAssertEqual(current, .smallEn, "unload(ifInvolving: .baseEn) must not touch the model that replaced it")
+    }
 }
 
-/// Gate the concurrency tests below open by hand.
-private actor WhisperTestGate {
+/// Gate the concurrency tests below open by hand. Not `private`: `WhisperModelManagerTests`
+/// reuses this and the two gated fakes below it to test `removeModel` during an in-flight
+/// activation without duplicating them.
+actor WhisperTestGate {
     private var isOpen = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
@@ -311,7 +415,7 @@ private actor WhisperTestGate {
     }
 }
 
-private actor GatedWhisperContext: LoadedWhisperContext {
+actor GatedWhisperContext: LoadedWhisperContext {
     let id: WhisperModelID
     let log: FakeWhisperEventLog
     let transcribeGate: WhisperTestGate?
@@ -335,7 +439,7 @@ private actor GatedWhisperContext: LoadedWhisperContext {
     }
 }
 
-private actor GatedWhisperEngine: WhisperEngine {
+actor GatedWhisperEngine: WhisperEngine {
     let log: FakeWhisperEventLog
     private let loadGate: WhisperTestGate?
     private let transcribeGateByID: [WhisperModelID: WhisperTestGate]

@@ -42,6 +42,11 @@ enum WhisperRuntimeError: Error, Equatable, Sendable {
 actor WhisperRuntime {
     private struct Transition {
         let target: WhisperModelID?
+        /// The model that was loaded when this transition started (before any unload ran), or
+        /// `nil` if nothing was loaded. Lets `unload(ifInvolving:)` recognize a transition that is
+        /// draining `from` on its way to `target`, even though `loaded` is already `nil` for the
+        /// whole of that drain.
+        let from: WhisperModelID?
         let token: UUID
         let task: Task<Void, Error>
     }
@@ -97,6 +102,27 @@ actor WhisperRuntime {
         try? await transition(to: nil)
     }
 
+    /// Unloads if `id` is involved in the runtime's current or in-flight state: it is the loaded
+    /// model, the target of an in-flight activation, or the model an in-flight transition is
+    /// currently draining on its way to some other target. A no-op otherwise (including when `id`
+    /// is not involved at all, or when a transition is merely draining a *different* model on its
+    /// way to loading `id` -- that drain doesn't touch `id`'s files).
+    ///
+    /// Exists for `WhisperModelManager.removeModel`: deleting `id`'s files is only safe once
+    /// nothing in the runtime still needs them, and `currentModelID` alone (`loaded?.id`) misses
+    /// both of those in-flight cases -- it reads `nil` while `id` is mid-activation and while a
+    /// switch away from `id` is still draining it.
+    func unload(ifInvolving id: WhisperModelID) async {
+        while let inFlight = inFlightTransition, inFlight.target == id || inFlight.from == id {
+            _ = try? await inFlight.task.value
+            // Re-evaluate: another transition touching `id` may have started while this call
+            // waited (e.g. a fresh activation of `id` racing the removal).
+        }
+        if loaded?.id == id {
+            await unload()
+        }
+    }
+
     private func transition(to target: WhisperModelID?) async throws {
         while true {
             if inFlightTransition == nil, loaded?.id == target {
@@ -112,8 +138,9 @@ actor WhisperRuntime {
         }
 
         let token = UUID()
+        let from = loaded?.id
         let task = Task { try await self.performTransition(to: target, token: token) }
-        inFlightTransition = Transition(target: target, token: token, task: task)
+        inFlightTransition = Transition(target: target, from: from, token: token, task: task)
         try await task.value
     }
 
