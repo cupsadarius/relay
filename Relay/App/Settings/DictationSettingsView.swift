@@ -17,12 +17,12 @@ struct DictationSettingsView: View {
             }
             SpeechBackendSettingsSection(
                 title: "Speech Recognition",
-                backends: model.sttBackends,
+                backends: model.sttBackendList.rows,
                 domain: .dictation,
                 controller: model.modelController,
-                message: model.modelController.messages[.dictation] ?? model.speechBackendMessage,
-                setEnabled: model.setSTTBackendEnabled,
-                move: model.moveSTTBackend
+                message: model.modelController.messages[.dictation] ?? model.sttBackendList.message,
+                setEnabled: model.sttBackendList.setEnabled,
+                move: model.sttBackendList.move
             ) { _ in EmptyView() }
             Text("Relay tries enabled backends in order and falls back to the next one. Models download only when you choose Download.")
                 .font(.caption).foregroundStyle(.secondary)

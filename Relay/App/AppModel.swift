@@ -50,13 +50,7 @@ final class AppModel {
     /// the Security & Permissions settings tab so a stale post-rebuild microphone grant (zero
     /// frames captured despite the OS showing the toggle on) is visible rather than silent.
     var lastMicrophoneCaptureDiagnostics: MicrophoneCaptureDiagnostics? { diagnostics.lastMicrophoneCaptureDiagnostics }
-    var sttBackends: [STTBackendStatus] = []
-    var speechBackendMessage: String?
-    var ttsBackends: [TTSBackendStatus] = []
-    var ttsBackendMessage: String?
     var overlayModel: ActivityOverlayModel { runtime.speechOut.overlayModel }
-    var sttRegistry: [String: any SpeechToTextBackend] { runtime.speechIn.sttRegistry }
-    var ttsRegistry: [String: any TextToSpeechBackend] { runtime.speechOut.ttsRegistry }
     private var selectionReader: any SelectionReading { runtime.selectionReader }
     private var preprocessor: RulesSpeechPreprocessor { runtime.preprocessor }
     private var speechCoordinator: any SpeechCoordinating { runtime.speechOut.speechCoordinator }
@@ -81,13 +75,13 @@ final class AppModel {
     var settings: AppSettings { settingsController.current }
     @ObservationIgnored let modelController: SpeechModelController
     @ObservationIgnored let voiceCatalog: SpeechVoiceCatalog
-    @ObservationIgnored var refreshGeneration = 0
-    @ObservationIgnored var ttsRefreshGeneration = 0
+    @ObservationIgnored let sttBackendList: BackendListModel
+    @ObservationIgnored let ttsBackendList: BackendListModel
     /// The fire-and-forget initial status refresh kicked off from `init`. Exposed so tests can
-    /// await it instead of racing an explicit `refreshSpeechBackendStatuses()` call against it.
+    /// await it instead of racing an explicit `sttBackendList.refresh()` call against it.
     @ObservationIgnored var initialSpeechBackendRefresh: Task<Void, Never>?
     /// The fire-and-forget initial TTS status refresh kicked off from `init`. Exposed so tests
-    /// can await it instead of racing an explicit `refreshTTSBackendStatuses()` call against it.
+    /// can await it instead of racing an explicit `ttsBackendList.refresh()` call against it.
     @ObservationIgnored var initialTTSBackendRefresh: Task<Void, Never>?
     @ObservationIgnored private var activationObserver: NSObjectProtocol?
     @ObservationIgnored private var dictationTask: Task<Void, Never>?
@@ -109,6 +103,21 @@ final class AppModel {
             diagnostics: runtime.diagnostics
         )
         voiceCatalog = SpeechVoiceCatalog()
+        let settings = runtime.settingsController
+        sttBackendList = BackendListModel(
+            entries: BackendListEntry.entries(runtime.speechIn.sttRegistry),
+            order: { settings.current.sttBackendOrder },
+            setOrder: { settings.setSTTBackendOrder($0) },
+            refusalMessage: "At least one speech recognition backend must stay enabled.",
+            statusSink: runtime.status
+        )
+        ttsBackendList = BackendListModel(
+            entries: BackendListEntry.entries(runtime.speechOut.ttsRegistry),
+            order: { settings.current.ttsBackendOrder },
+            setOrder: { settings.setTTSBackendOrder($0) },
+            refusalMessage: "At least one TTS backend must stay enabled.",
+            statusSink: runtime.status
+        )
         permissionSnapshot = runtime.permissionService.snapshot()
         microphonePermissionGranted = runtime.microphonePermissions.isGranted()
         launchAtLoginEnabled = runtime.loginItemService.isEnabled
@@ -118,11 +127,11 @@ final class AppModel {
         observeAppActivation()
         bindOverlayPresenter()
         initialSpeechBackendRefresh = Task { [weak self] in
-            await self?.refreshSpeechBackendStatuses()
+            await self?.sttBackendList.refresh()
             await self?.modelController.refresh(domain: .dictation)
         }
         initialTTSBackendRefresh = Task { [weak self] in
-            await self?.refreshTTSBackendStatuses()
+            await self?.ttsBackendList.refresh()
             await self?.modelController.refresh(domain: .textToSpeech)
         }
     }
@@ -146,9 +155,9 @@ final class AppModel {
             refreshBackends: { [weak self] domain in
                 switch domain {
                 case .dictation:
-                    await self?.refreshSpeechBackendStatuses()
+                    await self?.sttBackendList.refresh()
                 case .textToSpeech:
-                    await self?.refreshTTSBackendStatuses()
+                    await self?.ttsBackendList.refresh()
                 }
             },
             beforeRemoval: { [weak self] key in
@@ -240,7 +249,7 @@ final class AppModel {
         microphonePermissionGranted = microphonePermissions.isGranted()
         diagnostics.record(.permissionRechecked)
         registerHotkeys()
-        Task { [weak self] in await self?.refreshSpeechBackendStatuses() }
+        Task { [weak self] in await self?.sttBackendList.refresh() }
     }
 
     func clearDiagnostics() { diagnostics.clear() }

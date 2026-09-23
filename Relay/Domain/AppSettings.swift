@@ -91,8 +91,8 @@ struct AppSettings: Codable, Equatable, Sendable {
         // Normalize AFTER every field has its per-field fallback value: drop unknown/duplicate
         // backend ids (keeping the first occurrence of each known id, in order) and clamp the
         // rate into its valid range. Deliberately does NOT append known-but-missing backend ids
-        // to the order — that would invent new behavior; `BackendCatalog.knownOrder` (the
-        // equivalent runtime-side filter in `Relay/App/BackendCatalog.swift`) only ever filters
+        // to the order — that would invent new behavior; `BackendListModel.knownOrder()` (the
+        // equivalent runtime-side filter in `Relay/App/BackendListModel.swift`) only ever filters
         // too, never appends, so this matches existing semantics.
         sttBackendOrder = AppSettings.normalizedBackendOrder(
             decodedSTTOrder,

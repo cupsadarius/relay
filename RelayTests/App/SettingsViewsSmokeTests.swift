@@ -124,7 +124,7 @@ final class SpeechModelRowPresentationTests: XCTestCase {
 
     /// A model can be reported selected+downloaded by its manager (e.g.
     /// `AppleSpeechModelManager`'s always-downloaded façade) even while the OWNING backend isn't
-    /// actually usable (`STTBackendStatus.State` other than `.ready`, e.g. `.unsupported` on a Mac
+    /// actually usable (`BackendStatus.State` other than `.ready`, e.g. `.unsupported` on a Mac
     /// where Apple Speech isn't available). `backendReady: false` must suppress "Active" in that
     /// case -- a model can never show as in-use on a backend that can't run it -- falling back to
     /// the same "Downloaded" label an inactive-but-present model gets.

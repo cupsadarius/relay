@@ -780,106 +780,20 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(model.statusText.contains("Could not save settings"))
     }
 
-    func testSpeechBackendStatusesDeriveFromSettingsOrderEnabledFirstThenDisabled() async {
-        var settings = AppSettings.defaults
-        settings.sttBackendOrder = ["b", "a"]
-        let store = SpySettingsStore(settings: settings)
-        let a = FakeSTTBackend(id: "a", displayName: "A")
-        let b = FakeSTTBackend(id: "b", displayName: "B")
-        let c = FakeSTTBackend(id: "c", displayName: "C")
-        let model = makeModel(store: store, sttRegistry: ["a": a, "b": b, "c": c])
-        await model.initialSpeechBackendRefresh?.value
-
-        XCTAssertEqual(model.sttBackends.map(\.id), ["b", "a", "c"])
-        XCTAssertEqual(model.sttBackends.map(\.isEnabled), [true, true, false])
-        XCTAssertEqual(model.sttBackends.map(\.position), [0, 1, Int.max])
-        XCTAssertEqual(model.sttBackends.map(\.state), [.ready, .ready, .ready])
-    }
-
-    func testEnablingBackendAppendsItToOrderAndPersists() async {
+    func testBackendListsReadAndPersistOrderThroughSettings() async {
         var settings = AppSettings.defaults
         settings.sttBackendOrder = ["a"]
         let store = SpySettingsStore(settings: settings)
-        let a = FakeSTTBackend(id: "a", displayName: "A")
-        let b = FakeSTTBackend(id: "b", displayName: "B")
-        let model = makeModel(store: store, sttRegistry: ["a": a, "b": b])
+        let model = makeModel(store: store, sttRegistry: [
+            "a": FakeSTTBackend(id: "a", displayName: "A"),
+            "b": FakeSTTBackend(id: "b", displayName: "B"),
+        ])
         await model.initialSpeechBackendRefresh?.value
 
-        model.setSTTBackendEnabled("b", true)
+        model.sttBackendList.setEnabled("b", true)
 
         XCTAssertEqual(model.settings.sttBackendOrder, ["a", "b"])
         XCTAssertEqual(store.saved.last?.sttBackendOrder, ["a", "b"])
-        XCTAssertEqual(model.sttBackends.first { $0.id == "b" }?.isEnabled, true)
-        XCTAssertEqual(model.sttBackends.first { $0.id == "b" }?.position, 1)
-    }
-
-    func testMovingEnabledBackendReordersSettings() async {
-        var settings = AppSettings.defaults
-        settings.sttBackendOrder = ["a", "b"]
-        let store = SpySettingsStore(settings: settings)
-        let a = FakeSTTBackend(id: "a", displayName: "A")
-        let b = FakeSTTBackend(id: "b", displayName: "B")
-        let model = makeModel(store: store, sttRegistry: ["a": a, "b": b])
-        await model.initialSpeechBackendRefresh?.value
-
-        model.moveSTTBackend("b", up: true)
-
-        XCTAssertEqual(model.settings.sttBackendOrder, ["b", "a"])
-        XCTAssertEqual(model.sttBackends.map(\.id), ["b", "a"])
-    }
-
-    func testCannotDisableTheLastEnabledBackend() async {
-        var settings = AppSettings.defaults
-        settings.sttBackendOrder = ["a"]
-        let store = SpySettingsStore(settings: settings)
-        let a = FakeSTTBackend(id: "a", displayName: "A")
-        let model = makeModel(store: store, sttRegistry: ["a": a])
-        await model.initialSpeechBackendRefresh?.value
-
-        model.setSTTBackendEnabled("a", false)
-
-        XCTAssertEqual(model.settings.sttBackendOrder, ["a"])
-        XCTAssertTrue(store.saved.isEmpty)
-        XCTAssertEqual(model.statusText, "At least one speech recognition backend must stay enabled.")
-    }
-
-    func testUnknownIDsInSettingsOrderAreIgnoredAndDroppedWhenPersisted() async {
-        var settings = AppSettings.defaults
-        settings.sttBackendOrder = ["ghost", "a"]
-        let store = SpySettingsStore(settings: settings)
-        let a = FakeSTTBackend(id: "a", displayName: "A")
-        let b = FakeSTTBackend(id: "b", displayName: "B")
-        let model = makeModel(store: store, sttRegistry: ["a": a, "b": b])
-        await model.initialSpeechBackendRefresh?.value
-
-        // "ghost" isn't in the registry, so "a" is treated as the first (and only) known
-        // enabled backend, not the second.
-        XCTAssertEqual(model.sttBackends.map(\.id), ["a", "b"])
-        XCTAssertEqual(model.sttBackends.first { $0.id == "a" }?.position, 0)
-
-        model.setSTTBackendEnabled("a", false)
-        XCTAssertEqual(model.statusText, "At least one speech recognition backend must stay enabled.")
-
-        model.setSTTBackendEnabled("b", true)
-
-        XCTAssertEqual(model.settings.sttBackendOrder, ["a", "b"])
-        XCTAssertEqual(store.saved.last?.sttBackendOrder, ["a", "b"])
-    }
-
-    func testSpeechBackendMessageIsSetOnRefusalAndClearedOnNextSuccessfulAction() async {
-        var settings = AppSettings.defaults
-        settings.sttBackendOrder = ["a"]
-        let store = SpySettingsStore(settings: settings)
-        let a = FakeSTTBackend(id: "a", displayName: "A")
-        let b = FakeSTTBackend(id: "b", displayName: "B")
-        let model = makeModel(store: store, sttRegistry: ["a": a, "b": b])
-        await model.initialSpeechBackendRefresh?.value
-
-        model.setSTTBackendEnabled("a", false)
-        XCTAssertEqual(model.speechBackendMessage, "At least one speech recognition backend must stay enabled.")
-
-        model.setSTTBackendEnabled("b", true)
-        XCTAssertNil(model.speechBackendMessage)
     }
 
     func testReadSelectionRoutesThroughKokoroWithConfiguredVoiceWhenAvailable() async {
@@ -997,26 +911,6 @@ final class AppModelTests: XCTestCase {
             ttsRegistry: ["pocket-tts": pocket, "kokoro": kokoro, "apple-tts": apple]
         ))
         return (model, hotkeys, pocket, kokoro, apple)
-    }
-
-    func testRefreshMapsBackendAvailabilityCasesToFixedStates() async {
-        let cases: [(BackendAvailability, STTBackendStatus.State)] = [
-            (.available, .ready),
-            (.modelNotDownloaded, .modelNotDownloaded),
-            (.unsupportedOS, .unsupported),
-            (.unsupportedHardware, .unsupported),
-            (.permissionDenied, .unavailable),
-            (.unavailable("some reason"), .unavailable),
-            (.failed("boom"), .unavailable),
-        ]
-
-        for (availability, expected) in cases {
-            let backend = FakeSTTBackend(id: "x", displayName: "X", availability: availability)
-            let model = makeModel(sttRegistry: ["x": backend])
-            await model.initialSpeechBackendRefresh?.value
-
-            XCTAssertEqual(model.sttBackends.first?.state, expected, "availability: \(availability)")
-        }
     }
 
     /// Polls `condition` until it's true, yielding between checks so other tasks (fakes waiting

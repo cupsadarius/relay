@@ -19,6 +19,6 @@ struct SettingsView: View {
                 .tabItem { Label("Integrations", systemImage: "app.connected.to.app.below.fill") }
         }
         .frame(width: 620, height: 610)
-        .task { await model.refreshSpeechBackendStatuses() }
+        .task { await model.sttBackendList.refresh() }
     }
 }

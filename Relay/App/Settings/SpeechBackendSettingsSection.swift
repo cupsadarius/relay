@@ -88,8 +88,6 @@ struct SpeechBackendSettingsSection<ExpandedContent: View>: View {
         switch state {
         case .ready: "Ready"
         case .modelNotDownloaded: "Model not downloaded"
-        case let .downloading(progress): "Downloading \(Int((progress * 100).rounded()))%"
-        case .downloadFailed: "Download failed"
         case .unsupported: "Unsupported on this Mac"
         case .unavailable: "Unavailable"
         }

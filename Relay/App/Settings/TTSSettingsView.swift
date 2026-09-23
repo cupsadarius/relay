@@ -7,12 +7,12 @@ struct TTSSettingsView: View {
         Form {
             SpeechBackendSettingsSection(
                 title: "Backends",
-                backends: model.ttsBackends,
+                backends: model.ttsBackendList.rows,
                 domain: .textToSpeech,
                 controller: model.modelController,
-                message: model.modelController.messages[.textToSpeech] ?? model.ttsBackendMessage,
-                setEnabled: model.setTTSBackendEnabled,
-                move: model.moveTTSBackend,
+                message: model.modelController.messages[.textToSpeech] ?? model.ttsBackendList.message,
+                setEnabled: model.ttsBackendList.setEnabled,
+                move: model.ttsBackendList.move,
                 hasExpandedContent: { !model.voiceCatalog.voices(for: $0).isEmpty }
             ) { backendID in
                 let activeID = model.voiceCatalog.activeVoiceID(for: backendID, settings: model.settings)
@@ -46,7 +46,7 @@ struct TTSSettingsView: View {
         }
         .formStyle(.grouped)
         .task {
-            await model.refreshTTSBackendStatuses()
+            await model.ttsBackendList.refresh()
             await model.modelController.refresh(domain: .textToSpeech)
         }
     }
