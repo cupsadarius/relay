@@ -332,6 +332,24 @@ final class WhisperModelStoreTests: XCTestCase {
         let modelDirectory = tempDirectory.appendingPathComponent(WhisperModelID.tinyEn.rawValue, isDirectory: true)
         XCTAssertFalse(FileManager.default.fileExists(atPath: modelDirectory.path))
     }
+
+    func testInvalidatePresenceMakesPresenceFalseWithoutDeletingTheRemainingFiles() async throws {
+        let tokenizerData = Data("{\"tokenizer\":\"data\"}".utf8)
+        downloader.filesToWrite = [
+            .init(relativePath: "tokenizer.json", data: tokenizerData, oid: TestOID.gitBlobSHA1(tokenizerData)),
+        ]
+        try await store.download(.tinyEn, progress: { _ in })
+        XCTAssertTrue(store.presence(of: .tinyEn))
+
+        store.invalidatePresence(of: .tinyEn)
+
+        XCTAssertFalse(store.presence(of: .tinyEn), "presence must flip to false as soon as the marker is gone")
+        let modelDirectory = tempDirectory.appendingPathComponent(WhisperModelID.tinyEn.rawValue, isDirectory: true)
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: modelDirectory.appendingPathComponent("tokenizer.json").path),
+            "invalidating presence must not delete the rest of the files -- that is remove(_:)'s job"
+        )
+    }
 }
 
 /// `XCTAssertThrowsError` has no async overload in this SDK version; this small helper awaits the

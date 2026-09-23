@@ -157,6 +157,18 @@ struct WhisperModelStore: Sendable {
         }
     }
 
+    /// Deletes just the `.verified` marker, so `presence(of:)` reports `false` immediately --
+    /// before the rest of a removal (unloading the runtime, then deleting the remaining files,
+    /// both of which can take a moment) even starts. A no-op if the marker is already gone.
+    ///
+    /// Exists for `WhisperModelManager.removeModel` to call first: once this returns, no new
+    /// caller that checks `presence(of:)` (e.g. `WhisperBackend.availability()`) can start a fresh
+    /// activation of `id` and race the rest of the removal for its files.
+    func invalidatePresence(of id: WhisperModelID) {
+        let markerURL = modelDirectory(for: id).appendingPathComponent(Self.verifiedMarkerName)
+        try? FileManager.default.removeItem(at: markerURL)
+    }
+
     /// Deletes a downloaded model's files. A no-op (not an error) if the model wasn't present.
     func remove(_ id: WhisperModelID) async throws {
         let directory = modelDirectory(for: id)

@@ -88,17 +88,25 @@ struct WhisperModelManager: SpeechModelManaging {
         try await store.download(modelID, progress: progress)
     }
 
-    /// Deletes a downloaded model's files. Unloads the runtime *first* (so no stale context can be
-    /// left pointing at deleted files), then deletes from the store; a model the runtime has no
-    /// stake in is deleted directly. `runtime.unload(ifInvolving:)` -- not a plain
-    /// `currentModelID == modelID` check -- covers this correctly even while `id` is mid-activation
-    /// or being drained by a switch away from it, both of which read `currentModelID` as `nil`
-    /// despite the runtime still needing `id`'s files. Removing the selected model is allowed and
-    /// leaves the selection in place, pointing at a now-absent model --
-    /// `WhisperBackend.availability()` already reports `.modelNotDownloaded` for that state, so no
-    /// special-casing is needed here.
+    /// Deletes a downloaded model's files, in three steps that close a TOCTOU window:
+    /// 1. Invalidate presence first (delete just the `.verified` marker) -- from this point,
+    ///    `store.presence(of:)` reports `false`, so no NEW caller (e.g. `WhisperBackend
+    ///    .availability()`/`.transcribe`) can start a fresh activation of `id` and race the rest
+    ///    of this removal for its files.
+    /// 2. Unload the runtime -- so no stale context is left pointing at files about to be
+    ///    deleted. `runtime.unload(ifInvolving:)`, not a plain `currentModelID == modelID` check,
+    ///    covers this correctly even while `id` is mid-activation or being drained by a switch
+    ///    away from it, both of which read `currentModelID` as `nil` despite the runtime still
+    ///    needing `id`'s files -- that only handles callers already in flight *before* step 1;
+    ///    step 1 is what stops new ones.
+    /// 3. Delete the remaining files. A model the runtime has no stake in skips straight to this.
+    ///
+    /// Removing the selected model is allowed and leaves the selection in place, pointing at a
+    /// now-absent model -- `WhisperBackend.availability()` already reports `.modelNotDownloaded`
+    /// for that state, so no special-casing is needed here.
     func removeModel(_ id: String) async throws {
         let modelID = try Self.modelID(for: id)
+        store.invalidatePresence(of: modelID)
         await runtime.unload(ifInvolving: modelID)
         try await store.remove(modelID)
     }

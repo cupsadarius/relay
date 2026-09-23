@@ -201,8 +201,16 @@ final class WhisperModelManagerTests: XCTestCase {
         for _ in 0..<20 { await Task.yield() }
 
         let removal = Task { try await gatedManager.removeModel(WhisperModelID.baseEn.rawValue) }
-        for _ in 0..<20 { await Task.yield() }
-        XCTAssertTrue(store.presence(of: .baseEn), "must not delete while the activation this removal is waiting on is still in flight")
+        let presenceDeadline = Date().addingTimeInterval(5)
+        while store.presence(of: .baseEn), Date() < presenceDeadline { await Task.yield() }
+        XCTAssertFalse(
+            store.presence(of: .baseEn),
+            "presence must flip to false immediately (before waiting on the in-flight activation), closing the TOCTOU window for a new caller"
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: tempDirectory.appendingPathComponent(WhisperModelID.baseEn.rawValue).path),
+            "the files themselves must not be deleted while the activation this removal is waiting on is still in flight"
+        )
 
         await gate.open()
         try await activation.value
