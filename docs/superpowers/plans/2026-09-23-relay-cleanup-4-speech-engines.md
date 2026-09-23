@@ -84,7 +84,8 @@ Output to expect:
 ## Execution Notes (fill in while executing)
 
 - **Task 8 spike: which thread runs Apple TTS `write` callbacks:** not skipped (system voices were installed). `SPIKE apple-tts-write-callback: main=62 background=0 nonEmptyBuffers=61`, macOS 27.0 (arm64). All callbacks arrived on the main thread; `main > 0` means the old `NSCondition`-based bridge risked blocking the main actor `next()` also needs (a deadlock risk), confirming Task 9's never-blocking, explicitly-`@Sendable` callback is the correct fix regardless of which thread Apple uses.
-- Deviations from this plan and why: `_____`
+- **Task 13 Step 7 manual check (real hardware, route change while dictating):** PENDING — not performed by this automated session; needs a human with real hardware to switch input devices mid-recording and confirm the pill surfaces the microphone error immediately and that dictation recovers on the next attempt.
+- Deviations from this plan and why: Task 13's `testCloseWaitsForAnInFlightCallbackToLeave` (`CaptureCallbackGateTests`) as given waits on the same `XCTestExpectation` twice (`XCTWaiter.wait` then `wait(for:)`), which XCTest raises `API violation` for on this toolchain. Rewrote it with a lock-protected boolean flag polled with `Thread.sleep`, preserving the same assertion intent (close blocks while a callback is in flight, returns once it leaves) without reusing the expectation object.
 
 ## File Structure
 

@@ -311,26 +311,44 @@ private final class AudioSampleAccumulator: @unchecked Sendable {
     }
 }
 
+/// Live microphone source. Threading rules:
+/// - The tap callback only takes the gate briefly and delivers samples with no lock held.
+/// - Every engine mutation (installTap, start, removeTap, stop) runs on `engineQueue`, which the
+///   tap never runs on, so teardown there can wait for an in-flight callback without deadlocking.
+/// - A failure seen on the tap thread (or on a route change) closes the gate and *queues* teardown
+///   on `engineQueue`, because removing a tap from inside its own callback can deadlock. A later
+///   `start()`/`stop()` goes through the same queue, so that teardown always runs before a newer
+///   capture installs its tap.
 private final class AVAudioEngineSource: AudioCaptureSourcing, AudioInputFormatReporting, @unchecked Sendable {
-    private let lock = NSLock()
     private let engine = AVAudioEngine()
-    private var isCapturing = false
-    private var captureError: Error?
-    /// The real input device's sample rate (Hz), captured from `inputFormat` in `start()` before
-    /// any resampling to the fixed 16 kHz pipeline rate. Read by `MicrophoneCapture` for
-    /// privacy-safe capture diagnostics — never any raw audio.
+    private let gate = CaptureCallbackGate()
+    private let engineQueue = DispatchQueue(label: "dev.relaymac.Relay.microphone-engine")
+    private let notificationCenter: NotificationCenter
+
+    private let stateLock = NSLock()
+    /// The real input device rate captured in `start()`, before resampling to 16 kHz. Metadata
+    /// for privacy-safe diagnostics only.
     private var inputSampleRate: Double = 0
+    private var terminalErrorHandler: (@Sendable (Error) async -> Void)?
+    private var configurationObserver: AudioEngineConfigurationObserver?
+
+    /// Only touched on `engineQueue`.
+    private var tapInstalled = false
+
+    init(notificationCenter: NotificationCenter = .default) {
+        self.notificationCenter = notificationCenter
+    }
 
     func currentInputSampleRate() -> Double {
-        lock.withLock { inputSampleRate }
+        stateLock.withLock { inputSampleRate }
     }
 
     func start(
         onSamples: @escaping @Sendable ([Float]) -> Void,
         onTerminalError: @escaping @Sendable (Error) async -> Void
     ) async throws {
-        try lock.withLock {
-            guard !isCapturing else { throw MicrophoneCaptureError.alreadyRecording }
+        try engineQueue.sync {
+            guard !tapInstalled else { throw MicrophoneCaptureError.alreadyRecording }
             let input = engine.inputNode
             let inputFormat = input.inputFormat(forBus: 0)
             guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0,
@@ -345,89 +363,103 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, AudioInputFormatR
                 throw MicrophoneCaptureError.unavailable("The current input format is unsupported.")
             }
 
-            inputSampleRate = inputFormat.sampleRate
-            captureError = nil
-            input.installTap(onBus: 0, bufferSize: 4_096, format: inputFormat) { [weak self] buffer, _ in
-                self?.convert(
-                    buffer,
-                    using: converter,
-                    outputFormat: outputFormat,
-                    onSamples: onSamples,
-                    onTerminalError: onTerminalError
-                )
+            stateLock.withLock {
+                inputSampleRate = inputFormat.sampleRate
+                terminalErrorHandler = onTerminalError
             }
+            gate.open()
+            input.installTap(onBus: 0, bufferSize: 4_096, format: inputFormat) { [weak self] buffer, _ in
+                self?.handleTap(buffer, converter: converter, outputFormat: outputFormat, onSamples: onSamples)
+            }
+            tapInstalled = true
 
             do {
                 try engine.start()
-                isCapturing = true
             } catch {
-                input.removeTap(onBus: 0)
-                engine.stop()
+                _ = gate.close()
+                tearDownEngine()
                 throw MicrophoneCaptureError.unavailable(error.localizedDescription)
             }
         }
+
+        let observer = AudioEngineConfigurationObserver(engine: engine, center: notificationCenter) { [weak self] in
+            self?.fail(MicrophoneCaptureError.unavailable("The audio input device changed."))
+        }
+        stateLock.withLock { configurationObserver = observer }
     }
 
+    /// Blocks its calling thread briefly, two ways: `gate.close()` waits out at most one
+    /// in-flight tap callback (one 4096-frame conversion), and `engineQueue.sync` waits for
+    /// `removeTap`/`engine.stop()`. Both are bounded and short. That is acceptable on the
+    /// `MicrophoneCapture` actor's executor, and it is what upholds the `AudioCaptureSourcing.stop`
+    /// contract that no samples arrive after it returns.
     func stop() async throws {
-        let error: Error? = lock.withLock {
-            // The lock serializes conversion callbacks with tap removal and the caller's subsequent drain.
-            if isCapturing {
-                engine.inputNode.removeTap(onBus: 0)
-                engine.stop()
+        let error = gate.close()
+        let observer: AudioEngineConfigurationObserver? = stateLock.withLock {
+            defer {
+                configurationObserver = nil
+                terminalErrorHandler = nil
             }
-            isCapturing = false
-            defer { captureError = nil }
-            return captureError
+            return configurationObserver
         }
+        withExtendedLifetime(observer) {}   // released here, outside the lock
+        engineQueue.sync { tearDownEngine() }
         if let error { throw error }
     }
 
-    private func convert(
-        _ buffer: AVAudioPCMBuffer,
-        using converter: AVAudioConverter,
-        outputFormat: AVAudioFormat,
-        onSamples: @escaping @Sendable ([Float]) -> Void,
-        onTerminalError: @escaping @Sendable (Error) async -> Void
-    ) {
-        lock.withLock {
-            guard isCapturing, captureError == nil else { return }
-            let ratio = outputFormat.sampleRate / buffer.format.sampleRate
-            let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio + 1)
-            guard let output = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else {
-                failCapture(MicrophoneCaptureError.unavailable("Unable to allocate an audio conversion buffer."), onTerminalError: onTerminalError)
-                return
-            }
-
-            let result = AudioBufferUtilities.convert(buffer, into: output, using: converter)
-            let status = result.status
-            let conversionError = result.error
-
-            switch AudioConversionDisposition.resolve(
-                status: status,
-                hasConversionError: conversionError != nil,
-                frameLength: output.frameLength
-            ) {
-            case .appendOutput:
-                break
-            case .awaitNextCallback:
-                return
-            case .fail:
-                failCapture(conversionError ?? MicrophoneCaptureError.unavailable("Audio conversion failed with status \(status.rawValue)."), onTerminalError: onTerminalError)
-                return
-            }
-            guard let channel = output.floatChannelData?[0] else {
-                failCapture(MicrophoneCaptureError.unavailable("Converted audio has no float samples."), onTerminalError: onTerminalError)
-                return
-            }
-            onSamples(Array(UnsafeBufferPointer(start: channel, count: Int(output.frameLength))))
-        }
-    }
-
-    private func failCapture(_ error: Error, onTerminalError: @escaping @Sendable (Error) async -> Void) {
-        captureError = error
+    /// `engineQueue` only.
+    private func tearDownEngine() {
+        guard tapInstalled else { return }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
-        isCapturing = false
-        Task { await onTerminalError(error) }
+        tapInstalled = false
+    }
+
+    /// Tap thread.
+    private func handleTap(
+        _ buffer: AVAudioPCMBuffer,
+        converter: AVAudioConverter,
+        outputFormat: AVAudioFormat,
+        onSamples: @Sendable ([Float]) -> Void
+    ) {
+        guard gate.enter() else { return }
+        defer { gate.leave() }
+
+        let ratio = outputFormat.sampleRate / buffer.format.sampleRate
+        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio + 1)
+        guard let output = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else {
+            fail(MicrophoneCaptureError.unavailable("Unable to allocate an audio conversion buffer."))
+            return
+        }
+
+        let result = AudioBufferUtilities.convert(buffer, into: output, using: converter)
+        switch AudioConversionDisposition.resolve(
+            status: result.status,
+            hasConversionError: result.error != nil,
+            frameLength: output.frameLength
+        ) {
+        case .appendOutput:
+            break
+        case .awaitNextCallback:
+            return
+        case .fail:
+            fail(result.error ?? MicrophoneCaptureError.unavailable("Audio conversion failed with status \(result.status.rawValue)."))
+            return
+        }
+        guard let channel = output.floatChannelData?[0] else {
+            fail(MicrophoneCaptureError.unavailable("Converted audio has no float samples."))
+            return
+        }
+        onSamples(Array(UnsafeBufferPointer(start: channel, count: Int(output.frameLength))))
+    }
+
+    /// Tap thread or notification thread. Reports the first failure once and queues teardown.
+    private func fail(_ error: Error) {
+        guard gate.fail(error) else { return }
+        let handler = stateLock.withLock { terminalErrorHandler }
+        engineQueue.async { [weak self] in self?.tearDownEngine() }
+        if let handler {
+            Task { await handler(error) }
+        }
     }
 }
