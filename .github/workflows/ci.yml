@@ -1,45 +1,92 @@
 name: CI
 
 on:
-  push:
   pull_request:
+  push:
+    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded PR runs only; every push to main runs to completion.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Pinned so `xcodegen generate` output is byte-stable; a different XcodeGen version can
+  # rewrite Relay.xcodeproj and trip the drift check. Bump both lines together, then run
+  # `xcodegen generate` locally with the same version and commit the result.
+  XCODEGEN_VERSION: "2.46.0"
+  XCODEGEN_SHA256: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
 
 jobs:
   test:
-    # Wave 2 (Option A) raised Relay's deployment target to macOS 26.0
-    # (see `deploymentTarget.macOS` in project.yml). Building that target
-    # requires the macOS 26 SDK, which only ships with Xcode 26 — a
-    # macOS 15 runner image (Xcode 16 / macOS 15 SDK) cannot build it at
-    # all, so gating merges on that runner would be a broken, always-green
-    # (or always-failing) gate rather than a real check. If GitHub has not
-    # yet promoted `macos-26` to a generally-available runner image in this
-    # org/repo, substitute the newest available macOS runner label whose
-    # Xcode version bundles the macOS 26 SDK (check
-    # https://github.com/actions/runner-images for current availability)
-    # rather than falling back to macos-15.
+    # Relay's deployment target is macOS 26.0 (`deploymentTarget.macOS` in project.yml).
+    # Building it requires the macOS 26 SDK, which ships only with Xcode 26+, so a macos-15
+    # runner (Xcode 16 / macOS 15 SDK) cannot build it at all. If `macos-26` is not available
+    # to this repo, substitute the newest runner label whose image bundles Xcode 26 (see
+    # https://github.com/actions/runner-images) — never fall back to macos-15. The "Select
+    # Xcode 26" step below fails loudly if the image has no Xcode 26.
     runs-on: macos-26
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select newest Xcode
-        # Ensures the macOS 26 SDK toolchain is active even if the runner
-        # image ships multiple Xcode versions side by side.
-        run: sudo xcode-select -s /Applications/Xcode_26.app || true
+      - name: Select Xcode 26
+        run: |
+          set -euo pipefail
+          xcode="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | grep -vi beta | sort -V | tail -n 1 || true)"
+          if [[ -z "$xcode" ]]; then
+            echo "::error::No /Applications/Xcode_26*.app on this runner image. Relay needs the macOS 26 SDK (see the runs-on comment)."
+            ls -d /Applications/Xcode*.app || true
+            exit 1
+          fi
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+          sdk="$(xcrun --sdk macosx --show-sdk-version)"
+          echo "macOS SDK: $sdk"
+          [[ "$sdk" == 26* || "${sdk%%.*}" -gt 26 ]] || { echo "::error::Selected Xcode ships macOS SDK $sdk; need 26+."; exit 1; }
 
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Install XcodeGen ${{ env.XCODEGEN_VERSION }} and xcbeautify
+        run: |
+          set -euo pipefail
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip"
+          echo "${XCODEGEN_SHA256}  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+          command -v xcbeautify >/dev/null || brew install xcbeautify
 
-      - name: Generate project
-        run: xcodegen generate
+      - name: Check Relay.xcodeproj matches project.yml
+        run: |
+          set -euo pipefail
+          xcodegen --version
+          xcodegen generate
+          if ! git diff --exit-code -- Relay.xcodeproj || [[ -n "$(git status --porcelain -- Relay.xcodeproj)" ]]; then
+            git status --porcelain -- Relay.xcodeproj
+            echo "::error::Relay.xcodeproj is out of date with project.yml. Run 'xcodegen generate' (XcodeGen ${XCODEGEN_VERSION}) and commit the result."
+            exit 1
+          fi
+
+      - name: Lint (swift-format)
+        # Non-blocking until the baseline findings are fixed with `scripts/lint.sh --fix`
+        # (commit "style: apply swift-format"); then delete this line to make lint gate merges.
+        continue-on-error: true
+        run: scripts/lint.sh --strict
 
       - name: Build & Test
-        # CODE_SIGNING_ALLOWED=NO: the app target uses Manual signing with a
-        # local-only identity ("Relay Local Development") that CI runners do
-        # not have. Unit tests run unsigned, so disable signing for the CI
-        # build rather than provisioning a certificate.
-        run: set -o pipefail && xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO | tail -80
+        # CODE_SIGNING_ALLOWED=NO: the targets use Manual signing with a local-only identity
+        # ("Relay Local Development") that CI runners do not have. Unit tests run unsigned.
+        run: |
+          set -o pipefail
+          xcodebuild test -scheme Relay -destination 'platform=macOS' \
+            -resultBundlePath "$RUNNER_TEMP/Relay.xcresult" \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcbeautify --renderer github-actions
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Relay-xcresult
+          path: ${{ runner.temp }}/Relay.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
