@@ -47,12 +47,10 @@ actor AgentSessionRegistry {
     }
 }
 
-/// Prunes `registry` using a single process-table snapshot from `processInspector`, so every call
-/// site that needs "prune stale sessions before a focus decision" (`AgentAutoReadCoordinator`,
-/// `AppModel.replayLast()`) shares one fail-safe: if the snapshot throws, pruning is skipped
-/// entirely for this cycle rather than risking a false "dead" verdict on a session that's
-/// actually still running.
-func pruneDeadSessions(in registry: AgentSessionRegistry, using processInspector: ProcessInspector) async {
-    guard let snapshot = try? await processInspector.snapshot() else { return }
+/// Prunes `registry` against `snapshot` — the SAME snapshot the caller uses for the rest of its
+/// focus decision. A `nil` snapshot (failed `ps`) skips pruning for this cycle rather than
+/// risking a false "dead" verdict on a session that is still running.
+func pruneDeadSessions(in registry: AgentSessionRegistry, snapshot: ProcessSnapshot?) async {
+    guard let snapshot else { return }
     await registry.prune(isAlive: { pid in snapshot.record(pid: pid) != nil })
 }

@@ -665,7 +665,16 @@ final class AppModelIntegrationsTests: XCTestCase {
         await waitUntil { model.latestAgentResponseAvailable }
 
         XCTAssertTrue(harness.speech.requests.isEmpty)
-        let sessions = await harness.registry.sessions()
+        // `latestAgentResponseAvailable` flips the moment `IntegrationManager.consume()` calls
+        // `store.set(event)`, strictly BEFORE it awaits `onResponse` (the coordinator), so the
+        // registry upsert can still be in flight here (now one snapshot-fetch await further out
+        // than before Task 11's shared-snapshot rework) — poll instead of reading once.
+        var sessions = await harness.registry.sessions()
+        let deadline = Date().addingTimeInterval(2)
+        while sessions.isEmpty, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 5_000_000)
+            sessions = await harness.registry.sessions()
+        }
         XCTAssertEqual(sessions.first?.latestResponse.text, harness.event.text)
     }
 
@@ -722,7 +731,6 @@ private func makeAutoReadWiringHarness(focus: FocusDecision, autoRead: Bool) -> 
     let speech = RecordingWiringSpeechSink()
     let coordinator = AgentAutoReadCoordinator(
         registry: registry,
-        processContext: StubWiringProcessContextCapture(),
         focus: StubWiringSessionFocusResolver(decision: focus),
         preprocess: { $0 },
         speech: speech,
@@ -747,12 +755,6 @@ private func makeAutoReadWiringHarness(focus: FocusDecision, autoRead: Bool) -> 
 private struct StubWiringSessionFocusResolver: SessionFocusResolving {
     let decision: FocusDecision
     func resolve(session: AgentSession) async -> FocusDecision { decision }
-}
-
-private struct StubWiringProcessContextCapture: AgentProcessContextCapturing {
-    func capture(parentPID: Int32) async -> AgentProcessContext {
-        .init(ancestry: [parentPID], tty: nil)
-    }
 }
 
 /// Reports every pid in a wide synthetic range as alive, so this file's fabricated pids are never

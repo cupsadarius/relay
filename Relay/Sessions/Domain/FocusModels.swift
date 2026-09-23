@@ -32,10 +32,26 @@ struct FocusDecision: Sendable, Equatable {
     }
 }
 
+extension FocusDecision {
+    var isConfidentlyFocused: Bool { state == .focused && confidence == .high }
+}
+
+/// Everything a resolver may consult for ONE focus decision. Built once per decision and shared
+/// by every resolver and every candidate session, so the frontmost app is looked up once and the
+/// process table is read once.
 struct FocusContext: Sendable {
     let frontmostApplication: FrontmostApplication?
     let sessions: [AgentSession]
-    let now: Date
+    /// One `ps` snapshot for this decision; `nil` when it could not be taken (resolvers that
+    /// need it answer `.unknown`).
+    let processSnapshot: ProcessSnapshot?
+}
+
+/// The outcome of resolving focus across candidate sessions: the confidently focused session
+/// (if any) plus every per-session decision made on the way, in order, for diagnostics.
+struct FocusResolution: Sendable, Equatable {
+    let focused: AgentSession?
+    let decisions: [FocusDecision]
 }
 
 protocol FocusResolver: Sendable {
@@ -47,21 +63,22 @@ protocol FocusResolver: Sendable {
 protocol SessionFocusResolving: Sendable {
     func resolve(session: AgentSession) async -> FocusDecision
 
-    /// Resolves focus for each of `sessions` (in order) and returns the single
-    /// confidently-focused (`.focused` + `.high`) session, or `nil` if none is. A default
-    /// implementation built on `resolve(session:)` is provided below, so most conformers — real
-    /// and test doubles alike — never need to implement this themselves.
-    func focusedSession(among sessions: [AgentSession]) async -> AgentSession?
+    /// Resolves `sessions` in order and stops at the first confidently focused one. Conformers
+    /// that can share one context across sessions (`FocusResolutionService`) use
+    /// `processSnapshot` for it; the default below simply calls `resolve(session:)` per session.
+    func resolveFocus(among sessions: [AgentSession], processSnapshot: ProcessSnapshot?) async -> FocusResolution
 }
 
 extension SessionFocusResolving {
-    func focusedSession(among sessions: [AgentSession]) async -> AgentSession? {
+    func resolveFocus(among sessions: [AgentSession], processSnapshot: ProcessSnapshot?) async -> FocusResolution {
+        var decisions: [FocusDecision] = []
         for session in sessions {
             let decision = await resolve(session: session)
-            if decision.state == .focused, decision.confidence == .high {
-                return session
+            decisions.append(decision)
+            if decision.isConfidentlyFocused {
+                return FocusResolution(focused: session, decisions: decisions)
             }
         }
-        return nil
+        return FocusResolution(focused: nil, decisions: decisions)
     }
 }

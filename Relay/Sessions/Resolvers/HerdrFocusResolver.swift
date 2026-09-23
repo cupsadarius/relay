@@ -15,7 +15,14 @@ struct HerdrFocusResolver: FocusResolver {
               let producingPane = session.terminalContext.herdrPaneID else {
             return .unknown(resolverID: id, reason: "missing frontmost app or Herdr identifiers")
         }
-        guard await hostOwnership.frontmostAppOwnsClient(frontmostPID: frontmostPID, socketPath: socket) else {
+        guard let processSnapshot = context.processSnapshot else {
+            return .unknown(resolverID: id, reason: "process snapshot unavailable")
+        }
+        guard await hostOwnership.frontmostAppOwnsClient(
+            frontmostPID: frontmostPID,
+            socketPath: socket,
+            processSnapshot: processSnapshot
+        ) else {
             return .notFocused(resolverID: id, reason: "frontmost app does not own a client for this Herdr socket")
         }
         do {

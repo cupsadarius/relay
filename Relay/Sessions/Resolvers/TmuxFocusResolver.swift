@@ -3,7 +3,6 @@ import Foundation
 struct TmuxFocusResolver: FocusResolver {
     let id = "tmux"
     let runner: any TmuxCommandRunning
-    let processTrees: any ProcessTreeReading
 
     func supports(_ session: AgentSession) -> Bool {
         session.terminalContext.tmuxSocketPath != nil && session.terminalContext.tmuxPaneID != nil
@@ -15,13 +14,13 @@ struct TmuxFocusResolver: FocusResolver {
               let producingPane = session.terminalContext.tmuxPaneID else {
             return .unknown(resolverID: id, reason: "missing frontmost app or tmux identifiers")
         }
+        guard let snapshot = context.processSnapshot else {
+            return .unknown(resolverID: id, reason: "process snapshot unavailable")
+        }
         do {
             let clients = try await runner.listClients(socketPath: socket)
-            var frontmostClients: [TmuxClientListing] = []
-            for client in clients {
-                if try await processTrees.ancestry(from: client.pid).contains(frontmostPID) {
-                    frontmostClients.append(client)
-                }
+            let frontmostClients = clients.filter { client in
+                snapshot.ancestry(from: client.pid).contains { $0.pid == frontmostPID }
             }
             guard frontmostClients.count == 1, let client = frontmostClients.first else {
                 return frontmostClients.isEmpty

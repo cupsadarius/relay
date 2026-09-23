@@ -46,8 +46,8 @@ struct ProcessSnapshot: Sendable {
 struct ProcessInspector: Sendable {
     /// How long we'll wait for `ps` to produce output before giving up. `ps` over the full process
     /// table is normally a few milliseconds; 5s gives a huge margin for a loaded machine while still
-    /// guaranteeing the caller (`AgentProcessContextCapture.capture`) gets a response instead of
-    /// hanging its actor forever.
+    /// guaranteeing the caller (e.g. `AgentAutoReadCoordinator.handle(_:)`) gets a response instead
+    /// of hanging its actor forever.
     private static let timeout: TimeInterval = 5
 
     /// Executable/arguments are injectable (defaulting to real `/bin/ps`) purely so tests can point
@@ -86,12 +86,9 @@ struct ProcessInspector: Sendable {
 
 enum ProcessInspectionError: Error, Equatable { case psFailed, timedOut }
 
-protocol ProcessTreeReading: Sendable {
-    func ancestry(from pid: Int32) async throws -> [Int32]
+/// Source of process-table snapshots (`ProcessInspector`'s real `ps` in production).
+protocol ProcessSnapshotProviding: Sendable {
+    func snapshot() async throws -> ProcessSnapshot
 }
 
-extension ProcessInspector: ProcessTreeReading {
-    func ancestry(from pid: Int32) async throws -> [Int32] {
-        try await snapshot().ancestry(from: pid).map(\.pid)
-    }
-}
+extension ProcessInspector: ProcessSnapshotProviding {}

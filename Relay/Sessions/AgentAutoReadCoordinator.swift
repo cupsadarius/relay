@@ -1,29 +1,18 @@
 import Foundation
 
-/// Process ancestry and tty captured for the process that emitted an agent response, used by
-/// `AgentSessionRegistry`/focus resolvers to identify which terminal/multiplexer pane a session is
-/// running in.
+/// Process ancestry and tty for the process that emitted an agent response, used by
+/// `AgentSessionRegistry`/focus resolvers to identify which terminal/multiplexer pane a session
+/// runs in.
 struct AgentProcessContext: Sendable, Equatable {
     let ancestry: [Int32]
     let tty: String?
-}
 
-protocol AgentProcessContextCapturing: Sendable {
-    func capture(parentPID: Int32) async -> AgentProcessContext
-}
-
-/// Production `AgentProcessContextCapturing`, backed by `ProcessInspector`. A failed `ps` snapshot
-/// degrades to an empty context rather than throwing: session tracking and auto-read gating both
-/// treat "no ancestry" as "unknown", never as a crash.
-struct AgentProcessContextCapture: AgentProcessContextCapturing {
-    let processInspector: ProcessInspector
-
-    func capture(parentPID: Int32) async -> AgentProcessContext {
-        guard let snapshot = try? await processInspector.snapshot() else {
-            return .init(ancestry: [], tty: nil)
-        }
+    /// Walks `parentPID`'s ancestry in `snapshot`. No snapshot (failed `ps`) degrades to an empty
+    /// context: session tracking and gating treat "no ancestry" as "unknown", never a crash.
+    static func capture(parentPID: Int32, in snapshot: ProcessSnapshot?) -> AgentProcessContext {
+        guard let snapshot else { return AgentProcessContext(ancestry: [], tty: nil) }
         let records = snapshot.ancestry(from: parentPID)
-        return .init(ancestry: records.map(\.pid), tty: records.compactMap(\.tty).first)
+        return AgentProcessContext(ancestry: records.map(\.pid), tty: records.compactMap(\.tty).first)
     }
 }
 
@@ -47,7 +36,6 @@ struct AgentProcessContextCapture: AgentProcessContextCapturing {
 /// registry so a background response remains available for manual "Speak Latest".
 actor AgentAutoReadCoordinator {
     private let registry: AgentSessionRegistry
-    private let processContext: any AgentProcessContextCapturing
     private let focus: any SessionFocusResolving
     private let preprocess: @Sendable (String) -> String
     /// `any SpeechSubmitting & Sendable`, not bare `any SpeechSubmitting`: this actor calls
@@ -59,9 +47,8 @@ actor AgentAutoReadCoordinator {
     private let speech: any SpeechSubmitting & Sendable
     private let autoReadEnabled: @Sendable () async -> Bool
     private let diagnostics: IntegrationDiagnosticsLog
-    /// Used to take a single process-table snapshot per `handle(_:)` call, so dead-process
-    /// sessions can be pruned before every focus decision. A failed snapshot skips pruning for
-    /// that cycle rather than risking a false "dead" verdict on a live session.
+    /// Takes the ONE process-table snapshot per `handle(_:)` that ancestry capture, pruning, and
+    /// every focus resolver share.
     private let processInspector: ProcessInspector
     /// The most-recently-active agent session: the last one found confidently focused, or the
     /// last one actually auto-spoken (whichever happened most recently). `nil` until the first
@@ -70,7 +57,6 @@ actor AgentAutoReadCoordinator {
 
     init(
         registry: AgentSessionRegistry,
-        processContext: any AgentProcessContextCapturing,
         focus: any SessionFocusResolving,
         preprocess: @escaping @Sendable (String) -> String,
         speech: any SpeechSubmitting & Sendable,
@@ -79,7 +65,6 @@ actor AgentAutoReadCoordinator {
         processInspector: ProcessInspector = ProcessInspector()
     ) {
         self.registry = registry
-        self.processContext = processContext
         self.focus = focus
         self.preprocess = preprocess
         self.speech = speech
@@ -89,7 +74,9 @@ actor AgentAutoReadCoordinator {
     }
 
     func handle(_ event: AgentResponseEvent) async {
-        let captured = await processContext.capture(parentPID: event.parentPID)
+        // One snapshot per event, shared by ancestry capture, pruning, and every focus resolver.
+        let snapshot = try? await processInspector.snapshot()
+        let captured = AgentProcessContext.capture(parentPID: event.parentPID, in: snapshot)
         let session = await registry.upsert(
             response: event,
             processAncestry: captured.ancestry,
@@ -102,13 +89,14 @@ actor AgentAutoReadCoordinator {
             return
         }
 
-        // Prune stale sessions before every focus decision so a dead agent's session (or one gone
-        // quiet past the TTL) never keeps generic-terminal focus ambiguous. One snapshot per
-        // cycle (see `pruneDeadSessions`), rather than a `ps` invocation per candidate pid.
-        await pruneDeadSessions(in: registry, using: processInspector)
+        // Prune before every focus decision so a dead agent's session (or one past the TTL)
+        // never keeps generic-terminal focus ambiguous.
+        await pruneDeadSessions(in: registry, snapshot: snapshot)
 
         let sessions = await registry.sessions()
-        let focused = await focus.focusedSession(among: sessions)
+        let resolution = await focus.resolveFocus(among: sessions, processSnapshot: snapshot)
+        recordFocusDecisions(resolution.decisions)
+        let focused = resolution.focused
         diagnostics.append(
             stage: "coordinator",
             outcome: "focus-decision",
@@ -145,6 +133,19 @@ actor AgentAutoReadCoordinator {
         } catch {
             // Structural only: never the error's own text, which could carry content.
             diagnostics.append(stage: "coordinator", outcome: "speak-failed", detail: "provider=\(event.provider.rawValue)")
+        }
+    }
+
+    /// The "why silent?" signal: one privacy-safe entry per session resolved — resolver ID,
+    /// state, confidence, and the resolver's reason (always a fixed literal, never payload,
+    /// paths, or IDs).
+    private func recordFocusDecisions(_ decisions: [FocusDecision]) {
+        for decision in decisions {
+            diagnostics.append(
+                stage: "focus",
+                outcome: decision.state.rawValue,
+                detail: "resolver=\(decision.resolverID) confidence=\(decision.confidence) reason=\(decision.reason)"
+            )
         }
     }
 

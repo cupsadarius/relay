@@ -288,26 +288,25 @@ final class RelayRuntime {
         let frontmostApps = FrontmostAppMonitor()
         let tmuxRunner = TmuxExecutableLocator().locate().map { TmuxClient(executable: $0) }
         let herdrClient = HerdrSocketClient()
-        let agentProcessContext = AgentProcessContextCapture(processInspector: processInspector)
 
         var resolvers: [any FocusResolver] = []
         resolvers.append(HerdrFocusResolver(
             herdr: herdrClient,
-            hostOwnership: HerdrHostOwnershipChecker(processInspector: processInspector)
+            hostOwnership: HerdrHostOwnershipChecker()
         ))
         if let tmuxRunner {
-            resolvers.append(TmuxFocusResolver(runner: tmuxRunner, processTrees: processInspector))
+            resolvers.append(TmuxFocusResolver(runner: tmuxRunner))
         }
         resolvers.append(GenericTerminalFocusResolver())
 
         let focusResolution = FocusResolutionService(
             registry: sessionRegistry,
             frontmostApps: frontmostApps,
+            processSnapshots: processInspector,
             resolvers: resolvers
         )
         let autoReadCoordinator = AgentAutoReadCoordinator(
             registry: sessionRegistry,
-            processContext: agentProcessContext,
             focus: focusResolution,
             preprocess: { RulesSpeechPreprocessor().prepare(text: $0, mode: .automatic) },
             speech: coordinator,

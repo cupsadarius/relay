@@ -718,17 +718,15 @@ final class AppModel {
     /// fine here: the session count is tiny, and the underlying `ps`/`lsof` calls are
     /// deadlock-hardened.
     private func replayLast() async {
-        // Prune stale sessions before this tier-1/tier-2 read, same as
-        // `AgentAutoReadCoordinator`: a dead-process session (or one gone quiet past the TTL)
-        // must not be offered to focus resolution or treated as hosting the frontmost terminal.
-        await pruneDeadSessions(in: sessionRegistry, using: processInspector)
+        // One snapshot for this decision, shared by pruning and every focus resolver — the same
+        // shape as `AgentAutoReadCoordinator.handle(_:)`.
+        let snapshot = try? await processInspector.snapshot()
+        await pruneDeadSessions(in: sessionRegistry, snapshot: snapshot)
         let sessions = await sessionRegistry.sessions()
 
-        for session in sessions {
-            let decision = await focusResolution.resolve(session: session)
-            guard decision.state == .focused, decision.confidence == .high else { continue }
+        if let focused = await focusResolution.resolveFocus(among: sessions, processSnapshot: snapshot).focused {
             guard !Task.isCancelled else { return }
-            await speakFocusedSessionReply(session)
+            await speakFocusedSessionReply(focused)
             return
         }
 

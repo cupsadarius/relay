@@ -7,7 +7,7 @@ final class GenericTerminalFocusResolverTests: XCTestCase {
         let context = FocusContext(
             frontmostApplication: .init(pid: 20, bundleIdentifier: "com.example.Terminal", localizedName: "Terminal Host"),
             sessions: [session],
-            now: Date()
+            processSnapshot: nil
         )
         let decision = await GenericTerminalFocusResolver().resolve(session: session, context: context)
         XCTAssertEqual(decision.state, .focused)
@@ -20,7 +20,7 @@ final class GenericTerminalFocusResolverTests: XCTestCase {
         let context = FocusContext(
             frontmostApplication: .init(pid: 20, bundleIdentifier: nil, localizedName: "Any Terminal"),
             sessions: [a, b],
-            now: Date()
+            processSnapshot: nil
         )
         let decision = await GenericTerminalFocusResolver().resolve(session: a, context: context)
         XCTAssertEqual(decision.state, .unknown)
@@ -31,7 +31,7 @@ final class GenericTerminalFocusResolverTests: XCTestCase {
         let context = FocusContext(
             frontmostApplication: .init(pid: 88, bundleIdentifier: "com.apple.Safari", localizedName: "Safari"),
             sessions: [session],
-            now: Date()
+            processSnapshot: nil
         )
         let decision = await GenericTerminalFocusResolver().resolve(session: session, context: context)
         XCTAssertEqual(decision.state, .notFocused)

@@ -2,33 +2,32 @@ import XCTest
 @testable import Relay
 
 final class TmuxFocusResolverTests: XCTestCase {
+    /// Ghostty (20) -> login (100) -> tmux clients 300 and 301.
+    private let snapshot = try! ProcessSnapshot.parse("""
+      1   0 ??      launchd
+     20   1 ??      Ghostty
+    100  20 ttys001 login
+    300 100 ttys001 tmux
+    301 100 ttys002 tmux
+    """)
+
+    private func context(frontmostPID: Int32 = 20, snapshot: ProcessSnapshot?) -> FocusContext {
+        FocusContext(
+            frontmostApplication: .init(pid: frontmostPID, bundleIdentifier: nil, localizedName: "Terminal"),
+            sessions: [],
+            processSnapshot: snapshot
+        )
+    }
+
     func testMatchingFrontmostClientAndPaneIsFocused() async {
-        let runner = StubTmuxRunner(
-            clients: [.init(name: "/dev/ttys001", pid: 300)],
-            activePaneByClient: ["/dev/ttys001": "%7"]
-        )
-        let inspector = StubProcessTree(ancestries: [300: [300, 100, 20, 1]])
-        let resolver = TmuxFocusResolver(runner: runner, processTrees: inspector)
-        let session = makeTmuxSession(pane: "%7")
-        let context = FocusContext(
-            frontmostApplication: .init(pid: 20, bundleIdentifier: nil, localizedName: "Terminal"),
-            sessions: [session], now: Date()
-        )
-        let decision = await resolver.resolve(session: session, context: context)
+        let runner = StubTmuxRunner(clients: [.init(name: "/dev/ttys001", pid: 300)], activePaneByClient: ["/dev/ttys001": "%7"])
+        let decision = await TmuxFocusResolver(runner: runner).resolve(session: makeTmuxSession(pane: "%7"), context: context(snapshot: snapshot))
         XCTAssertEqual(decision.state, .focused)
     }
 
     func testSameClientDifferentPaneIsNotFocused() async {
-        let runner = StubTmuxRunner(
-            clients: [.init(name: "/dev/ttys001", pid: 300)],
-            activePaneByClient: ["/dev/ttys001": "%9"]
-        )
-        let inspector = StubProcessTree(ancestries: [300: [300, 100, 20, 1]])
-        let resolver = TmuxFocusResolver(runner: runner, processTrees: inspector)
-        let decision = await resolver.resolve(
-            session: makeTmuxSession(pane: "%7"),
-            context: .init(frontmostApplication: .init(pid: 20, bundleIdentifier: nil, localizedName: "Terminal"), sessions: [], now: Date())
-        )
+        let runner = StubTmuxRunner(clients: [.init(name: "/dev/ttys001", pid: 300)], activePaneByClient: ["/dev/ttys001": "%9"])
+        let decision = await TmuxFocusResolver(runner: runner).resolve(session: makeTmuxSession(pane: "%7"), context: context(snapshot: snapshot))
         XCTAssertEqual(decision.state, .notFocused)
     }
 
@@ -37,13 +36,15 @@ final class TmuxFocusResolverTests: XCTestCase {
             clients: [.init(name: "c1", pid: 300), .init(name: "c2", pid: 301)],
             activePaneByClient: ["c1": "%7", "c2": "%8"]
         )
-        let inspector = StubProcessTree(ancestries: [300: [300, 20, 1], 301: [301, 20, 1]])
-        let resolver = TmuxFocusResolver(runner: runner, processTrees: inspector)
-        let decision = await resolver.resolve(
-            session: makeTmuxSession(pane: "%7"),
-            context: .init(frontmostApplication: .init(pid: 20, bundleIdentifier: nil, localizedName: "Terminal"), sessions: [], now: Date())
-        )
+        let decision = await TmuxFocusResolver(runner: runner).resolve(session: makeTmuxSession(pane: "%7"), context: context(snapshot: snapshot))
         XCTAssertEqual(decision.state, .unknown)
+    }
+
+    func testMissingProcessSnapshotIsUnknown() async {
+        let runner = StubTmuxRunner(clients: [.init(name: "c1", pid: 300)], activePaneByClient: ["c1": "%7"])
+        let decision = await TmuxFocusResolver(runner: runner).resolve(session: makeTmuxSession(pane: "%7"), context: context(snapshot: nil))
+        XCTAssertEqual(decision.state, .unknown)
+        XCTAssertEqual(decision.reason, "process snapshot unavailable")
     }
 }
 
@@ -54,11 +55,6 @@ private struct StubTmuxRunner: TmuxCommandRunning {
     func activePane(socketPath: String, clientName: String) async throws -> String {
         activePaneByClient[clientName] ?? ""
     }
-}
-
-private struct StubProcessTree: ProcessTreeReading {
-    let ancestries: [Int32: [Int32]]
-    func ancestry(from pid: Int32) async throws -> [Int32] { ancestries[pid] ?? [] }
 }
 
 private func makeTmuxSession(pane: String) -> AgentSession {

@@ -173,8 +173,8 @@ final class AgentAutoReadCoordinatorTests: XCTestCase {
     // MARK: - Pruning
 
     /// A session whose root process has since died must be pruned before the focus resolver ever
-    /// sees it — proven here by inspecting exactly what `focusedSession(among:)` was called with,
-    /// not merely the eventual registry contents.
+    /// sees it — proven here by inspecting exactly what `resolveFocus(among:processSnapshot:)` was
+    /// called with, not merely the eventual registry contents.
     func testDeadSessionIsPrunedBeforeFocusResolution() async {
         let speech = RecordingSpeechSink()
         let focus = MutableStubFocusResolver()
@@ -217,13 +217,48 @@ final class AgentAutoReadCoordinatorTests: XCTestCase {
         let focusDecision = diagnostics.snapshot().first { $0.outcome == "focus-decision" }
         XCTAssertEqual(focusDecision?.detail, "focused=claude-code:b lastActive=claude-code:b")
     }
+
+    // MARK: - One snapshot per decision
+
+    func testOneProcessSnapshotServesCapturePruneAndFocus() async {
+        let runner = CountingProcessRunner()
+        let focus = MutableStubFocusResolver()
+        let coordinator = makeCoordinator(
+            focus: focus, speech: RecordingSpeechSink(), autoRead: true,
+            processInspector: ProcessInspector(runner: runner)
+        )
+
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "a", text: "done"))
+
+        XCTAssertEqual(runner.runCount, 1)
+        XCTAssertTrue(focus.lastSnapshotWasProvided)
+    }
+
+    func testFocusDecisionReasonsAreRecordedForDiagnostics() async {
+        let diagnostics = IntegrationDiagnosticsLog()
+        let focus = MutableStubFocusResolver()
+        focus.decisions = [.unknown(resolverID: "generic-terminal", reason: "multiple direct agent sessions share the frontmost terminal process")]
+        let coordinator = makeCoordinator(focus: focus, speech: RecordingSpeechSink(), autoRead: true, diagnostics: diagnostics)
+
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "a", text: "done"))
+
+        let entry = diagnostics.snapshot().first { $0.stage == "focus" }
+        XCTAssertEqual(entry?.outcome, "unknown")
+        XCTAssertEqual(
+            entry?.detail,
+            "resolver=generic-terminal confidence=low reason=multiple direct agent sessions share the frontmost terminal process"
+        )
+    }
 }
 
 private final class MutableStubFocusResolver: SessionFocusResolving, @unchecked Sendable {
     var focusedSessionID: AgentSessionID?
-    /// The ids `focusedSession(among:)` was most recently called with, so tests can prove pruning
-    /// happened before this resolver ever saw a candidate list.
+    /// Decisions `resolveFocus` reports, so tests can check what reaches diagnostics.
+    var decisions: [FocusDecision] = []
+    /// The ids `resolveFocus` was most recently called with, so tests can prove pruning happened
+    /// before this resolver ever saw a candidate list.
     private(set) var lastAmongIDs: [AgentSessionID] = []
+    private(set) var lastSnapshotWasProvided = false
 
     func resolve(session: AgentSession) async -> FocusDecision {
         session.id == focusedSessionID
@@ -231,10 +266,24 @@ private final class MutableStubFocusResolver: SessionFocusResolving, @unchecked 
             : .unknown(resolverID: "stub", reason: "not the stubbed focused session")
     }
 
-    func focusedSession(among sessions: [AgentSession]) async -> AgentSession? {
+    func resolveFocus(among sessions: [AgentSession], processSnapshot: ProcessSnapshot?) async -> FocusResolution {
         lastAmongIDs = sessions.map(\.id)
-        guard let focusedSessionID else { return nil }
-        return sessions.first { $0.id == focusedSessionID }
+        lastSnapshotWasProvided = processSnapshot != nil
+        let focused = focusedSessionID.flatMap { id in sessions.first { $0.id == id } }
+        return FocusResolution(focused: focused, decisions: decisions)
+    }
+}
+
+/// Reports every pid in a wide synthetic range as alive, standing in for a live process table so
+/// tests using small fabricated pids for `processAncestry` aren't treated as dead.
+private final class CountingProcessRunner: ProcessRunning, @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    var runCount: Int { lock.withLock { count } }
+    func run(executable: URL, arguments: [String], timeout: TimeInterval, maxOutputBytes: Int) throws -> ProcessResult {
+        lock.withLock { count += 1 }
+        let lines = (1...2_000).map { "\($0) 1 ttys001 fake" }.joined(separator: "\n")
+        return ProcessResult(stdout: Data(lines.utf8), terminationStatus: 0)
     }
 }
 
@@ -256,12 +305,6 @@ private final class MutableAliveProcessRunner: ProcessRunning, @unchecked Sendab
     func run(executable: URL, arguments: [String], timeout: TimeInterval, maxOutputBytes: Int) throws -> ProcessResult {
         let lines = alivePIDs.map { "\($0) 1 ttys001 fake" }.joined(separator: "\n")
         return ProcessResult(stdout: Data(lines.utf8), terminationStatus: 0)
-    }
-}
-
-private struct StubProcessContextCapture: AgentProcessContextCapturing {
-    func capture(parentPID: Int32) async -> AgentProcessContext {
-        .init(ancestry: [parentPID, 20, 1], tty: "/dev/ttys001")
     }
 }
 
@@ -295,7 +338,6 @@ private func makeCoordinatorHarness(
     let registry = AgentSessionRegistry()
     let coordinator = AgentAutoReadCoordinator(
         registry: registry,
-        processContext: StubProcessContextCapture(),
         focus: focus,
         preprocess: { $0.replacingOccurrences(of: "**", with: "") },
         speech: speech,

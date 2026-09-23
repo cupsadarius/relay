@@ -27,31 +27,85 @@ final class FocusResolutionServiceTests: XCTestCase {
         XCTAssertEqual(decision.state, .unknown)
     }
 
-    func testFocusedSessionAmongReturnsTheConfidentlyFocusedOne() async {
-        let focusedSession = makeSession(providerSessionID: "focused-one")
-        let otherSession = makeSession(providerSessionID: "other")
-        let resolver = SelectiveFocusResolver(focusedSessionID: focusedSession.id)
+    func testResolveFocusReturnsTheFirstConfidentlyFocusedSessionAndStopsThere() async {
+        let a = makeSession(providerSessionID: "a")
+        let b = makeSession(providerSessionID: "b")
+        let c = makeSession(providerSessionID: "c")
         let service = FocusResolutionService(
             registry: AgentSessionRegistry(),
             frontmostApps: StubFrontmostApp(pid: 20),
-            resolvers: [resolver]
+            resolvers: [SelectiveFocusResolver(focusedSessionID: b.id)]
         )
 
-        let result = await service.focusedSession(among: [otherSession, focusedSession])
+        let result = await service.resolveFocus(among: [a, b, c], processSnapshot: nil)
 
-        XCTAssertEqual(result?.id, focusedSession.id)
+        XCTAssertEqual(result.focused?.id, b.id)
+        XCTAssertEqual(result.decisions.map(\.state), [.unknown, .focused])
     }
 
-    func testFocusedSessionAmongReturnsNilWhenNoneAreConfidentlyFocused() async {
+    func testResolveFocusReturnsNilWhenNoneAreConfidentlyFocused() async {
         let service = FocusResolutionService(
             registry: AgentSessionRegistry(),
             frontmostApps: StubFrontmostApp(pid: 20),
             resolvers: [StubFocusResolver(id: "x", decision: .unknown(resolverID: "x", reason: "ambiguous"))]
         )
 
-        let result = await service.focusedSession(among: [makeSession(), makeSession(providerSessionID: "b")])
+        let result = await service.resolveFocus(among: [makeSession(), makeSession(providerSessionID: "b")], processSnapshot: nil)
 
-        XCTAssertNil(result)
+        XCTAssertNil(result.focused)
+        XCTAssertEqual(result.decisions.count, 2)
+    }
+
+    func testResolveFocusLooksUpTheFrontmostAppOnceAndSharesOneSnapshot() async throws {
+        let frontmost = CountingFrontmostApp(pid: 20)
+        let recorder = SnapshotRecordingResolver()
+        let service = FocusResolutionService(registry: AgentSessionRegistry(), frontmostApps: frontmost, resolvers: [recorder])
+        let snapshot = try ProcessSnapshot.parse("42 1 ?? agent")
+
+        _ = await service.resolveFocus(
+            among: [makeSession(providerSessionID: "a"), makeSession(providerSessionID: "b"), makeSession(providerSessionID: "c")],
+            processSnapshot: snapshot
+        )
+
+        let lookups = await frontmost.lookups
+        XCTAssertEqual(lookups, 1)
+        XCTAssertEqual(recorder.sawSnapshotContainingPID42, [true, true, true])
+    }
+
+    func testUnresolvedSessionKeepsTheResolversSpecificReason() async {
+        let service = FocusResolutionService(
+            registry: AgentSessionRegistry(),
+            frontmostApps: StubFrontmostApp(pid: 20),
+            resolvers: [StubFocusResolver(id: "generic-terminal", decision: .unknown(resolverID: "generic-terminal", reason: "ambiguous"))]
+        )
+
+        let decision = await service.resolve(session: makeSession())
+
+        XCTAssertEqual(decision.resolverID, "generic-terminal")
+        XCTAssertEqual(decision.reason, "ambiguous")
+    }
+}
+
+private actor CountingFrontmostApp: FrontmostAppMonitoring {
+    let pid: Int32
+    private(set) var lookups = 0
+    init(pid: Int32) { self.pid = pid }
+    func current() async -> FrontmostApplication? {
+        lookups += 1
+        return .init(pid: pid, bundleIdentifier: nil, localizedName: "Test Terminal")
+    }
+}
+
+private final class SnapshotRecordingResolver: FocusResolver, @unchecked Sendable {
+    let id = "recorder"
+    private let lock = NSLock()
+    private var seen: [Bool] = []
+    var sawSnapshotContainingPID42: [Bool] { lock.withLock { seen } }
+    func supports(_ session: AgentSession) -> Bool { true }
+    func resolve(session: AgentSession, context: FocusContext) async -> FocusDecision {
+        let saw = context.processSnapshot?.record(pid: 42) != nil
+        lock.withLock { seen.append(saw) }
+        return .unknown(resolverID: id, reason: "recording")
     }
 }
 

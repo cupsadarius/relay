@@ -1,7 +1,7 @@
 import Foundation
 
 protocol HerdrHostOwnershipChecking: Sendable {
-    func frontmostAppOwnsClient(frontmostPID: Int32, socketPath: String) async -> Bool
+    func frontmostAppOwnsClient(frontmostPID: Int32, socketPath: String, processSnapshot: ProcessSnapshot) async -> Bool
 }
 
 struct HerdrHostOwnershipChecker: HerdrHostOwnershipChecking {
@@ -10,8 +10,6 @@ struct HerdrHostOwnershipChecker: HerdrHostOwnershipChecking {
     /// runs on the focus path, so a short timeout keeps a hung/misbehaving `lsof` from blocking focus
     /// resolution indefinitely.
     private static let defaultTimeout: TimeInterval = 2
-
-    let processInspector: ProcessInspector
 
     /// Executable/arguments/timeout are injectable (defaulting to real `/usr/sbin/lsof` and its
     /// normal arguments) purely so tests can point the ownership check at a slow/blocking fake
@@ -22,22 +20,19 @@ struct HerdrHostOwnershipChecker: HerdrHostOwnershipChecking {
     private let runner: ProcessRunning
 
     init(
-        processInspector: ProcessInspector,
         lsofExecutableURL: URL = URL(fileURLWithPath: "/usr/sbin/lsof"),
         lsofArguments: @escaping @Sendable (Int32) -> [String] = { pid in ["-a", "-p", String(pid), "-U", "-Fn"] },
         lsofTimeout: TimeInterval = HerdrHostOwnershipChecker.defaultTimeout,
         runner: ProcessRunning = BoundedProcessRunner()
     ) {
-        self.processInspector = processInspector
         self.lsofExecutableURL = lsofExecutableURL
         self.lsofArguments = lsofArguments
         self.lsofTimeout = lsofTimeout
         self.runner = runner
     }
 
-    func frontmostAppOwnsClient(frontmostPID: Int32, socketPath: String) async -> Bool {
-        guard let snapshot = try? await processInspector.snapshot() else { return false }
-        let candidates = snapshot.descendants(of: frontmostPID).filter {
+    func frontmostAppOwnsClient(frontmostPID: Int32, socketPath: String, processSnapshot: ProcessSnapshot) async -> Bool {
+        let candidates = processSnapshot.descendants(of: frontmostPID).filter {
             URL(fileURLWithPath: $0.command).lastPathComponent.lowercased() == "herdr"
         }
         for candidate in candidates {
