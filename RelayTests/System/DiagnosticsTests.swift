@@ -145,6 +145,7 @@ import XCTest
     }
 }
 
+@MainActor
 private final class FakeNativePermissions: NativePermissionChecking {
     var inputMonitoring: Bool
     var accessibilityTrusted: Bool

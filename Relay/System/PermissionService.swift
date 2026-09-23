@@ -60,12 +60,14 @@ protocol GlobalPermissionAuthorizing: AnyObject {
     func requestPermissions()
 }
 
+@MainActor
 protocol NativePermissionChecking: AnyObject {
     func canListenForEvents() -> Bool
     func isAccessibilityTrusted() -> Bool
     func requestAccessibilityTrust()
 }
 
+@MainActor
 final class PermissionService: GlobalPermissionAuthorizing {
     private let native: any NativePermissionChecking
     init(native: any NativePermissionChecking = SystemNativePermissions()) { self.native = native }
@@ -78,6 +80,7 @@ final class PermissionService: GlobalPermissionAuthorizing {
     }
 }
 
+@MainActor
 final class SystemNativePermissions: NativePermissionChecking {
     func canListenForEvents() -> Bool { CGPreflightListenEventAccess() }
     func isAccessibilityTrusted() -> Bool { AXIsProcessTrusted() }
