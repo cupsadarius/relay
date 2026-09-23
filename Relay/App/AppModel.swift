@@ -830,10 +830,11 @@ final class AppModel {
 
     /// The fixed Unix-domain socket location Relay listens on for local agent-hook envelopes.
     /// Must match `RelayHook`'s `HookTransportClient.defaultSocketPath` exactly.
+    /// This build's Unix-domain socket for agent-hook envelopes (`Relay/relay.sock` for Release,
+    /// `Relay Debug/relay.sock` for Debug). `RelayHook` derives the same path from its own
+    /// location — see `RelayPaths.socketPath(forHelperExecutablePath:)`.
     static var integrationSocketPath: String {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/Relay/relay.sock")
-            .path
+        RelayPaths.socketPath()
     }
 
     /// Starts listening for local agent-hook envelopes on the fixed Relay socket path and begins

@@ -24,18 +24,16 @@ struct HelperInstaller {
         self.baseDirectory = baseDirectory
     }
 
-    /// Relay's directory under the real `~/Library/Application Support`.
+    /// This build's own directory under `~/Library/Application Support` (`Relay` or
+    /// `Relay Debug`, see `BuildFlavor`).
     static func defaultBaseDirectory() -> URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library", isDirectory: true)
-            .appendingPathComponent("Application Support", isDirectory: true)
-            .appendingPathComponent("Relay", isDirectory: true)
+        RelayPaths.supportDirectory()
     }
 
-    /// The stable, bundle-independent path Relay always installs `RelayHook` hook commands
-    /// to: `~/Library/Application Support/Relay/bin/RelayHook`.
+    /// The stable, bundle-independent path this build's hook commands point at:
+    /// `<support dir>/bin/RelayHook`.
     static func stableHelperURL() -> URL {
-        binDirectory(under: defaultBaseDirectory()).appendingPathComponent(helperBasename, isDirectory: false)
+        RelayPaths.stableHelperURL()
     }
 
     private static func binDirectory(under baseDirectory: URL) -> URL {

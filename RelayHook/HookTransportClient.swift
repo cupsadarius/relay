@@ -25,12 +25,12 @@ struct HookTransportClient {
         self.totalDeadline = totalDeadline
     }
 
-    /// Default Relay socket location: `~/Library/Application Support/Relay/relay.sock`.
+    /// The socket for the running helper, derived from this executable's own location
+    /// (`<support>/bin/RelayHook` -> `<support>/relay.sock`), else the Release socket. Only
+    /// meaningful inside `RelayHook`; in the app target it always yields the Release socket.
     static var defaultSocketPath: String {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return home
-            .appendingPathComponent("Library/Application Support/Relay/relay.sock")
-            .path
+        let executablePath = Bundle.main.executableURL?.path ?? CommandLine.arguments.first ?? ""
+        return RelayPaths.socketPath(forHelperExecutablePath: executablePath)
     }
 
     /// Attempts to deliver `payload` (appending a trailing `\n` if missing)

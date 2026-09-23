@@ -240,11 +240,8 @@ final class RelayRuntime {
         // model from Settings. See `WhisperSelectionCache`/`WhisperSelectionWriterBox`'s doc
         // comments above for why selection is threaded through a lock-protected cache plus a
         // postponed-wiring box rather than reading/writing `SettingsBox` directly.
-        let whisperCacheDirectory = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library", isDirectory: true)
-            .appendingPathComponent("Application Support", isDirectory: true)
-            .appendingPathComponent("Relay", isDirectory: true)
-            .appendingPathComponent("Models", isDirectory: true)
+        // Models are shared by Debug and Release (see `RelayPaths.sharedModelsDirectory`).
+        let whisperCacheDirectory = RelayPaths.sharedModelsDirectory()
             .appendingPathComponent("Whisper", isDirectory: true)
         let whisperStore = WhisperModelStore(
             cacheDirectory: whisperCacheDirectory,

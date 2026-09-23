@@ -70,9 +70,10 @@ final class HelperInstallerTests: XCTestCase {
         XCTAssertEqual(binDirectoryContents.map(\.lastPathComponent), ["RelayHook"])
     }
 
-    func testStableHelperURLPointsUnderApplicationSupportRelayBin() {
+    func testStableHelperURLPointsUnderThisBuildsSupportDirectory() {
         let resolved = HelperInstaller.stableHelperURL()
-        XCTAssertTrue(resolved.path.hasSuffix("/Library/Application Support/Relay/bin/RelayHook"))
+        XCTAssertEqual(resolved, RelayPaths.supportDirectory().appendingPathComponent("bin/RelayHook"))
+        XCTAssertTrue(resolved.path.contains("/Library/Application Support/Relay"))
     }
 
     func testBinDirectoryIsCreatedWithRestrictedPermissions() throws {

@@ -16,6 +16,9 @@ targets:
     platform: macOS
     sources:
       - path: Relay
+        excludes:
+          - Info.plist
+      - path: Shared
       - path: RelayHook/HookTransportClient.swift
         group: RelayHook
       - path: RelayHook/BoundedStdinReader.swift
@@ -36,6 +39,8 @@ targets:
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "Relay Local Development"
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: Relay/Info.plist
+        RELAY_BUILD_FLAVOR: release
         INFOPLIST_KEY_LSUIElement: YES
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Relay uses the microphone only while you dictate."
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Relay uses on-device speech recognition when the Apple Speech backend is selected."
@@ -45,6 +50,7 @@ targets:
           # helper. Stable signing (below) keeps its grants across rebuilds.
           PRODUCT_BUNDLE_IDENTIFIER: dev.relaymac.Relay.debug
           INFOPLIST_KEY_CFBundleDisplayName: "Relay Debug"
+          RELAY_BUILD_FLAVOR: debug
     postbuildScripts:
       - name: Embed RelayHook
         script: |
@@ -61,6 +67,7 @@ targets:
       - path: RelayHook
       - path: Relay/Integrations/Domain/HookEnvelope.swift
       - path: Relay/Integrations/Domain/AgentProvider.swift
+      - path: Shared
     settings:
       base:
         PRODUCT_NAME: RelayHook
