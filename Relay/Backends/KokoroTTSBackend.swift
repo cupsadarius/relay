@@ -17,6 +17,16 @@ final class KokoroTTSBackend: TextToSpeechBackend {
         self.engine = engine
     }
 
+    /// Kokoro `voiceSpeed` range Relay drives: the shared slider range
+    /// (`AppSettings.validTTSRateRange`, 0.1...1.0) mapped through `rate / 0.5`, so 0.5 (the
+    /// shared default) maps to 1.0 (normal speed).
+    nonisolated static let speedRange: ClosedRange<Float> = 0.2...2.0
+
+    nonisolated static func speed(forRate rate: Float) -> Float {
+        guard rate.isFinite else { return 1 }
+        return min(max(rate / 0.5, speedRange.lowerBound), speedRange.upperBound)
+    }
+
     func availability() async -> BackendAvailability {
         await engine.modelsArePresent() ? .available : .modelNotDownloaded
     }
@@ -31,9 +41,7 @@ final class KokoroTTSBackend: TextToSpeechBackend {
         }
 
         let voice = options.kokoroVoice ?? TtsConstants.recommendedVoice
-        // The shared rate slider is on Apple's 0...1 scale (default 0.5); Kokoro's voiceSpeed uses
-        // 1.0 = normal. This mapping lines up the shared default: 0.5 -> 1.0.
-        let speed = options.rate / 0.5
+        let speed = Self.speed(forRate: options.rate)
         do {
             let phonemes = try await engine.phonemes(for: text)
             let chunks = KokoroPhonemeChunker(

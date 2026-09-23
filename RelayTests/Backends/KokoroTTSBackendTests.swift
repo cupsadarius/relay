@@ -122,6 +122,14 @@ final class KokoroTTSBackendTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(engine.synthesizeCalls.last?.speed), 2.0, accuracy: 0.0001)
     }
 
+    func testSpeedIsClampedToTheSupportedRange() {
+        XCTAssertEqual(KokoroTTSBackend.speed(forRate: 0.5), 1.0, accuracy: 0.0001)
+        XCTAssertEqual(KokoroTTSBackend.speed(forRate: 5), 2.0, accuracy: 0.0001)
+        XCTAssertEqual(KokoroTTSBackend.speed(forRate: 0), 0.2, accuracy: 0.0001)
+        XCTAssertEqual(KokoroTTSBackend.speed(forRate: -1), 0.2, accuracy: 0.0001)
+        XCTAssertEqual(KokoroTTSBackend.speed(forRate: .nan), 1.0, accuracy: 0.0001)
+    }
+
     func testMakeAudioSourceWithEmptyTextDoesNotCrash() async throws {
         let engine = FakeKokoroEngine()
         engine.modelsPresent = true
