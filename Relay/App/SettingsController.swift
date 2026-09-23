@@ -16,6 +16,10 @@ final class SettingsSnapshot: Sendable {
         storage.withLock { $0 }
     }
 
+    /// Invariant: `SettingsController` is the only writer, and it is `@MainActor`-isolated, so
+    /// writes are never concurrent with each other — only ever with the `Mutex`-protected reads
+    /// above, from whatever actor. Do not add a second call site for this without keeping that
+    /// single-writer property true.
     fileprivate func replace(_ newValue: AppSettings) {
         storage.withLock { $0 = newValue }
     }
