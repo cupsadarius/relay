@@ -77,6 +77,29 @@ final class PipedTTSAudioSourceTests: XCTestCase {
         let ended = await producerEnded.value
         XCTAssertTrue(ended, "cancel() must end the producer, not just the consumer side")
     }
+
+    func testDroppingABlockedProducerWithoutCancelStillEndsTheProducerTask() async throws {
+        let format = self.format
+        let producerEnded = ProducerEnded()
+        var source: PipedTTSAudioSource? = PipedTTSAudioSource(highWatermark: 1, lowWatermark: 0.5) { sink in
+            defer { Task { await producerEnded.mark() } }
+            while true {
+                try await sink.yield(TTSAudioFrame(samples: [Float](repeating: 0, count: 10), format: format))
+            }
+        }
+        for _ in 0..<50 { await Task.yield() }
+
+        // Drop every reference without ever calling cancel() or draining via next() -- the
+        // producer is blocked in `sink.yield` at the high watermark at this point.
+        source = nil
+
+        let deadline = Date().addingTimeInterval(5)
+        while await !producerEnded.value, Date() < deadline {
+            await Task.yield()
+        }
+        let ended = await producerEnded.value
+        XCTAssertTrue(ended, "dropping the source without cancel() must still end the blocked producer")
+    }
 }
 
 private actor ProducerEnded {

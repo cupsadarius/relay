@@ -142,9 +142,17 @@ final class AppleTTSAudioSource: TTSAudioSource, @unchecked Sendable {
     /// started, then every strong reference goes away) leaks `PipedTTSAudioSource`'s producer
     /// task: it stays suspended in `for await event in stream` forever, since nothing else ever
     /// finishes `events`. Finishing here ends that loop, which falls through to `throw
-    /// CancellationError()` and lets the producer (and the pipe it feeds) wind down normally.
+    /// CancellationError()` and lets the producer (and the pipe it feeds) wind down normally --
+    /// `PipedTTSAudioSource`'s own `ProducerBox.deinit` separately covers a producer already
+    /// blocked inside `sink.yield` at the high watermark, which `events.finish()` alone cannot
+    /// reach. Also stops the underlying synthesizer, mirroring `cancel()`: without this, a
+    /// dropped-but-never-cancelled source would leave Apple's speech engine synthesizing (and
+    /// calling its write callback) in the background indefinitely.
     deinit {
         events.finish()
+        Task { @MainActor [synthesizer] in
+            _ = synthesizer.stopSpeaking(at: .immediate)
+        }
     }
 
     func next() async throws -> TTSAudioFrame? {
