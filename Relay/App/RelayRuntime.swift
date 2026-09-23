@@ -207,13 +207,14 @@ final class RelayRuntime {
             diagnostics: integrationDiagnosticsLog,
             onResponse: { event in await autoReadCoordinator.handle(event) }
         )
-        let actionDispatcher: any ActivityOverlayControlling = ActivityOverlayActionDispatcher(dictation: dictation, speech: coordinator)
         let overlayPresenter = ActivityOverlayWindowController(
             model: overlayModel,
             host: ActivityOverlayPanelHost(),
             screens: SystemActivityOverlayScreens(),
             diagnostics: diagnostics,
-            onAction: { [actionDispatcher] action in actionDispatcher.perform(action) }
+            onAction: { action in
+                await ActivityOverlayActions.perform(action, dictation: dictation, speech: coordinator)
+            }
         )
         return RelayRuntime(
             status: status,

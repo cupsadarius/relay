@@ -104,7 +104,7 @@ final class AppModelTests: XCTestCase {
     }
 
     /// Regression for the stale menu-bar label bug: the pill's Stop button routes through
-    /// `ActivityOverlayActionDispatcher` to `SpeechCoordinator.stop(sessionID:)`, and the real
+    /// `ActivityOverlayActions.perform` to `SpeechCoordinator.stop(sessionID:)`, and the real
     /// (non-fake) coordinator hides the overlay itself by calling `overlay.cancel(sessionID:)` —
     /// it never touches `AppModel.statusText`. `SpySpeechCoordinator.stop(sessionID:)` only
     /// records the call, so this drives the same overlay transition directly to exercise what

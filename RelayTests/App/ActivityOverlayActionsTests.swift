@@ -2,27 +2,24 @@ import XCTest
 @testable import Relay
 
 @MainActor
-final class ActivityOverlayActionDispatcherTests: XCTestCase {
+final class ActivityOverlayActionsTests: XCTestCase {
     func testCancelDictationActionReachesDictationCoordinatorWithSameSessionID() async {
         let dictation = FakeDispatchedDictationCoordinator()
         let speech = FakeDispatchedSpeechCoordinator()
-        let dispatcher = ActivityOverlayActionDispatcher(dictation: dictation, speech: speech)
         let sessionID = UUID()
 
-        dispatcher.perform(.cancelDictation(sessionID: sessionID))
-        await Task.yield()
+        await ActivityOverlayActions.perform(.cancelDictation(sessionID: sessionID), dictation: dictation, speech: speech)
 
         XCTAssertEqual(dictation.cancelledSessionIDs, [sessionID])
         XCTAssertTrue(speech.stoppedSessionIDs.isEmpty)
     }
 
-    func testStopSpeechActionReachesSpeechCoordinatorWithSameSessionID() {
+    func testStopSpeechActionReachesSpeechCoordinatorWithSameSessionID() async {
         let dictation = FakeDispatchedDictationCoordinator()
         let speech = FakeDispatchedSpeechCoordinator()
-        let dispatcher = ActivityOverlayActionDispatcher(dictation: dictation, speech: speech)
         let sessionID = UUID()
 
-        dispatcher.perform(.stopSpeech(sessionID: sessionID))
+        await ActivityOverlayActions.perform(.stopSpeech(sessionID: sessionID), dictation: dictation, speech: speech)
 
         XCTAssertEqual(speech.stoppedSessionIDs, [sessionID])
         XCTAssertTrue(dictation.cancelledSessionIDs.isEmpty)
