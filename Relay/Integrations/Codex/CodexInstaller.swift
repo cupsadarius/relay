@@ -82,41 +82,74 @@ struct CodexInstaller {
 
     // MARK: - config.toml (`[features] hooks = false`)
 
-    /// True when `config.toml` (under this installer's base directory) explicitly contains a
-    /// `[features]` table with `hooks = false`. A missing file, a commented-out line,
-    /// `hooks = false` under a different or nested table, or any other value never counts.
+    /// True when `config.toml` (under this installer's base directory) explicitly disables hooks
+    /// via any of the forms `tomlExplicitlyDisablesHooks(_:)` recognises. A missing file, a
+    /// commented-out line, `hooks = false` under a different or nested table, or any other value
+    /// never counts.
     private func configExplicitlyDisablesHooks() throws -> Bool {
         guard FileManager.default.fileExists(atPath: configTomlURL.path) else { return false }
         let text = try String(contentsOf: configTomlURL, encoding: .utf8)
         return Self.tomlExplicitlyDisablesHooks(text)
     }
 
-    /// A targeted scan for `[features]\nhooks = false` — not a full TOML parser. It tracks the
-    /// most recently opened `[table]` header and looks for a `hooks = false` assignment while
-    /// that table is `features` exactly (not `features.sub`, not `[[features]]`). Comments (`#`,
-    /// respecting quoted strings) are stripped from each line before it is inspected, so a
-    /// commented-out header or assignment is never matched.
+    /// A targeted scan — not a full TOML parser — for the three ways `config.toml` can turn
+    /// Codex hooks off:
+    ///
+    /// - `[features]` table, then `hooks = false`
+    /// - root-level dotted key `features.hooks = false` (whitespace around `.` allowed)
+    /// - root-level inline table `features = { …, hooks = false, … }`
+    ///
+    /// Comments (`#`, respecting quotes) are stripped first. `hooks = false` under any other table
+    /// (`[features.sub]`, `[[features]]`, `[other]`) never counts, and neither do dotted or inline
+    /// forms inside a non-root table. Inline-table values containing commas inside strings are
+    /// not handled (not produced by Codex's own config).
     static func tomlExplicitlyDisablesHooks(_ text: String) -> Bool {
-        var inFeaturesTable = false
+        var currentTable = "" // "" is the root table.
         for rawLine in text.components(separatedBy: .newlines) {
             let line = stripTomlComment(rawLine).trimmingCharacters(in: .whitespaces)
             guard !line.isEmpty else { continue }
 
             if line.hasPrefix("[") && line.hasSuffix("]") {
-                let tableName = line.dropFirst().dropLast().trimmingCharacters(in: .whitespaces)
-                inFeaturesTable = (tableName == "features")
+                // `[features]` -> "features"; `[[features]]` -> "[features]" (never matches).
+                currentTable = line.dropFirst().dropLast().trimmingCharacters(in: .whitespaces)
                 continue
             }
 
-            guard inFeaturesTable, let equalsIndex = line.firstIndex(of: "=") else { continue }
-
-            let key = line[line.startIndex..<equalsIndex].trimmingCharacters(in: .whitespaces)
+            guard let equalsIndex = line.firstIndex(of: "=") else { continue }
+            let key = normalizedDottedKey(String(line[line.startIndex..<equalsIndex]))
             let value = line[line.index(after: equalsIndex)...].trimmingCharacters(in: .whitespaces)
-            if key == "hooks" && value == "false" {
-                return true
+
+            switch currentTable {
+            case "features":
+                if key == "hooks" && value == "false" { return true }
+            case "":
+                if key == "features.hooks" && value == "false" { return true }
+                if key == "features" && inlineTableDisablesHooks(value) { return true }
+            default:
+                continue
             }
         }
         return false
+    }
+
+    /// `"features . hooks "` -> `"features.hooks"`.
+    private static func normalizedDottedKey(_ rawKey: String) -> String {
+        rawKey
+            .split(separator: ".", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .joined(separator: ".")
+    }
+
+    /// True for `{ …, hooks = false, … }`.
+    private static func inlineTableDisablesHooks(_ value: String) -> Bool {
+        guard value.hasPrefix("{"), value.hasSuffix("}") else { return false }
+        let body = value.dropFirst().dropLast()
+        return body.split(separator: ",").contains { pair in
+            guard let equalsIndex = pair.firstIndex(of: "=") else { return false }
+            let key = normalizedDottedKey(String(pair[pair.startIndex..<equalsIndex]))
+            let entryValue = pair[pair.index(after: equalsIndex)...].trimmingCharacters(in: .whitespaces)
+            return key == "hooks" && entryValue == "false"
+        }
     }
 
     /// Strips a trailing `#` comment from a single TOML line, respecting (naively) single- and

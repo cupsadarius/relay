@@ -276,4 +276,30 @@ final class CodexInstallerTests: XCTestCase {
         XCTAssertFalse(CodexInstaller.tomlExplicitlyDisablesHooks(""))
         XCTAssertFalse(CodexInstaller.tomlExplicitlyDisablesHooks("[features]\nhooks = true\n"))
     }
+
+    func testTomlDottedRootKeyDisablesHooks() {
+        XCTAssertTrue(CodexInstaller.tomlExplicitlyDisablesHooks("features.hooks = false\n"))
+        XCTAssertTrue(CodexInstaller.tomlExplicitlyDisablesHooks("model = \"o3\"\nfeatures . hooks=false # off\n"))
+    }
+
+    func testTomlInlineFeaturesTableDisablesHooks() {
+        XCTAssertTrue(CodexInstaller.tomlExplicitlyDisablesHooks("features = { hooks = false }\n"))
+        XCTAssertTrue(CodexInstaller.tomlExplicitlyDisablesHooks("features = { web_search = true, hooks = false }\n"))
+    }
+
+    func testTomlNonDisablingVariantsAreIgnored() {
+        XCTAssertFalse(CodexInstaller.tomlExplicitlyDisablesHooks("features.hooks = true\n"))
+        XCTAssertFalse(CodexInstaller.tomlExplicitlyDisablesHooks("features = { hooks = true }\n"))
+        XCTAssertFalse(CodexInstaller.tomlExplicitlyDisablesHooks("# features.hooks = false\n"))
+        XCTAssertFalse(CodexInstaller.tomlExplicitlyDisablesHooks("[other]\nfeatures.hooks = false\n"))
+        XCTAssertFalse(CodexInstaller.tomlExplicitlyDisablesHooks("[[features]]\nhooks = false\n"))
+    }
+
+    func testInstallRefusesWhenDottedKeyDisablesHooks() throws {
+        try writeConfigToml("features.hooks = false\n")
+        XCTAssertThrowsError(try makeInstaller().install()) { error in
+            XCTAssertEqual(error as? IntegrationInstallerError, .hooksDisabledInConfig)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: hooksURL.path))
+    }
 }
