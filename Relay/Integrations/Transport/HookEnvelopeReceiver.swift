@@ -28,6 +28,11 @@ enum HookEnvelopeDropReason: Sendable {
 /// logging system. Line contents, decoded text, working directories, and
 /// environment variables are never logged.
 final class HookEnvelopeReceiver: @unchecked Sendable {
+    /// At most this many decoded envelopes wait for `IntegrationManager`; older ones are dropped
+    /// (and recorded) first, so a burst while the consumer is slow can never grow memory without
+    /// bound. Speech only ever cares about recent responses.
+    static let eventBufferLimit = 16
+
     let events: AsyncStream<HookEnvelope>
 
     /// Whether the underlying `UnixSocketServer` currently holds an open
@@ -53,7 +58,7 @@ final class HookEnvelopeReceiver: @unchecked Sendable {
         self.diagnostics = diagnostics
 
         var capturedContinuation: AsyncStream<HookEnvelope>.Continuation?
-        events = AsyncStream { continuation in
+        events = AsyncStream(bufferingPolicy: .bufferingNewest(Self.eventBufferLimit)) { continuation in
             capturedContinuation = continuation
         }
         // The AsyncStream body above runs synchronously, so this is always set.
@@ -97,7 +102,13 @@ final class HookEnvelopeReceiver: @unchecked Sendable {
         }
 
         diagnostics.append(stage: "receiver", outcome: "envelope-decoded", detail: "provider=\(envelope.provider.rawValue)")
-        continuation.yield(envelope)
+        if case .dropped = continuation.yield(envelope) {
+            diagnostics.append(
+                stage: "receiver",
+                outcome: "dropped",
+                detail: "event-buffer-full provider=\(envelope.provider.rawValue)"
+            )
+        }
     }
 
     private func drop(_ reason: HookEnvelopeDropReason, byteCount: Int) {

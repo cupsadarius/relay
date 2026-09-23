@@ -195,4 +195,35 @@ final class HookEnvelopeReceiverTests: XCTestCase {
         }
         XCTAssertTrue(entries.first { $0.outcome == "envelope-decoded" }?.detail.contains("provider=claude-code") ?? false)
     }
+
+    func testEventStreamKeepsOnlyTheNewestEnvelopesWhenNobodyIsConsuming() async throws {
+        let path = temporarySocketPath()
+        let diagnostics = IntegrationDiagnosticsLog()
+        let receiver = HookEnvelopeReceiver(diagnostics: diagnostics)
+        try receiver.start(path: path)
+
+        for pid in 1...20 {
+            let line = #"{"schemaVersion":1,"provider":"codex","rawPayload":"{}","#
+                + #""parentPID":\#(pid),"environment":{},"capturedAt":1700000000}"# + "\n"
+            try await UnixSocketTestClient.send(line, to: path)
+        }
+        let deadline = Date().addingTimeInterval(2)
+        while diagnostics.snapshot().filter({ $0.outcome == "envelope-decoded" }).count < 20, Date() < deadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        receiver.stop() // finishes the stream; buffered elements are still delivered
+        var pids: [Int32] = []
+        for await envelope in receiver.events {
+            pids.append(envelope.parentPID)
+        }
+
+        XCTAssertEqual(HookEnvelopeReceiver.eventBufferLimit, 16)
+        // 20 separate connections are not guaranteed to be decoded in send order, so compare
+        // counts and membership, not order: 16 distinct envelopes kept, 4 dropped.
+        XCTAssertEqual(pids.count, 16)
+        XCTAssertEqual(Set(pids).count, 16)
+        XCTAssertTrue(Set(pids).isSubset(of: Set(Int32(1)...Int32(20))))
+        XCTAssertEqual(diagnostics.snapshot().filter { $0.detail.hasPrefix("event-buffer-full") }.count, 4)
+    }
 }
