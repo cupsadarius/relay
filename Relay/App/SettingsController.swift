@@ -90,9 +90,9 @@ final class SettingsController {
     func setLiveTranscriptionEnabled(_ enabled: Bool) { update { $0.liveTranscriptionEnabled = enabled } }
     func setSTTBackendOrder(_ order: [String]) { update { $0.sttBackendOrder = order } }
     func setTTSBackendOrder(_ order: [String]) { update { $0.ttsBackendOrder = order } }
-    func setVoiceIdentifier(_ identifier: String?) { update { $0.ttsVoiceIdentifier = identifier } }
-    func setKokoroVoice(_ voice: String?) { update { $0.kokoroVoice = voice } }
-    func setPocketVoice(_ voice: String?) { update { $0.pocketVoice = voice } }
+    func setVoice(_ voice: String?, for backendID: String) {
+        update { $0.voiceByBackend[backendID] = voice }
+    }
 
     func setSelectedSpeechModel(backendID: String, modelID: String?) {
         update { $0.selectedSpeechModelByBackend[backendID] = modelID }

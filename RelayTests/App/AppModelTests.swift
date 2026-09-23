@@ -485,7 +485,7 @@ final class AppModelTests: XCTestCase {
     func testPreviewVoiceUsesClickedProviderAndCurrentRateWithoutPersistingSelection() async {
         let speech = SpySpeechCoordinator()
         var settings = AppSettings.defaults
-        settings.kokoroVoice = "af_heart"
+        settings.voiceByBackend["kokoro"] = "af_heart"
         settings.ttsRate = 0.75
         let store = SpySettingsStore(settings: settings)
         let model = makeModel(store: store, speech: speech)
@@ -496,7 +496,7 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(speech.previews.first?.backendID, "kokoro")
         XCTAssertEqual(speech.previews.first?.options.kokoroVoice, "am_adam")
         XCTAssertEqual(speech.previews.first?.options.rate, 0.75)
-        XCTAssertEqual(model.settings.kokoroVoice, "af_heart")
+        XCTAssertEqual(model.settings.voiceByBackend["kokoro"], "af_heart")
     }
 
     func testSelectVoicePersistsThroughProviderNeutralCatalogMapping() {
@@ -504,7 +504,7 @@ final class AppModelTests: XCTestCase {
 
         model.selectVoice(backendID: "kokoro", voiceID: "kokoro:am_adam")
 
-        XCTAssertEqual(model.settings.kokoroVoice, "am_adam")
+        XCTAssertEqual(model.settings.voiceByBackend["kokoro"], "am_adam")
     }
 
     func testHoldToTalkStartsOnPressAndFinishesOnRelease() async {
@@ -876,8 +876,7 @@ final class AppModelTests: XCTestCase {
         let apple = FakeTTSBackend(id: "apple-tts")
         var settings = AppSettings.defaults
         settings.ttsBackendOrder = ["pocket-tts", "kokoro", "apple-tts"]
-        settings.kokoroVoice = "af_bella"
-        settings.pocketVoice = "alba"
+        settings.voiceByBackend = ["kokoro": "af_bella", "pocket-tts": "alba"]
         let store = SpySettingsStore(settings: settings)
         let overlay = ActivityOverlayModel()
         let player = FakePlayer()
@@ -891,14 +890,7 @@ final class AppModelTests: XCTestCase {
         )
         let coordinator = SpeechCoordinator(
             router: router,
-            options: {
-                TTSOptions(
-                    voiceIdentifier: settings.ttsVoiceIdentifier,
-                    rate: settings.ttsRate,
-                    kokoroVoice: settings.kokoroVoice,
-                    pocketVoice: settings.pocketVoice
-                )
-            },
+            options: { TTSOptions(settings: settings) },
             overlay: overlay
         )
         let hotkeys = SpyHotkeyManager()

@@ -30,7 +30,7 @@ final class AppSettingsDecodeTests: XCTestCase {
     func testInvalidOneFieldDoesNotResetUnrelated() throws {
         var saved = AppSettings.defaults
         saved.dictationMode = .toggle
-        saved.ttsVoiceIdentifier = "voice.test"
+        saved.voiceByBackend["apple-tts"] = "voice.test"
         let encoded = try JSONEncoder().encode(saved)
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         object["autoReadEnabled"] = "not-a-bool"
@@ -41,7 +41,7 @@ final class AppSettingsDecodeTests: XCTestCase {
         )
 
         XCTAssertEqual(decoded.dictationMode, .toggle)
-        XCTAssertEqual(decoded.ttsVoiceIdentifier, "voice.test")
+        XCTAssertEqual(decoded.voiceByBackend["apple-tts"], "voice.test")
         XCTAssertEqual(decoded.autoReadEnabled, AppSettings.defaults.autoReadEnabled)
     }
 
@@ -101,7 +101,7 @@ final class AppSettingsDecodeTests: XCTestCase {
         let encoded = try JSONEncoder().encode(saved)
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         for legacyMissingKey in [
-            "schemaVersion", "activityOverlayStyle", "kokoroVoice", "pocketVoice", "liveTranscriptionEnabled",
+            "schemaVersion", "activityOverlayStyle", "voiceByBackend", "liveTranscriptionEnabled",
         ] {
             object.removeValue(forKey: legacyMissingKey)
         }
@@ -117,8 +117,7 @@ final class AppSettingsDecodeTests: XCTestCase {
         XCTAssertEqual(decoded.ttsRate, 0.75, accuracy: 0.0001)
         XCTAssertFalse(decoded.autoReadEnabled)
         XCTAssertEqual(decoded.activityOverlayStyle, .interactive)
-        XCTAssertNil(decoded.kokoroVoice)
-        XCTAssertNil(decoded.pocketVoice)
+        XCTAssertTrue(decoded.voiceByBackend.isEmpty)
         XCTAssertFalse(decoded.liveTranscriptionEnabled)
         XCTAssertEqual(decoded.schemaVersion, AppSettings.currentSchemaVersion)
     }
@@ -131,12 +130,10 @@ final class AppSettingsDecodeTests: XCTestCase {
         value.hotkeys[.readSelection] = .chord(keyCode: 15, modifiers: [.option])
         value.sttBackendOrder = ["parakeet", "apple-speech"]
         value.ttsBackendOrder = ["apple-tts", "kokoro", "pocket-tts"]
-        value.ttsVoiceIdentifier = "voice.test"
+        value.voiceByBackend = ["apple-tts": "voice.test", "kokoro": "af_heart", "pocket-tts": "alba"]
         value.ttsRate = 0.65
         value.autoReadEnabled = false
         value.activityOverlayStyle = .minimal
-        value.kokoroVoice = "af_heart"
-        value.pocketVoice = "alba"
         value.liveTranscriptionEnabled = true
 
         let data = try JSONEncoder().encode(value)
@@ -145,30 +142,42 @@ final class AppSettingsDecodeTests: XCTestCase {
         XCTAssertEqual(decoded, value)
     }
 
-    /// Optional and newer fields used `try decodeIfPresent`, so a wrong-typed value threw and
-    /// `SettingsStore.load()` reset EVERY setting. Each must now fall back on its own.
-    func testWrongTypedOptionalFieldsFallBackWithoutResettingOthers() throws {
+    /// A v1 blob with wrong-typed legacy voice values migrates the valid ones and drops only
+    /// the bad ones; no other field is reset.
+    func testWrongTypedLegacyVoiceKeysMigrateWithoutResettingOthers() throws {
         var saved = AppSettings.defaults
         saved.dictationMode = .toggle
         saved.ttsRate = 0.8
-        let encoded = try JSONEncoder().encode(saved)
-        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as? [String: Any]
+        )
+        object.removeValue(forKey: "voiceByBackend")
+        object["schemaVersion"] = 1
         object["ttsVoiceIdentifier"] = 42
-        object["kokoroVoice"] = true
+        object["kokoroVoice"] = "am_adam"
         object["pocketVoice"] = ["not", "a", "string"]
         object["liveTranscriptionEnabled"] = "yes"
 
-        let decoded = try JSONDecoder().decode(
-            AppSettings.self,
-            from: JSONSerialization.data(withJSONObject: object)
-        )
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
 
+        XCTAssertEqual(decoded.voiceByBackend, ["kokoro": "am_adam"])
         XCTAssertEqual(decoded.dictationMode, .toggle)
         XCTAssertEqual(decoded.ttsRate, 0.8, accuracy: 0.0001)
-        XCTAssertEqual(decoded.ttsVoiceIdentifier, AppSettings.defaults.ttsVoiceIdentifier)
-        XCTAssertEqual(decoded.kokoroVoice, AppSettings.defaults.kokoroVoice)
-        XCTAssertEqual(decoded.pocketVoice, AppSettings.defaults.pocketVoice)
         XCTAssertEqual(decoded.liveTranscriptionEnabled, AppSettings.defaults.liveTranscriptionEnabled)
+    }
+
+    func testWrongTypedVoiceMapFallsBackToEmptyWithoutResettingOthers() throws {
+        var saved = AppSettings.defaults
+        saved.dictationMode = .toggle
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as? [String: Any]
+        )
+        object["voiceByBackend"] = ["kokoro": 7]
+
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
+
+        XCTAssertTrue(decoded.voiceByBackend.isEmpty)
+        XCTAssertEqual(decoded.dictationMode, .toggle)
     }
 
     func testUnknownActivityOverlayStyleFallsBackToDefault() throws {

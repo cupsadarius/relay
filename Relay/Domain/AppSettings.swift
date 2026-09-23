@@ -16,12 +16,12 @@ struct AppSettings: Codable, Equatable, Sendable {
     var hotkeys: [HotkeyAction: HotkeyDefinition]
     var sttBackendOrder: [String]
     var ttsBackendOrder: [String]
-    var ttsVoiceIdentifier: String?
     var ttsRate: Float
     var autoReadEnabled: Bool
     var activityOverlayStyle: ActivityOverlayStyle
-    var kokoroVoice: String?
-    var pocketVoice: String?
+    /// The selected voice per TTS backend id (`BackendID.rawValue` → backend-specific voice id).
+    /// A missing entry means that backend's default voice.
+    var voiceByBackend: [String: String]
     var liveTranscriptionEnabled: Bool
     /// The last model id selected per STT backend id (e.g. `"whisper": "small.en"`), so a
     /// multi-model backend like Whisper remembers the user's choice across launches. Absent
@@ -33,7 +33,8 @@ struct AppSettings: Codable, Equatable, Sendable {
     /// The current on-disk schema version. Bump this (and add an explicit transform to
     /// `init(from:)`) only when a future change needs more than per-field fallback defaults,
     /// e.g. renaming or reshaping a field.
-    static let currentSchemaVersion = 1
+    /// 2: per-backend voice keys folded into voiceByBackend.
+    static let currentSchemaVersion = 2
 
     /// Backend ids `sttBackendOrder` recognizes as valid, mirroring the STT backends
     /// `RelayRuntime.makeProduction()` actually registers (`Relay/App/RelayRuntime.swift`).
@@ -52,9 +53,14 @@ struct AppSettings: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case schemaVersion
         case dictationMode, hotkeys, sttBackendOrder, ttsBackendOrder
-        case ttsVoiceIdentifier, ttsRate, autoReadEnabled, activityOverlayStyle, kokoroVoice, pocketVoice
+        case ttsRate, autoReadEnabled, activityOverlayStyle, voiceByBackend
         case liveTranscriptionEnabled
         case selectedSpeechModelByBackend
+    }
+
+    /// Keys only schema < 2 wrote; read during migration, never encoded.
+    private enum LegacyCodingKeys: String, CodingKey {
+        case ttsVoiceIdentifier, kokoroVoice, pocketVoice
     }
 
     init(from decoder: Decoder) throws {
@@ -76,12 +82,18 @@ struct AppSettings: Codable, Equatable, Sendable {
         hotkeys = AppSettings.decodeHotkeys(from: values) ?? fallback.hotkeys
         let decodedSTTOrder = field(.sttBackendOrder, default: fallback.sttBackendOrder)
         let decodedTTSOrder = field(.ttsBackendOrder, default: fallback.ttsBackendOrder)
-        ttsVoiceIdentifier = field(.ttsVoiceIdentifier, default: fallback.ttsVoiceIdentifier)
         let decodedRate = field(.ttsRate, default: fallback.ttsRate)
         autoReadEnabled = field(.autoReadEnabled, default: fallback.autoReadEnabled)
         activityOverlayStyle = field(.activityOverlayStyle, default: fallback.activityOverlayStyle)
-        kokoroVoice = field(.kokoroVoice, default: fallback.kokoroVoice)
-        pocketVoice = field(.pocketVoice, default: fallback.pocketVoice)
+        // The first reshaped field: schema < 2 stored one optional voice per TTS backend under
+        // its own key. A blob with no/invalid `schemaVersion` reads as 0 and migrates too.
+        let savedSchemaVersion = field(.schemaVersion, default: 0)
+        if savedSchemaVersion < 2 {
+            voiceByBackend = AppSettings.migrateLegacyVoices(from: decoder)
+        } else {
+            // Current, or newer than this build knows: best-effort per-field decode.
+            voiceByBackend = field(.voiceByBackend, default: fallback.voiceByBackend)
+        }
         liveTranscriptionEnabled = field(.liveTranscriptionEnabled, default: fallback.liveTranscriptionEnabled)
         selectedSpeechModelByBackend = field(
             .selectedSpeechModelByBackend,
@@ -170,17 +182,31 @@ struct AppSettings: Codable, Equatable, Sendable {
         return normalized.isEmpty ? fallback : normalized
     }
 
+    private static func migrateLegacyVoices(from decoder: Decoder) -> [String: String] {
+        guard let legacy = try? decoder.container(keyedBy: LegacyCodingKeys.self) else { return [:] }
+        let pairs: [(LegacyCodingKeys, BackendID)] = [
+            (.ttsVoiceIdentifier, .appleTTS),
+            (.kokoroVoice, .kokoro),
+            (.pocketVoice, .pocketTTS),
+        ]
+        var voices: [String: String] = [:]
+        for (key, backend) in pairs {
+            if let voice = try? legacy.decode(String.self, forKey: key) {
+                voices[backend.rawValue] = voice
+            }
+        }
+        return voices
+    }
+
     init(
         dictationMode: DictationMode,
         hotkeys: [HotkeyAction: HotkeyDefinition],
         sttBackendOrder: [String],
         ttsBackendOrder: [String],
-        ttsVoiceIdentifier: String?,
         ttsRate: Float,
         autoReadEnabled: Bool,
         activityOverlayStyle: ActivityOverlayStyle,
-        kokoroVoice: String? = nil,
-        pocketVoice: String? = nil,
+        voiceByBackend: [String: String] = [:],
         liveTranscriptionEnabled: Bool = false,
         selectedSpeechModelByBackend: [String: String] = [:],
         schemaVersion: Int = AppSettings.currentSchemaVersion
@@ -190,12 +216,10 @@ struct AppSettings: Codable, Equatable, Sendable {
         self.hotkeys = hotkeys
         self.sttBackendOrder = sttBackendOrder
         self.ttsBackendOrder = ttsBackendOrder
-        self.ttsVoiceIdentifier = ttsVoiceIdentifier
         self.ttsRate = ttsRate
         self.autoReadEnabled = autoReadEnabled
         self.activityOverlayStyle = activityOverlayStyle
-        self.kokoroVoice = kokoroVoice
-        self.pocketVoice = pocketVoice
+        self.voiceByBackend = voiceByBackend
         self.liveTranscriptionEnabled = liveTranscriptionEnabled
         self.selectedSpeechModelByBackend = selectedSpeechModelByBackend
     }
@@ -211,12 +235,23 @@ struct AppSettings: Codable, Equatable, Sendable {
         ],
         sttBackendOrder: [BackendID.appleSpeech.rawValue],
         ttsBackendOrder: BackendID.allTextToSpeech.map(\.rawValue),
-        ttsVoiceIdentifier: nil,
         ttsRate: 0.5,
         autoReadEnabled: true,
         activityOverlayStyle: .interactive,
         liveTranscriptionEnabled: false
     )
+}
+
+extension TTSOptions {
+    /// The single mapping from persisted settings to per-utterance options.
+    init(settings: AppSettings) {
+        self.init(
+            voiceIdentifier: settings.voiceByBackend[BackendID.appleTTS.rawValue],
+            rate: settings.ttsRate,
+            kokoroVoice: settings.voiceByBackend[BackendID.kokoro.rawValue],
+            pocketVoice: settings.voiceByBackend[BackendID.pocketTTS.rawValue]
+        )
+    }
 }
 
 /// Wraps a value whose decode may fail, without failing itself — so an unkeyed container always

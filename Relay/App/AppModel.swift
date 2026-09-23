@@ -170,12 +170,7 @@ final class AppModel {
 
     func selectVoice(backendID: String, voiceID: String) {
         guard let value = voiceCatalog.storedValue(for: voiceID, backendID: backendID) else { return }
-        switch backendID {
-        case BackendID.appleTTS: settingsController.setVoiceIdentifier(value)
-        case BackendID.kokoro: settingsController.setKokoroVoice(value)
-        case BackendID.pocketTTS: settingsController.setPocketVoice(value)
-        default: break
-        }
+        settingsController.setVoice(value, for: backendID)
     }
 
     func setActivityOverlayStyle(_ style: ActivityOverlayStyle) {

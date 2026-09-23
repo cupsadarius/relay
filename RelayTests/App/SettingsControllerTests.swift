@@ -197,6 +197,28 @@ final class SettingsControllerTests: XCTestCase {
 
         XCTAssertNil(controller.whisperSelection())
     }
+
+    func testSetVoiceWritesAndClearsOneBackendsEntry() {
+        let store = SpySettingsStore()
+        let controller = makeController(store: store)
+
+        controller.setVoice("am_adam", for: BackendID.kokoro.rawValue)
+        XCTAssertEqual(controller.current.voiceByBackend, ["kokoro": "am_adam"])
+
+        controller.setVoice(nil, for: BackendID.kokoro.rawValue)
+        XCTAssertTrue(controller.current.voiceByBackend.isEmpty)
+        XCTAssertEqual(store.saved.count, 2)
+    }
+
+    func testTTSOptionsMapTheVoiceMapOntoBackendFields() {
+        var settings = AppSettings.defaults
+        settings.ttsRate = 0.7
+        settings.voiceByBackend = ["apple-tts": "com.apple.voice.x", "kokoro": "am_adam", "pocket-tts": "alba"]
+
+        let options = TTSOptions(settings: settings)
+
+        XCTAssertEqual(options, TTSOptions(voiceIdentifier: "com.apple.voice.x", rate: 0.7, kokoroVoice: "am_adam", pocketVoice: "alba"))
+    }
 }
 
 /// Collects `onHotkeysChanged` calls. A class, so the escaping `@MainActor` closure mutates a

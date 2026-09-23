@@ -133,14 +133,7 @@ final class RelayRuntime {
         )
         let coordinator = SpeechCoordinator(
             router: router,
-            options: {
-                TTSOptions(
-                    voiceIdentifier: settings.value.ttsVoiceIdentifier,
-                    rate: settings.value.ttsRate,
-                    kokoroVoice: settings.value.kokoroVoice,
-                    pocketVoice: settings.value.pocketVoice
-                )
-            },
+            options: { TTSOptions(settings: settings.value) },
             overlay: overlayModel
         )
 

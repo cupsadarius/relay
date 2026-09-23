@@ -19,7 +19,6 @@ final class AppSettingsTests: XCTestCase {
                 hotkeys: [:],
                 sttBackendOrder: [],
                 ttsBackendOrder: [],
-                ttsVoiceIdentifier: nil,
                 ttsRate: 0.5,
                 autoReadEnabled: true,
                 activityOverlayStyle: .interactive
@@ -40,7 +39,7 @@ final class AppSettingsTests: XCTestCase {
     func testDecodingPreOverlaySettingsAddsInteractiveWithoutResettingOtherFields() throws {
         var saved = AppSettings.defaults
         saved.dictationMode = .toggle
-        saved.ttsVoiceIdentifier = "voice.test"
+        saved.voiceByBackend["apple-tts"] = "voice.test"
         saved.ttsRate = 0.7
         saved.autoReadEnabled = false
         let encoded = try JSONEncoder().encode(saved)
@@ -54,67 +53,89 @@ final class AppSettingsTests: XCTestCase {
 
         XCTAssertEqual(decoded.activityOverlayStyle, .interactive)
         XCTAssertEqual(decoded.dictationMode, .toggle)
-        XCTAssertEqual(decoded.ttsVoiceIdentifier, "voice.test")
+        XCTAssertEqual(decoded.voiceByBackend["apple-tts"], "voice.test")
         XCTAssertEqual(decoded.ttsRate, 0.7, accuracy: 0.0001)
         XCTAssertFalse(decoded.autoReadEnabled)
     }
 
-    func testDefaultsHaveNoKokoroVoiceConfigured() {
-        XCTAssertNil(AppSettings.defaults.kokoroVoice)
+    func testDefaultsHaveNoVoicesConfigured() {
+        XCTAssertTrue(AppSettings.defaults.voiceByBackend.isEmpty)
+        XCTAssertEqual(AppSettings.currentSchemaVersion, 2)
     }
 
-    func testKokoroVoiceRoundTrips() throws {
+    func testVoiceMapRoundTrips() throws {
         var value = AppSettings.defaults
-        value.kokoroVoice = "af_heart"
+        value.voiceByBackend = ["kokoro": "am_adam", "pocket-tts": "alba", "apple-tts": "com.apple.voice.x"]
 
-        let data = try JSONEncoder().encode(value)
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(value))
 
-        XCTAssertEqual(try JSONDecoder().decode(AppSettings.self, from: data).kokoroVoice, "af_heart")
+        XCTAssertEqual(decoded.voiceByBackend, value.voiceByBackend)
     }
 
-    func testDecodingPreKokoroSettingsDefaultsKokoroVoiceToNilWithoutResettingOtherFields() throws {
-        var saved = AppSettings.defaults
-        saved.dictationMode = .toggle
-        let encoded = try JSONEncoder().encode(saved)
-        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-        object.removeValue(forKey: "kokoroVoice")
+    /// A v1 blob stored one optional voice per backend under its own key.
+    func testLegacyV1VoiceKeysMigrateIntoTheVoiceMap() throws {
+        var object = try legacyV1Object()
+        object["ttsVoiceIdentifier"] = "com.apple.voice.x"
+        object["kokoroVoice"] = "am_adam"
+        object["pocketVoice"] = "alba"
+        object["dictationMode"] = "toggle"
 
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
+
+        XCTAssertEqual(decoded.voiceByBackend, [
+            "apple-tts": "com.apple.voice.x",
+            "kokoro": "am_adam",
+            "pocket-tts": "alba",
+        ])
+        XCTAssertEqual(decoded.dictationMode, .toggle)
+        XCTAssertEqual(decoded.schemaVersion, AppSettings.currentSchemaVersion)
+    }
+
+    func testLegacyV1BlobWithoutVoiceKeysMigratesToAnEmptyMap() throws {
         let decoded = try JSONDecoder().decode(
             AppSettings.self,
-            from: JSONSerialization.data(withJSONObject: object)
+            from: JSONSerialization.data(withJSONObject: legacyV1Object())
         )
 
-        XCTAssertNil(decoded.kokoroVoice)
-        XCTAssertEqual(decoded.dictationMode, .toggle)
+        XCTAssertTrue(decoded.voiceByBackend.isEmpty)
     }
 
-    func testDefaultsHaveNoPocketVoiceConfigured() {
-        XCTAssertNil(AppSettings.defaults.pocketVoice)
-    }
+    func testMigratedBlobReEncodesAsV2WithoutLegacyKeys() throws {
+        var object = try legacyV1Object()
+        object["kokoroVoice"] = "am_adam"
+        let migrated = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
 
-    func testPocketVoiceRoundTrips() throws {
-        var value = AppSettings.defaults
-        value.pocketVoice = "alba"
-
-        let data = try JSONEncoder().encode(value)
-
-        XCTAssertEqual(try JSONDecoder().decode(AppSettings.self, from: data).pocketVoice, "alba")
-    }
-
-    func testDecodingPrePocketVoiceSettingsDefaultsPocketVoiceToNilWithoutResettingOtherFields() throws {
-        var saved = AppSettings.defaults
-        saved.dictationMode = .toggle
-        let encoded = try JSONEncoder().encode(saved)
-        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-        object.removeValue(forKey: "pocketVoice")
-
-        let decoded = try JSONDecoder().decode(
-            AppSettings.self,
-            from: JSONSerialization.data(withJSONObject: object)
+        let reencoded = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(migrated)) as? [String: Any]
         )
 
-        XCTAssertNil(decoded.pocketVoice)
-        XCTAssertEqual(decoded.dictationMode, .toggle)
+        XCTAssertEqual(reencoded["schemaVersion"] as? Int, 2)
+        XCTAssertEqual(reencoded["voiceByBackend"] as? [String: String], ["kokoro": "am_adam"])
+        XCTAssertNil(reencoded["kokoroVoice"])
+        XCTAssertNil(reencoded["pocketVoice"])
+        XCTAssertNil(reencoded["ttsVoiceIdentifier"])
+    }
+
+    func testV2BlobIgnoresStrayLegacyKeys() throws {
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(AppSettings.defaults)) as? [String: Any]
+        )
+        object["voiceByBackend"] = ["kokoro": "af_heart"]
+        object["kokoroVoice"] = "am_adam"
+
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
+
+        XCTAssertEqual(decoded.voiceByBackend, ["kokoro": "af_heart"])
+    }
+
+    /// Current defaults re-shaped as a schema-1 blob (no `voiceByBackend`).
+    private func legacyV1Object() throws -> [String: Any] {
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(AppSettings.defaults)) as? [String: Any]
+        )
+        object.removeValue(forKey: "voiceByBackend")
+        object["schemaVersion"] = 1
+        return object
     }
 
     func testSettingsRoundTrip() throws {
@@ -147,7 +168,7 @@ final class AppSettingsTests: XCTestCase {
         ])
         XCTAssertEqual(AppSettings.defaults.sttBackendOrder, ["apple-speech"])
         XCTAssertEqual(AppSettings.defaults.ttsBackendOrder, ["pocket-tts", "apple-tts", "kokoro"])
-        XCTAssertNil(AppSettings.defaults.ttsVoiceIdentifier)
+        XCTAssertTrue(AppSettings.defaults.voiceByBackend.isEmpty)
         XCTAssertEqual(AppSettings.defaults.ttsRate, 0.5)
         XCTAssertTrue(AppSettings.defaults.autoReadEnabled)
     }

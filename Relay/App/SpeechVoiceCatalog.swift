@@ -72,21 +72,12 @@ struct SpeechVoiceCatalog {
     }
 
     func activeVoiceID(for backendID: String, settings: AppSettings) -> String? {
-        switch backendID {
-        case BackendID.appleTTS:
-            guard let value = settings.ttsVoiceIdentifier else { return "apple:default" }
-            return voices(for: backendID).first(where: { $0.storedValue == value })?.id
-        case BackendID.kokoro:
-            guard let value = settings.kokoroVoice, value != recommendedKokoroVoice else {
-                return "kokoro:default"
-            }
-            return voices(for: backendID).first(where: { $0.storedValue == value })?.id
-        case BackendID.pocketTTS:
-            guard let value = settings.pocketVoice, value != pocketVoice else { return "pocket:default" }
-            return voices(for: backendID).first(where: { $0.storedValue == value })?.id
-        default:
-            return nil
+        let options = voices(for: backendID)
+        guard let defaultOption = options.first(where: { $0.storedValue == nil }) else { return nil }
+        guard let value = settings.voiceByBackend[backendID], value != recommendedValue(for: backendID) else {
+            return defaultOption.id
         }
+        return options.first(where: { $0.storedValue == value })?.id
     }
 
     func storedValue(for voiceID: String, backendID: String) -> String?? {
@@ -94,19 +85,20 @@ struct SpeechVoiceCatalog {
     }
 
     func options(for voiceID: String, backendID: String, settings: AppSettings) -> TTSOptions? {
-        guard let mapped = storedValue(for: voiceID, backendID: backendID) else { return nil }
-        var options = TTSOptions(
-            voiceIdentifier: settings.ttsVoiceIdentifier,
-            rate: settings.ttsRate,
-            kokoroVoice: settings.kokoroVoice,
-            pocketVoice: settings.pocketVoice
-        )
+        guard BackendID.allTextToSpeech.contains(BackendID(rawValue: backendID)),
+              let mapped = storedValue(for: voiceID, backendID: backendID)
+        else { return nil }
+        var previewSettings = settings
+        previewSettings.voiceByBackend[backendID] = mapped
+        return TTSOptions(settings: previewSettings)
+    }
+
+    /// The stored value that means "the recommended default" for backends that name one.
+    private func recommendedValue(for backendID: String) -> String? {
         switch backendID {
-        case BackendID.appleTTS: options.voiceIdentifier = mapped
-        case BackendID.kokoro: options.kokoroVoice = mapped
-        case BackendID.pocketTTS: options.pocketVoice = mapped
-        default: return nil
+        case BackendID.kokoro: recommendedKokoroVoice
+        case BackendID.pocketTTS: pocketVoice
+        default: nil
         }
-        return options
     }
 }
