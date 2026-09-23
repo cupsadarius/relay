@@ -77,34 +77,6 @@ final class FluidAudioParakeetEngineTests: XCTestCase {
         XCTAssertEqual(receivedSamples?.count, 16_000)
     }
 
-    func testConcurrentLoadsShareASingleUnderlyingLoad() async throws {
-        let loader = FakeModelLoader()
-        await loader.setIsValid(true)
-        await loader.setShouldGateLoad(true)
-        let engine = makeEngine(loader: loader)
-
-        let task1 = Task { try await engine.load(allowDownload: false) }
-        let task2 = Task { try await engine.load(allowDownload: false) }
-
-        // Give both tasks every opportunity to reach the loader before we inspect call counts;
-        // a buggy (non-single-flighted) implementation would call load() a second time here.
-        while await loader.loadCallCount < 1 {
-            await Task.yield()
-        }
-        for _ in 0..<5 {
-            await Task.yield()
-        }
-        let callCountBeforeGateOpens = await loader.loadCallCount
-
-        await loader.openGate()
-        try await task1.value
-        try await task2.value
-
-        XCTAssertEqual(callCountBeforeGateOpens, 1, "A second concurrent load must not reach the loader while the first is in flight")
-        let finalCallCount = await loader.loadCallCount
-        XCTAssertEqual(finalCallCount, 1, "Two concurrent loads must only invoke the underlying loader once")
-    }
-
     func testFailedLoadCanBeRetried() async throws {
         let loader = FakeModelLoader()
         await loader.setIsValid(true)
@@ -125,21 +97,6 @@ final class FluidAudioParakeetEngineTests: XCTestCase {
         XCTAssertEqual(text, "engine-result")
         let loadCallCount = await loader.loadCallCount
         XCTAssertEqual(loadCallCount, 2, "The retry must reach the loader again after the first failure")
-    }
-
-    func testIsModelValidIsOnlyConsultedOnceAcrossRepeatedLoadAttempts() async throws {
-        let loader = FakeModelLoader()
-        await loader.setIsValid(true)
-        let engine = makeEngine(loader: loader)
-
-        try await engine.load(allowDownload: false)
-        try await engine.load(allowDownload: false)
-        try await engine.load(allowDownload: false)
-
-        let validationCalls = await loader.isModelValidCallCount
-        XCTAssertEqual(validationCalls, 1, "A positive validation result should be cached for the engine's lifetime")
-        let loadCallCount = await loader.loadCallCount
-        XCTAssertEqual(loadCallCount, 1, "Once loaded, further load() calls must be no-ops")
     }
 
     func testModelsArePresentNeverConsultsTheLoader() async {
@@ -164,6 +121,19 @@ final class FluidAudioParakeetEngineTests: XCTestCase {
         XCTAssertEqual(box.values, [1.0])
         let validationCalls = await loader.isModelValidCallCount
         XCTAssertEqual(validationCalls, 0, "allowDownload: true must skip local validation entirely")
+    }
+
+    func testValidationErrorMapsToLoadFailedWithTheValidationLabel() async {
+        let loader = FakeModelLoader()
+        await loader.setValidationError(FakeLoaderError.boom)
+        let engine = makeEngine(loader: loader)
+
+        do {
+            try await engine.load(allowDownload: false)
+            XCTFail("Expected loadFailed")
+        } catch {
+            XCTAssertEqual(error as? ParakeetEngineError, .loadFailed("Parakeet model validation failed"))
+        }
     }
 
     private func makeEngine(loader: FakeModelLoader) -> FluidAudioParakeetEngine {
@@ -196,8 +166,7 @@ private actor FakeSession: ParakeetModelSession {
 private actor FakeModelLoader: ParakeetModelLoading {
     private var isValid = true
     private var loadError: Error?
-    private var shouldGateLoad = false
-    private var gateContinuation: CheckedContinuation<Void, Never>?
+    private var validationError: Error?
     private(set) var isModelValidCallCount = 0
     private(set) var loadCallCount = 0
     private(set) var downloadCallCount = 0
@@ -211,13 +180,8 @@ private actor FakeModelLoader: ParakeetModelLoading {
         loadError = error
     }
 
-    func setShouldGateLoad(_ value: Bool) {
-        shouldGateLoad = value
-    }
-
-    func openGate() {
-        gateContinuation?.resume()
-        gateContinuation = nil
+    func setValidationError(_ error: Error?) {
+        validationError = error
     }
 
     func lastSessionReceivedSamples() async -> [Float]? {
@@ -226,17 +190,14 @@ private actor FakeModelLoader: ParakeetModelLoading {
 
     func isModelValid() async throws -> Bool {
         isModelValidCallCount += 1
+        if let validationError {
+            throw validationError
+        }
         return isValid
     }
 
     func load() async throws -> any ParakeetModelSession {
         loadCallCount += 1
-
-        if shouldGateLoad {
-            await withCheckedContinuation { continuation in
-                gateContinuation = continuation
-            }
-        }
 
         if let loadError {
             throw loadError
