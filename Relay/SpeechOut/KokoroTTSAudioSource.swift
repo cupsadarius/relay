@@ -5,8 +5,7 @@ import Foundation
 struct KokoroTTSAudioSource: TTSAudioSource {
     private static let maxAdaptiveSplitDepth = 8
 
-    private let source: TTSAudioPipe.Source
-    private let producer: Task<Void, Never>
+    private let piped: PipedTTSAudioSource
 
     init(
         engine: any KokoroEngine,
@@ -17,38 +16,28 @@ struct KokoroTTSAudioSource: TTSAudioSource {
         highWatermark: TimeInterval = 30,
         lowWatermark: TimeInterval = 15
     ) {
-        let pipe = TTSAudioPipe.make(highWatermark: highWatermark, lowWatermark: lowWatermark)
-        source = pipe.source
-        producer = Task {
-            do {
-                for chunk in chunks {
-                    try Task.checkCancellation()
-                    try await Self.produce(
-                        chunk: chunk,
-                        depth: 0,
-                        engine: engine,
-                        voice: voice,
-                        speed: speed,
-                        framer: framer,
-                        sink: pipe.sink
-                    )
-                }
-                await pipe.sink.finish()
-            } catch is CancellationError {
-                await pipe.sink.cancel()
-            } catch {
-                await pipe.sink.fail(error)
+        piped = PipedTTSAudioSource(highWatermark: highWatermark, lowWatermark: lowWatermark) { sink in
+            for chunk in chunks {
+                try Task.checkCancellation()
+                try await Self.produce(
+                    chunk: chunk,
+                    depth: 0,
+                    engine: engine,
+                    voice: voice,
+                    speed: speed,
+                    framer: framer,
+                    sink: sink
+                )
             }
         }
     }
 
     func next() async throws -> TTSAudioFrame? {
-        try await source.next()
+        try await piped.next()
     }
 
     func cancel() async {
-        producer.cancel()
-        await source.cancel()
+        await piped.cancel()
     }
 
     private static func produce(

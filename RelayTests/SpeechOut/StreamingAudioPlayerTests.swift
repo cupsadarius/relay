@@ -734,39 +734,20 @@ extension StreamingAudioPlayer {
     }
 }
 
-/// Feeds a raw `[Float]` frame stream into a `TTSAudioPipe` from a background task, keeping the
-/// non-`Sendable` stream iterator wholly inside that task. Test-only replacement for the production
-/// `LegacyFloatStreamAudioSource` deleted when every backend began producing a `TTSAudioSource`.
-private final class FloatStreamTestSource: TTSAudioSource {
-    private let source: TTSAudioPipe.Source
-    private let feeder: Task<Void, Never>
+/// Feeds a raw `[Float]` frame stream into a pipe, keeping the stream iterator inside the
+/// producer task.
+private struct FloatStreamTestSource: TTSAudioSource {
+    private let piped: PipedTTSAudioSource
 
     init(frames: AsyncThrowingStream<[Float], Error>, sampleRate: Double) {
-        let (sink, source) = TTSAudioPipe.make()
-        self.source = source
-        feeder = Task {
-            do {
-                for try await samples in frames {
-                    try await sink.yield(TTSAudioFrame(
-                        samples: samples,
-                        format: TTSAudioFormat(sampleRate: sampleRate, channelCount: 1)
-                    ))
-                }
-                await sink.finish()
-            } catch is CancellationError {
-                await sink.cancel()
-            } catch {
-                await sink.fail(error)
+        let format = TTSAudioFormat(sampleRate: sampleRate, channelCount: 1)
+        piped = PipedTTSAudioSource { sink in
+            for try await samples in frames {
+                try await sink.yield(TTSAudioFrame(samples: samples, format: format))
             }
         }
     }
 
-    func next() async throws -> TTSAudioFrame? {
-        try await source.next()
-    }
-
-    func cancel() async {
-        feeder.cancel()
-        await source.cancel()
-    }
+    func next() async throws -> TTSAudioFrame? { try await piped.next() }
+    func cancel() async { await piped.cancel() }
 }
