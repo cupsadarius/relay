@@ -22,19 +22,14 @@ struct AVAudioPCMBufferConverter: AppleSpeechBufferConverting {
         let sampleRate = inputFormat.sampleRate
         guard sampleRate > 0 else { throw ConversionError.unsupportedFormat }
 
-        // Already non-interleaved Float32: interleave directly.
         if inputFormat.commonFormat == .pcmFormatFloat32, !inputFormat.isInterleaved,
            let channels = buffer.floatChannelData {
-            let frameLength = Int(buffer.frameLength)
-            var interleaved = [Float](repeating: 0, count: frameLength * channelCount)
-            for channel in 0..<channelCount {
-                let source = channels[channel]
-                for index in 0..<frameLength {
-                    interleaved[index * channelCount + channel] = source[index]
-                }
-            }
             return TTSAudioFrame(
-                samples: interleaved,
+                samples: AudioBufferUtilities.interleave(
+                    channels,
+                    channelCount: channelCount,
+                    frameLength: Int(buffer.frameLength)
+                ),
                 format: TTSAudioFormat(sampleRate: sampleRate, channelCount: channelCount)
             )
         }
@@ -54,7 +49,10 @@ struct AVAudioPCMBufferConverter: AppleSpeechBufferConverting {
             frameCapacity: max(buffer.frameCapacity, buffer.frameLength)
         ) else { throw ConversionError.allocationFailed }
 
-        try convert(buffer, to: outputBuffer, using: converter)
+        let result = AudioBufferUtilities.convert(buffer, into: outputBuffer, using: converter)
+        if result.status == .error {
+            throw result.error ?? ConversionError.conversionFailed
+        }
 
         let frameLength = Int(outputBuffer.frameLength)
         guard let interleavedData = outputBuffer.floatChannelData else {
@@ -68,34 +66,6 @@ struct AVAudioPCMBufferConverter: AppleSpeechBufferConverting {
         )
     }
 
-    private func convert(
-        _ input: AVAudioPCMBuffer,
-        to output: AVAudioPCMBuffer,
-        using converter: AVAudioConverter
-    ) throws {
-        let state = SingleBufferInput(buffer: input)
-        var conversionError: NSError?
-        let status = converter.convert(to: output, error: &conversionError) { _, inputStatus in
-            if state.consumed {
-                inputStatus.pointee = .noDataNow
-                return nil
-            }
-            state.consumed = true
-            inputStatus.pointee = .haveData
-            return state.buffer
-        }
-        if status == .error {
-            throw conversionError ?? ConversionError.conversionFailed
-        }
-    }
-
-    /// Boxes the single input buffer for `AVAudioConverter`'s `@Sendable`-imported input block,
-    /// which is only ever called synchronously on the calling thread.
-    private final class SingleBufferInput: @unchecked Sendable {
-        var consumed = false
-        let buffer: AVAudioPCMBuffer
-        init(buffer: AVAudioPCMBuffer) { self.buffer = buffer }
-    }
 }
 
 /// Produces PCM from `AVSpeechSynthesizer.write(_:toBufferCallback:)`. Each source owns a

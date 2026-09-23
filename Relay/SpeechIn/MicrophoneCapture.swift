@@ -24,17 +24,6 @@ protocol MicrophoneSampleStreaming: Sendable {
     func setSampleObserver(_ observer: (@Sendable ([Float]) -> Void)?) async
 }
 
-/// Reduces a batch of raw audio samples to a single normalized loudness value for the activity
-/// overlay's level meter. Never exposes the samples themselves.
-enum MicrophoneLevelMeter {
-    static func normalized(samples: [Float]) -> Float {
-        guard !samples.isEmpty else { return 0 }
-        let meanSquare = samples.reduce(0) { $0 + $1 * $1 } / Float(samples.count)
-        let rms = sqrt(meanSquare)
-        return min(max(rms * 4, 0), 1)
-    }
-}
-
 protocol AudioCaptureSourcing: Sendable {
     /// `stop` does not return until no future sample callbacks can be accepted.
     func start(
@@ -148,7 +137,7 @@ actor MicrophoneCapture: MicrophoneCapturing, MicrophoneSampleStreaming {
             try await source.start(
                 onSamples: { [accumulator] samples in
                     accumulator.append(samples)
-                    onLevel(MicrophoneLevelMeter.normalized(samples: samples))
+                    onLevel(AudioBufferUtilities.level(of: samples))
                     sampleTap?(samples)
                 },
                 onTerminalError: { [weak self] error in
@@ -409,11 +398,9 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, AudioInputFormatR
                 return
             }
 
-            let supplier = AVAudioInputBufferSupplier(buffer: buffer)
-            var conversionError: NSError?
-            let status = converter.convert(to: output, error: &conversionError) { _, inputStatus in
-                supplier.next(inputStatus: inputStatus)
-            }
+            let result = AudioBufferUtilities.convert(buffer, into: output, using: converter)
+            let status = result.status
+            let conversionError = result.error
 
             switch AudioConversionDisposition.resolve(
                 status: status,
@@ -442,26 +429,5 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, AudioInputFormatR
         engine.stop()
         isCapturing = false
         Task { await onTerminalError(error) }
-    }
-}
-
-/// AVFoundation invokes the converter input closure synchronously for this conversion.
-/// This wrapper keeps the non-Sendable PCM buffer inside the lock-protected audio callback boundary.
-private final class AVAudioInputBufferSupplier: @unchecked Sendable {
-    private let buffer: AVAudioPCMBuffer
-    private var supplied = false
-
-    init(buffer: AVAudioPCMBuffer) {
-        self.buffer = buffer
-    }
-
-    func next(inputStatus: UnsafeMutablePointer<AVAudioConverterInputStatus>) -> AVAudioBuffer? {
-        guard !supplied else {
-            inputStatus.pointee = .noDataNow
-            return nil
-        }
-        supplied = true
-        inputStatus.pointee = .haveData
-        return buffer
     }
 }

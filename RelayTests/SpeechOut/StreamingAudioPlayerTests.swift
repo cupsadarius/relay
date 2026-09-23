@@ -2,39 +2,11 @@ import AVFoundation
 import XCTest
 @testable import Relay
 
-/// `level(forFrame:)` tests run unconditionally: they're pure and never touch `AVAudioEngine`.
 /// Tests that exercise real playback are gated behind `requireAudioOutput()` and skip themselves
 /// with `XCTSkip` on a host with no usable audio output device: keep audio-producing assertions
 /// capability-gated.
 @MainActor
 final class StreamingAudioPlayerTests: XCTestCase {
-    // MARK: - Unconditional: level(forFrame:)
-
-    func testLevelOfSilentFrameIsZero() {
-        let level = StreamingAudioPlayer.level(forFrame: [Float](repeating: 0, count: 1_920))
-
-        XCTAssertEqual(level, 0)
-    }
-
-    func testLevelOfEmptyFrameIsZero() {
-        XCTAssertEqual(StreamingAudioPlayer.level(forFrame: []), 0)
-    }
-
-    func testLevelOfFullScaleFrameClampsToOne() {
-        let level = StreamingAudioPlayer.level(forFrame: [Float](repeating: 1, count: 1_920))
-
-        XCTAssertEqual(level, 1)
-    }
-
-    func testLevelOfMidAmplitudeFrameScalesByGainFour() {
-        // RMS of a constant-amplitude signal equals the amplitude itself, so the result should be
-        // exactly amplitude * 4 (the level gain the player applies).
-        let amplitude: Float = 0.2
-        let level = StreamingAudioPlayer.level(forFrame: [Float](repeating: amplitude, count: 1_920))
-
-        XCTAssertEqual(level, amplitude * 4, accuracy: 0.0001)
-    }
-
     // MARK: - Source + demand semantics (headless, via a fake output node)
 
     func testShortSourceEmitsStartedThenFinishedAfterPlayback() async throws {

@@ -18,11 +18,6 @@ final class MicrophoneCaptureStateTests: XCTestCase {
         XCTAssertEqual(AudioConversionDisposition.resolve(status: .error, hasConversionError: false, frameLength: 0), .fail)
         XCTAssertEqual(AudioConversionDisposition.resolve(status: .endOfStream, hasConversionError: false, frameLength: 0), .fail)
     }
-    func testLevelMeterNormalizesRMSWithoutExposingSamples() {
-        XCTAssertEqual(MicrophoneLevelMeter.normalized(samples: [0, 0]), 0)
-        XCTAssertEqual(MicrophoneLevelMeter.normalized(samples: [1, -1]), 1)
-    }
-
     func testStartEmitsNormalizedLevelForEachAcceptedSampleBatch() async throws {
         let source = FakeAudioSource()
         let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)

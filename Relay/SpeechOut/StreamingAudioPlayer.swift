@@ -63,19 +63,6 @@ final class AVEngineOutputNode: AudioOutputNode {
     }
 }
 
-/// Carries the mutable "already provided input" flag and the source buffer across the boundary into
-/// `AVAudioConverter`'s `@Sendable`-imported input block, which `convert(to:error:withInputFrom:)`
-/// in fact only ever calls synchronously on the calling thread. `@unchecked` because that
-/// synchronous contract is what actually makes it safe, not anything the type system can verify.
-private final class ConversionInputState: @unchecked Sendable {
-    var providedInput = false
-    let sourceBuffer: AVAudioPCMBuffer
-
-    init(sourceBuffer: AVAudioPCMBuffer) {
-        self.sourceBuffer = sourceBuffer
-    }
-}
-
 /// Errors raised by `StreamingAudioPlayer` itself (as opposed to ones AVFoundation raises while
 /// building the engine graph or converting a buffer, which are propagated as-is).
 enum StreamingAudioPlayerError: Error, Equatable, Sendable {
@@ -94,9 +81,6 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
         let level: Float
     }
 
-    /// Empirical gain applied to the RMS level so the pill's speaking waveform reads well across
-    /// backends; it is deliberately shared by every source feeding this one player.
-    private static nonisolated let levelGain: Float = 4
     /// How much audio to buffer before starting playback, trading a little latency for headroom
     /// against synthesis briefly falling behind real time.
     private static let prebufferSeconds: TimeInterval = 0.6
@@ -187,7 +171,7 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
                 let pendingBuffer = PendingBuffer(
                     buffer: converted,
                     duration: Double(converted.frameLength) / converted.format.sampleRate,
-                    level: Self.level(forFrame: frame.samples)
+                    level: AudioBufferUtilities.level(of: frame.samples)
                 )
 
                 if started {
@@ -388,21 +372,8 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
         ) else { throw StreamingAudioPlayerError.bufferAllocationFailed }
         sourceBuffer.frameLength = AVAudioFrameCount(framesPerChannel)
 
-        // Deinterleave the shared interleaved Float32 samples into the non-interleaved source buffer.
         if let channels = sourceBuffer.floatChannelData {
-            frame.samples.withUnsafeBufferPointer { pointer in
-                guard let base = pointer.baseAddress else { return }
-                if channelCount == 1 {
-                    channels[0].update(from: base, count: framesPerChannel)
-                } else {
-                    for channel in 0..<channelCount {
-                        let destination = channels[channel]
-                        for index in 0..<framesPerChannel {
-                            destination[index] = base[index * channelCount + channel]
-                        }
-                    }
-                }
-            }
+            AudioBufferUtilities.deinterleave(frame.samples, channelCount: channelCount, into: channels)
         }
 
         let ratio = outputFormat.sampleRate / sourceFormat.sampleRate
@@ -411,19 +382,9 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
             throw StreamingAudioPlayerError.bufferAllocationFailed
         }
 
-        let inputState = ConversionInputState(sourceBuffer: sourceBuffer)
-        var conversionError: NSError?
-        let status = converter.convert(to: outputBuffer, error: &conversionError) { _, inputStatus in
-            if inputState.providedInput {
-                inputStatus.pointee = .noDataNow
-                return nil
-            }
-            inputState.providedInput = true
-            inputStatus.pointee = .haveData
-            return inputState.sourceBuffer
-        }
-        guard status != .error else {
-            throw conversionError ?? StreamingAudioPlayerError.conversionFailed
+        let result = AudioBufferUtilities.convert(sourceBuffer, into: outputBuffer, using: converter)
+        guard result.status != .error else {
+            throw result.error ?? StreamingAudioPlayerError.conversionFailed
         }
         return outputBuffer
     }
@@ -460,20 +421,6 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
         guard let continuation = startContinuation else { return }
         startContinuation = nil
         continuation.resume(throwing: error)
-    }
-
-    // MARK: - Levels
-
-    /// Computes a single frame's `.level` value: RMS scaled by `levelGain`, clamped to `0...1` - the
-    /// same scaling the pill's waveform expects regardless of which source is driving it. Pure and
-    /// `nonisolated` so it can be unit tested without a working audio output device.
-    nonisolated static func level(forFrame samples: [Float]) -> Float {
-        guard !samples.isEmpty else { return 0 }
-        var sumOfSquares: Float = 0
-        for sample in samples {
-            sumOfSquares += sample * sample
-        }
-        return min(max(sqrt(sumOfSquares / Float(samples.count)) * levelGain, 0), 1)
     }
 }
 

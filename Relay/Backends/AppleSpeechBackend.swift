@@ -239,35 +239,10 @@ private enum AppleSpeechRuntime {
             throw SpeechBackendError.inferenceFailed("Unable to allocate converted Apple Speech input")
         }
 
-        let inputSupplier = AudioBufferInputSupplier(inputBuffer)
-        var conversionError: NSError?
-        let status = converter.convert(to: outputBuffer, error: &conversionError) { _, outputStatus in
-            guard let suppliedBuffer = inputSupplier.next() else {
-                outputStatus.pointee = .endOfStream
-                return nil
-            }
-            outputStatus.pointee = .haveData
-            return suppliedBuffer
-        }
-        guard status != .error, conversionError == nil, outputBuffer.frameLength > 0 else {
+        let result = AudioBufferUtilities.convert(inputBuffer, into: outputBuffer, using: converter, exhaustedStatus: .endOfStream)
+        guard result.status != .error, result.error == nil, outputBuffer.frameLength > 0 else {
             throw SpeechBackendError.inferenceFailed("Unable to convert Apple Speech input")
         }
         return outputBuffer
-    }
-}
-
-private final class AudioBufferInputSupplier: @unchecked Sendable {
-    private let lock = NSLock()
-    private var buffer: AVAudioPCMBuffer?
-
-    init(_ buffer: AVAudioPCMBuffer) {
-        self.buffer = buffer
-    }
-
-    func next() -> AVAudioPCMBuffer? {
-        lock.lock()
-        defer { lock.unlock() }
-        defer { buffer = nil }
-        return buffer
     }
 }
