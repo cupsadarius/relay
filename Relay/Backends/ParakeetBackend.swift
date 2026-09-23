@@ -44,9 +44,6 @@ extension ParakeetEngine {
 final class ParakeetBackend: SpeechToTextBackend {
     let id = "parakeet"
     let displayName = "Parakeet"
-    let capabilities = STTCapabilities([
-        .fullyOffline,
-    ])
 
     private let engine: any ParakeetEngine
 
@@ -56,10 +53,6 @@ final class ParakeetBackend: SpeechToTextBackend {
 
     func availability() async -> BackendAvailability {
         await engine.modelsArePresent() ? .available : .modelNotDownloaded
-    }
-
-    func prepare() async throws {
-        try await ensureLoaded()
     }
 
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {

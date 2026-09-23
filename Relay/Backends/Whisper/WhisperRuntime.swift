@@ -148,8 +148,8 @@ struct WhisperKitEngine: WhisperEngine {
 /// A model downloaded before this change lacks the tokenizer files and must be re-downloaded (its
 /// `.verified` manifest won't list them, so `presence(of:)` now correctly reports it as not
 /// downloaded). This closes the gap for any NEWLY downloaded model; the owner should still verify
-/// one real activation with the network genuinely disabled before relying on `.fullyOffline` in
-/// `WhisperBackend.capabilities` in production.
+/// one real activation with the network genuinely disabled before relying on Whisper being fully
+/// offline in production.
 struct WhisperKitContext: LoadedWhisperContext, @unchecked Sendable {
     private let whisperKit: WhisperKit
 

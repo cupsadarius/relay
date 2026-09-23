@@ -11,10 +11,6 @@ import Foundation
 final class PocketTTSBackend: TextToSpeechBackend {
     let id = "pocket-tts"
     let displayName = "PocketTTS"
-    let capabilities = TTSCapabilities([
-        .fullyOffline,
-        .voiceSelection,
-    ])
 
     private let engine: any PocketTTSEngine
 

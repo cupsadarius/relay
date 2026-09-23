@@ -1,10 +1,9 @@
 import Foundation
 import os
 
-/// Reads which Whisper model is currently selected, synchronously. `WhisperBackend.capabilities`
-/// is a plain synchronous getter (protocol requirement) and `availability()` needs the selected
-/// id without awaiting `AppSettings`, so selection is exposed through this narrow closure-based
-/// seam rather than an async read of app settings.
+/// Reads which Whisper model is currently selected, synchronously. `availability()` needs the
+/// selected id without awaiting `AppSettings`, so selection is exposed through this narrow
+/// closure-based seam rather than an async read of app settings.
 typealias WhisperModelSelection = @Sendable () -> WhisperModelID?
 
 /// On-device speech-to-text backend built on WhisperKit's CoreML port of OpenAI Whisper. Fully
@@ -19,10 +18,6 @@ typealias WhisperModelSelection = @Sendable () -> WhisperModelID?
 actor WhisperBackend: SpeechToTextBackend {
     nonisolated let id = "whisper"
     nonisolated let displayName = "OpenAI Whisper"
-    /// Advertised statically regardless of which model is currently selected: the backend as a
-    /// whole supports multilingual transcription (the catalog includes multilingual models), and
-    /// this is a synchronous getter that cannot await the selection to vary per-model.
-    nonisolated let capabilities = STTCapabilities([.fullyOffline, .multilingual])
 
     private let store: WhisperModelStore
     private let runtime: WhisperRuntime
@@ -46,10 +41,6 @@ actor WhisperBackend: SpeechToTextBackend {
             return .modelNotDownloaded
         }
         return store.presence(of: modelID) ? .available : .modelNotDownloaded
-    }
-
-    func prepare() async throws {
-        try await ensureLoaded()
     }
 
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {

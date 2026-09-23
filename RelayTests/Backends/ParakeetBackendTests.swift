@@ -10,19 +10,6 @@ final class ParakeetBackendTests: XCTestCase {
         XCTAssertEqual(backend.displayName, "Parakeet")
     }
 
-    func testCapabilitiesIncludeFullyOffline() {
-        let backend = ParakeetBackend(engine: FakeParakeetEngine())
-
-        XCTAssertTrue(backend.capabilities.contains(.fullyOffline))
-    }
-
-    func testCapabilitiesDoNotAdvertiseMultilingual() {
-        let backend = ParakeetBackend(engine: FakeParakeetEngine())
-
-        XCTAssertFalse(backend.capabilities.contains(.multilingual))
-        XCTAssertTrue(backend.capabilities.contains(.fullyOffline))
-    }
-
     func testAvailabilityIsModelNotDownloadedWhenModelsAreAbsent() async {
         let engine = FakeParakeetEngine()
         engine.modelsPresent = false
@@ -101,16 +88,6 @@ final class ParakeetBackendTests: XCTestCase {
             XCTAssertEqual(error as? SpeechBackendError, .invalidInput)
         }
         XCTAssertTrue(engine.loadCalls.isEmpty, "Should not attempt to load the engine for the wrong sample rate")
-    }
-
-    func testPrepareTriggersEngineLoadWithoutAllowingDownload() async throws {
-        let engine = FakeParakeetEngine()
-        engine.modelsPresent = true
-        let backend = ParakeetBackend(engine: engine)
-
-        try await backend.prepare()
-
-        XCTAssertEqual(engine.loadCalls, [false])
     }
 
     func testTranscribeLazilyLoadsWhenNotYetPrepared() async throws {
@@ -197,20 +174,6 @@ final class ParakeetBackendTests: XCTestCase {
         XCTAssertEqual(engine.loadCalls, [false, false], "A failed load must not block a later retry")
     }
 
-    func testPrepareMapsLoadFailedToInitializationFailed() async {
-        let engine = FakeParakeetEngine()
-        engine.modelsPresent = true
-        engine.loadError = ParakeetEngineError.loadFailed("boom")
-        let backend = ParakeetBackend(engine: engine)
-
-        do {
-            try await backend.prepare()
-            XCTFail("Expected initializationFailed")
-        } catch {
-            XCTAssertEqual(error as? SpeechBackendError, .initializationFailed("boom"))
-        }
-    }
-
     func testTranscribeMapsEngineTranscriptionFailureToInferenceFailed() async {
         let engine = FakeParakeetEngine()
         engine.modelsPresent = true
@@ -278,22 +241,6 @@ final class ParakeetBackendTests: XCTestCase {
             XCTFail("Expected cancellation")
         } catch is CancellationError {
             // Expected: cancellation remains distinguishable from initialization failure.
-        } catch {
-            XCTFail("Expected cancellation, got \(error)")
-        }
-    }
-
-    func testPreparePreservesCancellationFromLoad() async {
-        let engine = FakeParakeetEngine()
-        engine.modelsPresent = true
-        engine.loadError = CancellationError()
-        let backend = ParakeetBackend(engine: engine)
-
-        do {
-            try await backend.prepare()
-            XCTFail("Expected cancellation")
-        } catch is CancellationError {
-            // Expected.
         } catch {
             XCTFail("Expected cancellation, got \(error)")
         }

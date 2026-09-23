@@ -60,25 +60,6 @@ final class AppleSpeechBackendTests: XCTestCase {
         )
     }
 
-    func testPrepareMapsAssetPreparationFailureToInitializationFailure() async {
-        let backend = AppleSpeechBackend(
-            isMacOS26OrLater: { true },
-            isSpeechTranscriberAvailable: { true },
-            prepareAssets: { _ in throw TestFailure.failed },
-            transcribeAudio: { _, _ in "unused" }
-        )
-
-        do {
-            try await backend.prepare()
-            XCTFail("Expected initialization failure")
-        } catch {
-            XCTAssertEqual(
-                error as? SpeechBackendError,
-                .initializationFailed("Apple Speech preparation failed")
-            )
-        }
-    }
-
     func testTranscribeMapsAnalysisFailureToInferenceFailure() async {
         let backend = AppleSpeechBackend(
             isMacOS26OrLater: { true },

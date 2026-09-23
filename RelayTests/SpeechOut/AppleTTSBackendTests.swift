@@ -11,13 +11,6 @@ final class AppleTTSBackendTests: XCTestCase {
         XCTAssertEqual(backend.displayName, "Apple System Voice")
     }
 
-    func testAppleBackendReportsSupportedCapabilities() {
-        let backend = makeBackend()
-
-        XCTAssertTrue(backend.capabilities.contains(.voiceSelection))
-        XCTAssertTrue(backend.capabilities.contains(.fullyOffline))
-    }
-
     func testAvailabilityIsAlwaysAvailable() async {
         let backend = makeBackend()
 

@@ -104,7 +104,7 @@ struct WhisperModelManager: SpeechModelManaging {
 
     /// Updates the selection only. Never downloads and never loads: selecting a not-downloaded
     /// id is valid (selection and installed state are independent), and it is each caller's own
-    /// job (e.g. a "Download" button, or `WhisperBackend.prepare()`'s on-demand activation) to
+    /// job (e.g. a "Download" button, or `WhisperBackend.transcribe`'s on-demand activation) to
     /// decide when a selection should actually be fetched or loaded.
     func selectModel(_ id: String) async throws {
         let modelID = try Self.modelID(for: id)

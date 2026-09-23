@@ -24,10 +24,6 @@ extension AVSpeechSynthesizer: AppleSpeechSynthesizing {}
 final class AppleTTSBackend: TextToSpeechBackend {
     let id = "apple-tts"
     let displayName = "Apple System Voice"
-    let capabilities = TTSCapabilities([
-        .voiceSelection,
-        .fullyOffline,
-    ])
 
     /// Builds a fresh synthesizer per `makeAudioSource` call so each speech attempt's Apple
     /// callbacks are isolated - a cancelled attempt's late buffers cannot leak into a later one.

@@ -937,12 +937,10 @@ private actor LevelCapturingMicrophone: MicrophoneCapturing {
 private final class AudioRecordingBackend: SpeechToTextBackend {
     let id = "audio-recording"
     let displayName = "Audio Recording"
-    let capabilities = STTCapabilities([])
     private(set) var callCount = 0
     private(set) var lastSamples: [Float] = []
 
     func availability() async -> BackendAvailability { .available }
-    func prepare() async throws {}
 
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
         callCount += 1
@@ -989,7 +987,6 @@ private actor GatedRecordingBackend {
 private final class GatedFakeBackend: SpeechToTextBackend {
     let id = "gated"
     let displayName = "Gated"
-    let capabilities = STTCapabilities([])
     private let recorder: GatedRecordingBackend
 
     init(recorder: GatedRecordingBackend) {
@@ -997,7 +994,6 @@ private final class GatedFakeBackend: SpeechToTextBackend {
     }
 
     func availability() async -> BackendAvailability { .available }
-    func prepare() async throws {}
 
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
         let callID = await recorder.recordStart()
@@ -1031,7 +1027,6 @@ private actor InterimStaleResultGate {
 private final class FirstCallGatedThenImmediateBackend: SpeechToTextBackend {
     let id = "first-call-gated"
     let displayName = "First Call Gated"
-    let capabilities = STTCapabilities([])
     private let gate: InterimStaleResultGate
     private let finalText: String
     private(set) var callCount = 0
@@ -1042,7 +1037,6 @@ private final class FirstCallGatedThenImmediateBackend: SpeechToTextBackend {
     }
 
     func availability() async -> BackendAvailability { .available }
-    func prepare() async throws {}
 
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
         callCount += 1
@@ -1106,13 +1100,11 @@ private actor SampleStreamingFakeMicrophone: MicrophoneCapturing, MicrophoneSamp
 private final class FakeBackend: SpeechToTextBackend {
     let id = "fake"
     let displayName = "Fake"
-    let capabilities = STTCapabilities([])
     let events: EventLog
     let transcript: String
     let error: SpeechBackendError?
     init(events: EventLog, transcript: String, error: SpeechBackendError?) { self.events = events; self.transcript = transcript; self.error = error }
     func availability() async -> BackendAvailability { .available }
-    func prepare() async throws {}
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript { events.append("stt.transcribe"); if let error { throw error }; return Transcript(text: transcript, backendID: id) }
 }
 
@@ -1122,7 +1114,6 @@ private final class FakeBackend: SpeechToTextBackend {
 private final class NamedFakeBackend: SpeechToTextBackend {
     let id: String
     let displayName: String
-    let capabilities = STTCapabilities([])
     let events: EventLog
     let transcript: String
     let error: SpeechBackendError?
@@ -1135,7 +1126,6 @@ private final class NamedFakeBackend: SpeechToTextBackend {
     }
     var availabilityValue: BackendAvailability = .available
     func availability() async -> BackendAvailability { availabilityValue }
-    func prepare() async throws {}
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
         events.append("stt.transcribe.\(id)")
         if let error { throw error }
@@ -1151,13 +1141,11 @@ private final class NamedFakeBackend: SpeechToTextBackend {
 private final class BlockingBackend: SpeechToTextBackend, @unchecked Sendable {
     let id = "blocking"
     let displayName = "Blocking"
-    let capabilities = STTCapabilities([])
     private let lock = NSLock()
     private var pending: [CheckedContinuation<Transcript, Error>] = []
     private var cancellations = 0
 
     func availability() async -> BackendAvailability { .available }
-    func prepare() async throws {}
 
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
         try await withTaskCancellationHandler {
@@ -1189,7 +1177,6 @@ private final class BlockingBackend: SpeechToTextBackend, @unchecked Sendable {
 private final class BlockingAvailabilityBackend: SpeechToTextBackend, @unchecked Sendable {
     let id = "blocking-availability"
     let displayName = "Blocking Availability"
-    let capabilities = STTCapabilities([])
     private let lock = NSLock()
     private var callCount = 0
     private var waiter: CheckedContinuation<Void, Never>?
@@ -1206,8 +1193,6 @@ private final class BlockingAvailabilityBackend: SpeechToTextBackend, @unchecked
         }
         return .available
     }
-
-    func prepare() async throws {}
 
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
         Transcript(text: "hello relay", backendID: id)

@@ -1140,7 +1140,6 @@ final class AppModelTests: XCTestCase {
             (.unsupportedHardware, .unsupported),
             (.permissionDenied, .unavailable),
             (.unavailable("some reason"), .unavailable),
-            (.initializing, .unavailable),
             (.failed("boom"), .unavailable),
         ]
 
@@ -1344,7 +1343,6 @@ private enum TestError: Error {
 private actor FakeSTTBackend: SpeechToTextBackend {
     nonisolated let id: String
     nonisolated let displayName: String
-    nonisolated let capabilities = STTCapabilities([])
     private var availabilityResult: BackendAvailability
     private var shouldBlockAvailability = false
     private(set) var availabilityCallCount = 0
@@ -1375,8 +1373,6 @@ private actor FakeSTTBackend: SpeechToTextBackend {
         availabilityContinuation?.resume()
         availabilityContinuation = nil
     }
-
-    func prepare() async throws {}
 
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
         Transcript(text: "", backendID: id)

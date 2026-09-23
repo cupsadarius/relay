@@ -455,7 +455,6 @@ final class FakePlayer: StreamingAudioPlaying {
 final class FakeTTSBackend: TextToSpeechBackend {
     let id: String
     let displayName: String
-    let capabilities = TTSCapabilities([])
     var availabilityValue: BackendAvailability = .available
     /// Thrown from `makeAudioSource`.
     var error: Error?

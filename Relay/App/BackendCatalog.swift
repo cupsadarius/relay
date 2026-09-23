@@ -121,7 +121,7 @@ enum BackendCatalog<Backend> {
             .modelNotDownloaded
         case .unsupportedOS, .unsupportedHardware:
             .unsupported
-        case .permissionDenied, .unavailable, .initializing, .failed:
+        case .permissionDenied, .unavailable, .failed:
             .unavailable
         }
     }

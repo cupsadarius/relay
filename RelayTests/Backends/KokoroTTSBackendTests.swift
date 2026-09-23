@@ -11,13 +11,6 @@ final class KokoroTTSBackendTests: XCTestCase {
         XCTAssertEqual(backend.displayName, "Kokoro")
     }
 
-    func testCapabilities() {
-        let backend = KokoroTTSBackend(engine: FakeKokoroEngine())
-
-        XCTAssertTrue(backend.capabilities.contains(.fullyOffline))
-        XCTAssertTrue(backend.capabilities.contains(.voiceSelection))
-    }
-
     func testAvailabilityIsAvailableWhenModelsArePresent() async {
         let engine = FakeKokoroEngine()
         engine.modelsPresent = true

@@ -113,8 +113,6 @@ final class STTRouter {
             .skip(.unsupportedOS)
         case .unsupportedHardware:
             .skip(.unsupportedHardware)
-        case .initializing:
-            .skip(.unavailable("Backend is initializing"))
         case .failed(let reason):
             .skip(.initializationFailed(reason))
         }

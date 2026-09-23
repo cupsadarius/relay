@@ -10,10 +10,6 @@ import Foundation
 final class KokoroTTSBackend: TextToSpeechBackend {
     let id = "kokoro"
     let displayName = "Kokoro"
-    let capabilities = TTSCapabilities([
-        .fullyOffline,
-        .voiceSelection,
-    ])
 
     private let engine: any KokoroEngine
 

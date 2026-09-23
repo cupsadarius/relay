@@ -7,6 +7,5 @@ enum BackendAvailability: Equatable, Sendable {
     case permissionDenied
     case unsupportedOS
     case unsupportedHardware
-    case initializing
     case failed(String)
 }

@@ -11,13 +11,6 @@ final class PocketTTSBackendTests: XCTestCase {
         XCTAssertEqual(backend.displayName, "PocketTTS")
     }
 
-    func testCapabilities() {
-        let backend = PocketTTSBackend(engine: FakePocketTTSEngine())
-
-        XCTAssertTrue(backend.capabilities.contains(.fullyOffline))
-        XCTAssertTrue(backend.capabilities.contains(.voiceSelection))
-    }
-
     func testAvailabilityIsAvailableWhenModelsArePresent() async {
         let engine = FakePocketTTSEngine()
         engine.modelsPresent = true

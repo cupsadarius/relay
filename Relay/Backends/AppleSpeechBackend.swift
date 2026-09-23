@@ -5,10 +5,6 @@ import Speech
 final class AppleSpeechBackend: SpeechToTextBackend {
     let id = "apple-speech"
     let displayName = "Apple Speech"
-    let capabilities = STTCapabilities([
-        .multilingual,
-        .fullyOffline,
-    ])
 
     private let isMacOS26OrLater: @Sendable () -> Bool
     private let isSpeechTranscriberAvailable: @Sendable () async -> Bool
@@ -32,29 +28,6 @@ final class AppleSpeechBackend: SpeechToTextBackend {
             return .unsupportedOS
         }
         return await isSpeechTranscriberAvailable() ? .available : .unsupportedHardware
-    }
-
-    func prepare() async throws {
-        guard isMacOS26OrLater() else {
-            throw SpeechBackendError.unsupportedOS
-        }
-        guard await isSpeechTranscriberAvailable() else {
-            throw SpeechBackendError.unsupportedHardware
-        }
-        guard #available(macOS 26.0, *) else {
-            throw SpeechBackendError.unsupportedOS
-        }
-
-        do {
-            try await prepareAssets(.current)
-            try Task.checkCancellation()
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch let error as SpeechBackendError {
-            throw error
-        } catch {
-            throw SpeechBackendError.initializationFailed("Apple Speech preparation failed")
-        }
     }
 
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {

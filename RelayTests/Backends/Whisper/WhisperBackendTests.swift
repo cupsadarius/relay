@@ -142,9 +142,4 @@ final class WhisperBackendTests: XCTestCase {
             XCTFail("expected a SpeechBackendError, got \(error)")
         }
     }
-
-    func testCapabilitiesAdvertiseOfflineAndMultilingual() {
-        XCTAssertTrue(backend.capabilities.contains(.fullyOffline))
-        XCTAssertTrue(backend.capabilities.contains(.multilingual))
-    }
 }

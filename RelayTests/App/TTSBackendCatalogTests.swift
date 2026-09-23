@@ -124,7 +124,6 @@ final class TTSBackendCatalogTests: XCTestCase {
             (.unsupportedHardware, .unsupported),
             (.permissionDenied, .unavailable),
             (.unavailable("some reason"), .unavailable),
-            (.initializing, .unavailable),
             (.failed("boom"), .unavailable),
         ]
 
@@ -182,7 +181,6 @@ private enum TestCatalogError: Error, Equatable {
 private final class FakeTTSCatalogBackend: TextToSpeechBackend {
     nonisolated let id: String
     nonisolated let displayName: String
-    let capabilities = TTSCapabilities([])
     private var availabilityValue: BackendAvailability
     private var shouldBlockAvailability = false
     private(set) var availabilityCallCount = 0

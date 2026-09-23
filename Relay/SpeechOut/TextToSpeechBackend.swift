@@ -26,7 +26,6 @@ enum TTSPlaybackEvent: Equatable, Sendable {
 protocol TextToSpeechBackend: AnyObject {
     var id: String { get }
     var displayName: String { get }
-    var capabilities: TTSCapabilities { get }
 
     func availability() async -> BackendAvailability
 

@@ -82,7 +82,6 @@ final class STTRouterTests: XCTestCase {
             (.unsupportedOS, .unsupportedOS),
             (.unsupportedHardware, .unsupportedHardware),
             (.failed("setup failed"), .initializationFailed("setup failed")),
-            (.initializing, .unavailable("Backend is initializing")),
         ]
 
         for (availability, expectedError) in cases {
@@ -340,7 +339,6 @@ final class STTRouterTests: XCTestCase {
 private final class FakeSTTBackend: SpeechToTextBackend {
     let id: String
     let displayName: String
-    let capabilities = STTCapabilities([])
     var availabilityValue: BackendAvailability = .available
     var error: SpeechBackendError?
     private(set) var transcriptionCount = 0
@@ -356,7 +354,6 @@ private final class FakeSTTBackend: SpeechToTextBackend {
         availabilityCallCount += 1
         return availabilityValue
     }
-    func prepare() async throws {}
 
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
         transcriptionCount += 1
