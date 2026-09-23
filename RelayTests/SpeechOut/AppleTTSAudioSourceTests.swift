@@ -187,14 +187,11 @@ private struct ScriptedConverter: AppleSpeechBufferConverting {
 
 @MainActor
 private final class FakeWriteSynthesizer: AppleSpeechSynthesizing {
-    var delegate: AVSpeechSynthesizerDelegate?
     private(set) var writtenUtterances: [AVSpeechUtterance] = []
     private(set) var stopCount = 0
     private var callback: AVSpeechSynthesizer.BufferCallback?
 
     var hasCallback: Bool { callback != nil }
-
-    func speak(_ utterance: AVSpeechUtterance) {}
 
     func write(_ utterance: AVSpeechUtterance, toBufferCallback bufferCallback: @escaping AVSpeechSynthesizer.BufferCallback) {
         writtenUtterances.append(utterance)
@@ -205,9 +202,6 @@ private final class FakeWriteSynthesizer: AppleSpeechSynthesizing {
         stopCount += 1
         return true
     }
-
-    func pauseSpeaking(at boundary: AVSpeechBoundary) -> Bool { true }
-    func continueSpeaking() -> Bool { true }
 
     func fire(_ buffer: AVAudioPCMBuffer) {
         callback?(buffer)

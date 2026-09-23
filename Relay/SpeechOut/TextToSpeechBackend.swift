@@ -1,7 +1,6 @@
 import Foundation
 
 enum TTSPlaybackEvent: Equatable, Sendable {
-    case scheduled(sessionID: UUID)
     case started(sessionID: UUID)
     case level(sessionID: UUID, level: Float)
     case finished(sessionID: UUID)
@@ -10,8 +9,7 @@ enum TTSPlaybackEvent: Equatable, Sendable {
 
     var sessionID: UUID {
         switch self {
-        case let .scheduled(sessionID),
-             let .started(sessionID),
+        case let .started(sessionID),
              let .finished(sessionID),
              let .cancelled(sessionID),
              let .failed(sessionID):

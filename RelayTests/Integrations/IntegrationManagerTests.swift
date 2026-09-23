@@ -573,6 +573,7 @@ private final class FakeSpeechCoordinator: SpeechCoordinating {
     func speak(_ request: SpeechRequest) async throws {
         requests.append(request)
     }
+    func previewVoice(text: String, backendID: String, options: TTSOptions) async throws {}
     func stop() {}
     func stop(sessionID: UUID) {}
     func replayLast() async throws {}

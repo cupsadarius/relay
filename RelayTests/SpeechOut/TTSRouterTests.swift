@@ -132,23 +132,6 @@ final class TTSRouterTests: XCTestCase {
         XCTAssertEqual(second.spoken.map(\.text), ["hello"])
     }
 
-    // MARK: One-session `.scheduled`
-
-    func testScheduledEmittedExactlyOnceAcrossFallbackAttempts() async throws {
-        let first = FakeTTSBackend(id: "first")
-        first.error = SpeechBackendError.inferenceFailed("boom")
-        let second = FakeTTSBackend(id: "second")
-        let router = makeRouter([first, second])
-
-        var events: [TTSPlaybackEvent] = []
-        router.setPlaybackEventHandler { event, _ in events.append(event) }
-
-        let sessionID = UUID()
-        try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
-
-        XCTAssertEqual(events, [.scheduled(sessionID: sessionID)])
-    }
-
     // MARK: Commit-on-started
 
     func testFirstStartedCommitsBackend() async throws {
@@ -229,19 +212,6 @@ final class TTSRouterTests: XCTestCase {
         router.stop()
 
         XCTAssertEqual(player.stopCount, 1)
-    }
-
-    func testPauseAndResumeDelegateToPlayer() async throws {
-        let backend = FakeTTSBackend(id: "apple")
-        let player = FakePlayer()
-        let router = makeRouter([backend], player: player)
-
-        try await router.speak(text: "hello", options: .init(), sessionID: UUID())
-        router.pause()
-        router.resume()
-
-        XCTAssertEqual(player.pauseCount, 1)
-        XCTAssertEqual(player.resumeCount, 1)
     }
 
     func testSessionSpecificStopIgnoresStaleID() async throws {
@@ -376,8 +346,6 @@ final class FakePlayer: StreamingAudioPlaying {
 
     private(set) var started: [(source: any TTSAudioSource, sessionID: UUID)] = []
     private(set) var stopCount = 0
-    private(set) var pauseCount = 0
-    private(set) var resumeCount = 0
 
     /// Thrown from the next `startPlayback`, simulating a pre-`.started` player failure.
     var failNextStart: Error?
@@ -430,9 +398,6 @@ final class FakePlayer: StreamingAudioPlaying {
             stopContinuation.resume()
         }
     }
-
-    func pause() { pauseCount += 1 }
-    func resume() { resumeCount += 1 }
 
     /// Fires a lifecycle event through the router's installed handler, updating the fake's own
     /// active-session tracking so a subsequent idle `stop()` correctly no-ops.
@@ -497,8 +462,6 @@ final class FakeTTSBackend: TextToSpeechBackend {
     }
 
     var stopCount: Int { player.stopCount }
-    var pauseCount: Int { player.pauseCount }
-    var resumeCount: Int { player.resumeCount }
 
     var duringSpeak: (@MainActor (UUID) -> Void)? {
         get { player.duringStart }

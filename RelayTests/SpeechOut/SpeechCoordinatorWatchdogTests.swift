@@ -110,9 +110,8 @@ final class SpeechCoordinatorWatchdogTests: XCTestCase {
         XCTAssertEqual(backend.spoken.map(\.text), ["wedged", "after"])
     }
 
-    /// Regression test: on some backends (`StreamingAudioPlayer`/`PocketTTS`), `stop()` emits its
-    /// terminal event SYNCHRONOUSLY and reentrantly, from inside `stop()` itself, before it
-    /// returns - unlike AppleTTS, whose delegate callback arrives later, asynchronously. If the
+    /// Regression test: the shared `StreamingAudioPlayer`'s `stop()` emits its terminal event
+    /// SYNCHRONOUSLY and reentrantly, from inside `stop()` itself, before it returns. If the
     /// watchdog called `router.stop()` before retiring its own session tracking, that reentrant
     /// `.cancelled` would race ahead of the watchdog's own `.failed` report: it clears the
     /// overlay's active session (silently no-oping the subsequent `overlay.fail(...)`) and

@@ -302,6 +302,7 @@ private final class NoOpSelectionReader: SelectionReading {
 @MainActor
 private final class NoOpSpeechCoordinator: SpeechCoordinating {
     func speak(_ request: SpeechRequest) async throws {}
+    func previewVoice(text: String, backendID: String, options: TTSOptions) async throws {}
     func stop() {}
     func stop(sessionID: UUID) {}
     func replayLast() async throws {}

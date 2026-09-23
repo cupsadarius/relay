@@ -9,14 +9,6 @@ protocol SpeechCoordinating: AnyObject {
     func replayLast() async throws
 }
 
-enum SpeechPreviewError: Error { case unsupported }
-
-extension SpeechCoordinating {
-    func previewVoice(text: String, backendID: String, options: TTSOptions) async throws {
-        throw SpeechPreviewError.unsupported
-    }
-}
-
 /// A narrow submission-only view of `SpeechCoordinating`, used by callers (like
 /// `AgentAutoReadCoordinator`) that only ever need to submit a `SpeechRequest` and have no
 /// business stopping or replaying speech.
@@ -75,13 +67,10 @@ final class SpeechCoordinator: SpeechCoordinating {
     /// legitimate finish; replaced (not merely cancelled) whenever a new session starts.
     private var watchdogTask: Task<Void, Never>?
     /// Set to a session ID only for the duration of `handleWatchdogExpiry(sessionID:)`'s call to
-    /// `router.stop()`, and `nil` otherwise. Some backends (`StreamingAudioPlayer`/`PocketTTS`)
-    /// emit their terminal event SYNCHRONOUSLY and reentrantly from inside `stop()`, before it
-    /// returns; `handle(_:backend:)` ignores any event for this session while it's set, so that
-    /// reentrant terminal can't race the watchdog's own `.failed` overlay update or double-drain
-    /// the queue. (AppleTTS's delegate callback is asynchronous, so this window has already
-    /// closed by the time its terminal event arrives — this exists purely for the synchronous
-    /// case.)
+    /// `router.stop()`, and `nil` otherwise. The shared `StreamingAudioPlayer` emits its terminal
+    /// `.cancelled` SYNCHRONOUSLY and reentrantly from inside `stop()`, before it returns;
+    /// `handle(_:backend:)` ignores any event for this session while it's set, so that reentrant
+    /// terminal can't race the watchdog's own `.failed` overlay update or double-drain the queue.
     private var watchdogRetiringSessionID: UUID?
     /// Automatic-mode sessions that have not yet been shown in the overlay.
     /// Showing them only once playback actually starts (or fails) avoids
@@ -261,15 +250,13 @@ final class SpeechCoordinator: SpeechCoordinating {
     /// the same MainActor turn) - before treating it as abandoned.
     ///
     /// Retires this session's own tracking BEFORE calling `router.stop()`, rather than going
-    /// through `finishInFlightSession(_:)` afterwards: a synchronous-terminal backend
-    /// (`StreamingAudioPlayer`/`PocketTTS`) emits `.cancelled` reentrantly from inside `stop()`,
-    /// and `watchdogRetiringSessionID` makes `handle(_:backend:)` ignore it for that call's
-    /// duration. Without both of these, that reentrant `.cancelled` would race ahead of this
-    /// method's own `.failed` report — clearing the overlay's `activeSessionID` (so the
-    /// subsequent `overlay.fail(...)` below silently no-ops) and dequeuing the next request itself
-    /// (so the drain at the end here would double it). Retiring first and suppressing the
-    /// reentrant event makes both of those impossible, on every backend regardless of whether its
-    /// `stop()` reports synchronously or asynchronously.
+    /// through `finishInFlightSession(_:)` afterwards: the shared `StreamingAudioPlayer` emits
+    /// `.cancelled` reentrantly from inside `stop()`, and `watchdogRetiringSessionID` makes
+    /// `handle(_:backend:)` ignore it for that call's duration. Without both of these, that
+    /// reentrant `.cancelled` would race ahead of this method's own `.failed` report — clearing
+    /// the overlay's `activeSessionID` (so the subsequent `overlay.fail(...)` below silently
+    /// no-ops) and dequeuing the next request itself (so the drain at the end here would double
+    /// it). Retiring first and suppressing the reentrant event makes both of those impossible.
     private func handleWatchdogExpiry(sessionID: UUID) {
         guard sessionID == currentSessionID else { return }
         cancelWatchdog()
@@ -343,8 +330,6 @@ final class SpeechCoordinator: SpeechCoordinating {
         // comment.
         guard event.sessionID != watchdogRetiringSessionID else { return }
         switch event {
-        case .scheduled:
-            break
         case let .started(sessionID):
             recordPlaybackProgress(sessionID: sessionID)
             if pendingAutomaticSessions.remove(sessionID) != nil {

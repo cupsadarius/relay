@@ -4,7 +4,7 @@ import Foundation
 /// The single production playback seam. `TTSRouter` drives one shared player for every provider:
 /// a backend produces a provider-neutral `TTSAudioSource`, the player pulls PCM frames from it,
 /// converts them to the output device format, and schedules them - emitting the standard
-/// `TTSPlaybackEvent` lifecycle (`scheduled -> started -> level* -> finished|cancelled|failed`).
+/// `TTSPlaybackEvent` lifecycle (`started -> level* -> finished|cancelled|failed`).
 ///
 /// `startPlayback(_:sessionID:)` returns as soon as playback has actually started (after
 /// prebuffering, or immediately once an empty/short source ends before reaching the prebuffer
@@ -18,8 +18,6 @@ protocol StreamingAudioPlaying: AnyObject {
     var onEvent: (@MainActor (TTSPlaybackEvent) -> Void)? { get set }
     func startPlayback(_ source: any TTSAudioSource, sessionID: UUID) async throws
     func stop()
-    func pause()
-    func resume()
 }
 
 /// The audio-output device seam. Production wraps `AVAudioEngine`/`AVAudioPlayerNode`; tests inject
@@ -31,7 +29,6 @@ protocol AudioOutputNode: AnyObject {
     var outputFormat: AVAudioFormat { get }
     func start() throws
     func play()
-    func pause()
     func stop()
     func schedule(_ buffer: AVAudioPCMBuffer, onPlayed: @escaping @Sendable @MainActor () -> Void)
 }
@@ -53,7 +50,6 @@ final class AVEngineOutputNode: AudioOutputNode {
 
     func start() throws { try engine.start() }
     func play() { playerNode.play() }
-    func pause() { playerNode.pause() }
 
     func stop() {
         playerNode.stop()
@@ -157,8 +153,6 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
         started = false
         explicitlyStopped = false
 
-        onEvent?(.scheduled(sessionID: sessionID))
-
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             startContinuation = continuation
             pumpTask = Task { @MainActor [weak self] in
@@ -179,14 +173,6 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
         if let source {
             Task { await source.cancel() }
         }
-    }
-
-    func pause() {
-        outputNode?.pause()
-    }
-
-    func resume() {
-        outputNode?.play()
     }
 
     // MARK: - Pump

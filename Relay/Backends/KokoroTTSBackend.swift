@@ -5,7 +5,7 @@ import Foundation
 /// its model is downloaded. It is a pure audio producer: `makeAudioSource` phonemizes the full
 /// text, chunks it into phoneme-safe segments, and returns a `KokoroTTSAudioSource` that
 /// synthesizes them sequentially. `TTSRouter` drives the shared `StreamingAudioPlayer` with that
-/// source; the backend owns no speakers, pause/resume, or playback events.
+/// source; the backend owns no speakers or playback events.
 @MainActor
 final class KokoroTTSBackend: TextToSpeechBackend {
     let id = "kokoro"

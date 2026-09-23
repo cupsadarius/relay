@@ -213,7 +213,7 @@ final class AppleSpeechBufferBridge: @unchecked Sendable {
 /// Produces PCM from `AVSpeechSynthesizer.write(_:toBufferCallback:)`. Each source owns a dedicated
 /// synthesizer so a cancelled attempt's late callbacks cannot leak into a later session. Generation
 /// and playback are fully separated: this only generates PCM; the shared `StreamingAudioPlayer`
-/// owns speakers, pause/resume, and metering.
+/// owns speakers and metering.
 final class AppleTTSAudioSource: TTSAudioSource, @unchecked Sendable {
     private let synthesizer: any AppleSpeechSynthesizing
     private let converter: any AppleSpeechBufferConverting

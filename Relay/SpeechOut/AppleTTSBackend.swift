@@ -5,21 +5,15 @@ import Foundation
 /// through the real system voice.
 @MainActor
 protocol AppleSpeechSynthesizing: AnyObject {
-    /// Must be held weakly by conforming types, matching `AVSpeechSynthesizer`'s own delegate
-    /// property.
-    var delegate: AVSpeechSynthesizerDelegate? { get set }
-    func speak(_ utterance: AVSpeechUtterance)
     func write(_ utterance: AVSpeechUtterance, toBufferCallback bufferCallback: @escaping AVSpeechSynthesizer.BufferCallback)
     func stopSpeaking(at boundary: AVSpeechBoundary) -> Bool
-    func pauseSpeaking(at boundary: AVSpeechBoundary) -> Bool
-    func continueSpeaking() -> Bool
 }
 
 extension AVSpeechSynthesizer: AppleSpeechSynthesizing {}
 
 /// Apple's on-device TTS backend as a pure audio producer. `makeAudioSource` builds an
 /// `AppleTTSAudioSource` over `AVSpeechSynthesizer.write`; `TTSRouter` drives the shared
-/// `StreamingAudioPlayer` with it. The backend owns no speakers, pause/resume, or playback events.
+/// `StreamingAudioPlayer` with it. The backend owns no speakers or playback events.
 @MainActor
 final class AppleTTSBackend: TextToSpeechBackend {
     let id = "apple-tts"

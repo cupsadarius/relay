@@ -74,13 +74,8 @@ private final class SynthesizerCounter {
 
 @MainActor
 private final class FakeAppleSynthesizer: AppleSpeechSynthesizing {
-    weak var delegate: AVSpeechSynthesizerDelegate?
-
-    func speak(_ utterance: AVSpeechUtterance) {}
     func write(_ utterance: AVSpeechUtterance, toBufferCallback bufferCallback: @escaping AVSpeechSynthesizer.BufferCallback) {}
     func stopSpeaking(at boundary: AVSpeechBoundary) -> Bool { true }
-    func pauseSpeaking(at boundary: AVSpeechBoundary) -> Bool { true }
-    func continueSpeaking() -> Bool { true }
 }
 
 private struct FakeBufferConverter: AppleSpeechBufferConverting {

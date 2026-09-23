@@ -42,6 +42,7 @@ private final class FakeDispatchedDictationCoordinator: DictationCoordinating {
 private final class FakeDispatchedSpeechCoordinator: SpeechCoordinating {
     private(set) var stoppedSessionIDs: [UUID] = []
     func speak(_ request: SpeechRequest) async throws {}
+    func previewVoice(text: String, backendID: String, options: TTSOptions) async throws {}
     func stop() {}
     func stop(sessionID: UUID) { stoppedSessionIDs.append(sessionID) }
     func replayLast() async throws {}

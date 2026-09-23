@@ -7,22 +7,19 @@ import Foundation
 /// Fallback is allowed only BEFORE audible playback starts (backend unavailable, `makeAudioSource`
 /// failure, or a pre-`.started` player failure). Once the player emits `.started` the backend is
 /// committed for that session: a later failure ends the session as `.failed` and never restarts the
-/// response in another voice. `.scheduled` is emitted exactly once per Relay speech session, not
-/// once per backend attempt.
+/// response in another voice.
 @MainActor
 final class TTSRouter {
     private let backends: [String: any TextToSpeechBackend]
     private let backendOrder: () -> [String]
     private let player: any StreamingAudioPlaying
 
-    /// The backend/source pair for the session the player is currently driving. Assigned BEFORE
+    /// The backend for the session the player is currently driving. Assigned BEFORE
     /// `startPlayback` because the player emits `.started` (committing the backend) while
     /// `startPlayback` is still suspended - `forward` needs the candidate set at that point.
     private struct CandidatePlayback {
         let backend: any TextToSpeechBackend
-        let source: any TTSAudioSource
         let sessionID: UUID
-        var committed: Bool
     }
 
     private var candidate: CandidatePlayback?
@@ -48,7 +45,7 @@ final class TTSRouter {
     }
 
     /// Installs the single downstream listener for playback lifecycle events. Router-emitted
-    /// `.scheduled`/`.failed` carry a `nil` backend (they are emitted before, or independently of, a
+    /// `.failed` carries a `nil` backend (it is emitted before, or independently of, a
     /// committed backend); player-sourced events carry the committed backend.
     func setPlaybackEventHandler(
         _ handler: @escaping @MainActor (TTSPlaybackEvent, (any TextToSpeechBackend)?) -> Void
@@ -69,10 +66,6 @@ final class TTSRouter {
             // A newer `speak` may already own `routingSessionID`; only clear our own.
             if routingSessionID == sessionID { routingSessionID = nil }
         }
-        // Emitted exactly once per Relay speech session, before any backend attempt, so fallback
-        // attempts never duplicate it.
-        eventHandler?(.scheduled(sessionID: sessionID), nil)
-
         var lastError: SpeechBackendError = .unavailable("No TTS backend is available")
 
         let candidateIDs = preferredBackendID.map { [$0] } ?? backendOrder()
@@ -106,12 +99,7 @@ final class TTSRouter {
                 throw CancellationError()
             }
 
-            candidate = CandidatePlayback(
-                backend: backend,
-                source: source,
-                sessionID: sessionID,
-                committed: false
-            )
+            candidate = CandidatePlayback(backend: backend, sessionID: sessionID)
 
             do {
                 try await player.startPlayback(source, sessionID: sessionID)
@@ -160,14 +148,6 @@ final class TTSRouter {
         return true
     }
 
-    func pause() {
-        player.pause()
-    }
-
-    func resume() {
-        player.resume()
-    }
-
     private func clearCandidate(sessionID: UUID) {
         if candidate?.sessionID == sessionID {
             candidate = nil
@@ -175,15 +155,9 @@ final class TTSRouter {
     }
 
     private func forward(_ event: TTSPlaybackEvent) {
-        guard var candidate, event.sessionID == candidate.sessionID else { return }
+        guard let candidate, event.sessionID == candidate.sessionID else { return }
         switch event {
-        case .scheduled:
-            // The router already emitted `.scheduled` once for the session; the player's own
-            // per-start `.scheduled` is suppressed so fallback cannot duplicate it.
-            return
         case .started:
-            candidate.committed = true
-            self.candidate = candidate
             eventHandler?(event, candidate.backend)
         case .level:
             eventHandler?(event, candidate.backend)

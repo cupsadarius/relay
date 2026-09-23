@@ -822,6 +822,7 @@ private final class FakeSpeechCoordinator: SpeechCoordinating {
         requests.append(request)
         if let speakError { throw speakError }
     }
+    func previewVoice(text: String, backendID: String, options: TTSOptions) async throws {}
     func stop() {}
     func stop(sessionID: UUID) {}
     func replayLast() async throws {}
