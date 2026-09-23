@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   # Cancel superseded PR runs only; every push to main runs to completion.
@@ -78,6 +81,7 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild test -scheme Relay -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -resultBundlePath "$RUNNER_TEMP/Relay.xcresult" \
             CODE_SIGNING_ALLOWED=NO \
             | xcbeautify --renderer github-actions
