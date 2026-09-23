@@ -55,24 +55,24 @@ final class ClaudeCodeInstallerTests: XCTestCase {
     // MARK: - Identification logic
 
     func testRelayOwnedCommandRecognizedRegardlessOfAbsolutePath() {
-        XCTAssertTrue(ClaudeCodeInstaller.isRelayOwnedCommand(
+        XCTAssertTrue(ClaudeCodeInstaller.isRelayHookCommand(
             "\"/Applications/Relay.app/Contents/Helpers/RelayHook\" --provider claude-code"
         ))
-        XCTAssertTrue(ClaudeCodeInstaller.isRelayOwnedCommand(
+        XCTAssertTrue(ClaudeCodeInstaller.isRelayHookCommand(
             "\"/Users/me/Downloads/Relay 2.app/Contents/Helpers/RelayHook\" --provider claude-code"
         ))
     }
 
     func testUnrelatedCommandsAreNotRecognizedAsRelayOwned() {
-        XCTAssertFalse(ClaudeCodeInstaller.isRelayOwnedCommand("echo hello"))
-        XCTAssertFalse(ClaudeCodeInstaller.isRelayOwnedCommand(
+        XCTAssertFalse(ClaudeCodeInstaller.isRelayHookCommand("echo hello"))
+        XCTAssertFalse(ClaudeCodeInstaller.isRelayHookCommand(
             "\"/usr/local/bin/some-other-tool\" --provider claude-code"
         ))
-        XCTAssertFalse(ClaudeCodeInstaller.isRelayOwnedCommand(
+        XCTAssertFalse(ClaudeCodeInstaller.isRelayHookCommand(
             "\"/Applications/Relay.app/Contents/Helpers/RelayHook\" --provider codex"
         ))
         // Same basename, but not the Relay flag suffix.
-        XCTAssertFalse(ClaudeCodeInstaller.isRelayOwnedCommand(
+        XCTAssertFalse(ClaudeCodeInstaller.isRelayHookCommand(
             "\"/Applications/Relay.app/Contents/Helpers/RelayHook\""
         ))
     }
@@ -143,5 +143,27 @@ final class ClaudeCodeInstallerTests: XCTestCase {
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: otherTemp.appendingPathComponent("settings.json").path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: settingsURL.path))
+    }
+
+    func testDebugAndReleaseInstallersCoexistInOneSettingsFile() throws {
+        let release = ClaudeCodeInstaller(
+            baseDirectory: tempDirectory,
+            helperPath: RelayPaths.stableHelperURL(flavor: .release).path,
+            migratesLegacyEntries: true
+        )
+        let debug = ClaudeCodeInstaller(
+            baseDirectory: tempDirectory,
+            helperPath: RelayPaths.stableHelperURL(flavor: .debug).path,
+            migratesLegacyEntries: false
+        )
+
+        try release.install()
+        try debug.install()
+        XCTAssertEqual(try release.status(), .installedAwaitingFirstEvent)
+        XCTAssertEqual(try debug.status(), .installedAwaitingFirstEvent)
+
+        try debug.uninstall()
+        XCTAssertEqual(try release.status(), .installedAwaitingFirstEvent)
+        XCTAssertEqual(try debug.status(), .notInstalled)
     }
 }

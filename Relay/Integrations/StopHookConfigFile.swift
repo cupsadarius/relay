@@ -18,10 +18,11 @@ enum IntegrationInstallerError: Error, Equatable, Sendable {
 /// Owns the read -> merge -> write cycle for the single Relay-owned `Stop` command hook inside
 /// ONE agent's JSON hook config (Claude Code's `settings.json`, Codex's `hooks.json`).
 ///
-/// Only the Relay-owned command entry — recognised structurally by
-/// `isRelayOwnedCommand(_:provider:)` (a `RelayHook` helper basename followed by the exact
-/// `--provider <raw>` suffix) — is ever added, rewritten, or removed. Every other key, hook
-/// event, matcher group, and `Stop` entry is left untouched.
+/// Ownership is per build (see `EntryOwnership`): this file only ever adds, rewrites, or removes
+/// entries pointing at `helperPath` — plus, when `migratesLegacyEntries` (Release), legacy entries
+/// from before the stable helper existed. Another build's entry, every non-Relay entry, and every
+/// other key, hook event, and matcher group are left untouched, so Debug and Release hooks
+/// coexist in one config file.
 ///
 /// Writes are conservative: a merge that changes nothing never touches the file; a symlinked
 /// config is updated at its real target (the link survives); the target's POSIX permissions are
@@ -40,33 +41,66 @@ struct StopHookConfigFile: Sendable {
     let provider: AgentProvider
     /// Absolute path of the helper THIS build installs (the stable `RelayHook` copy).
     let helperPath: String
+    /// When true (Release only, `BuildFlavor.ownsLegacyHookEntries`), entries whose helper sits
+    /// outside every `Application Support/Relay*/bin` (pre-stable-helper installs) are treated as
+    /// this build's: migrated on install when no own entry exists, removed on uninstall.
+    let migratesLegacyEntries: Bool
     /// `timeout` (seconds) written on a NEWLY appended Relay entry; `nil` writes no timeout key.
     /// An existing Relay entry's keys are never rewritten except `command`.
     let entryTimeoutSeconds: Int?
 
-    init(fileURL: URL, provider: AgentProvider, helperPath: String, entryTimeoutSeconds: Int? = nil) {
+    init(
+        fileURL: URL,
+        provider: AgentProvider,
+        helperPath: String,
+        migratesLegacyEntries: Bool,
+        entryTimeoutSeconds: Int? = nil
+    ) {
         self.fileURL = fileURL
         self.provider = provider
         self.helperPath = helperPath
+        self.migratesLegacyEntries = migratesLegacyEntries
         self.entryTimeoutSeconds = entryTimeoutSeconds
     }
 
     // MARK: - Identification
 
+    /// Whose entry a Relay hook command is, relative to THIS build.
+    enum EntryOwnership: Equatable, Sendable {
+        /// Points at exactly this build's stable helper.
+        case own
+        /// Points at another build's stable helper (`…/Application Support/Relay*/bin/RelayHook`).
+        case otherBuild
+        /// Points at a `RelayHook` anywhere else (app bundle, DerivedData) — pre-stable installs.
+        case legacy
+    }
+
     static func commandSuffix(for provider: AgentProvider) -> String {
         "--provider \(provider.rawValue)"
     }
 
-    /// True when `command` ends with the exact `--provider <raw>` suffix for `provider` and the
-    /// executable path before it has basename `RelayHook` — independent of the absolute path, so
-    /// an entry installed from a previous app location is still recognised.
-    static func isRelayOwnedCommand(_ command: String, provider: AgentProvider) -> Bool {
+    /// Structural check only: ends with the exact `--provider <raw>` suffix and the executable
+    /// before it has basename `RelayHook`. True for EVERY build's entries.
+    static func isRelayHookCommand(_ command: String, provider: AgentProvider) -> Bool {
+        helperPath(inCommand: command, provider: provider) != nil
+    }
+
+    /// The (unquoted) helper path of a Relay hook command, or `nil` if `command` is not one.
+    static func helperPath(inCommand command: String, provider: AgentProvider) -> String? {
         let suffix = commandSuffix(for: provider)
-        guard command.hasSuffix(suffix) else { return false }
+        guard command.hasSuffix(suffix) else { return nil }
         var pathPortion = String(command.dropLast(suffix.count))
         pathPortion = pathPortion.trimmingCharacters(in: .whitespaces)
         pathPortion = pathPortion.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
-        return (pathPortion as NSString).lastPathComponent == helperBasename
+        guard (pathPortion as NSString).lastPathComponent == helperBasename else { return nil }
+        return pathPortion
+    }
+
+    /// `nil` for non-Relay commands (including the other provider's).
+    func ownership(ofCommand command: String) -> EntryOwnership? {
+        guard let path = Self.helperPath(inCommand: command, provider: provider) else { return nil }
+        if path == helperPath { return .own }
+        return RelayPaths.isStableHelperPath(path) ? .otherBuild : .legacy
     }
 
     /// The exact command string Relay installs for `helperPath`.
@@ -90,9 +124,47 @@ struct StopHookConfigFile: Sendable {
         var stopGroups = try Self.validatedStopGroups(from: hooks)
 
         let command = Self.relayCommand(helperPath: helperPath, provider: provider)
-        let migrated = migratingRelayCommand(in: stopGroups, to: command)
-        stopGroups = migrated.stopGroups
-        if !migrated.foundRelayEntry {
+        let hasOwnEntry = stopGroups.contains { group in
+            Self.entries(in: group).contains { ownership(ofEntry: $0) == .own }
+        }
+        let adoptsLegacy = migratesLegacyEntries && !hasOwnEntry
+        func pointedAtUs(_ entry: [String: Any]) -> [String: Any] {
+            guard entry["command"] as? String != command else { return entry }
+            var updatedEntry = entry
+            updatedEntry["command"] = command
+            return updatedEntry
+        }
+        var rewroteAny = false
+        var migratedLegacy = false
+        stopGroups = stopGroups.compactMap { group -> [String: Any]? in
+            guard let hookEntries = group["hooks"] as? [[String: Any]] else { return group }
+            let updatedEntries = hookEntries.compactMap { entry -> [String: Any]? in
+                switch ownership(ofEntry: entry) {
+                case .own:
+                    rewroteAny = true
+                    return pointedAtUs(entry)
+                case .legacy where adoptsLegacy:
+                    // The first legacy entry becomes ours in place (keeping its timeout etc.).
+                    // Any further legacy entries would be duplicates that each fire the hook, so
+                    // they are dropped.
+                    guard !migratedLegacy else { return nil }
+                    migratedLegacy = true
+                    rewroteAny = true
+                    return pointedAtUs(entry)
+                default:
+                    return entry
+                }
+            }
+            // A group emptied by dropping duplicates is removed only if it has no other keys
+            // (for example a matcher), mirroring `uninstall()`.
+            if updatedEntries.isEmpty, !hookEntries.isEmpty, group.keys.allSatisfy({ $0 == "hooks" }) {
+                return nil
+            }
+            var updatedGroup = group
+            updatedGroup["hooks"] = updatedEntries
+            return updatedGroup
+        }
+        if !rewroteAny {
             stopGroups.append(["hooks": [newEntry(command: command)]])
         }
 
@@ -113,7 +185,7 @@ struct StopHookConfigFile: Sendable {
         var didRemoveAnyRelayEntry = false
         stopGroups = stopGroups.compactMap { group -> [String: Any]? in
             guard let hookEntries = group["hooks"] as? [[String: Any]] else { return group }
-            let filteredEntries = hookEntries.filter { !isRelayEntry($0) }
+            let filteredEntries = hookEntries.filter { !isRemovable($0) }
             if filteredEntries.count == hookEntries.count { return group }
             didRemoveAnyRelayEntry = true
             if filteredEntries.isEmpty && group.keys.count == 1 { return nil }
@@ -144,46 +216,35 @@ struct StopHookConfigFile: Sendable {
             return false
         }
         return stopGroups.contains { group in
-            (group["hooks"] as? [[String: Any]] ?? []).contains(where: isRelayEntry)
+            Self.entries(in: group).contains { ownership(ofEntry: $0) == .own }
         }
     }
 
     // MARK: - Merge helpers
 
-    private func isRelayEntry(_ entry: [String: Any]) -> Bool {
+    private func ownership(ofEntry entry: [String: Any]) -> EntryOwnership? {
         guard entry["type"] as? String == "command",
-              let command = entry["command"] as? String else { return false }
-        return Self.isRelayOwnedCommand(command, provider: provider)
+              let command = entry["command"] as? String else { return nil }
+        return ownership(ofCommand: command)
+    }
+
+    /// Entries uninstall may remove: our own, plus legacy ones when this build adopts them.
+    private func isRemovable(_ entry: [String: Any]) -> Bool {
+        switch ownership(ofEntry: entry) {
+        case .own: true
+        case .legacy: migratesLegacyEntries
+        case .otherBuild, nil: false
+        }
+    }
+
+    private static func entries(in group: [String: Any]) -> [[String: Any]] {
+        group["hooks"] as? [[String: Any]] ?? []
     }
 
     private func newEntry(command: String) -> [String: Any] {
         var entry: [String: Any] = ["type": "command", "command": command]
         if let entryTimeoutSeconds { entry["timeout"] = entryTimeoutSeconds }
         return entry
-    }
-
-    /// Rewrites the `command` of any Relay-owned entry to `command`, leaving every other entry
-    /// untouched, and reports whether a Relay-owned entry was found at all.
-    private func migratingRelayCommand(
-        in stopGroups: [[String: Any]],
-        to command: String
-    ) -> (stopGroups: [[String: Any]], foundRelayEntry: Bool) {
-        var foundRelayEntry = false
-        let updatedGroups = stopGroups.map { group -> [String: Any] in
-            guard let hookEntries = group["hooks"] as? [[String: Any]] else { return group }
-            let updatedEntries = hookEntries.map { entry -> [String: Any] in
-                guard isRelayEntry(entry) else { return entry }
-                foundRelayEntry = true
-                guard entry["command"] as? String != command else { return entry }
-                var updatedEntry = entry
-                updatedEntry["command"] = command
-                return updatedEntry
-            }
-            var updatedGroup = group
-            updatedGroup["hooks"] = updatedEntries
-            return updatedGroup
-        }
-        return (updatedGroups, foundRelayEntry)
     }
 
     /// `root["hooks"]` as an object, or `[:]` when absent. Throws `.configFileMalformed` when

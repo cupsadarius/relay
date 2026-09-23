@@ -26,7 +26,13 @@ final class StopHookConfigFileTests: XCTestCase {
     }
 
     private func makeFile(provider: AgentProvider = .claudeCode, timeout: Int? = nil) -> StopHookConfigFile {
-        StopHookConfigFile(fileURL: fileURL, provider: provider, helperPath: helperPath, entryTimeoutSeconds: timeout)
+        StopHookConfigFile(
+            fileURL: fileURL,
+            provider: provider,
+            helperPath: helperPath,
+            migratesLegacyEntries: true,
+            entryTimeoutSeconds: timeout
+        )
     }
 
     private func relayCommand(_ provider: AgentProvider = .claudeCode) -> String {
@@ -58,15 +64,15 @@ final class StopHookConfigFileTests: XCTestCase {
     // MARK: - Identification
 
     func testRelayOwnedCommandIsProviderSpecificAndPathIndependent() {
-        XCTAssertTrue(StopHookConfigFile.isRelayOwnedCommand(
+        XCTAssertTrue(StopHookConfigFile.isRelayHookCommand(
             "\"/Users/me/Downloads/Relay 2.app/Contents/Helpers/RelayHook\" --provider claude-code",
             provider: .claudeCode
         ))
-        XCTAssertFalse(StopHookConfigFile.isRelayOwnedCommand(
+        XCTAssertFalse(StopHookConfigFile.isRelayHookCommand(
             "\"/Applications/Relay.app/Contents/Helpers/RelayHook\" --provider claude-code",
             provider: .codex
         ))
-        XCTAssertFalse(StopHookConfigFile.isRelayOwnedCommand(
+        XCTAssertFalse(StopHookConfigFile.isRelayHookCommand(
             "\"/usr/local/bin/other\" --provider codex",
             provider: .codex
         ))
@@ -367,5 +373,159 @@ final class StopHookConfigFileTests: XCTestCase {
         let text = try String(contentsOf: fileURL, encoding: .utf8)
         XCTAssertTrue(text.contains("/Applications/Relay.app/Contents/Helpers/RelayHook"))
         XCTAssertFalse(text.contains(#"\/"#))
+    }
+
+    // MARK: - Per-build ownership
+
+    private let releaseHelper = "/Users/test/Library/Application Support/Relay/bin/RelayHook"
+    private let debugHelper = "/Users/test/Library/Application Support/Relay Debug/bin/RelayHook"
+    private let legacyHelper = "/Applications/Old Relay.app/Contents/Helpers/RelayHook"
+
+    private func buildFile(_ flavor: BuildFlavor) -> StopHookConfigFile {
+        StopHookConfigFile(
+            fileURL: fileURL,
+            provider: .codex,
+            helperPath: flavor == .release ? releaseHelper : debugHelper,
+            migratesLegacyEntries: flavor.ownsLegacyHookEntries,
+            entryTimeoutSeconds: 3
+        )
+    }
+
+    private func codexCommand(_ helper: String) -> String {
+        "\"\(helper)\" --provider codex"
+    }
+
+    private func writeLegacyEntry() throws {
+        try writeRaw(#"""
+        { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "\"/Applications/Old Relay.app/Contents/Helpers/RelayHook\" --provider codex", "timeout": 7 } ] } ] } }
+        """#)
+    }
+
+    func testOwnershipClassification() {
+        let debug = buildFile(.debug)
+        XCTAssertEqual(debug.ownership(ofCommand: codexCommand(debugHelper)), .own)
+        XCTAssertEqual(debug.ownership(ofCommand: codexCommand(releaseHelper)), .otherBuild)
+        XCTAssertEqual(debug.ownership(ofCommand: codexCommand(legacyHelper)), .legacy)
+        XCTAssertNil(debug.ownership(ofCommand: "echo hi"))
+        XCTAssertNil(debug.ownership(ofCommand: "\"\(debugHelper)\" --provider claude-code"))
+    }
+
+    func testDebugInstallLeavesReleaseEntryUntouchedAndBothCoexist() throws {
+        try buildFile(.release).install()
+        try buildFile(.debug).install()
+
+        XCTAssertEqual(
+            Set(commandStrings(stopGroups(try readJSON()))),
+            [codexCommand(releaseHelper), codexCommand(debugHelper)]
+        )
+    }
+
+    func testReleaseInstallLeavesDebugEntryUntouched() throws {
+        try buildFile(.debug).install()
+        try buildFile(.release).install()
+
+        XCTAssertEqual(
+            Set(commandStrings(stopGroups(try readJSON()))),
+            [codexCommand(releaseHelper), codexCommand(debugHelper)]
+        )
+    }
+
+    func testEachUninstallRemovesOnlyItsOwnEntry() throws {
+        try buildFile(.release).install()
+        try buildFile(.debug).install()
+
+        try buildFile(.debug).uninstall()
+        XCTAssertEqual(commandStrings(stopGroups(try readJSON())), [codexCommand(releaseHelper)])
+
+        try buildFile(.debug).install()
+        try buildFile(.release).uninstall()
+        XCTAssertEqual(commandStrings(stopGroups(try readJSON())), [codexCommand(debugHelper)])
+    }
+
+    func testStatusSeesOnlyTheBuildsOwnEntry() throws {
+        try buildFile(.release).install()
+        XCTAssertTrue(try buildFile(.release).containsRelayEntry())
+        XCTAssertFalse(try buildFile(.debug).containsRelayEntry())
+    }
+
+    func testReleaseMigratesLegacyEntryInPlace() throws {
+        try writeLegacyEntry()
+
+        try buildFile(.release).install()
+
+        let entries = hookEntries(stopGroups(try readJSON()))
+        XCTAssertEqual(entries.compactMap { $0["command"] as? String }, [codexCommand(releaseHelper)])
+        XCTAssertEqual(entries.first?["timeout"] as? Int, 7)
+    }
+
+    func testReleaseMigratesTheFirstOfSeveralLegacyEntriesAndDropsTheRest() throws {
+        try writeRaw(#"""
+        { "hooks": { "Stop": [
+          { "hooks": [ { "type": "command", "command": "\"/Applications/Old Relay.app/Contents/Helpers/RelayHook\" --provider codex", "timeout": 7 } ] },
+          { "hooks": [ { "type": "command", "command": "\"/Users/test/Library/Developer/Xcode/DerivedData/Relay-abc/Build/Products/Debug/Relay.app/Contents/Helpers/RelayHook\" --provider codex" } ] },
+          { "matcher": "keep", "hooks": [ { "type": "command", "command": "echo other" } ] }
+        ] } }
+        """#)
+
+        try buildFile(.release).install()
+
+        let groups = stopGroups(try readJSON())
+        XCTAssertEqual(commandStrings(groups).filter { $0.contains("RelayHook") }, [codexCommand(releaseHelper)], "no duplicate Relay entries")
+        XCTAssertEqual(hookEntries(groups).first?["timeout"] as? Int, 7, "the first legacy entry is the one migrated in place")
+        XCTAssertEqual(groups.count, 2, "the emptied legacy-only group is dropped; the unrelated group stays")
+        XCTAssertTrue(commandStrings(groups).contains("echo other"))
+    }
+
+    func testDebugNeverMigratesLegacyEntry() throws {
+        try writeLegacyEntry()
+
+        try buildFile(.debug).install()
+
+        XCTAssertEqual(
+            Set(commandStrings(stopGroups(try readJSON()))),
+            [codexCommand(legacyHelper), codexCommand(debugHelper)]
+        )
+    }
+
+    func testOnlyReleaseUninstallRemovesLegacyEntry() throws {
+        try writeLegacyEntry()
+        let before = try Data(contentsOf: fileURL)
+
+        try buildFile(.debug).uninstall()
+        XCTAssertEqual(try Data(contentsOf: fileURL), before)
+
+        try buildFile(.release).uninstall()
+        XCTAssertNil(try readJSON()["hooks"])
+    }
+
+    func testLegacyEntryIsNotReportedAsInstalled() throws {
+        try writeLegacyEntry()
+        XCTAssertFalse(try buildFile(.release).containsRelayEntry())
+    }
+
+    func testReleaseMigratesLegacyOnceAndNeverTouchesTheDebugEntry() throws {
+        try writeLegacyEntry()
+        try buildFile(.debug).install()          // legacy + debug
+        try buildFile(.release).install()        // migrates legacy -> release
+        try buildFile(.release).install()        // no-op
+
+        XCTAssertEqual(
+            Set(commandStrings(stopGroups(try readJSON()))),
+            [codexCommand(releaseHelper), codexCommand(debugHelper)]
+        )
+    }
+
+    func testReleaseLeavesLegacyEntryAloneWhenItAlreadyHasItsOwn() throws {
+        try writeRaw(#"""
+        { "hooks": { "Stop": [
+          { "hooks": [ { "type": "command", "command": "\"/Users/test/Library/Application Support/Relay/bin/RelayHook\" --provider codex" } ] },
+          { "hooks": [ { "type": "command", "command": "\"/Applications/Old Relay.app/Contents/Helpers/RelayHook\" --provider codex" } ] }
+        ] } }
+        """#)
+        let before = try Data(contentsOf: fileURL)
+
+        try buildFile(.release).install()
+
+        XCTAssertEqual(try Data(contentsOf: fileURL), before, "no duplicate own entry, no write")
     }
 }
