@@ -1,5 +1,11 @@
 # Relay Phases 1.6 & 1.7 — Settings Remodel and Kokoro TTS
 
+> **Historical — superseded.** Playback (`SynthesizedAudioPlayer`) was replaced by the
+> `TTSAudioSource` + shared `StreamingAudioPlayer` pipeline in the
+> [Unified TTS Migration Design](2026-09-19-relay-unified-tts-migration-design.md), and settings /
+> model management by the [Unified Speech Model Settings Design](2026-09-21-unified-speech-model-settings-design.md).
+> For the current architecture see the [README architecture section](../../../README.md#architecture).
+
 Date: 2026-09-15
 Status: Approved (design)
 Depends on: Phase 1.5 (Activity Overlay), Parakeet STT backend (committed `fdfda0d`)

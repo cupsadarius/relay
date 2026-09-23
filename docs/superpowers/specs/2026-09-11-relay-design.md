@@ -1,5 +1,11 @@
 # Relay Design Specification
 
+> **Historical — superseded.** This is the original 2026-09-11 design draft, kept for its
+> requirements and rationale. Its component map (§6) and several type names
+> (`RecentInteractionTracker`, `ClipboardFallback`, `LocalNeuralTTSBackend`, `WhisperKitBackend`,
+> `TmuxResolver`, …) never shipped or were renamed. For the current architecture see the
+> [README architecture section](../../../README.md#architecture).
+
 **Date:** 2026-09-11  
 **Status:** Draft for review  
 **Scope:** v1 architecture and behavior
