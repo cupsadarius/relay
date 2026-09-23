@@ -42,9 +42,13 @@ final class HotkeyController {
         ensureTap()
     }
 
-    /// Called by `SettingsController.onHotkeysChanged`.
+    /// Called by `SettingsController.onHotkeysChanged`. Also retries the event tap: editing a
+    /// hotkey is a natural moment to recover from an earlier "unavailable" status (e.g. the user
+    /// just granted Accessibility and came back to Settings to fix a binding), and re-posts the
+    /// unavailable status again if it's still not available, exactly as `ensureTap()` always does.
     func definitionsChanged(_ definitions: [HotkeyAction: HotkeyDefinition]) {
         manager.update(definitions: definitions)
+        ensureTap()
     }
 
     /// Retries the event tap (e.g. after Accessibility is granted) without touching the matcher.

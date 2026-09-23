@@ -43,6 +43,32 @@ final class HotkeyControllerTests: XCTestCase {
         XCTAssertEqual(controller.eventTapStatus, .registered)
     }
 
+    /// Editing a hotkey is a natural moment to retry a previously-unavailable tap (e.g. the user
+    /// just granted Accessibility and came back to Settings to fix a binding).
+    func testDefinitionsChangedAlsoRetriesTheEventTap() {
+        let hotkeys = SpyHotkeyManager()
+        let (controller, runtime) = makeController(hotkeys: hotkeys)
+        XCTAssertEqual(hotkeys.ensureTapCount, 1, "sanity: start() already called ensureTap once")
+
+        controller.definitionsChanged([:])
+
+        XCTAssertEqual(hotkeys.updates.last, [:])
+        XCTAssertEqual(hotkeys.ensureTapCount, 2)
+        withExtendedLifetime(runtime) {}
+    }
+
+    /// A still-unavailable tap must keep posting its status after a hotkey edit, exactly as
+    /// `ensureTap()` always does — not just retry silently.
+    func testDefinitionsChangedPostsStatusWhenTheTapIsStillUnavailable() {
+        let hotkeys = SpyHotkeyManager(status: .unavailable("Enable Accessibility permission, then reopen Relay."))
+        let (controller, runtime) = makeController(hotkeys: hotkeys)
+
+        controller.definitionsChanged([:])
+
+        XCTAssertEqual(controller.eventTapStatus, .unavailable("Enable Accessibility permission, then reopen Relay."))
+        XCTAssertEqual(runtime.status.message, "Enable Accessibility permission, then reopen Relay.")
+    }
+
     func testUnavailableTapSurfacesActionableStatus() {
         let hotkeys = SpyHotkeyManager(status: .unavailable("Enable Accessibility permission, then reopen Relay."))
         let (controller, runtime) = makeController(hotkeys: hotkeys)
