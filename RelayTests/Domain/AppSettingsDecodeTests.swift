@@ -144,4 +144,115 @@ final class AppSettingsDecodeTests: XCTestCase {
 
         XCTAssertEqual(decoded, value)
     }
+
+    /// Optional and newer fields used `try decodeIfPresent`, so a wrong-typed value threw and
+    /// `SettingsStore.load()` reset EVERY setting. Each must now fall back on its own.
+    func testWrongTypedOptionalFieldsFallBackWithoutResettingOthers() throws {
+        var saved = AppSettings.defaults
+        saved.dictationMode = .toggle
+        saved.ttsRate = 0.8
+        let encoded = try JSONEncoder().encode(saved)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object["ttsVoiceIdentifier"] = 42
+        object["kokoroVoice"] = true
+        object["pocketVoice"] = ["not", "a", "string"]
+        object["liveTranscriptionEnabled"] = "yes"
+
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+
+        XCTAssertEqual(decoded.dictationMode, .toggle)
+        XCTAssertEqual(decoded.ttsRate, 0.8, accuracy: 0.0001)
+        XCTAssertEqual(decoded.ttsVoiceIdentifier, AppSettings.defaults.ttsVoiceIdentifier)
+        XCTAssertEqual(decoded.kokoroVoice, AppSettings.defaults.kokoroVoice)
+        XCTAssertEqual(decoded.pocketVoice, AppSettings.defaults.pocketVoice)
+        XCTAssertEqual(decoded.liveTranscriptionEnabled, AppSettings.defaults.liveTranscriptionEnabled)
+    }
+
+    func testUnknownActivityOverlayStyleFallsBackToDefault() throws {
+        var saved = AppSettings.defaults
+        saved.autoReadEnabled = false
+        let encoded = try JSONEncoder().encode(saved)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object["activityOverlayStyle"] = "holographic"
+
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+
+        XCTAssertEqual(decoded.activityOverlayStyle, AppSettings.defaults.activityOverlayStyle)
+        XCTAssertFalse(decoded.autoReadEnabled)
+    }
+
+    /// Pins the on-disk format: a `[HotkeyAction: HotkeyDefinition]` encodes as a flat
+    /// `[key, value, key, value]` array, and it must keep round-tripping.
+    func testHotkeysStillEncodeAsFlatArrayAndRoundTrip() throws {
+        var saved = AppSettings.defaults
+        saved.hotkeys[.readSelection] = .chord(keyCode: 15, modifiers: [.option, .command])
+        saved.hotkeys[.dictate] = .doubleTapModifier(.control)
+        let encoded = try JSONEncoder().encode(saved)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+
+        XCTAssertNotNil(object["hotkeys"] as? [Any], "hotkeys must stay a flat array on disk")
+        XCTAssertEqual(try JSONDecoder().decode(AppSettings.self, from: encoded).hotkeys, saved.hotkeys)
+    }
+
+    func testUnknownHotkeyActionDropsOnlyThatEntry() throws {
+        var saved = AppSettings.defaults
+        saved.hotkeys[.readSelection] = .chord(keyCode: 15, modifiers: [.option, .command])
+        let encoded = try JSONEncoder().encode(saved)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        var entries = try XCTUnwrap(object["hotkeys"] as? [Any])
+        entries.append("summonDragons")
+        entries.append(["chord": ["keyCode": 1, "modifiers": [String]()]])
+        object["hotkeys"] = entries
+
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+
+        XCTAssertEqual(decoded.hotkeys, saved.hotkeys)
+    }
+
+    func testMalformedHotkeyDefinitionDropsOnlyThatEntry() throws {
+        var saved = AppSettings.defaults
+        saved.hotkeys[.readSelection] = .chord(keyCode: 15, modifiers: [.option, .command])
+        let encoded = try JSONEncoder().encode(saved)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        var entries = try XCTUnwrap(object["hotkeys"] as? [Any])
+        let dictateIndex = try XCTUnwrap(entries.firstIndex { ($0 as? String) == "dictate" })
+        entries[dictateIndex + 1] = ["bogus": 1]
+        object["hotkeys"] = entries
+
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+
+        var expected = saved.hotkeys
+        expected[.dictate] = nil
+        XCTAssertEqual(decoded.hotkeys, expected)
+    }
+
+    /// A keyed-object hotkeys map (what the dictionary would encode as if `HotkeyAction` ever
+    /// becomes `CodingKeyRepresentable`) is read too, with unknown keys dropped.
+    func testKeyedObjectHotkeysFormatIsAlsoRead() throws {
+        let encoded = try JSONEncoder().encode(AppSettings.defaults)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object["hotkeys"] = [
+            "readSelection": ["chord": ["keyCode": 15, "modifiers": ["option"]]],
+            "summonDragons": ["chord": ["keyCode": 1, "modifiers": [String]()]],
+        ]
+
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+
+        XCTAssertEqual(decoded.hotkeys, [.readSelection: .chord(keyCode: 15, modifiers: [.option])])
+    }
 }
