@@ -383,7 +383,13 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, AudioInputFormatR
         }
 
         let observer = AudioEngineConfigurationObserver(engine: engine, center: notificationCenter) { [weak self] in
-            self?.fail(MicrophoneCaptureError.unavailable("The audio input device changed."))
+            guard let self else { return }
+            // Bracket with the same gate the tap uses: if the gate is already closed (a `stop()`
+            // in flight, or a previous failure already reported), this notification is stale for
+            // the current -- or a since-superseded -- session and must not fail it.
+            guard self.gate.enter() else { return }
+            defer { self.gate.leave() }
+            self.fail(MicrophoneCaptureError.unavailable("The audio input device changed."))
         }
         stateLock.withLock { configurationObserver = observer }
     }
@@ -454,9 +460,20 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, AudioInputFormatR
     }
 
     /// Tap thread or notification thread. Reports the first failure once and queues teardown.
+    /// Also drops `configurationObserver`/`terminalErrorHandler` right away: `stop()` is the only
+    /// other place that clears them, and a failed recording's `MicrophoneCapture.stop()` never
+    /// calls into this source (it reads the recorded error and returns without touching it), so
+    /// without this they would linger -- the observer still watching for further route changes,
+    /// the handler closure still retained -- until whatever `start()` eventually replaces them.
     private func fail(_ error: Error) {
         guard gate.fail(error) else { return }
-        let handler = stateLock.withLock { terminalErrorHandler }
+        let handler = stateLock.withLock {
+            defer {
+                configurationObserver = nil
+                terminalErrorHandler = nil
+            }
+            return terminalErrorHandler
+        }
         engineQueue.async { [weak self] in self?.tearDownEngine() }
         if let handler {
             Task { await handler(error) }
