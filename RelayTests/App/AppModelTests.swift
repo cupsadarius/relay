@@ -226,6 +226,62 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.diagnosticsEntries.first?.event, .ttsFailed)
     }
 
+    func testTwoQuickReadSelectionPressesSpeakOnlyOnce() async {
+        let selection = FakeSelectionReader(text: "selected")
+        let speech = FakeSpeechCoordinator()
+        let hotkeys = FakeHotkeyManager()
+        let model = makeModel(selection: selection, speech: speech, hotkeys: hotkeys)
+
+        hotkeys.send(.readSelection, .pressed)
+        hotkeys.send(.readSelection, .pressed)
+        await waitUntil { !speech.requests.isEmpty }
+        try? await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertEqual(speech.requests.count, 1)
+        withExtendedLifetime(model) {}
+    }
+
+    func testTwoQuickReplayPressesReplayOnlyOnce() async {
+        let speech = FakeSpeechCoordinator()
+        let hotkeys = FakeHotkeyManager()
+        let model = makeModel(speech: speech, hotkeys: hotkeys)
+
+        hotkeys.send(.replayLast, .pressed)
+        hotkeys.send(.replayLast, .pressed)
+        await waitUntil { speech.replayCount > 0 }
+        try? await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertEqual(speech.replayCount, 1)
+        withExtendedLifetime(model) {}
+    }
+
+    func testStopSpeechCancelsAPendingReplay() async {
+        let speech = FakeSpeechCoordinator()
+        let hotkeys = FakeHotkeyManager()
+        let model = makeModel(speech: speech, hotkeys: hotkeys)
+
+        hotkeys.send(.replayLast, .pressed)
+        hotkeys.send(.stopSpeech, .pressed)
+        try? await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertEqual(speech.replayCount, 0)
+        XCTAssertEqual(speech.stopCount, 1)
+        withExtendedLifetime(model) {}
+    }
+
+    func testCancelledReadSelectionIsNotReportedAsFailure() async {
+        let speech = FakeSpeechCoordinator(speakError: CancellationError())
+        let hotkeys = FakeHotkeyManager()
+        let model = makeModel(speech: speech, hotkeys: hotkeys)
+
+        hotkeys.send(.readSelection, .pressed)
+        await waitUntil { !speech.requests.isEmpty }
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertFalse(model.diagnosticsEntries.contains { $0.event == .ttsFailed })
+        XCTAssertEqual(model.statusText, "Ready")
+    }
+
     // MARK: - Session-aware Replay Last
 
     func testReplayLastWithFocusedHighConfidenceSessionSpeaksThatSessionsLatestReply() async {

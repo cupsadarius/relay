@@ -96,6 +96,9 @@ final class AppModel {
     @ObservationIgnored private let overlayPresenter: any ActivityOverlayPresenting
     @ObservationIgnored private var activationObserver: NSObjectProtocol?
     @ObservationIgnored private var dictationTask: Task<Void, Never>?
+    /// The in-flight Read Selection / Replay Last action. Each new press of either hotkey, and
+    /// Stop Speech, cancels it, so two quick presses can never both reach the speech coordinator.
+    @ObservationIgnored private var speechActionTask: Task<Void, Never>?
     @ObservationIgnored private let hookEnvelopeReceiver: HookEnvelopeReceiver
     @ObservationIgnored private let integrationManager: IntegrationManager
     @ObservationIgnored private let claudeCodeInstaller: ClaudeCodeInstaller
@@ -594,6 +597,7 @@ final class AppModel {
 
     deinit {
         dictationTask?.cancel()
+        speechActionTask?.cancel()
         if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
     }
 
@@ -620,15 +624,27 @@ final class AppModel {
         case .dictate:
             break
         case .readSelection:
-            Task { await readSelection() }
+            startSpeechAction { await $0.readSelection() }
         case .stopSpeech:
+            speechActionTask?.cancel()
+            speechActionTask = nil
             speechCoordinator.stop()
             diagnostics.record(.ttsStopped)
             statusText = "Speech stopped"
         case .replayLast:
-            Task { await replayLast() }
+            startSpeechAction { await $0.replayLast() }
         case .toggleAutoRead:
             toggleAutoRead()
+        }
+    }
+
+    /// Replaces any in-flight speech action with `action`. The cancelled one checks
+    /// `Task.isCancelled` before speaking, so it never reaches the speech coordinator.
+    private func startSpeechAction(_ action: @escaping @MainActor (AppModel) async -> Void) {
+        speechActionTask?.cancel()
+        speechActionTask = Task { [weak self] in
+            guard let self, !Task.isCancelled else { return }
+            await action(self)
         }
     }
 
@@ -673,8 +689,11 @@ final class AppModel {
                 mode: .userRequested,
                 sessionID: nil
             )
+            guard !Task.isCancelled else { return }
             try await speechCoordinator.speak(request)
             diagnostics.record(.ttsSubmitted)
+        } catch is CancellationError {
+            // Stopped or superseded on purpose: not a failure.
         } catch {
             diagnostics.record(error is SelectionReadingError ? .selectionUnavailable : .ttsFailed)
             statusText = error.localizedDescription
@@ -705,10 +724,12 @@ final class AppModel {
         for session in sessions {
             let decision = await focusResolution.resolve(session: session)
             guard decision.state == .focused, decision.confidence == .high else { continue }
+            guard !Task.isCancelled else { return }
             await speakFocusedSessionReply(session)
             return
         }
 
+        guard !Task.isCancelled else { return }
         if let frontmostPID = await frontmostApps.current()?.pid,
            sessions.contains(where: { $0.processAncestry.contains(frontmostPID) }),
            integrationManager.latestResponse != nil,
@@ -716,6 +737,7 @@ final class AppModel {
             return
         }
 
+        guard !Task.isCancelled else { return }
         await speakLastSpokenText()
     }
 
@@ -731,6 +753,8 @@ final class AppModel {
                 outcome: "focused-session",
                 detail: "provider=\(session.id.provider.rawValue)"
             )
+        } catch is CancellationError {
+            // Stopped or superseded on purpose: not a failure.
         } catch {
             diagnostics.record(.ttsFailed)
             statusText = error.localizedDescription
@@ -752,6 +776,8 @@ final class AppModel {
             diagnostics.record(.ttsSubmitted)
             integrationDiagnosticsLog.append(stage: "replay-last", outcome: "global-latest", detail: "")
             return true
+        } catch is CancellationError {
+            return true
         } catch {
             diagnostics.record(.ttsFailed)
             statusText = error.localizedDescription
@@ -766,6 +792,8 @@ final class AppModel {
             try await speechCoordinator.replayLast()
             diagnostics.record(.ttsReplayed)
             integrationDiagnosticsLog.append(stage: "replay-last", outcome: "last-spoken", detail: "")
+        } catch is CancellationError {
+            // Stopped or superseded on purpose: not a failure.
         } catch {
             diagnostics.record(.ttsFailed)
             statusText = error.localizedDescription
