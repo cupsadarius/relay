@@ -40,7 +40,7 @@ final class SpeechActions {
 
     func readSelection() async {
         do {
-            let selection = try selectionReader.readSelection()
+            let selection = try await selectionReader.readSelection()
             diagnostics.record(selection.source == .accessibility ? .selectionAccessibility : .selectionClipboard)
             let request = SpeechRequest(
                 text: preprocessor.prepare(text: selection.text, mode: .userRequested),

@@ -1,5 +1,25 @@
 import ApplicationServices
 
+/// The one place Relay reads the system-wide focused UI element.
+@MainActor
+enum SystemAccessibility {
+    static func focusedElementValue() -> CFTypeRef? {
+        var focusedValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            AXUIElementCreateSystemWide(),
+            kAXFocusedUIElementAttribute as CFString,
+            &focusedValue
+        ) == .success else { return nil }
+        return focusedValue
+    }
+
+    /// Narrows an AX attribute value to an element, or `nil` if it is some other CF type.
+    static func element(from value: CFTypeRef?) -> AXUIElement? {
+        guard let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return (value as! AXUIElement)
+    }
+}
+
 @MainActor
 protocol AccessibilityElementAccessing {
     func focusedElementValue() -> CFTypeRef?
@@ -9,16 +29,7 @@ protocol AccessibilityElementAccessing {
 @MainActor
 final class SystemAccessibilityElementAccessor: AccessibilityElementAccessing {
     func focusedElementValue() -> CFTypeRef? {
-        let systemWideElement = AXUIElementCreateSystemWide()
-        var focusedValue: CFTypeRef?
-        let focusedResult = AXUIElementCopyAttributeValue(
-            systemWideElement,
-            kAXFocusedUIElementAttribute as CFString,
-            &focusedValue
-        )
-
-        guard focusedResult == .success else { return nil }
-        return focusedValue
+        SystemAccessibility.focusedElementValue()
     }
 
     func selectedText(from element: AXUIElement) -> String? {
@@ -43,13 +54,7 @@ final class AccessibilityService: AccessibilityReading {
     }
 
     func selectedText() -> String? {
-        guard let focusedValue = accessor.focusedElementValue(),
-              CFGetTypeID(focusedValue) == AXUIElementGetTypeID()
-        else {
-            return nil
-        }
-
-        let focusedElement = focusedValue as! AXUIElement
-        return accessor.selectedText(from: focusedElement)
+        guard let element = SystemAccessibility.element(from: accessor.focusedElementValue()) else { return nil }
+        return accessor.selectedText(from: element)
     }
 }

@@ -37,16 +37,7 @@ protocol AccessibilityTextInserting {
 @MainActor
 final class SystemAccessibilityTextInserter: AccessibilityTextInserting {
     func focusedElementValue() -> CFTypeRef? {
-        let systemWideElement = AXUIElementCreateSystemWide()
-        var focusedValue: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
-            systemWideElement,
-            kAXFocusedUIElementAttribute as CFString,
-            &focusedValue
-        ) == .success else {
-            return nil
-        }
-        return focusedValue
+        SystemAccessibility.focusedElementValue()
     }
 
     func replaceSelectedText(_ text: String, in element: AXUIElement) -> Bool {
@@ -112,7 +103,7 @@ final class TextInsertionService: TextInserting {
     init(
         accessibility: any AccessibilityTextInserting = SystemAccessibilityTextInserter(),
         clipboard: any ClipboardPasteboard = GeneralClipboardPasteboard(),
-        pasteCommand: any PasteCommandSending = SystemPasteCommand(),
+        pasteCommand: any PasteCommandSending = SystemKeyCommand.paste,
         scheduler: any ClipboardRestoreScheduling = TaskClipboardRestoreScheduler(),
         canPostEvents: @escaping () -> Bool = { CGPreflightPostEventAccess() }
     ) {
@@ -210,11 +201,9 @@ final class TextInsertionService: TextInserting {
     /// When the element does not report the range as settable and readable, we deliberately skip
     /// AX and use the paste fallback instead, rather than risk a silent no-op or a duplicate paste.
     private func insertViaAccessibility(_ text: String) -> Bool {
-        guard let focusedValue = accessibility.focusedElementValue(),
-              CFGetTypeID(focusedValue) == AXUIElementGetTypeID() else {
+        guard let focusedElement = SystemAccessibility.element(from: accessibility.focusedElementValue()) else {
             return false
         }
-        let focusedElement = focusedValue as! AXUIElement
 
         guard accessibility.isSelectedTextSettable(focusedElement),
               let originalRange = accessibility.selectedTextRange(of: focusedElement) else {

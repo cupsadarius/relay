@@ -158,7 +158,7 @@ final class SpySelectionReader: SelectionReading {
 
     init(text: String = "selected") { self.text = text }
 
-    func readSelection() throws -> SelectionResult {
+    func readSelection() async throws -> SelectionResult {
         readCount += 1
         return .init(text: text, source: .accessibility)
     }

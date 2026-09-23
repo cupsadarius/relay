@@ -3,43 +3,41 @@ import XCTest
 
 @MainActor
 final class SelectionReaderTests: XCTestCase {
-    func testUsesAccessibilityBeforeClipboard() throws {
+    func testUsesAccessibilityBeforeClipboard() async throws {
         let accessibility = FakeAccessibilitySelection(value: "from ax")
         let clipboard = FakeClipboardSelection(value: "from clipboard")
-        let reader = SelectionReader(accessibility: accessibility, clipboard: clipboard)
+        let reader = SelectionReader(accessibility: accessibility, clipboard: clipboard, canReadSelection: { true })
 
-        XCTAssertEqual(try reader.readSelection(), .init(text: "from ax", source: .accessibility))
+        let result = try await reader.readSelection()
+        XCTAssertEqual(result, .init(text: "from ax", source: .accessibility))
         XCTAssertEqual(clipboard.copySelectionCallCount, 0)
     }
 
-    func testFallsBackToClipboardWhenAccessibilityHasNoSelection() throws {
+    func testFallsBackToClipboardWhenAccessibilityHasNoSelection() async throws {
         let accessibility = FakeAccessibilitySelection(value: nil)
         let clipboard = FakeClipboardSelection(value: "fallback")
 
-        XCTAssertEqual(
-            try SelectionReader(accessibility: accessibility, clipboard: clipboard).readSelection(),
-            .init(text: "fallback", source: .clipboard)
-        )
+        let result = try await SelectionReader(accessibility: accessibility, clipboard: clipboard, canReadSelection: { true }).readSelection()
+        XCTAssertEqual(result, .init(text: "fallback", source: .clipboard))
         XCTAssertEqual(clipboard.copySelectionCallCount, 1)
     }
 
-    func testFallsBackToClipboardWhenAccessibilitySelectionIsWhitespace() throws {
+    func testFallsBackToClipboardWhenAccessibilitySelectionIsWhitespace() async throws {
         let accessibility = FakeAccessibilitySelection(value: " \n\t ")
         let clipboard = FakeClipboardSelection(value: "fallback")
 
-        XCTAssertEqual(
-            try SelectionReader(accessibility: accessibility, clipboard: clipboard).readSelection(),
-            .init(text: "fallback", source: .clipboard)
-        )
+        let result = try await SelectionReader(accessibility: accessibility, clipboard: clipboard, canReadSelection: { true }).readSelection()
+        XCTAssertEqual(result, .init(text: "fallback", source: .clipboard))
     }
 
-    func testThrowsActionableErrorWhenNeitherBackendHasUsableSelection() throws {
+    func testThrowsActionableErrorWhenNeitherBackendHasUsableSelection() async throws {
         let accessibility = FakeAccessibilitySelection(value: "")
         let clipboard = FakeClipboardSelection(value: "  ")
 
-        XCTAssertThrowsError(
-            try SelectionReader(accessibility: accessibility, clipboard: clipboard).readSelection()
-        ) { error in
+        do {
+            _ = try await SelectionReader(accessibility: accessibility, clipboard: clipboard, canReadSelection: { true }).readSelection()
+            XCTFail("expected error")
+        } catch {
             XCTAssertEqual(error as? SelectionReadingError, .noUsableSelection)
             XCTAssertEqual(
                 error.localizedDescription,
@@ -48,13 +46,61 @@ final class SelectionReaderTests: XCTestCase {
         }
     }
 
-    func testThrowsActionableErrorWhenClipboardFallbackFails() {
+    func testThrowsActionableErrorWhenClipboardFallbackFails() async {
         let accessibility = FakeAccessibilitySelection(value: nil)
         let clipboard = FakeClipboardSelection(value: nil, error: TestSelectionError.copyFailed)
 
-        XCTAssertThrowsError(
-            try SelectionReader(accessibility: accessibility, clipboard: clipboard).readSelection()
-        ) { error in
+        do {
+            _ = try await SelectionReader(accessibility: accessibility, clipboard: clipboard, canReadSelection: { true }).readSelection()
+            XCTFail("expected error")
+        } catch {
+            XCTAssertEqual(error as? SelectionReadingError, .noUsableSelection)
+        }
+    }
+
+    func testReportsMissingPermissionInsteadOfNoSelection() async {
+        let reader = SelectionReader(
+            accessibility: FakeAccessibilitySelection(value: nil),
+            clipboard: FakeClipboardSelection(value: nil),
+            canReadSelection: { false }
+        )
+
+        do {
+            _ = try await reader.readSelection()
+            XCTFail("expected error")
+        } catch {
+            XCTAssertEqual(error as? SelectionReadingError, .accessibilityPermissionDenied)
+            XCTAssertEqual(
+                error.localizedDescription,
+                "Relay needs Accessibility permission to read selected text. Enable it in System Settings › Privacy & Security › Accessibility."
+            )
+        }
+    }
+
+    func testWithoutPermissionTheClipboardFallbackIsNotAttempted() async {
+        let clipboard = FakeClipboardSelection(value: "fallback")
+        let reader = SelectionReader(
+            accessibility: FakeAccessibilitySelection(value: nil),
+            clipboard: clipboard,
+            canReadSelection: { false }
+        )
+
+        _ = try? await reader.readSelection()
+
+        XCTAssertEqual(clipboard.copySelectionCallCount, 0)
+    }
+
+    func testABusyClipboardReportsNoSelectionRatherThanCrashingOrHanging() async {
+        let reader = SelectionReader(
+            accessibility: FakeAccessibilitySelection(value: nil),
+            clipboard: FakeClipboardSelection(value: nil, error: ClipboardCopyError.busy),
+            canReadSelection: { true }
+        )
+
+        do {
+            _ = try await reader.readSelection()
+            XCTFail("expected error")
+        } catch {
             XCTAssertEqual(error as? SelectionReadingError, .noUsableSelection)
         }
     }
@@ -84,7 +130,7 @@ private final class FakeClipboardSelection: ClipboardReading {
         self.error = error
     }
 
-    func copyCurrentSelection() throws -> String? {
+    func copyCurrentSelection() async throws -> String? {
         copySelectionCallCount += 1
         if let error { throw error }
         return value

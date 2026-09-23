@@ -4,7 +4,7 @@ import XCTest
 
 @MainActor
 final class ClipboardServiceTests: XCTestCase {
-    func testCopiesAfterChangeAndRestoresOriginalClipboard() throws {
+    func testCopiesAfterChangeAndRestoresOriginalClipboard() async throws {
         let original = ClipboardSnapshot(items: [
             ClipboardItemSnapshot(representations: [
                 "public.utf8-plain-text": .data(Data("original".utf8))
@@ -24,12 +24,13 @@ final class ClipboardServiceTests: XCTestCase {
             waiter: waiter
         )
 
-        XCTAssertEqual(try service.copyCurrentSelection(), "selected")
+        let copied = try await service.copyCurrentSelection()
+        XCTAssertEqual(copied, "selected")
         XCTAssertEqual(waiter.waitedMilliseconds, [20])
         XCTAssertEqual(pasteboard.restoredSnapshots, [original])
     }
 
-    func testWaitsAtMostTwoHundredMillisecondsWhenClipboardDoesNotChange() throws {
+    func testWaitsAtMostTwoHundredMillisecondsWhenClipboardDoesNotChange() async throws {
         let original = ClipboardSnapshot(items: [])
         let pasteboard = FakeClipboardPasteboard(changeCount: 2, snapshot: original, copiedString: nil)
         let waiter = FakeClipboardWaiter()
@@ -39,12 +40,14 @@ final class ClipboardServiceTests: XCTestCase {
             waiter: waiter
         )
 
-        XCTAssertNil(try service.copyCurrentSelection())
+        let copied = try await service.copyCurrentSelection()
+        XCTAssertNil(copied)
         XCTAssertEqual(waiter.waitedMilliseconds, Array(repeating: 20, count: 10))
-        XCTAssertEqual(pasteboard.restoredSnapshots, [original])
+        // Nothing was copied, so the clipboard is still the user's: there is nothing to restore.
+        XCTAssertEqual(pasteboard.restoredSnapshots, [])
     }
 
-    func testRestoresClipboardWhenSendingCopyThrows() {
+    func testSendingCopyFailureLeavesTheClipboardUntouched() async {
         let original = ClipboardSnapshot(items: [])
         let pasteboard = FakeClipboardPasteboard(changeCount: 2, snapshot: original, copiedString: nil)
         let service = ClipboardService(
@@ -53,7 +56,44 @@ final class ClipboardServiceTests: XCTestCase {
             waiter: FakeClipboardWaiter()
         )
 
-        XCTAssertThrowsError(try service.copyCurrentSelection())
+        do {
+            _ = try await service.copyCurrentSelection()
+            XCTFail("expected error")
+        } catch {}
+        XCTAssertEqual(pasteboard.restoredSnapshots, [])
+    }
+
+    func testDoesNotRestoreOverContentWrittenAfterTheCopy() async throws {
+        let original = ClipboardSnapshot(items: [])
+        let pasteboard = FakeClipboardPasteboard(changeCount: 4, snapshot: original, copiedString: "selected")
+        let waiter = FakeClipboardWaiter { pasteboard.changeCount = 5 }
+        pasteboard.onString = { pasteboard.changeCount = 6 } // user copies something else meanwhile
+        let service = ClipboardService(pasteboard: pasteboard, copyCommand: FakeCopyCommand(), waiter: waiter)
+
+        let copied = try await service.copyCurrentSelection()
+        XCTAssertEqual(copied, "selected")
+        XCTAssertEqual(pasteboard.restoredSnapshots, [], "newer clipboard content must not be overwritten")
+    }
+
+    func testRejectsAReentrantCopyWhileOneIsInFlight() async throws {
+        let original = ClipboardSnapshot(items: [])
+        let pasteboard = FakeClipboardPasteboard(changeCount: 1, snapshot: original, copiedString: "selected")
+        let gate = WaitGate()
+        let waiter = FakeClipboardWaiter(gate: gate) { pasteboard.changeCount = 2 }
+        let service = ClipboardService(pasteboard: pasteboard, copyCommand: FakeCopyCommand(), waiter: waiter)
+
+        let first = Task { try await service.copyCurrentSelection() }
+        while !gate.isWaiting { await Task.yield() }
+        do {
+            _ = try await service.copyCurrentSelection()
+            XCTFail("reentrant copy must be rejected")
+        } catch {
+            XCTAssertEqual(error as? ClipboardCopyError, .busy)
+        }
+        gate.open()
+
+        let firstResult = try await first.value
+        XCTAssertEqual(firstResult, "selected")
         XCTAssertEqual(pasteboard.restoredSnapshots, [original])
     }
 
@@ -77,6 +117,7 @@ private final class FakeClipboardPasteboard: ClipboardPasteboard {
     var changeCount: Int
     let snapshotValue: ClipboardSnapshot
     let copiedString: String?
+    var onString: () -> Void = {}
     private(set) var restoredSnapshots: [ClipboardSnapshot] = []
 
     init(changeCount: Int, snapshot: ClipboardSnapshot, copiedString: String?) {
@@ -86,7 +127,7 @@ private final class FakeClipboardPasteboard: ClipboardPasteboard {
     }
 
     func snapshot() -> ClipboardSnapshot { snapshotValue }
-    func string() -> String? { copiedString }
+    func string() -> String? { onString(); return copiedString }
     func write(string: String, ownershipToken: Data) -> Bool { true }
     func restore(_ snapshot: ClipboardSnapshot) { restoredSnapshots.append(snapshot) }
     func restore(_ snapshot: ClipboardSnapshot, ifOwnedBy ownershipToken: Data) {}
@@ -106,16 +147,35 @@ private struct FakeCopyCommand: CopyCommandSending {
 }
 
 @MainActor
+private final class WaitGate {
+    private(set) var isWaiting = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        isWaiting = true
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func open() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+@MainActor
 private final class FakeClipboardWaiter: ClipboardWaiting {
+    private let gate: WaitGate?
     private let onWait: () -> Void
     private(set) var waitedMilliseconds: [Int] = []
 
-    init(onWait: @escaping () -> Void = {}) {
+    init(gate: WaitGate? = nil, onWait: @escaping () -> Void = {}) {
+        self.gate = gate
         self.onWait = onWait
     }
 
-    func wait(milliseconds: Int) {
+    func wait(milliseconds: Int) async {
         waitedMilliseconds.append(milliseconds)
+        if let gate, waitedMilliseconds.count == 1 { await gate.wait() }
         onWait()
     }
 }

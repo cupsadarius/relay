@@ -63,7 +63,8 @@ protocol PasteCommandSending {
 
 @MainActor
 protocol ClipboardWaiting {
-    func wait(milliseconds: Int)
+    /// Suspends (never blocks or pumps a nested run loop) for about `milliseconds`.
+    func wait(milliseconds: Int) async
 }
 
 /// A cancellation handle for an operation scheduled via `ClipboardRestoreScheduling`.
@@ -85,36 +86,52 @@ protocol ClipboardRestoreScheduling {
     ) -> any ClipboardRestoreHandle
 }
 
+enum ClipboardCopyError: Error, Equatable {
+    /// Another copy is still waiting for the pasteboard; running a second one would snapshot
+    /// Relay's own temporary content as the user's "original".
+    case busy
+}
+
 @MainActor
 final class ClipboardService: ClipboardReading {
     private let pasteboard: any ClipboardPasteboard
     private let copyCommand: any CopyCommandSending
     private let waiter: any ClipboardWaiting
+    private var isCopying = false
 
     init(
         pasteboard: any ClipboardPasteboard = GeneralClipboardPasteboard(),
-        copyCommand: any CopyCommandSending = SystemCopyCommand(),
-        waiter: any ClipboardWaiting = RunLoopClipboardWaiter()
+        copyCommand: any CopyCommandSending = SystemKeyCommand.copy,
+        waiter: any ClipboardWaiting = SleepingClipboardWaiter()
     ) {
         self.pasteboard = pasteboard
         self.copyCommand = copyCommand
         self.waiter = waiter
     }
 
-    func copyCurrentSelection() throws -> String? {
-        let original = pasteboard.snapshot()
-        defer { pasteboard.restore(original) }
+    /// Sends ⌘C, waits up to 200 ms for the pasteboard to change, reads the string, then puts the
+    /// user's clipboard back — but only if nothing else has written it since the copy landed.
+    func copyCurrentSelection() async throws -> String? {
+        guard !isCopying else { throw ClipboardCopyError.busy }
+        isCopying = true
+        defer { isCopying = false }
 
+        let original = pasteboard.snapshot()
         let originalChangeCount = pasteboard.changeCount
         try copyCommand.sendCopy()
 
         for _ in 0..<10 {
-            waiter.wait(milliseconds: 20)
-            if pasteboard.changeCount != originalChangeCount {
-                return pasteboard.string()
+            await waiter.wait(milliseconds: 20)
+            let copiedChangeCount = pasteboard.changeCount
+            guard copiedChangeCount != originalChangeCount else { continue }
+            let copied = pasteboard.string()
+            // A later write (the user copying, another app) wins over our restore.
+            if pasteboard.changeCount == copiedChangeCount {
+                pasteboard.restore(original)
             }
+            return copied
         }
-
+        // The copy never landed: the clipboard is still the user's; nothing to restore.
         return nil
     }
 }
@@ -184,22 +201,29 @@ final class GeneralClipboardPasteboard: ClipboardPasteboard {
     }
 }
 
-enum CopyCommandError: Error {
+enum KeyCommandError: Error {
     case eventCreationFailed
 }
 
+/// Posts ⌘+`virtualKey` as genuine-looking user input. The combined session source attributes
+/// these synthetic events like real keystrokes, so target apps accept them.
 @MainActor
-struct SystemCopyCommand: CopyCommandSending {
-    func sendCopy() throws {
-        // The combined session source attributes these synthetic events like genuine user
-        // input, so target apps accept them instead of ignoring or mishandling them.
-        guard let source = CGEventSource(stateID: .combinedSessionState),
-              let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 8, keyDown: true),
-              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 8, keyDown: false)
-        else {
-            throw CopyCommandError.eventCreationFailed
-        }
+struct SystemKeyCommand: CopyCommandSending, PasteCommandSending {
+    static let copy = SystemKeyCommand(virtualKey: 8)  // kVK_ANSI_C
+    static let paste = SystemKeyCommand(virtualKey: 9) // kVK_ANSI_V
 
+    let virtualKey: CGKeyCode
+
+    func sendCopy() throws { try post() }
+    func sendPaste() throws { try post() }
+
+    private func post() throws {
+        guard let source = CGEventSource(stateID: .combinedSessionState),
+              let keyDown = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: false)
+        else {
+            throw KeyCommandError.eventCreationFailed
+        }
         keyDown.flags = .maskCommand
         keyUp.flags = .maskCommand
         keyDown.post(tap: .cghidEventTap)
@@ -208,28 +232,9 @@ struct SystemCopyCommand: CopyCommandSending {
 }
 
 @MainActor
-struct SystemPasteCommand: PasteCommandSending {
-    func sendPaste() throws {
-        // The combined session source attributes these synthetic events like genuine user
-        // input, so target apps accept them instead of ignoring or mishandling them.
-        guard let source = CGEventSource(stateID: .combinedSessionState),
-              let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
-              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false)
-        else {
-            throw CopyCommandError.eventCreationFailed
-        }
-
-        keyDown.flags = .maskCommand
-        keyUp.flags = .maskCommand
-        keyDown.post(tap: .cghidEventTap)
-        keyUp.post(tap: .cghidEventTap)
-    }
-}
-
-@MainActor
-struct RunLoopClipboardWaiter: ClipboardWaiting {
-    func wait(milliseconds: Int) {
-        RunLoop.current.run(until: Date().addingTimeInterval(Double(milliseconds) / 1_000))
+struct SleepingClipboardWaiter: ClipboardWaiting {
+    func wait(milliseconds: Int) async {
+        try? await Task.sleep(for: .milliseconds(milliseconds))
     }
 }
 
