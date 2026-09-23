@@ -379,7 +379,9 @@ final class DictationCoordinator: DictationCoordinating {
         state = .idle
         diagnostics?.record(.dictation(.failed(stage)))
         activity.fail(sessionID: session, category: category(for: error, stage: stage), message: capsuleMessage(for: stage, error: error))
-        status("Dictation failed: \(actionableMessage(for: error))")
+        // Only a transcription-stage error came from a speech backend; name the one that failed.
+        let backendName = stage == .transcription ? sttRouter.lastFailedBackendDisplayName : nil
+        status("Dictation failed: \(actionableMessage(for: error, backendName: backendName))")
     }
 
     /// `SpeechBackendError.noUsableAudio` always means "no usable audio", regardless of which
@@ -409,18 +411,21 @@ final class DictationCoordinator: DictationCoordinating {
         }
     }
 
-    private func actionableMessage(for error: Error) -> String {
+    /// `backendName` is the display name of the speech backend that produced `error`, when
+    /// known (see `STTRouter.lastFailedBackendDisplayName`). Never hardcode one backend here.
+    private func actionableMessage(for error: Error, backendName: String? = nil) -> String {
         switch error {
         case SpeechBackendError.unavailable:
             "Speech recognition is unavailable. Try again after it is ready."
         case SpeechBackendError.modelNotDownloaded:
-            "Download the Apple Speech assets, then try again."
+            backendName.map { "Download the \($0) model in Settings, then try again." }
+                ?? "Download a speech recognition model in Settings, then try again."
         case SpeechBackendError.initializationFailed:
             "Speech recognition could not start. Try again."
         case SpeechBackendError.unsupportedOS:
-            "Apple Speech requires a newer version of macOS."
+            "\(backendName ?? "This speech recognition backend") requires a newer version of macOS."
         case SpeechBackendError.unsupportedHardware:
-            "Apple Speech is unavailable on this Mac."
+            "\(backendName ?? "This speech recognition backend") is unavailable on this Mac."
         case SpeechBackendError.inferenceFailed:
             "Speech recognition could not understand the audio. Try again."
         case SpeechBackendError.resourceExhausted:

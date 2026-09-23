@@ -234,10 +234,10 @@ final class DictationCoordinatorTests: XCTestCase {
     func testEveryKnownDictationErrorHasStableActionableStatus() async {
         let cases: [(Error, String)] = [
             (SpeechBackendError.unavailable("offline"), "Dictation failed: Speech recognition is unavailable. Try again after it is ready."),
-            (SpeechBackendError.modelNotDownloaded, "Dictation failed: Download the Apple Speech assets, then try again."),
+            (SpeechBackendError.modelNotDownloaded, "Dictation failed: Download the Fake model in Settings, then try again."),
             (SpeechBackendError.initializationFailed("x"), "Dictation failed: Speech recognition could not start. Try again."),
-            (SpeechBackendError.unsupportedOS, "Dictation failed: Apple Speech requires a newer version of macOS."),
-            (SpeechBackendError.unsupportedHardware, "Dictation failed: Apple Speech is unavailable on this Mac."),
+            (SpeechBackendError.unsupportedOS, "Dictation failed: Fake requires a newer version of macOS."),
+            (SpeechBackendError.unsupportedHardware, "Dictation failed: Fake is unavailable on this Mac."),
             (SpeechBackendError.inferenceFailed("x"), "Dictation failed: Speech recognition could not understand the audio. Try again."),
             (SpeechBackendError.resourceExhausted, "Dictation failed: Speech recognition is busy. Try again shortly."),
             (SpeechBackendError.permissionDenied, "Dictation failed: Allow Microphone permission in System Settings, then try again."),
@@ -259,6 +259,30 @@ final class DictationCoordinatorTests: XCTestCase {
             await coordinator.finish()
             XCTAssertEqual(statuses.last, expected)
         }
+    }
+
+    /// The real-world case: the only backend (Parakeet) has no model, so it is skipped before
+    /// listening starts (nothing is announced) and the router throws `.modelNotDownloaded`.
+    /// The message must name Parakeet, not Apple Speech.
+    func testModelNotDownloadedStatusNamesTheSkippedBackend() async {
+        let events = EventLog()
+        var statuses: [String] = []
+        let parakeet = NamedFakeBackend(id: "parakeet", displayName: "Parakeet", events: events)
+        parakeet.availabilityValue = .modelNotDownloaded
+        let coordinator = DictationCoordinator(
+            microphone: FakeMicrophone(events: events),
+            sttRouter: STTRouter(backends: [parakeet.id: parakeet], backendOrder: { ["parakeet"] }),
+            processor: RulesTranscriptProcessor(),
+            textInserter: FakeTextInserter(events: events),
+            stopSpeech: {},
+            status: { statuses.append($0) },
+            activity: RecordingActivityOverlay()
+        )
+
+        await coordinator.start()
+        await coordinator.finish()
+
+        XCTAssertEqual(statuses.last, "Dictation failed: Download the Parakeet model in Settings, then try again.")
     }
 
     func testEveryMicrophoneErrorHasStableActionableStartStatus() async {
@@ -1109,7 +1133,8 @@ private final class NamedFakeBackend: SpeechToTextBackend {
         self.transcript = transcript
         self.error = error
     }
-    func availability() async -> BackendAvailability { .available }
+    var availabilityValue: BackendAvailability = .available
+    func availability() async -> BackendAvailability { availabilityValue }
     func prepare() async throws {}
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
         events.append("stt.transcribe.\(id)")

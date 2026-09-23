@@ -256,6 +256,49 @@ final class STTRouterTests: XCTestCase {
         XCTAssertEqual(second.availabilityCallCount, 1)
     }
 
+    // MARK: lastFailedBackendDisplayName
+
+    func testRecordsTheBackendWhoseErrorWasThrown() async {
+        let first = FakeSTTBackend(id: "first", error: .unavailable("offline"))
+        let second = FakeSTTBackend(id: "second", error: .resourceExhausted)
+        let router = makeRouter([first, second])
+
+        _ = try? await router.transcribe(audio: audio, options: .init())
+
+        XCTAssertEqual(router.lastFailedBackendDisplayName, "second")
+    }
+
+    func testRecordsASkippedBackendWhenItsAvailabilityErrorIsThrown() async {
+        let first = FakeSTTBackend(id: "first")
+        first.availabilityValue = .modelNotDownloaded
+        let router = makeRouter([first])
+
+        _ = try? await router.transcribe(audio: audio, options: .init())
+
+        XCTAssertEqual(router.lastFailedBackendDisplayName, "first")
+    }
+
+    func testClearsTheFailedBackendAfterASuccessfulTranscription() async throws {
+        let first = FakeSTTBackend(id: "first", error: .unavailable("offline"))
+        let router = makeRouter([first])
+        _ = try? await router.transcribe(audio: audio, options: .init())
+        XCTAssertEqual(router.lastFailedBackendDisplayName, "first")
+
+        first.error = nil
+        _ = try await router.transcribe(audio: audio, options: .init())
+
+        XCTAssertNil(router.lastFailedBackendDisplayName)
+    }
+
+    func testInterimFailuresNeverTouchTheFailedBackend() async {
+        let first = FakeSTTBackend(id: "first", error: .unavailable("offline"))
+        let router = makeRouter([first])
+
+        _ = try? await router.transcribeForInterim(audio: audio, options: .init())
+
+        XCTAssertNil(router.lastFailedBackendDisplayName)
+    }
+
     private let audio = AudioInput(samples: [0.1], sampleRate: 16_000)
 
     private func assertFallsBack(after error: SpeechBackendError) async throws {
