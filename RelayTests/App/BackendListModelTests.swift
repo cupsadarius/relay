@@ -163,6 +163,34 @@ final class BackendListModelTests: XCTestCase {
 
         XCTAssertEqual(list.rows.first?.state, .ready)
     }
+
+    /// A `setEnabled` landing while `refresh()` is still awaiting a probe must win: the refresh
+    /// must read the order again after its awaits, not apply the order it started with.
+    func testConcurrentOrderChangeDuringRefreshIsNotClobbered() async {
+        order = ["a", "b"]
+        let gate = AvailabilityGate()
+        gate.value = .available
+        let list = BackendListModel(
+            entries: [
+                BackendListEntry(id: "a", displayName: "A", availability: { await gate.next() }),
+                BackendListEntry(id: "b", displayName: "B", availability: { .available }),
+            ],
+            order: { [unowned self] in order },
+            setOrder: { [unowned self] in order = $0; writes.append($0) },
+            refusalMessage: "",
+            statusSink: statusSink
+        )
+
+        let refreshTask = Task { await list.refresh() }
+        while gate.pending == nil { await Task.yield() }
+        list.setEnabled("b", false)
+        gate.pending?.resume()
+        await refreshTask.value
+
+        XCTAssertEqual(order, ["a"])
+        XCTAssertEqual(list.rows.first { $0.id == "b" }?.isEnabled, false)
+        XCTAssertEqual(list.rows.first { $0.id == "a" }?.isEnabled, true)
+    }
 }
 
 /// First call suspends (returning the value captured at call time); later calls return `value`.

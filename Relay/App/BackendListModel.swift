@@ -73,11 +73,13 @@ final class BackendListModel {
         self.statusSink = statusSink
     }
 
-    /// Re-probes every backend. A refresh overtaken by a newer one discards its results.
+    /// Re-probes every backend. A refresh overtaken by a newer one discards its results. The
+    /// order is read again after every probe has returned, not snapshotted before the first
+    /// `await`: a `setEnabled`/`move` landing while this refresh is still awaiting probes must
+    /// win, not get clobbered by the order this refresh started with.
     func refresh() async {
         generation += 1
         let current = generation
-        let order = knownOrder()
         var fresh: [BackendStatus] = []
         for entry in entries {
             let availability = await entry.availability()
@@ -85,11 +87,16 @@ final class BackendListModel {
                 id: entry.id,
                 displayName: entry.displayName,
                 state: Self.state(for: availability),
-                isEnabled: order.contains(entry.id),
-                position: order.firstIndex(of: entry.id) ?? Int.max
+                isEnabled: false,
+                position: Int.max
             ))
         }
         guard current == generation else { return }
+        let order = knownOrder()
+        for index in fresh.indices {
+            fresh[index].isEnabled = order.contains(fresh[index].id)
+            fresh[index].position = order.firstIndex(of: fresh[index].id) ?? Int.max
+        }
         rows = Self.sorted(fresh)
     }
 
