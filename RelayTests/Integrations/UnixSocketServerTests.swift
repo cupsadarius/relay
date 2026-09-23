@@ -275,7 +275,8 @@ final class UnixSocketServerTests: XCTestCase {
         let shouldClose = connection.append(
             bytes: bytes[...],
             onLine: { lines.append($0) },
-            onOversizedLine: { oversizedByteCounts.append($0) }
+            onOversizedLine: { oversizedByteCounts.append($0) },
+            onOversizedUnterminated: { _ in XCTFail("no unterminated oversized line in this test") }
         )
 
         XCTAssertFalse(shouldClose)

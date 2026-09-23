@@ -4,14 +4,13 @@ import XCTest
 
 /// SAFETY: every test in this file points `ClaudeCodeInstaller`/`CodexInstaller` at a unique
 /// temporary directory created in `setUp` and removed in `tearDown`. No test may read or write
-/// the real `~/.claude` or `~/.codex` directories. Most tests never call
-/// `AppModel.startIntegrations()` at all — that would open the real, fixed-path Unix socket at
-/// `~/Library/Application Support/Relay/relay.sock`. Runtime event flow is exercised instead by
+/// the real `~/.claude` or `~/.codex` directories. No test may open the real, fixed-path Unix
+/// socket at `~/Library/Application Support/Relay/relay.sock` either: `makeModel`'s default
+/// `hookSocketPath` is a unique `/tmp` path per call, so even a test that calls
+/// `AppModel.startIntegrations()` without overriding it can never reach the real socket. Most
+/// tests never call `startIntegrations()` at all — runtime event flow is exercised instead by
 /// constructing an `IntegrationManager` directly around a manually driven `AsyncStream`, exactly
-/// as `IntegrationManagerTests` does. The one exception is the socket-indicator test below, which
-/// pre-starts an injected `HookEnvelopeReceiver` on a temp path before calling
-/// `startIntegrations()`; `UnixSocketServer.start`'s already-started guard then rejects the call
-/// before it ever touches the real production path, so that test never opens it either.
+/// as `IntegrationManagerTests` does.
 @MainActor
 final class AppModelIntegrationsTests: XCTestCase {
     private var tempDirectory: URL!
@@ -61,6 +60,14 @@ final class AppModelIntegrationsTests: XCTestCase {
             .appendingPathComponent("RelayHook")
     }
 
+    /// A short, unique `/tmp` path — never the real production socket at
+    /// `~/Library/Application Support/Relay/relay.sock` — used as `makeModel`'s default
+    /// `hookSocketPath`. Kept well under the `sun_path` 104-byte limit. `UnixSocketServer.start`
+    /// creates the parent directory itself, so nothing needs to be pre-created here.
+    private func uniqueTestSocketPath() -> String {
+        "/tmp/relay-t-\(UUID().uuidString.prefix(8))/relay.sock"
+    }
+
     private func makeModel(
         claudeCodeInstaller: ClaudeCodeInstaller? = nil,
         codexInstaller: CodexInstaller? = nil,
@@ -82,7 +89,7 @@ final class AppModelIntegrationsTests: XCTestCase {
             codexInstaller: codexInstaller ?? makeCodexInstaller(),
             helperInstaller: helperInstaller ?? makeHelperInstaller(),
             bundledHelperURL: bundledHelperURL ?? nonexistentBundledHelperURL,
-            hookSocketPath: hookSocketPath ?? AppModel.integrationSocketPath
+            hookSocketPath: hookSocketPath ?? uniqueTestSocketPath()
         )
     }
 
@@ -348,6 +355,34 @@ final class AppModelIntegrationsTests: XCTestCase {
         XCTAssertEqual(model.statusText, "No agent response to speak yet.")
     }
 
+    func testSpeakLatestAgentResponseSuccessClearsAStaleStatusText() async {
+        let event = AgentResponseEvent(
+            id: UUID(),
+            provider: .claudeCode,
+            providerSessionID: "session-3",
+            turnID: nil,
+            text: "Done.",
+            cwd: "/Users/me/project",
+            transcriptPath: nil,
+            parentPID: 100,
+            environment: [:],
+            capturedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        let store = LatestAgentResponseStore()
+        await store.set(event)
+        let speech = FakeSpeechCoordinator()
+        let events = AsyncStream<HookEnvelope> { _ in }
+        let manager = IntegrationManager(events: events, integrations: [], store: store, speechCoordinator: speech)
+        let model = makeModel(integrationManager: manager)
+        // Simulate leftover text from an earlier failed/empty attempt.
+        model.statusText = "Could not speak the latest agent response."
+
+        await model.speakLatestAgentResponse()
+
+        XCTAssertEqual(speech.requests.count, 1)
+        XCTAssertEqual(model.statusText, "Ready")
+    }
+
     func testIntegrationStatusPrefersActiveRuntimeStatusOverInstallerStatus() async {
         let claudeInstaller = makeClaudeInstaller()
         let event = AgentResponseEvent(
@@ -392,10 +427,10 @@ final class AppModelIntegrationsTests: XCTestCase {
         let socketPath = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .path
-        // Pre-start the receiver on a TEMP path. `AppModel.startIntegrations()` always targets
-        // the fixed production path, but `UnixSocketServer.start` rejects a second `start` on an
-        // already-listening instance (`.alreadyStarted`) before it ever touches that path — so
-        // the calls below never open, bind, or unlink the real production socket.
+        // Pre-start the receiver on a TEMP path. `UnixSocketServer.start` rejects a second
+        // `start` on an already-listening instance (`.alreadyStarted`) before it ever touches
+        // the path passed to it — so the calls below never open, bind, or unlink anything,
+        // regardless of `makeModel`'s (already non-production) default `hookSocketPath`.
         try receiver.start(path: socketPath)
         defer { receiver.stop() }
         let model = makeModel(hookEnvelopeReceiver: receiver)

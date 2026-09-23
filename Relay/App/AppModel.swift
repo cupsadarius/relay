@@ -1075,6 +1075,10 @@ final class AppModel {
                 return
             }
             diagnostics.record(.ttsSubmitted)
+            // Clears a stale failure ("Could not speak…") or empty-store ("No agent response…")
+            // message left over from an earlier call, the same way a fresh success elsewhere in
+            // this file always leaves `statusText` at its clean default.
+            statusText = "Ready"
         } catch {
             diagnostics.record(.ttsFailed)
             statusText = "Could not speak the latest agent response."

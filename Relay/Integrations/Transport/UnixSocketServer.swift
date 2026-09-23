@@ -569,7 +569,7 @@ final class UnixSocketClientConnection {
         bytes: ArraySlice<UInt8>,
         onLine: (@Sendable (String) -> Void)?,
         onOversizedLine: (Int) -> Void,
-        onOversizedUnterminated: (Int) -> Void = { _ in }
+        onOversizedUnterminated: (Int) -> Void
     ) -> Bool {
         buffer.append(contentsOf: bytes)
 
