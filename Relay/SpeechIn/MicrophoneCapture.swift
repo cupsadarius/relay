@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import os
 
 protocol MicrophoneCapturing: Sendable {
     /// `onLevel` receives only a normalized [0, 1] microphone level for each accepted sample
@@ -327,10 +328,13 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, AudioInputFormatR
 
     private let stateLock = NSLock()
     /// The real input device rate captured in `start()`, before resampling to 16 kHz. Metadata
-    /// for privacy-safe diagnostics only.
+    /// for privacy-safe diagnostics only, and (paired with `installedInputChannelCount`) the
+    /// baseline `AudioEngineRouteChangeDecision` compares a route-change notification against.
     private var inputSampleRate: Double = 0
+    private var installedInputChannelCount: AVAudioChannelCount = 0
     private var terminalErrorHandler: (@Sendable (Error) async -> Void)?
     private var configurationObserver: AudioEngineConfigurationObserver?
+    private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "microphone")
 
     /// Only touched on `engineQueue`.
     private var tapInstalled = false
@@ -365,6 +369,7 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, AudioInputFormatR
 
             stateLock.withLock {
                 inputSampleRate = inputFormat.sampleRate
+                installedInputChannelCount = inputFormat.channelCount
                 terminalErrorHandler = onTerminalError
             }
             gate.open()
@@ -389,6 +394,23 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, AudioInputFormatR
             // the current -- or a since-superseded -- session and must not fail it.
             guard self.gate.enter() else { return }
             defer { self.gate.leave() }
+
+            let current = self.engine.inputNode.inputFormat(forBus: 0)
+            let installed = self.stateLock.withLock { (self.inputSampleRate, self.installedInputChannelCount) }
+            guard AudioEngineRouteChangeDecision.isDisruptive(
+                isEngineRunning: self.engine.isRunning,
+                installedSampleRate: installed.0,
+                installedChannelCount: installed.1,
+                currentSampleRate: current.sampleRate,
+                currentChannelCount: current.channelCount
+            ) else {
+                // A benign renegotiation (e.g. AirPods switching A2DP <-> HFP): the engine is
+                // still running with the same format the tap was installed against, so nothing
+                // downstream is actually broken. Failing here would end perfectly healthy
+                // dictation sessions on every such post.
+                self.logger.debug("Ignoring a non-disruptive audio route change")
+                return
+            }
             self.fail(MicrophoneCaptureError.unavailable("The audio input device changed."))
         }
         stateLock.withLock { configurationObserver = observer }

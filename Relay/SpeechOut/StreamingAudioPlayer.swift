@@ -52,7 +52,24 @@ final class AVEngineOutputNode: AudioOutputNode {
         outputFormat = engine.mainMixerNode.outputFormat(forBus: 0)
         engine.connect(playerNode, to: engine.mainMixerNode, format: outputFormat)
         configurationObserver = AudioEngineConfigurationObserver(engine: engine, center: notificationCenter) { [weak self] in
-            Task { @MainActor in self?.onConfigurationChange?() }
+            Task { @MainActor in
+                guard let self else { return }
+                let current = self.engine.mainMixerNode.outputFormat(forBus: 0)
+                guard AudioEngineRouteChangeDecision.isDisruptive(
+                    isEngineRunning: self.engine.isRunning,
+                    installedSampleRate: self.outputFormat.sampleRate,
+                    installedChannelCount: self.outputFormat.channelCount,
+                    currentSampleRate: current.sampleRate,
+                    currentChannelCount: current.channelCount
+                ) else {
+                    // A benign renegotiation: the engine is still running at the format
+                    // `outputFormat` was fixed to at connect time, so already-scheduled and
+                    // future buffers remain valid. Failing here would end healthy playback on
+                    // every such post (e.g. AirPods switching A2DP <-> HFP).
+                    return
+                }
+                self.onConfigurationChange?()
+            }
         }
     }
 
