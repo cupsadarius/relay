@@ -73,16 +73,31 @@ import XCTest
         recorder.record(.keyboardEventReceived)
         recorder.record(.keyboardEventReceived)
         recorder.record(.hotkeyMatched(action: .readSelection, phase: .pressed))
+        recorder.record(.hotkeyMatched(action: .readSelection, phase: .pressed))
         recorder.record(.actionDispatched(action: .readSelection, phase: .pressed))
 
+        XCTAssertEqual(recorder.entries.count, 3)
         XCTAssertEqual(Set(recorder.entries.map(\.id)).count, 3)
         XCTAssertEqual(recorder.counters.received, 2)
-        XCTAssertEqual(recorder.counters.matched, 1)
+        XCTAssertEqual(recorder.counters.matched, 2)
         XCTAssertEqual(recorder.counters.dispatched, 1)
         XCTAssertEqual(recorder.entries.last?.event.message, "Read Selection pressed dispatched")
         recorder.clear()
         XCTAssertTrue(recorder.entries.isEmpty)
         XCTAssertEqual(recorder.counters, .init())
+    }
+
+    /// Every keystroke system-wide reports `.keyboardEventReceived` while the event tap is live.
+    /// It must only bump the counter: buffering it would evict every meaningful entry.
+    func testKeyboardEventsAreCountedButNeverBuffered() {
+        let recorder = DiagnosticsRecorder(capacity: 5)
+        recorder.record(.eventTapRegistered)
+        for _ in 0..<20 {
+            recorder.record(.keyboardEventReceived)
+        }
+
+        XCTAssertEqual(recorder.counters.received, 20)
+        XCTAssertEqual(recorder.entries.map(\.event), [.eventTapRegistered])
     }
 
     func testCopyIncludesConciseLocalTimestamp() {

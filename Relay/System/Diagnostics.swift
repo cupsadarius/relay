@@ -142,8 +142,21 @@ final class DiagnosticsRecorder {
     var entries: [DiagnosticEntry] { buffer.entries }
     init(capacity: Int = 250) { buffer = DiagnosticsBuffer(capacity: capacity) }
     func record(_ event: DiagnosticsEvent) {
+        switch event {
+        case .keyboardEventReceived:
+            // Reported for EVERY keystroke system-wide while the event tap is live. Count it
+            // only: appending it to `buffer` and `os_log` would evict every meaningful entry
+            // within seconds of typing and churn every observer of `buffer`.
+            counters.received += 1
+            return
+        case .hotkeyMatched:
+            counters.matched += 1
+        case .actionDispatched:
+            counters.dispatched += 1
+        default:
+            break
+        }
         buffer.append(event)
-        switch event { case .keyboardEventReceived: counters.received += 1; case .hotkeyMatched: counters.matched += 1; case .actionDispatched: counters.dispatched += 1; default: break }
         logger.info("\(event.message, privacy: .public)")
     }
     func clear() { buffer.clear(); counters = .init() }
