@@ -124,7 +124,10 @@ final class AppleTTSAudioSourceTests: XCTestCase {
         }
     }
 
-    func testMakeAudioSourceRejectsAnUnknownVoiceIdentifier() async {
+    /// A stale saved voice id (e.g. a voice the user deleted) must fall back to the default
+    /// voice rather than stopping all TTS. See `AppleTTSBackendTests
+    /// .testMakeAudioSourceFallsBackToTheDefaultVoiceForAnUnknownVoiceIdentifier`.
+    func testMakeAudioSourceFallsBackToTheDefaultVoiceForAnUnknownVoiceIdentifier() async throws {
         let backend = AppleTTSBackend(
             makeSynthesizer: { FakeWriteSynthesizer() },
             bufferConverter: ScriptedConverter()
@@ -132,12 +135,9 @@ final class AppleTTSAudioSourceTests: XCTestCase {
         var options = TTSOptions()
         options.voiceIdentifier = "com.example.nonexistent.voice"
 
-        do {
-            _ = try await backend.makeAudioSource(text: "hi", options: options)
-            XCTFail("Expected invalidInput for an unknown voice")
-        } catch {
-            XCTAssertEqual(error as? SpeechBackendError, .invalidInput)
-        }
+        let source = try await backend.makeAudioSource(text: "hi", options: options)
+
+        XCTAssertTrue(source is AppleTTSAudioSource)
     }
 
     // MARK: - Helpers

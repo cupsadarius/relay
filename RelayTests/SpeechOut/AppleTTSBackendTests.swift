@@ -26,20 +26,19 @@ final class AppleTTSBackendTests: XCTestCase {
         XCTAssertEqual(availability, .available)
     }
 
-    func testMakeAudioSourceRejectsAnUnknownVoiceIdentifierWithoutBuildingASynthesizer() async {
+    /// A stale saved voice id (e.g. a voice the user deleted) must fall back to the default voice.
+    /// Throwing `.invalidInput` there is not fallback-worthy, so it used to stop all TTS.
+    func testMakeAudioSourceFallsBackToTheDefaultVoiceForAnUnknownVoiceIdentifier() async throws {
         let synthesizerCount = SynthesizerCounter()
         let backend = makeBackend(synthesizerCount: synthesizerCount)
 
-        do {
-            _ = try await backend.makeAudioSource(
-                text: "hello",
-                options: TTSOptions(voiceIdentifier: "not-a-real-voice")
-            )
-            XCTFail("Expected invalidInput")
-        } catch {
-            XCTAssertEqual(error as? SpeechBackendError, .invalidInput)
-        }
-        XCTAssertEqual(synthesizerCount.value, 0, "An invalid voice must be rejected before any synthesizer is built")
+        let source = try await backend.makeAudioSource(
+            text: "hello",
+            options: TTSOptions(voiceIdentifier: "not-a-real-voice")
+        )
+
+        XCTAssertTrue(source is AppleTTSAudioSource)
+        XCTAssertEqual(synthesizerCount.value, 1)
     }
 
     func testMakeAudioSourceWithDefaultVoiceReturnsAnAppleSource() async throws {

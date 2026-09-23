@@ -46,11 +46,10 @@ final class AppleTTSBackend: TextToSpeechBackend {
         .available
     }
 
+    /// An unknown `voiceIdentifier` (e.g. a saved voice since removed from the system) is not an
+    /// error: `AppleTTSAudioSource` falls back to the default system voice.
     func makeAudioSource(text: String, options: TTSOptions) async throws -> any TTSAudioSource {
-        if let identifier = options.voiceIdentifier, AVSpeechSynthesisVoice(identifier: identifier) == nil {
-            throw SpeechBackendError.invalidInput
-        }
-        return AppleTTSAudioSource(
+        AppleTTSAudioSource(
             text: text,
             rate: options.rate,
             voiceIdentifier: options.voiceIdentifier,
