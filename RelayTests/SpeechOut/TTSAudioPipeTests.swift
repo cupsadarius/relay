@@ -63,12 +63,22 @@ final class TTSAudioPipeTests: XCTestCase {
             }
         }
 
-        await settle()
+        // Deterministically wait for "the third yield is now blocked" instead of guessing with a
+        // fixed number of yields: poll the pipe's own count of suspended producers.
+        let blockedDeadline = Date().addingTimeInterval(5)
+        while await pipe.sink.waitingProducerCount != 1, Date() < blockedDeadline {
+            await Task.yield()
+        }
+        let waitingBeforeDrain = await pipe.sink.waitingProducerCount
+        XCTAssertEqual(waitingBeforeDrain, 1, "the third 1s frame must wait: 2s buffered reached the 2s high watermark")
         let beforeDrain = await progress.value
         XCTAssertEqual(beforeDrain, 2, "the third 1s frame must wait: 2s buffered reached the 2s high watermark")
 
         _ = try await pipe.source.next()   // 1s buffered: not below the 1s low watermark yet
-        await settle()
+        // `next()` is an actor call that runs to completion (including any `resumeProducers()`
+        // decision) before returning, so the count is already settled here -- no settle() needed.
+        let waitingAfterFirstDrain = await pipe.sink.waitingProducerCount
+        XCTAssertEqual(waitingAfterFirstDrain, 1, "hysteresis: the producer stays blocked until buffered < low watermark")
         let afterFirstDrain = await progress.value
         XCTAssertEqual(afterFirstDrain, 2, "hysteresis: the producer stays blocked until buffered < low watermark")
 

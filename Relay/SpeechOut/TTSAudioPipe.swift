@@ -22,6 +22,14 @@ enum TTSAudioPipe {
         func cancel() async {
             await state.cancel()
         }
+
+        /// How many `yield` calls are currently suspended waiting for headroom below the high
+        /// watermark. Test-only visibility into backpressure state, so a test can poll for "the
+        /// producer is now blocked" deterministically instead of guessing with a fixed number of
+        /// `Task.yield()`s.
+        var waitingProducerCount: Int {
+            get async { await state.waitingProducerCount }
+        }
     }
 
     struct Source: TTSAudioSource {
@@ -61,6 +69,9 @@ enum TTSAudioPipe {
         private var terminal: Terminal = .open
         private var consumerWaiters: [CheckedContinuation<Void, Never>] = []
         private var producerWaiters: [CheckedContinuation<Void, Never>] = []
+        /// Count of `yield` calls currently suspended in the wait loop below, balanced around each
+        /// suspend/resume regardless of why it resumed (headroom opened up, or a terminal state).
+        private(set) var waitingProducerCount = 0
 
         init(highWatermark: TimeInterval, lowWatermark: TimeInterval) {
             self.highWatermark = highWatermark
@@ -69,9 +80,11 @@ enum TTSAudioPipe {
 
         func yield(_ frame: TTSAudioFrame) async throws {
             while case .open = terminal, bufferedDuration >= highWatermark {
+                waitingProducerCount += 1
                 await withCheckedContinuation { continuation in
                     producerWaiters.append(continuation)
                 }
+                waitingProducerCount -= 1
             }
 
             switch terminal {
