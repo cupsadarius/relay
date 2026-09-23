@@ -148,21 +148,7 @@ final class IntegrationManager {
     /// identically. Never invoked automatically; only ever reached from an explicit user action.
     func speakResponse(_ event: AgentResponseEvent) async throws {
         let prepared = preprocessor.prepare(text: event.text, mode: .automatic)
-        let source: SpeechSource
-        switch event.provider {
-        case .claudeCode:
-            source = .claudeCode
-        case .codex:
-            source = .codex
-        }
-
-        let request = SpeechRequest(
-            text: prepared,
-            source: source,
-            mode: .userRequested,
-            sessionID: "\(event.provider.rawValue):\(event.providerSessionID)"
-        )
-        try await speechCoordinator.speak(request)
+        try await speechCoordinator.speak(event.speechRequest(text: prepared, mode: .userRequested))
     }
 
     /// Reads the ephemeral latest response (if any) and submits it for speech as a

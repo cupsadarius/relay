@@ -136,13 +136,7 @@ actor AgentAutoReadCoordinator {
 
     private func speak(session: AgentSession, event: AgentResponseEvent, reason: String) async {
         diagnostics.append(stage: "coordinator", outcome: "spoke", detail: "provider=\(event.provider.rawValue) reason=\(reason)")
-        let source: SpeechSource = event.provider == .claudeCode ? .claudeCode : .codex
-        let request = SpeechRequest(
-            text: preprocess(event.text),
-            source: source,
-            mode: .automatic,
-            sessionID: "\(event.provider.rawValue):\(event.providerSessionID)"
-        )
+        let request = event.speechRequest(text: preprocess(event.text), mode: .automatic)
         do {
             try await speech.speak(request)
         } catch is CancellationError {
@@ -155,6 +149,6 @@ actor AgentAutoReadCoordinator {
     }
 
     private static func label(_ id: AgentSessionID) -> String {
-        "\(id.provider.rawValue):\(id.providerSessionID)"
+        id.qualifiedName
     }
 }

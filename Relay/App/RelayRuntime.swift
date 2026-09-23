@@ -352,7 +352,7 @@ final class RelayRuntime {
 
         let integrationManager = IntegrationManager(
             events: hookEnvelopeReceiver.events,
-            integrations: [ClaudeCodeIntegration(), CodexIntegration()],
+            integrations: [StopHookIntegration.claudeCode, StopHookIntegration.codex],
             speechCoordinator: coordinator,
             diagnostics: integrationDiagnosticsLog,
             onResponse: { event in await autoReadCoordinator.handle(event) }

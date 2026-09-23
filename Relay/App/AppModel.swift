@@ -251,7 +251,7 @@ final class AppModel {
         self.hookEnvelopeReceiver = hookEnvelopeReceiver
         self.integrationManager = integrationManager ?? IntegrationManager(
             events: hookEnvelopeReceiver.events,
-            integrations: [ClaudeCodeIntegration(), CodexIntegration()],
+            integrations: [StopHookIntegration.claudeCode, StopHookIntegration.codex],
             speechCoordinator: speechCoordinator,
             diagnostics: integrationDiagnosticsLog
         )

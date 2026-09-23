@@ -9,7 +9,7 @@ actor AgentSessionRegistry {
         processAncestry: [Int32],
         tty: String?
     ) -> AgentSession {
-        let id = AgentSessionID(provider: response.provider, providerSessionID: response.providerSessionID)
+        let id = response.sessionID
         let value = AgentSession(
             id: id,
             cwd: response.cwd,
