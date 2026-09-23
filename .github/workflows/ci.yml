@@ -70,9 +70,6 @@ jobs:
           fi
 
       - name: Lint (swift-format)
-        # Non-blocking until the baseline findings are fixed with `scripts/lint.sh --fix`
-        # (commit "style: apply swift-format"); then delete this line to make lint gate merges.
-        continue-on-error: true
         run: scripts/lint.sh --strict
 
       - name: Build & Test
