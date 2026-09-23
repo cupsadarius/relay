@@ -16,10 +16,9 @@ struct HelperInstaller {
 
     private let baseDirectory: URL
 
-    /// - Parameter baseDirectory: Relay's own directory under Application Support (normally
-    ///   `~/Library/Application Support/Relay`). Tests MUST inject a unique temporary
-    ///   directory here rather than relying on the default, so the real
-    ///   `~/Library/Application Support` is never read or written.
+    /// - Parameter baseDirectory: this build's support directory (`RelayPaths`). Tests MUST
+    ///   inject a unique temporary directory here rather than relying on the default, so the
+    ///   real `~/Library/Application Support` is never read or written.
     init(baseDirectory: URL = HelperInstaller.defaultBaseDirectory()) {
         self.baseDirectory = baseDirectory
     }

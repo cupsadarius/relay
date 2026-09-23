@@ -149,8 +149,8 @@ final class UnixSocketServer: @unchecked Sendable {
     /// Starts listening on the Unix-domain socket at `path`.
     ///
     /// - Parameters:
-    ///   - path: filesystem path for the socket, e.g.
-    ///     `~/Library/Application Support/Relay/relay.sock`.
+    ///   - path: filesystem path for the socket, under this build's support directory
+    ///     (`RelayPaths`), e.g. `~/Library/Application Support/Relay/relay.sock`.
     ///   - onLine: invoked once per newline-delimited line received from a
     ///     client, on the server's private serial queue. Must be
     ///     `Sendable`-safe; it is never invoked concurrently with itself.
