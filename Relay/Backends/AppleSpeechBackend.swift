@@ -1,6 +1,7 @@
 @preconcurrency import AVFoundation
 import Foundation
 import Speech
+import Synchronization
 
 final class AppleSpeechBackend: SpeechToTextBackend {
     let id = "apple-speech"
@@ -10,6 +11,10 @@ final class AppleSpeechBackend: SpeechToTextBackend {
     private let isSpeechTranscriberAvailable: @Sendable () async -> Bool
     private let prepareAssets: @Sendable (Locale) async throws -> Void
     private let transcribeAudio: @Sendable (AudioInput, Locale) async throws -> String
+
+    /// Locale identifiers whose on-device assets were confirmed installed during this process.
+    /// A failed preparation is never cached. Keyed by `Locale.identifier`.
+    private let installedAssetLocales = Mutex<Set<String>>([])
 
     init(
         isMacOS26OrLater: @escaping @Sendable () -> Bool = AppleSpeechBackend.defaultOSSupport,
@@ -42,16 +47,7 @@ final class AppleSpeechBackend: SpeechToTextBackend {
         }
 
         let locale = Locale(identifier: options.localeIdentifier)
-        do {
-            try await prepareAssets(locale)
-            try Task.checkCancellation()
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch let error as SpeechBackendError {
-            throw error
-        } catch {
-            throw SpeechBackendError.initializationFailed("Apple Speech preparation failed")
-        }
+        try await ensureAssets(for: locale)
 
         do {
             let text = try await transcribeAudio(audio, locale)
@@ -64,6 +60,23 @@ final class AppleSpeechBackend: SpeechToTextBackend {
         } catch {
             throw SpeechBackendError.inferenceFailed("Apple Speech analysis failed")
         }
+    }
+
+    private func ensureAssets(for locale: Locale) async throws {
+        if installedAssetLocales.withLock({ $0.contains(locale.identifier) }) {
+            return
+        }
+        do {
+            try await prepareAssets(locale)
+            try Task.checkCancellation()
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as SpeechBackendError {
+            throw error
+        } catch {
+            throw SpeechBackendError.initializationFailed("Apple Speech preparation failed")
+        }
+        installedAssetLocales.withLock { _ = $0.insert(locale.identifier) }
     }
 
     private static func defaultOSSupport() -> Bool {
@@ -184,7 +197,7 @@ private enum AppleSpeechRuntime {
             throw error
         } catch {
             await cancelAnalysisAndFinishResults()
-            throw SpeechBackendError.inferenceFailed(error.localizedDescription)
+            throw SpeechBackendError.inferenceFailed("Apple Speech analysis failed")
         }
     }
 

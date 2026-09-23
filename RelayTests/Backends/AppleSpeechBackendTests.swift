@@ -46,6 +46,50 @@ final class AppleSpeechBackendTests: XCTestCase {
         XCTAssertEqual(operations, [.prepared("fr-FR"), .transcribed("fr-FR")])
     }
 
+    func testAssetsArePreparedOncePerLocale() async throws {
+        let recorder = SpeechOperationRecorder()
+        let backend = AppleSpeechBackend(
+            isMacOS26OrLater: { true },
+            isSpeechTranscriberAvailable: { true },
+            prepareAssets: { locale in await recorder.recordPrepared(locale) },
+            transcribeAudio: { _, locale in
+                await recorder.recordTranscribed(locale)
+                return "Hello"
+            }
+        )
+        let audio = AudioInput(samples: [0.1], sampleRate: 16_000)
+
+        _ = try await backend.transcribe(audio: audio, options: STTOptions(localeIdentifier: "fr-FR"))
+        _ = try await backend.transcribe(audio: audio, options: STTOptions(localeIdentifier: "fr-FR"))
+        _ = try await backend.transcribe(audio: audio, options: STTOptions(localeIdentifier: "de-DE"))
+
+        let operations = await recorder.operations
+        XCTAssertEqual(operations, [
+            .prepared("fr-FR"), .transcribed("fr-FR"),
+            .transcribed("fr-FR"),
+            .prepared("de-DE"), .transcribed("de-DE"),
+        ])
+    }
+
+    func testFailedAssetPreparationIsRetriedOnTheNextCall() async throws {
+        let attempts = PreparationAttempts()
+        let backend = AppleSpeechBackend(
+            isMacOS26OrLater: { true },
+            isSpeechTranscriberAvailable: { true },
+            prepareAssets: { _ in
+                if await attempts.next() == 1 { throw TestFailure.failed }
+            },
+            transcribeAudio: { _, _ in "Hello" }
+        )
+        let audio = AudioInput(samples: [0.1], sampleRate: 16_000)
+
+        _ = try? await backend.transcribe(audio: audio, options: .init())
+        _ = try await backend.transcribe(audio: audio, options: .init())
+
+        let count = await attempts.count
+        XCTAssertEqual(count, 2)
+    }
+
     func testTranscribeMapsAssetPreparationFailureToInitializationFailure() async {
         let backend = AppleSpeechBackend(
             isMacOS26OrLater: { true },
@@ -147,6 +191,14 @@ final class AppleSpeechBackendTests: XCTestCase {
 
 private enum TestFailure: Error {
     case failed
+}
+
+private actor PreparationAttempts {
+    private(set) var count = 0
+    func next() -> Int {
+        count += 1
+        return count
+    }
 }
 
 private actor SpeechOperationRecorder {
