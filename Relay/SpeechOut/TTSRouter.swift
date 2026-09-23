@@ -26,6 +26,11 @@ final class TTSRouter {
     }
 
     private var candidate: CandidatePlayback?
+    /// The session `speak` is currently routing, set before any backend is consulted. A backend
+    /// can spend seconds inside `makeAudioSource` (Kokoro/PocketTTS model loads) before
+    /// `candidate` exists, so `stop(sessionID:)` also matches this, or a Stop pressed during
+    /// preparation would be ignored.
+    private var routingSessionID: UUID?
     private var eventHandler: (@MainActor (TTSPlaybackEvent, (any TextToSpeechBackend)?) -> Void)?
     private var routingGeneration = 0
 
@@ -59,6 +64,11 @@ final class TTSRouter {
     ) async throws {
         routingGeneration &+= 1
         let generation = routingGeneration
+        routingSessionID = sessionID
+        defer {
+            // A newer `speak` may already own `routingSessionID`; only clear our own.
+            if routingSessionID == sessionID { routingSessionID = nil }
+        }
         // Emitted exactly once per Relay speech session, before any backend attempt, so fallback
         // attempts never duplicate it.
         eventHandler?(.scheduled(sessionID: sessionID), nil)
@@ -134,14 +144,18 @@ final class TTSRouter {
 
     func stop() {
         routingGeneration &+= 1
+        routingSessionID = nil
         player.stop()
     }
 
-    /// No-ops unless `sessionID` matches the session currently being played, so a stale Interactive
-    /// Stop cannot cut off replacement speech. Returns whether the ID matched and a stop was issued.
+    /// No-ops unless `sessionID` matches the session currently being routed (still preparing its
+    /// source) or played, so a stale Interactive Stop cannot cut off replacement speech. Returns
+    /// whether the ID matched and a stop was issued. A stop during preparation bumps
+    /// `routingGeneration`, so `speak`'s post-`makeAudioSource` guard cancels the new source and
+    /// throws `CancellationError` instead of starting playback.
     @discardableResult
     func stop(sessionID: UUID) -> Bool {
-        guard candidate?.sessionID == sessionID else { return false }
+        guard routingSessionID == sessionID || candidate?.sessionID == sessionID else { return false }
         stop()
         return true
     }

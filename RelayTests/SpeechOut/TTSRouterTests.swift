@@ -262,6 +262,61 @@ final class TTSRouterTests: XCTestCase {
         XCTAssertEqual(player.stopCount, 1)
     }
 
+    func testSessionSpecificStopDuringSourcePreparationCancelsTheRequest() async throws {
+        let slow = FakeTTSBackend(id: "slow")
+        slow.suspendSourceCreation = true
+        let player = FakePlayer()
+        let router = makeRouter([slow], player: player)
+        let sessionID = UUID()
+
+        let speaking = Task {
+            try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
+        }
+        await waitUntil { slow.isSourceCreationSuspended }
+
+        XCTAssertTrue(router.stop(sessionID: sessionID), "a stop for the session being prepared must match it")
+        slow.resumeSourceCreation()
+
+        do {
+            try await speaking.value
+            XCTFail("Expected the stopped request to be cancelled")
+        } catch is CancellationError {}
+        XCTAssertTrue(player.started.isEmpty, "a stopped request must never reach the player")
+    }
+
+    func testSessionSpecificStopDuringPreparationIgnoresOtherSessionIDs() async throws {
+        let slow = FakeTTSBackend(id: "slow")
+        slow.suspendSourceCreation = true
+        let player = FakePlayer()
+        let router = makeRouter([slow], player: player)
+        let sessionID = UUID()
+
+        let speaking = Task {
+            try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
+        }
+        await waitUntil { slow.isSourceCreationSuspended }
+
+        XCTAssertFalse(router.stop(sessionID: UUID()))
+        slow.resumeSourceCreation()
+
+        try await speaking.value
+        XCTAssertEqual(player.started.count, 1)
+    }
+
+    func testRoutingSessionIsForgottenOnceRoutingFails() async {
+        let backend = FakeTTSBackend(id: "only")
+        backend.error = SpeechBackendError.invalidInput
+        let router = makeRouter([backend])
+        let sessionID = UUID()
+
+        do {
+            try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
+            XCTFail("Expected invalidInput")
+        } catch {}
+
+        XCTAssertFalse(router.stop(sessionID: sessionID))
+    }
+
     // MARK: Helpers
 
     private func makeRouter(
