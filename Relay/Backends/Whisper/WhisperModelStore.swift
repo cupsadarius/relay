@@ -183,6 +183,7 @@ struct WhisperModelStore: Sendable {
         against oid: WhisperFileOID,
         chunkSize: Int = verificationChunkSize
     ) throws -> Bool {
+        precondition(chunkSize > 0)
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
 
