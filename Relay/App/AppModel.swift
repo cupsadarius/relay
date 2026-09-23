@@ -28,16 +28,7 @@ final class AppModel {
 
     /// Menu-bar status: live activity (same source as the overlay pill), else the last message.
     /// Reads `overlayModel.state`, which is itself `@Observable`, so the menu updates live.
-    var activityStatusText: String {
-        switch overlayModel.state {
-        case .listening: "Listening…"
-        case .processing: "Transcribing…"
-        case .preparingSpeech: "Processing…"
-        case .speaking: "Speaking…"
-        case let .error(_, _, message): message
-        case .hidden: statusText
-        }
-    }
+    var activityStatusText: String { overlayModel.state.menuStatusText(idle: statusText) }
 
     // MARK: Diagnostics pass-throughs (DiagnosticsView)
 

@@ -193,3 +193,17 @@ final class ActivityOverlayModel {
 /// No behavior change: `ActivityOverlayModel` already implements every method
 /// `DictationActivityPublishing` requires with matching signatures.
 extension ActivityOverlayModel: DictationActivityPublishing {}
+
+extension ActivityOverlayState {
+    /// The menu-bar line for this state; `idle` is shown when nothing is happening.
+    func menuStatusText(idle: String) -> String {
+        switch self {
+        case .listening: "Listening…"
+        case .processing: "Transcribing…"
+        case .preparingSpeech: "Processing…"
+        case .speaking: "Speaking…"
+        case let .error(_, _, message): message
+        case .hidden: idle
+        }
+    }
+}

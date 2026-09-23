@@ -315,6 +315,22 @@ final class ActivityOverlayModelTests: XCTestCase {
         XCTAssertEqual(sessionID, session)
         XCTAssertNil(level)
     }
+
+    func testMenuStatusTextMapsEveryState() {
+        let id = UUID()
+        let now = Date()
+        let cases: [(ActivityOverlayState, String)] = [
+            (.hidden, "Ready"),
+            (.listening(sessionID: id, startedAt: now, level: 0), "Listening…"),
+            (.processing(sessionID: id, startedAt: now), "Transcribing…"),
+            (.preparingSpeech(sessionID: id, startedAt: now), "Processing…"),
+            (.speaking(sessionID: id, startedAt: now, level: nil), "Speaking…"),
+            (.error(sessionID: id, category: .microphone, message: "Mic unavailable"), "Mic unavailable"),
+        ]
+        for (state, expected) in cases {
+            XCTAssertEqual(state.menuStatusText(idle: "Ready"), expected, "state: \(state)")
+        }
+    }
 }
 
 /// Deterministic stand-in for `ActivityOverlayModel`'s real scheduler so
