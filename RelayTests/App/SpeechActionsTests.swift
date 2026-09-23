@@ -167,6 +167,7 @@ final class SpeechActionsTests: XCTestCase {
 
         await actions.previewVoice(backendID: "kokoro", voiceID: "kokoro:am_adam")
 
+        XCTAssertEqual(speech.previews.count, 1)
         XCTAssertEqual(speech.previews.first?.backendID, "kokoro")
         XCTAssertEqual(speech.previews.first?.options.kokoroVoice, "am_adam")
         XCTAssertEqual(speech.previews.first?.options.rate, 0.75)
@@ -218,6 +219,8 @@ final class SpeechActionsTests: XCTestCase {
         await actions.speakLatestAgentResponse()
 
         XCTAssertEqual(speech.requests.count, 1)
+        XCTAssertEqual(speech.requests.first?.source, .claudeCode)
+        XCTAssertEqual(speech.requests.first?.mode, .userRequested)
         XCTAssertEqual(runtime.status.message, "Ready")
     }
 }

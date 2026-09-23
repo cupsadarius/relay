@@ -95,6 +95,26 @@ final class PermissionsModelTests: XCTestCase {
         XCTAssertTrue(model.launchAtLoginEnabled)
     }
 
+    /// The service starting already enabled must be reflected at construction, not just after a
+    /// later `setLaunchAtLogin` call.
+    func testLaunchAtLoginReflectsAnAlreadyEnabledService() {
+        let loginItem = SpyLoginItemController(enabled: true)
+        let (model, _) = makeModel(loginItem: loginItem)
+
+        XCTAssertTrue(model.launchAtLoginEnabled)
+    }
+
+    func testLaunchAtLoginCanBeTurnedOff() {
+        let loginItem = SpyLoginItemController(enabled: true)
+        let (model, _) = makeModel(loginItem: loginItem)
+        XCTAssertTrue(model.launchAtLoginEnabled)
+
+        model.setLaunchAtLogin(false)
+
+        XCTAssertEqual(loginItem.setEnabledCalls, [false])
+        XCTAssertFalse(model.launchAtLoginEnabled)
+    }
+
     func testLaunchAtLoginFailureKeepsActualStatusAndAnnounces() {
         let loginItem = SpyLoginItemController(enabled: false, setEnabledError: CancellationError())
         let (model, runtime) = makeModel(loginItem: loginItem)
