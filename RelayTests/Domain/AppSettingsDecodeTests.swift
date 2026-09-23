@@ -180,6 +180,23 @@ final class AppSettingsDecodeTests: XCTestCase {
         XCTAssertEqual(decoded.dictationMode, .toggle)
     }
 
+    /// `voiceByBackend` decodes per-entry, same as `hotkeys`: a single malformed value drops only
+    /// that backend's entry, not every other backend's voice selection.
+    func testMalformedVoiceValueDropsOnlyThatEntry() throws {
+        var saved = AppSettings.defaults
+        saved.dictationMode = .toggle
+        saved.voiceByBackend = ["kokoro": "af_heart", "apple-tts": "voice.test"]
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as? [String: Any]
+        )
+        object["voiceByBackend"] = ["kokoro": 7, "apple-tts": "voice.test"]
+
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
+
+        XCTAssertEqual(decoded.voiceByBackend, ["apple-tts": "voice.test"])
+        XCTAssertEqual(decoded.dictationMode, .toggle)
+    }
+
     func testUnknownActivityOverlayStyleFallsBackToDefault() throws {
         var saved = AppSettings.defaults
         saved.autoReadEnabled = false

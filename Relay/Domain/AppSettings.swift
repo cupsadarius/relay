@@ -91,8 +91,10 @@ struct AppSettings: Codable, Equatable, Sendable {
         if savedSchemaVersion < 2 {
             voiceByBackend = AppSettings.migrateLegacyVoices(from: decoder)
         } else {
-            // Current, or newer than this build knows: best-effort per-field decode.
-            voiceByBackend = field(.voiceByBackend, default: fallback.voiceByBackend)
+            // Current, or newer than this build knows: decode per-entry, same as `hotkeys` above,
+            // so one malformed voice value drops only that backend's entry rather than the whole
+            // map via `try?`'s all-or-nothing collapse.
+            voiceByBackend = AppSettings.decodeVoiceByBackend(from: values) ?? fallback.voiceByBackend
         }
         liveTranscriptionEnabled = field(.liveTranscriptionEnabled, default: fallback.liveTranscriptionEnabled)
         selectedSpeechModelByBackend = field(
@@ -167,6 +169,27 @@ struct AppSettings: Codable, Equatable, Sendable {
             return (!object.allKeys.isEmpty && result.isEmpty) ? nil : result
         }
         return nil
+    }
+
+    /// Decodes `voiceByBackend` one entry at a time, so a single malformed voice value (e.g. a
+    /// non-string JSON value written by some future build) drops only that backend's entry
+    /// instead of the whole map — `try?` around a single `[String: String]` decode would collapse
+    /// on the FIRST bad value and lose every entry. Returns `nil` (caller falls back to the
+    /// default map) when the field is missing/not an object, or has at least one entry but every
+    /// one of them is malformed; an honestly empty object still decodes to an empty map.
+    private static func decodeVoiceByBackend(
+        from values: KeyedDecodingContainer<CodingKeys>
+    ) -> [String: String]? {
+        guard let object = try? values.nestedContainer(keyedBy: HotkeyMapKey.self, forKey: .voiceByBackend) else {
+            return nil
+        }
+        var result: [String: String] = [:]
+        for key in object.allKeys {
+            if let value = try? object.decode(LossyDecodable<String>.self, forKey: key), let value = value.value {
+                result[key.stringValue] = value
+            }
+        }
+        return (!object.allKeys.isEmpty && result.isEmpty) ? nil : result
     }
 
     /// Filters `order` down to ids in `knownIDs`, preserving their relative order and collapsing
