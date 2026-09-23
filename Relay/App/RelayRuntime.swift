@@ -182,6 +182,10 @@ final class RelayRuntime {
             processInspector: processInspector
         )
 
+        // Shared so ClipboardService's copy cycle and TextInsertionService's paste-fallback
+        // write/restore cycle never interleave on the real pasteboard.
+        let clipboardGate = ClipboardGate()
+
         let dictation = DictationCoordinator(
             microphone: MicrophoneCapture(onCaptureDiagnostics: { @MainActor (diagnosticsRecord: MicrophoneCaptureDiagnostics) in
                 diagnostics.recordMicrophoneCapture(diagnosticsRecord)
@@ -191,7 +195,7 @@ final class RelayRuntime {
                 backendOrder: { settings.value.sttBackendOrder }
             ),
             processor: RulesTranscriptProcessor(),
-            textInserter: TextInsertionService(),
+            textInserter: TextInsertionService(gate: clipboardGate),
             stopSpeech: { coordinator.stop() },
             status: { status.post($0) },
             activity: overlayModel,
@@ -255,7 +259,7 @@ final class RelayRuntime {
             hotkeyManager: GlobalHotkeyManager(diagnostics: diagnostics),
             selectionReader: SelectionReader(
                 accessibility: AccessibilityService(),
-                clipboard: ClipboardService()
+                clipboard: ClipboardService(gate: clipboardGate)
             ),
             preprocessor: RulesSpeechPreprocessor()
         )

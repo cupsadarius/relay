@@ -86,11 +86,47 @@ protocol ClipboardRestoreScheduling {
     ) -> any ClipboardRestoreHandle
 }
 
+/// Serializes `ClipboardService`'s copy cycle against `TextInsertionService`'s paste-fallback
+/// write/restore cycle so the two can never interleave on the real pasteboard: one instance is
+/// shared between them (see `RelayRuntime.makeProduction()`). `TextInsertionService.insert(_:)`
+/// stays synchronous (a deliberate invariant `DictationCoordinator` relies on — see its comment at
+/// the `insert` call site), so this gate is asymmetric: the async side (`ClipboardService`) always
+/// waits for whichever side already holds the clipboard; the synchronous side (`TextInsertionService`)
+/// can only check `isBusy` and decline to start rather than block.
+@MainActor
+final class ClipboardGate {
+    private var releaseTask: Task<Void, Never>?
+
+    /// Whether some operation currently holds the clipboard.
+    var isBusy: Bool { releaseTask != nil }
+
+    /// Suspends until whichever operation currently holds the clipboard has released it.
+    func acquire() async {
+        if let releaseTask {
+            await releaseTask.value
+        }
+    }
+
+    /// Marks the clipboard busy until `task` completes. Synchronous, so a caller that cannot
+    /// itself `await` (like a synchronous paste-fallback write) can still register its own busy
+    /// window and release it later from wherever its work actually finishes.
+    func markBusy(until task: Task<Void, Never>) {
+        releaseTask = task
+    }
+
+    /// Clears the busy marker. Callers must call this once their own held window ends (whether or
+    /// not `task` from `markBusy` has itself finished yet).
+    func release() {
+        releaseTask = nil
+    }
+}
+
 @MainActor
 final class ClipboardService: ClipboardReading {
     private let pasteboard: any ClipboardPasteboard
     private let copyCommand: any CopyCommandSending
     private let waiter: any ClipboardWaiting
+    private let gate: ClipboardGate
     /// The copy currently under way, if any. A second call arriving while one is in flight joins
     /// this instead of starting a second ⌘C (which would snapshot Relay's own temporary content
     /// as the user's "original") or failing outright.
@@ -99,11 +135,13 @@ final class ClipboardService: ClipboardReading {
     init(
         pasteboard: any ClipboardPasteboard = GeneralClipboardPasteboard(),
         copyCommand: any CopyCommandSending = SystemKeyCommand.copy,
-        waiter: any ClipboardWaiting = SleepingClipboardWaiter()
+        waiter: any ClipboardWaiting = SleepingClipboardWaiter(),
+        gate: ClipboardGate = ClipboardGate()
     ) {
         self.pasteboard = pasteboard
         self.copyCommand = copyCommand
         self.waiter = waiter
+        self.gate = gate
     }
 
     /// Sends ⌘C, waits up to 200 ms for the pasteboard to change, reads the string, then puts the
@@ -138,6 +176,16 @@ final class ClipboardService: ClipboardReading {
     }
 
     private func performCopy() async throws -> String? {
+        // Wait for the gate (e.g. a paste-fallback insertion mid-restore), then hold it for our
+        // own duration so a copy in flight is visible to anyone else consulting the gate.
+        await gate.acquire()
+        let (busySignal, busyContinuation) = AsyncStream<Void>.makeStream()
+        gate.markBusy(until: Task { for await _ in busySignal {} })
+        defer {
+            busyContinuation.finish()
+            gate.release()
+        }
+
         let original = pasteboard.snapshot()
         let originalChangeCount = pasteboard.changeCount
         try copyCommand.sendCopy()

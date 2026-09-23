@@ -144,6 +144,31 @@ final class ClipboardServiceTests: XCTestCase {
         XCTAssertEqual(pasteboard.restoredSnapshots, [original])
     }
 
+    /// `ClipboardService` shares a `ClipboardGate` with `TextInsertionService`'s paste fallback;
+    /// while that gate is busy (a paste-fallback write/restore in flight), a copy must wait rather
+    /// than read or restore the pasteboard out from under it.
+    func testCopyWaitsForTheSharedGateBeforeTouchingThePasteboard() async throws {
+        let gate = ClipboardGate()
+        let (busySignal, busyContinuation) = AsyncStream<Void>.makeStream()
+        gate.markBusy(until: Task { for await _ in busySignal {} })
+
+        let original = ClipboardSnapshot(items: [])
+        let pasteboard = FakeClipboardPasteboard(changeCount: 1, snapshot: original, copiedString: "selected")
+        let copyCommand = FakeCopyCommand()
+        let waiter = FakeClipboardWaiter { pasteboard.changeCount = 2 }
+        let service = ClipboardService(pasteboard: pasteboard, copyCommand: copyCommand, waiter: waiter, gate: gate)
+
+        let task = Task { try await service.copyCurrentSelection() }
+        for _ in 0..<3 { await Task.yield() }
+        XCTAssertEqual(copyCommand.callCount, 0, "must not send ⌘C while the shared gate is busy")
+
+        busyContinuation.finish()
+        let result = try await task.value
+
+        XCTAssertEqual(result, "selected")
+        XCTAssertEqual(copyCommand.callCount, 1)
+    }
+
     func testSnapshotCapturesEveryDataRepresentableType() {
         let item = NSPasteboardItem()
         let textType = NSPasteboard.PasteboardType.string

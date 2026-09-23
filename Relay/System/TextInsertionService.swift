@@ -4,6 +4,9 @@ enum TextInsertionError: Error, Equatable {
     case clipboardWriteFailed
     case accessibilityPermissionDenied
     case emptyText
+    /// `ClipboardService` is mid-copy right now; starting the paste fallback here would risk
+    /// interleaving its write/restore with that copy's own read/restore on the same pasteboard.
+    case clipboardBusy
 }
 
 /// Which mechanism actually delivered the text. Diagnostics may report this;
@@ -96,6 +99,7 @@ final class TextInsertionService: TextInserting {
     private let pasteCommand: any PasteCommandSending
     private let scheduler: any ClipboardRestoreScheduling
     private let canPostEvents: () -> Bool
+    private let gate: ClipboardGate
     /// The restore for the most recent paste-fallback insertion, if it hasn't run yet.
     private var pendingRestore: (@MainActor () -> Void)?
     private var pendingRestoreHandle: (any ClipboardRestoreHandle)?
@@ -105,13 +109,15 @@ final class TextInsertionService: TextInserting {
         clipboard: any ClipboardPasteboard = GeneralClipboardPasteboard(),
         pasteCommand: any PasteCommandSending = SystemKeyCommand.paste,
         scheduler: any ClipboardRestoreScheduling = TaskClipboardRestoreScheduler(),
-        canPostEvents: @escaping () -> Bool = { CGPreflightPostEventAccess() }
+        canPostEvents: @escaping () -> Bool = { CGPreflightPostEventAccess() },
+        gate: ClipboardGate = ClipboardGate()
     ) {
         self.accessibility = accessibility
         self.clipboard = clipboard
         self.pasteCommand = pasteCommand
         self.scheduler = scheduler
         self.canPostEvents = canPostEvents
+        self.gate = gate
     }
 
     @discardableResult
@@ -131,8 +137,18 @@ final class TextInsertionService: TextInserting {
         // If an earlier paste's clipboard restore is still pending, run it now instead of
         // letting it fire later: otherwise this insertion would snapshot Relay's own
         // temporary pasteboard content as its "original", and once its own restore fires it
-        // would permanently overwrite the user's real clipboard with that leftover text.
+        // would permanently overwrite the user's real clipboard with that leftover text. This
+        // also releases our own hold on the shared gate below, so the check right after it only
+        // ever sees genuine cross-service contention, never our own still-pending work.
         flushPendingRestore()
+
+        // `insert` is synchronous and can't await ClipboardService's gate (DictationCoordinator
+        // relies on that: see its comment at the `insert` call site), so this is a best-effort
+        // check rather than true mutual exclusion — but it stops the common case of starting a
+        // paste-fallback write while a copy is actively reading/restoring the same pasteboard.
+        guard !gate.isBusy else {
+            throw TextInsertionError.clipboardBusy
+        }
 
         let originalClipboard = clipboard.snapshot()
         let ownershipToken = Data(UUID().uuidString.utf8)
@@ -150,11 +166,24 @@ final class TextInsertionService: TextInserting {
             throw error
         }
 
+        // Hold the shared gate until the restore below fires, so a copy starting in the
+        // meantime (it can await, unlike us) waits for this paste-fallback to finish instead of
+        // reading or restoring the pasteboard while our temporary content is still on it.
+        // Captured directly (not via `self`) so the gate is always released even if this
+        // service happens to be deallocated before the scheduled restore fires.
+        let gate = self.gate
+        let (busySignal, busyContinuation) = AsyncStream<Void>.makeStream()
+        gate.markBusy(until: Task { for await _ in busySignal {} })
+
         // Restoring synchronously here (via a nested run loop) would let other event
         // handlers reenter while `insert` is still on the stack. Instead we return
         // immediately and let the target app read the pasteboard before restoring it;
         // `flushPendingRestore` above keeps a later overlapping insertion safe.
         let restore: @MainActor () -> Void = { [weak self] in
+            defer {
+                busyContinuation.finish()
+                gate.release()
+            }
             guard let self else { return }
             self.clipboard.restore(originalClipboard, ifOwnedBy: ownershipToken)
             self.pendingRestore = nil

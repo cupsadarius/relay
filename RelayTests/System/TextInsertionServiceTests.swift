@@ -56,6 +56,36 @@ final class TextInsertionServiceTests: XCTestCase {
         XCTAssertEqual(paste.sendCount, 1)
     }
 
+    /// A paste-fallback write must not start while `ClipboardService` is mid-copy: both share one
+    /// `ClipboardGate`, and interleaving their reads/writes/restores on the same pasteboard could
+    /// corrupt either the pasted text or the user's original clipboard.
+    func testDeclinesThePasteFallbackWhileTheSharedGateIsBusy() throws {
+        let accessibility = FakeTextAccessibility(
+            focusedValue: AXUIElementCreateSystemWide(),
+            canReplace: true,
+            settable: true,
+            initialRange: nil
+        )
+        let clipboard = FakeInsertionClipboard()
+        let paste = FakePasteCommand()
+        let gate = ClipboardGate()
+        gate.markBusy(until: Task {})
+        let service = TextInsertionService(
+            accessibility: accessibility,
+            clipboard: clipboard,
+            pasteCommand: paste,
+            scheduler: FakeClipboardRestoreScheduler(),
+            canPostEvents: { true },
+            gate: gate
+        )
+
+        XCTAssertThrowsError(try service.insert("dictated text")) { error in
+            XCTAssertEqual(error as? TextInsertionError, .clipboardBusy)
+        }
+        XCTAssertTrue(clipboard.writtenStrings.isEmpty)
+        XCTAssertEqual(paste.sendCount, 0)
+    }
+
     func testFallsBackToPasteWhenSelectedRangeIsUnchangedAfterWrite() throws {
         let accessibility = FakeTextAccessibility(
             focusedValue: AXUIElementCreateSystemWide(),
