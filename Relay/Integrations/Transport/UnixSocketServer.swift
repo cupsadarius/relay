@@ -64,9 +64,9 @@ extension UnixSocketServerError {
 /// - Important: never logs or otherwise surfaces line contents. Callers are
 ///   responsible for keeping their `onLine` closures privacy-safe as well.
 final class UnixSocketServer: @unchecked Sendable {
-    /// Maximum size, in bytes, of a single newline-delimited line. Matches
-    /// the Relay hook transport's global 2 MiB envelope limit.
-    static let maxLineBytes = 2 * 1024 * 1024
+    /// Maximum size, in bytes, of a single newline-delimited line: the shared
+    /// hook envelope wire limit `RelayHook` also checks before sending.
+    static let maxLineBytes = HookEnvelope.maxWireBytes
 
     /// Maximum number of simultaneously open client connections. Beyond this,
     /// newly accepted file descriptors are closed immediately instead of
@@ -94,7 +94,7 @@ final class UnixSocketServer: @unchecked Sendable {
     private var acceptSourceSuspended = false
     private var socketPath: String?
     private var onLine: (@Sendable (String) -> Void)?
-    private var connections: [Int32: ClientConnection] = [:]
+    private var connections: [Int32: UnixSocketClientConnection] = [:]
 
     /// File descriptor for the single-instance lockfile (`<socketDir>/relay.lock`),
     /// held via `flock(LOCK_EX | LOCK_NB)` for the server's entire lifetime.
@@ -300,7 +300,7 @@ final class UnixSocketServer: @unchecked Sendable {
     }
 
     private func beginReading(clientFD: Int32) {
-        let connection = ClientConnection(fd: clientFD)
+        let connection = UnixSocketClientConnection(fd: clientFD)
         let source = DispatchSource.makeReadSource(fileDescriptor: clientFD, queue: queue)
         source.setEventHandler { [weak self] in
             self?.handleReadable(clientFD: clientFD)
@@ -324,7 +324,13 @@ final class UnixSocketServer: @unchecked Sendable {
         if bytesRead > 0 {
             let shouldClose = connection.append(
                 bytes: readBuffer[0..<bytesRead],
-                onLine: onLine
+                onLine: onLine,
+                onOversizedLine: { byteCount in
+                    self.diagnostics.append(stage: "socket", outcome: "dropped", detail: "oversized-line (\(byteCount) bytes)")
+                },
+                onOversizedUnterminated: { byteCount in
+                    self.diagnostics.append(stage: "socket", outcome: "dropped", detail: "oversized-unterminated (\(byteCount) bytes)")
+                }
             )
             if shouldClose {
                 closeConnection(clientFD)
@@ -540,8 +546,9 @@ final class UnixSocketServer: @unchecked Sendable {
 }
 
 /// Per-connection buffering state, confined to `UnixSocketServer`'s serial
-/// queue. Not `Sendable`: never touch it off that queue.
-private final class ClientConnection {
+/// queue. Not `Sendable`: never touch it off that queue. Internal (not
+/// private) only so tests can drive `append` directly.
+final class UnixSocketClientConnection {
     let fd: Int32
     var source: DispatchSourceRead?
     private var buffer: [UInt8] = []
@@ -551,11 +558,19 @@ private final class ClientConnection {
     }
 
     /// Appends newly read bytes, emitting one `onLine` call per
-    /// newline-delimited line found. Returns `true` when the connection
-    /// must be closed because a line exceeded the maximum size without a
-    /// newline ever arriving — this bounds memory growth instead of
-    /// buffering an unbounded amount of data.
-    func append(bytes: ArraySlice<UInt8>, onLine: (@Sendable (String) -> Void)?) -> Bool {
+    /// newline-delimited line found. A newline-terminated line over
+    /// `UnixSocketServer.maxLineBytes` is dropped and reported through
+    /// `onOversizedLine` (with its byte count), and the lines after it still
+    /// arrive. Returns `true` when the connection must be closed because the
+    /// buffer exceeded the maximum size without a newline ever arriving,
+    /// reported through `onOversizedUnterminated`. This bounds memory growth
+    /// instead of buffering an unbounded amount of data.
+    func append(
+        bytes: ArraySlice<UInt8>,
+        onLine: (@Sendable (String) -> Void)?,
+        onOversizedLine: (Int) -> Void,
+        onOversizedUnterminated: (Int) -> Void = { _ in }
+    ) -> Bool {
         buffer.append(contentsOf: bytes)
 
         while let newlineIndex = buffer.firstIndex(of: UInt8(ascii: "\n")) {
@@ -563,7 +578,8 @@ private final class ClientConnection {
             defer { buffer.removeSubrange(buffer.startIndex...newlineIndex) }
 
             guard lineBytes.count <= UnixSocketServer.maxLineBytes else {
-                continue // Oversized but newline-terminated: drop silently.
+                onOversizedLine(lineBytes.count)
+                continue
             }
             if let line = String(bytes: lineBytes, encoding: .utf8) {
                 onLine?(line)
@@ -571,6 +587,7 @@ private final class ClientConnection {
         }
 
         if buffer.count > UnixSocketServer.maxLineBytes {
+            onOversizedUnterminated(buffer.count)
             buffer.removeAll(keepingCapacity: false)
             return true
         }

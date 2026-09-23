@@ -261,6 +261,46 @@ final class UnixSocketServerTests: XCTestCase {
         await fulfillment(of: [receivedShortLine], timeout: 1)
     }
 
+    /// Unit-level (no socket), so the newline-terminated oversized path is deterministic
+    /// regardless of how the kernel splits reads.
+    func testOversizedTerminatedLineIsReportedAndFollowingLinesStillArrive() {
+        let connection = UnixSocketClientConnection(fd: -1)
+        let lines = LineBox()
+        var oversizedByteCounts: [Int] = []
+        var bytes = [UInt8](repeating: UInt8(ascii: "a"), count: UnixSocketServer.maxLineBytes + 1)
+        bytes.append(UInt8(ascii: "\n"))
+        bytes.append(contentsOf: Array(#"{"ok":1}"#.utf8))
+        bytes.append(UInt8(ascii: "\n"))
+
+        let shouldClose = connection.append(
+            bytes: bytes[...],
+            onLine: { lines.append($0) },
+            onOversizedLine: { oversizedByteCounts.append($0) }
+        )
+
+        XCTAssertFalse(shouldClose)
+        XCTAssertEqual(oversizedByteCounts, [UnixSocketServer.maxLineBytes + 1])
+        XCTAssertEqual(lines.values, [#"{"ok":1}"#])
+    }
+
+    func testOversizedUnterminatedLineIsRecordedInDiagnosticsAndClosesTheConnection() async throws {
+        let path = temporarySocketPath()
+        let diagnostics = IntegrationDiagnosticsLog()
+        let server = UnixSocketServer(diagnostics: diagnostics)
+        try server.start(path: path) { _ in }
+        defer { server.stop() }
+
+        try await UnixSocketTestClient.send(String(repeating: "a", count: UnixSocketServer.maxLineBytes + 1), to: path)
+
+        let deadline = Date().addingTimeInterval(2)
+        while !diagnostics.snapshot().contains(where: { $0.stage == "socket" && $0.outcome == "dropped" }),
+              Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let entry = try XCTUnwrap(diagnostics.snapshot().first { $0.stage == "socket" && $0.outcome == "dropped" })
+        XCTAssertTrue(entry.detail.hasPrefix("oversized-unterminated ("))
+    }
+
     func testConnectionsBeyondTheCapAreDroppedWhileWithinCapClientsAreStillServed() async throws {
         let path = temporarySocketPath()
         let server = UnixSocketServer()
@@ -381,5 +421,23 @@ final class UnixSocketServerTests: XCTestCase {
         // connection — the aborted peer must not have wedged anything.
         try await UnixSocketTestClient.send(#"{"schemaVersion":1}"# + "\n", to: path)
         await fulfillment(of: [receivedFollowUpLine], timeout: 1)
+    }
+}
+
+/// Collects lines from `UnixSocketClientConnection`'s `@Sendable` `onLine` callback in tests.
+private final class LineBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [String] = []
+
+    func append(_ line: String) {
+        lock.lock()
+        storage.append(line)
+        lock.unlock()
+    }
+
+    var values: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
     }
 }

@@ -104,7 +104,12 @@ func runRelayHook() {
     )
 
     do {
-        let data = try JSONEncoder().encode(envelope)
+        guard let data = try envelope.wireData() else {
+            // JSON escaping grew a payload that passed the raw stdin cap past the socket's
+            // line limit. Relay would drop the line anyway, so don't send it.
+            debugLog("skip=oversized-envelope")
+            finish()
+        }
         let client = HookTransportClient(socketPath: HookTransportClient.defaultSocketPath)
         // Delivery is best-effort and bounded by a short total deadline
         // (connect + write). Relay may not be running, the socket may not
