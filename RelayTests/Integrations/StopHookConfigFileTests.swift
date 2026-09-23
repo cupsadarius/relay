@@ -289,4 +289,83 @@ final class StopHookConfigFileTests: XCTestCase {
         try file.uninstall()
         XCTAssertFalse(try file.containsRelayEntry())
     }
+
+    // MARK: - Safe writes
+
+    private func posixPermissions(_ url: URL) throws -> Int {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        return (attributes[.posixPermissions] as! NSNumber).intValue
+    }
+
+    private var backupURL: URL {
+        URL(fileURLWithPath: fileURL.path + StopHookConfigFile.backupSuffix)
+    }
+
+    func testNoOpInstallLeavesBytesAndModificationDateUntouched() throws {
+        let file = makeFile()
+        try file.install()
+        let pastDate = Date(timeIntervalSince1970: 1_000_000)
+        try FileManager.default.setAttributes([.modificationDate: pastDate], ofItemAtPath: fileURL.path)
+        let before = try Data(contentsOf: fileURL)
+
+        try file.install()
+
+        XCTAssertEqual(try Data(contentsOf: fileURL), before)
+        let modified = try FileManager.default.attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date
+        XCTAssertEqual(modified, pastDate)
+    }
+
+    func testInstallThroughSymlinkUpdatesTargetAndKeepsTheLink() throws {
+        let realDirectory = tempDirectory.appendingPathComponent("dotfiles", isDirectory: true)
+        try FileManager.default.createDirectory(at: realDirectory, withIntermediateDirectories: true)
+        let realFile = realDirectory.appendingPathComponent("real-settings.json")
+        try Data(#"{"keep":1}"#.utf8).write(to: realFile)
+        try FileManager.default.createSymbolicLink(atPath: fileURL.path, withDestinationPath: realFile.path)
+
+        try makeFile().install()
+
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: fileURL.path), realFile.path)
+        let real = try JSONSerialization.jsonObject(with: Data(contentsOf: realFile)) as! [String: Any]
+        XCTAssertEqual(real["keep"] as? Int, 1)
+        XCTAssertEqual(commandStrings(stopGroups(real)), [relayCommand()])
+    }
+
+    func testInstallPreservesRestrictivePermissions() throws {
+        try writeRaw(#"{"keep":1}"#)
+        XCTAssertEqual(chmod(fileURL.path, 0o600), 0)
+
+        try makeFile().install()
+
+        XCTAssertEqual(try posixPermissions(fileURL), 0o600)
+    }
+
+    func testNewFileIsCreatedWithDefaultPermissionsAndNoBackup() throws {
+        try makeFile().install()
+
+        XCTAssertEqual(try posixPermissions(fileURL), StopHookConfigFile.newFilePermissions)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: backupURL.path))
+    }
+
+    func testFirstModificationCreatesBackupOnceWithOriginalBytes() throws {
+        let originalJSON = #"{"keep":1}"#
+        try writeRaw(originalJSON)
+        let file = makeFile()
+
+        try file.install()
+        XCTAssertEqual(try String(contentsOf: backupURL, encoding: .utf8), originalJSON)
+
+        try file.uninstall()
+        XCTAssertEqual(
+            try String(contentsOf: backupURL, encoding: .utf8), originalJSON,
+            "a later modification must never overwrite the one-time backup"
+        )
+    }
+
+    func testWrittenJSONDoesNotEscapeSlashes() throws {
+        try makeFile().install()
+
+        let text = try String(contentsOf: fileURL, encoding: .utf8)
+        XCTAssertTrue(text.contains("/Applications/Relay.app/Contents/Helpers/RelayHook"))
+        XCTAssertFalse(text.contains(#"\/"#))
+    }
 }

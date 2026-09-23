@@ -23,9 +23,18 @@ enum IntegrationInstallerError: Error, Equatable, Sendable {
 /// `--provider <raw>` suffix) — is ever added, rewritten, or removed. Every other key, hook
 /// event, matcher group, and `Stop` entry is left untouched.
 ///
+/// Writes are conservative: a merge that changes nothing never touches the file; a symlinked
+/// config is updated at its real target (the link survives); the target's POSIX permissions are
+/// preserved; and the first modification of a pre-existing file leaves a one-time
+/// `<target>.relay-backup` copy beside it.
+///
 /// Never logs file contents; only structural facts.
 struct StopHookConfigFile: Sendable {
     static let helperBasename = "RelayHook"
+    static let backupSuffix = ".relay-backup"
+    /// Mode for a config file Relay creates from scratch (what `Data.write` produced before under
+    /// the default umask).
+    static let newFilePermissions = 0o644
 
     let fileURL: URL
     let provider: AgentProvider
@@ -211,12 +220,69 @@ struct StopHookConfigFile: Sendable {
         return dict
     }
 
-    /// `original` is what `readIfExists()` returned (`nil` when no file existed). Unused until
-    /// Task 2's no-op skip.
     private func write(_ root: [String: Any], replacing original: [String: Any]?) throws {
-        let directory = fileURL.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let data = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
-        try data.write(to: fileURL, options: .atomic)
+        if let original, NSDictionary(dictionary: original).isEqual(to: root) { return }
+
+        let fileManager = FileManager.default
+        let target = Self.resolvedWriteTarget(for: fileURL)
+        try fileManager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+
+        let existingPermissions = (try? fileManager.attributesOfItem(atPath: target.path))?[.posixPermissions] as? NSNumber
+        if existingPermissions != nil {
+            try Self.backUpOnce(target)
+        }
+
+        // `.sortedKeys` deliberately kept: Swift dictionary order is randomly seeded per process,
+        // so without it every modifying write would reshuffle the user's keys.
+        let data = try JSONSerialization.data(
+            withJSONObject: root,
+            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        )
+        try Self.atomicallyReplace(
+            target,
+            with: data,
+            permissions: existingPermissions?.intValue ?? Self.newFilePermissions
+        )
+    }
+
+    /// Follows `url` through at most 16 symlink hops (absolute or relative destinations) and
+    /// returns the real file to write. A non-link (or missing path) is returned unchanged.
+    static func resolvedWriteTarget(for url: URL) -> URL {
+        var current = url
+        for _ in 0..<16 {
+            guard let destination = try? FileManager.default.destinationOfSymbolicLink(atPath: current.path) else {
+                return current
+            }
+            current = destination.hasPrefix("/")
+                ? URL(fileURLWithPath: destination)
+                : current.deletingLastPathComponent().appendingPathComponent(destination)
+        }
+        return current
+    }
+
+    /// Copies `target` to `<target>.relay-backup` unless that backup already exists.
+    private static func backUpOnce(_ target: URL) throws {
+        let backup = URL(fileURLWithPath: target.path + backupSuffix)
+        guard !FileManager.default.fileExists(atPath: backup.path) else { return }
+        try FileManager.default.copyItem(at: target, to: backup)
+    }
+
+    /// Writes `data` to a sibling temp file created with `permissions`, then `rename(2)`s it over
+    /// `target`: readers never observe a partial file, and the mode is right from the first byte.
+    private static func atomicallyReplace(_ target: URL, with data: Data, permissions: Int) throws {
+        let temporary = target.deletingLastPathComponent()
+            .appendingPathComponent(".\(target.lastPathComponent).relay-\(UUID().uuidString)")
+        guard FileManager.default.createFile(
+            atPath: temporary.path,
+            contents: data,
+            attributes: [.posixPermissions: permissions]
+        ) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        guard rename(temporary.path, target.path) == 0 else {
+            let code = errno
+            try? FileManager.default.removeItem(at: temporary)
+            throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+        }
     }
 }
