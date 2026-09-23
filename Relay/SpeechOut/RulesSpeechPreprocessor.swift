@@ -3,53 +3,44 @@ import Foundation
 struct RulesSpeechPreprocessor {
     private let codeBlockCue = "There is a code block on screen. Please read it there."
 
+    /// Markdown-to-speech rewrite rules, compiled once. Order matters: each rule runs on the
+    /// output of the previous one. The patterns are constants covered by
+    /// `RulesSpeechPreprocessorTests`, so a compile failure is a programmer error.
+    private static let rules: [(expression: NSRegularExpression, template: String)] = [
+        (#"\[([^\]]+)\]\([^\)]+\)"#, "$1"),
+        (#"(?m)^[ \t]{0,3}#{1,6}[ \t]+"#, ""),
+        (#"(?m)[ \t]+#+[ \t]*$"#, ""),
+        (#"(?m)^[ \t]{0,3}(?:=+|-+)[ \t]*$"#, ""),
+        (#"(?m)^[ \t]*(?:>[ \t]*)+"#, ""),
+        (#"(?m)^[ \t]*[-*+][ \t]+(.+?)[ \t]*$"#, "$1."),
+        (#"(\*\*|__)(.+?)\1"#, "$2"),
+        (#"(\*|_)(.+?)\1"#, "$2"),
+    ].map { pattern, template in
+        (try! NSRegularExpression(pattern: pattern), template)
+    }
+
+    private static let whitespace = try! NSRegularExpression(pattern: #"\s+"#)
+
     func prepare(text: String, mode: SpeechMode) -> String {
         var prepared = replacingFencedCode(in: text)
-
-        prepared = replacingMatches(
-            in: prepared,
-            pattern: #"\[([^\]]+)\]\([^\)]+\)"#,
-            with: "$1"
-        )
-        prepared = replacingMatches(
-            in: prepared,
-            pattern: #"(?m)^[ \t]{0,3}#{1,6}[ \t]+"#,
-            with: ""
-        )
-        prepared = replacingMatches(
-            in: prepared,
-            pattern: #"(?m)[ \t]+#+[ \t]*$"#,
-            with: ""
-        )
-        prepared = replacingMatches(
-            in: prepared,
-            pattern: #"(?m)^[ \t]{0,3}(?:=+|-+)[ \t]*$"#,
-            with: ""
-        )
-        prepared = replacingMatches(
-            in: prepared,
-            pattern: #"(?m)^[ \t]*(?:>[ \t]*)+"#,
-            with: ""
-        )
-        prepared = replacingMatches(
-            in: prepared,
-            pattern: #"(?m)^[ \t]*[-*+][ \t]+(.+?)[ \t]*$"#,
-            with: "$1."
-        )
-        prepared = replacingMatches(
-            in: prepared,
-            pattern: #"(\*\*|__)(.+?)\1"#,
-            with: "$2"
-        )
-        prepared = replacingMatches(
-            in: prepared,
-            pattern: #"(\*|_)(.+?)\1"#,
-            with: "$2"
-        )
+        for rule in Self.rules {
+            prepared = Self.replacingMatches(in: prepared, using: rule.expression, with: rule.template)
+        }
         prepared = prepared.replacingOccurrences(of: "`", with: "")
-        prepared = replacingMatches(in: prepared, pattern: #"\s+"#, with: " ")
-
+        prepared = Self.replacingMatches(in: prepared, using: Self.whitespace, with: " ")
         return prepared.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func replacingMatches(
+        in text: String,
+        using expression: NSRegularExpression,
+        with template: String
+    ) -> String {
+        expression.stringByReplacingMatches(
+            in: text,
+            range: NSRange(text.startIndex..., in: text),
+            withTemplate: template
+        )
     }
 
     private func replacingFencedCode(in text: String) -> String {
@@ -102,22 +93,6 @@ struct RulesSpeechPreprocessor {
         let indentation = line.prefix(while: { $0 == " " }).count
         guard indentation <= 3 else { return nil }
         return line.dropFirst(indentation)
-    }
-
-    private func replacingMatches(
-        in text: String,
-        pattern: String,
-        with replacement: String
-    ) -> String {
-        guard let expression = try? NSRegularExpression(pattern: pattern) else {
-            return text
-        }
-        let range = NSRange(text.startIndex..., in: text)
-        return expression.stringByReplacingMatches(
-            in: text,
-            range: range,
-            withTemplate: replacement
-        )
     }
 }
 
