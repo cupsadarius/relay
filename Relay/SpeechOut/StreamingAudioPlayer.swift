@@ -292,17 +292,22 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
         guard let outputNode else { return }
         scheduledCount += 1
         scheduledDuration += item.duration
-        onEvent?(.level(sessionID: sessionID, level: item.level))
-        let playedDuration = item.duration
+        let duration = item.duration
+        let level = item.level
         outputNode.schedule(item.buffer) { [weak self] in
-            self?.handlePlayed(duration: playedDuration, sessionID: sessionID)
+            self?.handlePlayed(duration: duration, level: level, sessionID: sessionID)
         }
     }
 
-    private func handlePlayed(duration: TimeInterval, sessionID: UUID) {
+    /// Runs when a buffer has actually played back. The level goes out here, not at schedule
+    /// time. Otherwise the meter would run up to `maxScheduledAheadSeconds` ahead of the audio,
+    /// the prebuffer flush would burst ~8 levels at once, and those levels would re-arm the
+    /// speech watchdog for audio nobody has heard yet.
+    private func handlePlayed(duration: TimeInterval, level: Float, sessionID: UUID) {
         guard currentSessionID == sessionID, !explicitlyStopped else { return }
         playedCount += 1
         playedDuration += duration
+        onEvent?(.level(sessionID: sessionID, level: level))
         if scheduledDuration - playedDuration < Self.maxScheduledAheadSeconds {
             resumeCapacityWaiters()
         }

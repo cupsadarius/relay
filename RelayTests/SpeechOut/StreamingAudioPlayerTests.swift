@@ -37,6 +37,24 @@ final class StreamingAudioPlayerTests: XCTestCase {
         ])
     }
 
+    func testLevelsAreEmittedAsBuffersPlayNotWhenTheyAreScheduled() async throws {
+        let node = FakeOutputNode()
+        let player = StreamingAudioPlayer(makeOutputNode: { node })
+        let events = EventBox()
+        player.onEvent = { events.append($0) }
+        let sessionID = UUID()
+        // 10 x 80 ms crosses the 0.6 s prebuffer, so every frame is flushed to the node at once.
+        let source = ScriptedAudioSource(steps: (0..<10).map { _ in .frame(Self.frame(samples: 1_920)) })
+
+        try await player.startPlayback(source, sessionID: sessionID)
+        try await waitUntilAsync { node.scheduledCount == 10 }
+
+        XCTAssertEqual(events.values.filter(\.isLevel).count, 0, "no level may run ahead of audible audio")
+
+        node.firePlayed(3)
+        XCTAssertEqual(events.values.filter(\.isLevel).count, 3, "one level per buffer that actually played")
+    }
+
     func testSourceFailureBeforeStartThrowsAndEmitsNoTerminalEvent() async {
         let node = FakeOutputNode()
         let player = StreamingAudioPlayer(makeOutputNode: { node })
