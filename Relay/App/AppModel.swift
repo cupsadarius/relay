@@ -852,7 +852,9 @@ final class AppModel {
     }
 
     /// Starts listening for local agent-hook envelopes on the fixed Relay socket path and begins
-    /// dispatching decoded events through `integrationManager`.
+    /// dispatching decoded events through `integrationManager`. Also re-reads each provider's
+    /// install status and, when any provider has hooks installed, refreshes the stable
+    /// `RelayHook` helper (see `refreshInstalledHelperIfNeeded`).
     ///
     /// - Important: called ONLY from the real app lifecycle (`RelayApp.applicationDidFinishLaunching`).
     ///   Never called from any initializer, so constructing an `AppModel` in a test never opens a
@@ -864,6 +866,36 @@ final class AppModel {
         try? hookEnvelopeReceiver.start(path: Self.integrationSocketPath)
         isSocketListening = hookEnvelopeReceiver.isListening
         integrationManager.start()
+        refreshInstalledHelperIfNeeded()
+    }
+
+    /// Keeps the stable-path `RelayHook` copy in step with the helper bundled in THIS build.
+    /// `installBundledHelperIfPresent` otherwise runs only from the Install button, so after an
+    /// app update (or `install.sh`) every hook would keep running whatever helper the last
+    /// explicit install copied. Refreshes only when at least one provider's config actually
+    /// points hooks at the stable path. Never throws: a failure is recorded in
+    /// `integrationDiagnosticsLog`, and a previously installed helper stays in place.
+    private func refreshInstalledHelperIfNeeded() {
+        for provider in AgentProvider.allCases {
+            checkIntegration(provider)
+        }
+        guard AgentProvider.allCases.contains(where: { Self.hooksInstalled(installerStatuses[$0]) }) else {
+            return
+        }
+        do {
+            try installBundledHelperIfPresent()
+        } catch {
+            integrationDiagnosticsLog.append(stage: "helper", outcome: "refresh-failed", detail: "stable-helper-unavailable")
+        }
+    }
+
+    private static func hooksInstalled(_ status: IntegrationStatus?) -> Bool {
+        switch status {
+        case .installedAwaitingFirstEvent, .installedTrustRequired, .active:
+            true
+        case .notInstalled, .configurationError, nil:
+            false
+        }
     }
 
     /// Stops dispatching agent-hook events and stops/unlinks the Unix socket.
@@ -935,12 +967,18 @@ final class AppModel {
 
         do {
             try helperInstaller.installBundledHelper(from: bundledHelperURL)
+            integrationDiagnosticsLog.append(stage: "helper", outcome: "refreshed", detail: "")
         } catch {
             if hadValidStableHelperBefore {
                 installerLogger.log("bundled RelayHook helper refresh failed; a previously installed helper is still present")
             } else {
                 installerLogger.log("bundled RelayHook helper refresh failed")
             }
+            integrationDiagnosticsLog.append(
+                stage: "helper",
+                outcome: "refresh-failed",
+                detail: hadValidStableHelperBefore ? "previous-helper-kept" : "copy-failed"
+            )
         }
 
         guard fileManager.isExecutableFile(atPath: installedHelperPath) else {

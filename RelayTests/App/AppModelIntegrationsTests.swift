@@ -387,6 +387,91 @@ final class AppModelIntegrationsTests: XCTestCase {
         XCTAssertTrue(model.isSocketListening)
     }
 
+    // MARK: - Launch-time helper refresh
+
+    private func startedTempReceiver() throws -> HookEnvelopeReceiver {
+        let receiver = HookEnvelopeReceiver()
+        try receiver.start(path: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).path)
+        return receiver
+    }
+
+    private func writeBundledHelper(_ script: String) throws -> URL {
+        let bundleDirectory = tempDirectory.appendingPathComponent("bundle", isDirectory: true)
+        try FileManager.default.createDirectory(at: bundleDirectory, withIntermediateDirectories: true)
+        let bundledHelperURL = bundleDirectory.appendingPathComponent("RelayHook")
+        try Data(script.utf8).write(to: bundledHelperURL)
+        return bundledHelperURL
+    }
+
+    func testStartIntegrationsRefreshesAStaleStableHelperWhenAProviderIsInstalled() throws {
+        let bundledHelperURL = try writeBundledHelper("#!/bin/sh\necho old\n")
+        let helperInstaller = makeHelperInstaller()
+        try helperInstaller.installBundledHelper(from: bundledHelperURL)
+        // An app update ships a new bundled helper; nobody presses Install again.
+        try Data("#!/bin/sh\necho new\n".utf8).write(to: bundledHelperURL)
+        let claudeInstaller = makeClaudeInstaller()
+        try claudeInstaller.install()
+        let receiver = try startedTempReceiver()
+        defer { receiver.stop() }
+        let model = makeModel(
+            claudeCodeInstaller: claudeInstaller,
+            helperInstaller: helperInstaller,
+            bundledHelperURL: bundledHelperURL,
+            hookEnvelopeReceiver: receiver
+        )
+
+        model.startIntegrations()
+
+        XCTAssertEqual(
+            try Data(contentsOf: helperInstaller.installedHelperURL),
+            Data("#!/bin/sh\necho new\n".utf8)
+        )
+        XCTAssertEqual(model.integrationStatus(for: .claudeCode), .installedAwaitingFirstEvent)
+    }
+
+    func testStartIntegrationsDoesNotInstallAHelperWhenNoProviderIsInstalled() throws {
+        let bundledHelperURL = try writeBundledHelper("#!/bin/sh\necho new\n")
+        let helperInstaller = makeHelperInstaller()
+        let receiver = try startedTempReceiver()
+        defer { receiver.stop() }
+        let model = makeModel(
+            helperInstaller: helperInstaller,
+            bundledHelperURL: bundledHelperURL,
+            hookEnvelopeReceiver: receiver
+        )
+
+        model.startIntegrations()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: helperInstaller.installedHelperURL.path))
+    }
+
+    func testStartIntegrationsRecordsAHelperRefreshFailureWithoutThrowing() throws {
+        let bundledHelperURL = try writeBundledHelper("#!/bin/sh\necho new\n")
+        let unwritableBase = tempDirectory.appendingPathComponent("unwritable-appsupport", isDirectory: true)
+        try FileManager.default.createDirectory(at: unwritableBase, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: unwritableBase.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: unwritableBase.path)
+        }
+        let claudeInstaller = makeClaudeInstaller()
+        try claudeInstaller.install()
+        let receiver = try startedTempReceiver()
+        defer { receiver.stop() }
+        let model = makeModel(
+            claudeCodeInstaller: claudeInstaller,
+            helperInstaller: HelperInstaller(baseDirectory: unwritableBase),
+            bundledHelperURL: bundledHelperURL,
+            hookEnvelopeReceiver: receiver
+        )
+
+        model.startIntegrations()
+
+        XCTAssertTrue(model.integrationDiagnosticsEntries().contains {
+            $0.stage == "helper" && $0.outcome == "refresh-failed" && $0.detail == "stable-helper-unavailable"
+        })
+        XCTAssertTrue(model.isSocketListening)
+    }
+
     // MARK: - Fix 2: uninstall gives an immediate, truthful status change
 
     func testUninstallAfterRuntimeActiveReportsNotInstalledInsteadOfStaleActive() async {
