@@ -135,14 +135,14 @@ final class SettingsController {
     var whisperSelection: WhisperModelSelection {
         let snapshot = snapshot
         return {
-            snapshot.value.selectedSpeechModelByBackend["whisper"].flatMap(WhisperModelID.init(rawValue:))
+            snapshot.value.selectedSpeechModelByBackend[BackendID.whisper.rawValue].flatMap(WhisperModelID.init(rawValue:))
         }
     }
 
     /// Write half of the seam: persists through this controller like every other setting.
     var whisperSelectionWriter: WhisperModelSelectionWriter {
         { [weak self] modelID in
-            self?.setSelectedSpeechModel(backendID: "whisper", modelID: modelID?.rawValue)
+            self?.setSelectedSpeechModel(backendID: BackendID.whisper.rawValue, modelID: modelID?.rawValue)
         }
     }
 

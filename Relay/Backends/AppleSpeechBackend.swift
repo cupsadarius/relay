@@ -4,8 +4,8 @@ import Speech
 import Synchronization
 
 final class AppleSpeechBackend: SpeechToTextBackend {
-    let id = "apple-speech"
-    let displayName = "Apple Speech"
+    let id = BackendID.appleSpeech.rawValue
+    let displayName = BackendID.appleSpeech.displayName
 
     private let isMacOS26OrLater: @Sendable () -> Bool
     private let isSpeechTranscriberAvailable: @Sendable () async -> Bool

@@ -49,15 +49,15 @@ import XCTest
         )
     }
 
-    func testSpeechModelDownloadEventsUseFixedDisplayNameMessages() {
+    func testSpeechModelEventsRenderTheGivenBackendName() {
         var buffer = DiagnosticsBuffer()
-        buffer.append(.speechModelDownloadStarted(backendID: "parakeet"))
-        buffer.append(.speechModelDownloadFinished(backendID: "parakeet"))
-        buffer.append(.speechModelDownloadFailed(backendID: "parakeet"))
+        buffer.append(.speechModelDownloadStarted(backendName: "Kokoro"))
+        buffer.append(.speechModelDownloadFinished(backendName: "Kokoro"))
+        buffer.append(.speechModelDownloadFailed(backendName: "Parakeet"))
 
         XCTAssertEqual(
             buffer.copyText,
-            "Parakeet model download started\nParakeet model download finished\nParakeet model download failed"
+            "Kokoro model download started\nKokoro model download finished\nParakeet model download failed"
         )
     }
 

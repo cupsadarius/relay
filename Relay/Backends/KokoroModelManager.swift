@@ -8,7 +8,7 @@ enum KokoroModelManagerError: Error, Equatable, Sendable {
 /// Voice selection is intentionally separate from model selection.
 struct KokoroModelManager: SpeechModelManaging {
     static let modelID = "kokoro-82m-ane-en"
-    let backendID = "kokoro"
+    let backendID = BackendID.kokoro.rawValue
 
     private let engine: any KokoroEngine
 

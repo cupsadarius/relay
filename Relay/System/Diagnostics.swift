@@ -11,26 +11,18 @@ enum DiagnosticsEvent: Equatable, Sendable {
     case ttsSubmitted, ttsStopped, ttsReplayed, ttsFailed
     case dictation(DictationDiagnostic)
     case overlayFailed
-    case speechModelDownloadStarted(backendID: String)
-    case speechModelDownloadFinished(backendID: String)
-    case speechModelDownloadFailed(backendID: String)
-    case speechModelSelectionFinished(backendID: String)
-    case speechModelSelectionFailed(backendID: String)
-    case speechModelRemovalFinished(backendID: String)
-    case speechModelRemovalFailed(backendID: String)
+    case speechModelDownloadStarted(backendName: String)
+    case speechModelDownloadFinished(backendName: String)
+    case speechModelDownloadFailed(backendName: String)
+    case speechModelSelectionFinished(backendName: String)
+    case speechModelSelectionFailed(backendName: String)
+    case speechModelRemovalFinished(backendName: String)
+    case speechModelRemovalFailed(backendName: String)
     /// Settings failed to decode even after per-field resilience (the saved blob wasn't a
     /// decodable settings object at all — e.g. not JSON, or not a JSON object). Carries only the
     /// byte count of the blob that failed: never its contents, never the raw decode error, which
     /// could otherwise echo fragments of the corrupt bytes back into a log.
     case settingsDecodeFailed(byteCount: Int)
-
-    private static func speechBackendDisplayName(_ backendID: String) -> String {
-        switch backendID {
-        case "parakeet": "Parakeet"
-        case "apple-speech": "Apple Speech"
-        default: "Speech recognition"
-        }
-    }
 
     var message: String {
         switch self {
@@ -52,20 +44,20 @@ enum DiagnosticsEvent: Equatable, Sendable {
         case .ttsFailed: "Speech failed"
         case let .dictation(diagnostic): diagnostic.message
         case .overlayFailed: "Activity overlay failed"
-        case let .speechModelDownloadStarted(backendID):
-            "\(Self.speechBackendDisplayName(backendID)) model download started"
-        case let .speechModelDownloadFinished(backendID):
-            "\(Self.speechBackendDisplayName(backendID)) model download finished"
-        case let .speechModelDownloadFailed(backendID):
-            "\(Self.speechBackendDisplayName(backendID)) model download failed"
-        case let .speechModelSelectionFinished(backendID):
-            "\(Self.speechBackendDisplayName(backendID)) model selection finished"
-        case let .speechModelSelectionFailed(backendID):
-            "\(Self.speechBackendDisplayName(backendID)) model selection failed"
-        case let .speechModelRemovalFinished(backendID):
-            "\(Self.speechBackendDisplayName(backendID)) model removal finished"
-        case let .speechModelRemovalFailed(backendID):
-            "\(Self.speechBackendDisplayName(backendID)) model removal failed"
+        case let .speechModelDownloadStarted(backendName):
+            "\(backendName) model download started"
+        case let .speechModelDownloadFinished(backendName):
+            "\(backendName) model download finished"
+        case let .speechModelDownloadFailed(backendName):
+            "\(backendName) model download failed"
+        case let .speechModelSelectionFinished(backendName):
+            "\(backendName) model selection finished"
+        case let .speechModelSelectionFailed(backendName):
+            "\(backendName) model selection failed"
+        case let .speechModelRemovalFinished(backendName):
+            "\(backendName) model removal finished"
+        case let .speechModelRemovalFailed(backendName):
+            "\(backendName) model removal failed"
         case let .settingsDecodeFailed(byteCount):
             "Settings failed to decode (\(byteCount) bytes); restored defaults, blob preserved for recovery"
         }

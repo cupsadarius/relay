@@ -71,7 +71,7 @@ final class SpeechModelController {
 
         messages.removeValue(forKey: backend.domain)
         setInstallState(.downloading(progress: 0), modelID: modelID, backend: backend)
-        diagnostics.record(.speechModelDownloadStarted(backendID: backend.backendID))
+        diagnostics.record(.speechModelDownloadStarted(backendName: BackendID.displayName(for: backend.backendID)))
         do {
             try await manager.downloadModel(modelID) { [weak self] progress in
                 Task { @MainActor in
@@ -79,14 +79,14 @@ final class SpeechModelController {
                 }
             }
             downloads.remove(operation)
-            diagnostics.record(.speechModelDownloadFinished(backendID: backend.backendID))
+            diagnostics.record(.speechModelDownloadFinished(backendName: BackendID.displayName(for: backend.backendID)))
             await refresh(domain: backend.domain)
             await refreshBackends(backend.domain)
         } catch {
             downloads.remove(operation)
             setInstallState(.downloadFailed, modelID: modelID, backend: backend)
-            diagnostics.record(.speechModelDownloadFailed(backendID: backend.backendID))
-            messages[backend.domain] = "\(displayName(for: backend.backendID)) model download failed. Check your connection and try again."
+            diagnostics.record(.speechModelDownloadFailed(backendName: BackendID.displayName(for: backend.backendID)))
+            messages[backend.domain] = "\(BackendID.displayName(for: backend.backendID)) model download failed. Check your connection and try again."
         }
     }
 
@@ -95,14 +95,14 @@ final class SpeechModelController {
         let previous = models[backend]
         do {
             try await manager.selectModel(modelID)
-            diagnostics.record(.speechModelSelectionFinished(backendID: backend.backendID))
+            diagnostics.record(.speechModelSelectionFinished(backendName: BackendID.displayName(for: backend.backendID)))
             messages.removeValue(forKey: backend.domain)
             await refresh(domain: backend.domain)
             await refreshBackends(backend.domain)
         } catch {
             models[backend] = previous
-            diagnostics.record(.speechModelSelectionFailed(backendID: backend.backendID))
-            messages[backend.domain] = "\(displayName(for: backend.backendID)) model selection failed. Try again."
+            diagnostics.record(.speechModelSelectionFailed(backendName: BackendID.displayName(for: backend.backendID)))
+            messages[backend.domain] = "\(BackendID.displayName(for: backend.backendID)) model selection failed. Try again."
         }
     }
 
@@ -111,13 +111,13 @@ final class SpeechModelController {
         do {
             await beforeRemoval(backend)
             try await manager.removeModel(modelID)
-            diagnostics.record(.speechModelRemovalFinished(backendID: backend.backendID))
+            diagnostics.record(.speechModelRemovalFinished(backendName: BackendID.displayName(for: backend.backendID)))
             messages.removeValue(forKey: backend.domain)
             await refresh(domain: backend.domain)
             await refreshBackends(backend.domain)
         } catch {
-            diagnostics.record(.speechModelRemovalFailed(backendID: backend.backendID))
-            messages[backend.domain] = "\(displayName(for: backend.backendID)) model removal failed. Try again."
+            diagnostics.record(.speechModelRemovalFailed(backendName: BackendID.displayName(for: backend.backendID)))
+            messages[backend.domain] = "\(BackendID.displayName(for: backend.backendID)) model removal failed. Try again."
             await refresh(domain: backend.domain)
             await refreshBackends(backend.domain)
         }
@@ -169,17 +169,5 @@ final class SpeechModelController {
             )
         }
         models[backend] = rows
-    }
-
-    private func displayName(for backendID: String) -> String {
-        switch backendID {
-        case "apple-speech": "Apple Speech"
-        case "parakeet": "Parakeet"
-        case "whisper": "Whisper"
-        case "kokoro": "Kokoro"
-        case "pocket-tts": "PocketTTS"
-        case "apple-tts": "Apple"
-        default: backendID
-        }
     }
 }

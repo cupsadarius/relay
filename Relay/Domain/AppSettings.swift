@@ -38,12 +38,12 @@ struct AppSettings: Codable, Equatable, Sendable {
     /// Backend ids `sttBackendOrder` recognizes as valid, mirroring the STT backends
     /// `RelayRuntime.makeProduction()` actually registers (`Relay/App/RelayRuntime.swift`).
     /// Update this alongside that registry when a new STT backend is added.
-    static let knownSTTBackendIDs: Set<String> = ["apple-speech", "parakeet", "whisper"]
+    static let knownSTTBackendIDs: Set<String> = Set(BackendID.allSpeechToText.map(\.rawValue))
 
     /// Backend ids `ttsBackendOrder` recognizes as valid, mirroring the TTS backends
     /// `RelayRuntime.makeProduction()` actually registers (`Relay/App/RelayRuntime.swift`).
     /// Update this alongside that registry when a new TTS backend is added.
-    static let knownTTSBackendIDs: Set<String> = ["pocket-tts", "apple-tts", "kokoro"]
+    static let knownTTSBackendIDs: Set<String> = Set(BackendID.allTextToSpeech.map(\.rawValue))
 
     /// `ttsRate`'s valid range, matching `TTSSettingsView`'s slider bounds — the only place a
     /// user can actually set this value today.
@@ -209,8 +209,8 @@ struct AppSettings: Codable, Equatable, Sendable {
             .replayLast: .chord(keyCode: 15, modifiers: [.option, .shift]),
             .toggleAutoRead: .chord(keyCode: 0, modifiers: [.option, .shift]),
         ],
-        sttBackendOrder: ["apple-speech"],
-        ttsBackendOrder: ["pocket-tts", "apple-tts", "kokoro"],
+        sttBackendOrder: [BackendID.appleSpeech.rawValue],
+        ttsBackendOrder: BackendID.allTextToSpeech.map(\.rawValue),
         ttsVoiceIdentifier: nil,
         ttsRate: 0.5,
         autoReadEnabled: true,

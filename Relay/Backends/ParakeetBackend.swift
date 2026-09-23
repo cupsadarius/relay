@@ -42,8 +42,8 @@ extension ParakeetEngine {
 /// On-device speech-to-text backend built on FluidAudio's Parakeet v2 (English) model. Fully
 /// offline once its model is downloaded; never uploads audio or transcript text anywhere.
 final class ParakeetBackend: SpeechToTextBackend {
-    let id = "parakeet"
-    let displayName = "Parakeet"
+    let id = BackendID.parakeet.rawValue
+    let displayName = BackendID.parakeet.displayName
 
     private let engine: any ParakeetEngine
 

@@ -38,7 +38,7 @@ enum WhisperModelManagerError: Error, Equatable, Sendable {
 /// match `SpeechToTextBackend`'s existing backends. Here there is no such precedent to match, and
 /// a struct keeps this the simplest thing that satisfies `Sendable`.
 struct WhisperModelManager: SpeechModelManaging {
-    let backendID = "whisper"
+    let backendID = BackendID.whisper.rawValue
 
     private let store: WhisperModelStore
     private let runtime: WhisperRuntime

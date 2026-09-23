@@ -162,9 +162,9 @@ final class AppModel {
     func selectVoice(backendID: String, voiceID: String) {
         guard let value = voiceCatalog.storedValue(for: voiceID, backendID: backendID) else { return }
         switch backendID {
-        case "apple-tts": settingsController.setVoiceIdentifier(value)
-        case "kokoro": settingsController.setKokoroVoice(value)
-        case "pocket-tts": settingsController.setPocketVoice(value)
+        case BackendID.appleTTS: settingsController.setVoiceIdentifier(value)
+        case BackendID.kokoro: settingsController.setKokoroVoice(value)
+        case BackendID.pocketTTS: settingsController.setPocketVoice(value)
         default: break
         }
     }

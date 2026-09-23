@@ -24,7 +24,7 @@ struct AppleSpeechModelManager: SpeechModelManaging {
     /// `SpeechModelManaging` surface exposes.
     static let modelID = "apple-on-device"
 
-    let backendID = "apple-speech"
+    let backendID = BackendID.appleSpeech.rawValue
 
     /// Always exactly one status: always `.downloaded` (it ships with macOS -- there is nothing
     /// to fetch) and always selected (the one model IS the selection, mirroring

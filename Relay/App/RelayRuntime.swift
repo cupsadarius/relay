@@ -194,7 +194,7 @@ final class RelayRuntime {
                 backends: sttRegistry,
                 backendOrder: {
                     let configured = settings.value.sttBackendOrder.filter { sttRegistry[$0] != nil }
-                    return configured.isEmpty ? ["apple-speech"] : configured
+                    return configured.isEmpty ? [BackendID.appleSpeech.rawValue] : configured
                 }
             ),
             processor: RulesTranscriptProcessor(),

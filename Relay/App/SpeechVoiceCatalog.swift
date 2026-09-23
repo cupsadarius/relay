@@ -41,11 +41,11 @@ struct SpeechVoiceCatalog {
 
     func voices(for backendID: String) -> [SpeechVoiceOption] {
         switch backendID {
-        case "apple-tts":
+        case BackendID.appleTTS:
             return [
                 .init(id: "apple:default", displayName: "System Default", detail: nil, storedValue: nil)
             ] + appleVoices
-        case "kokoro":
+        case BackendID.kokoro:
             let choices = kokoroVoices.filter { $0 != recommendedKokoroVoice }.map {
                 SpeechVoiceOption(id: "kokoro:\($0)", displayName: $0, detail: nil, storedValue: $0)
             }
@@ -57,7 +57,7 @@ struct SpeechVoiceCatalog {
                     storedValue: nil
                 )
             ] + choices
-        case "pocket-tts":
+        case BackendID.pocketTTS:
             return [
                 .init(
                     id: "pocket:default",
@@ -73,15 +73,15 @@ struct SpeechVoiceCatalog {
 
     func activeVoiceID(for backendID: String, settings: AppSettings) -> String? {
         switch backendID {
-        case "apple-tts":
+        case BackendID.appleTTS:
             guard let value = settings.ttsVoiceIdentifier else { return "apple:default" }
             return voices(for: backendID).first(where: { $0.storedValue == value })?.id
-        case "kokoro":
+        case BackendID.kokoro:
             guard let value = settings.kokoroVoice, value != recommendedKokoroVoice else {
                 return "kokoro:default"
             }
             return voices(for: backendID).first(where: { $0.storedValue == value })?.id
-        case "pocket-tts":
+        case BackendID.pocketTTS:
             guard let value = settings.pocketVoice, value != pocketVoice else { return "pocket:default" }
             return voices(for: backendID).first(where: { $0.storedValue == value })?.id
         default:
@@ -102,9 +102,9 @@ struct SpeechVoiceCatalog {
             pocketVoice: settings.pocketVoice
         )
         switch backendID {
-        case "apple-tts": options.voiceIdentifier = mapped
-        case "kokoro": options.kokoroVoice = mapped
-        case "pocket-tts": options.pocketVoice = mapped
+        case BackendID.appleTTS: options.voiceIdentifier = mapped
+        case BackendID.kokoro: options.kokoroVoice = mapped
+        case BackendID.pocketTTS: options.pocketVoice = mapped
         default: return nil
         }
         return options

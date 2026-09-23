@@ -7,7 +7,7 @@ enum PocketTTSModelManagerError: Error, Equatable, Sendable {
 /// One-model `SpeechModelManaging` facade for Relay's PocketTTS backend.
 struct PocketTTSModelManager: SpeechModelManaging {
     static let modelID = "pocket-tts-v2.1-en"
-    let backendID = "pocket-tts"
+    let backendID = BackendID.pocketTTS.rawValue
 
     private let engine: any PocketTTSEngine
 

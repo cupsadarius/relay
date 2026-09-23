@@ -27,7 +27,7 @@ struct ParakeetModelManager: SpeechModelManaging {
     /// here as the id this `SpeechModelManaging` surface exposes.
     static let modelID = "parakeet-v2"
 
-    let backendID = "parakeet"
+    let backendID = BackendID.parakeet.rawValue
 
     private let engine: any ParakeetEngine
 
