@@ -23,10 +23,23 @@ enum UnixLineRequest {
     /// cannot hold the detached I/O thread indefinitely.
     private static let totalDeadlineNanoseconds: UInt64 = 1_000_000_000 // 1 second
 
+    /// Dedicated queue for the blocking socket I/O in `sendBlocking`, so a slow herdr peer ties
+    /// up one of this queue's threads instead of a Swift Concurrency cooperative-pool thread
+    /// (which `Task.detached` would have used).
+    private static let ioQueue = DispatchQueue(
+        label: "dev.relaymac.Relay.UnixLineRequest",
+        qos: .userInitiated,
+        attributes: .concurrent
+    )
+
     static func send(path: String, line: String, timeoutMilliseconds: Int32) async throws -> String {
-        try await Task.detached(priority: .userInitiated) {
-            try sendBlocking(path: path, line: line, timeoutMilliseconds: timeoutMilliseconds)
-        }.value
+        try await withCheckedThrowingContinuation { continuation in
+            ioQueue.async {
+                continuation.resume(with: Result {
+                    try sendBlocking(path: path, line: line, timeoutMilliseconds: timeoutMilliseconds)
+                })
+            }
+        }
     }
 
     private static func sendBlocking(path: String, line: String, timeoutMilliseconds: Int32) throws -> String {

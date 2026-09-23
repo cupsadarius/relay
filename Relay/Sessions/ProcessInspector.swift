@@ -70,10 +70,10 @@ struct ProcessInspector: Sendable {
         self.runner = runner
     }
 
-    func snapshot() throws -> ProcessSnapshot {
+    func snapshot() async throws -> ProcessSnapshot {
         let result: ProcessResult
         do {
-            result = try runner.run(executable: executableURL, arguments: arguments, timeout: timeout, maxOutputBytes: 4 * 1024 * 1024)
+            result = try await runner.run(executable: executableURL, arguments: arguments, timeout: timeout, maxOutputBytes: 4 * 1024 * 1024)
         } catch BoundedProcessError.timedOut {
             throw ProcessInspectionError.timedOut
         } catch {
@@ -92,6 +92,6 @@ protocol ProcessTreeReading: Sendable {
 
 extension ProcessInspector: ProcessTreeReading {
     func ancestry(from pid: Int32) async throws -> [Int32] {
-        try snapshot().ancestry(from: pid).map(\.pid)
+        try await snapshot().ancestry(from: pid).map(\.pid)
     }
 }

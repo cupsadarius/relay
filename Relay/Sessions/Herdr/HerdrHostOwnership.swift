@@ -36,24 +36,21 @@ struct HerdrHostOwnershipChecker: HerdrHostOwnershipChecking {
     }
 
     func frontmostAppOwnsClient(frontmostPID: Int32, socketPath: String) async -> Bool {
-        guard let snapshot = try? processInspector.snapshot() else { return false }
+        guard let snapshot = try? await processInspector.snapshot() else { return false }
         let candidates = snapshot.descendants(of: frontmostPID).filter {
             URL(fileURLWithPath: $0.command).lastPathComponent.lowercased() == "herdr"
         }
-        for candidate in candidates where lsof(pid: candidate.pid, contains: socketPath) {
-            return true
+        for candidate in candidates {
+            if await lsof(pid: candidate.pid, contains: socketPath) { return true }
         }
         return false
     }
 
-    private func lsof(pid: Int32, contains socketPath: String) -> Bool {
+    private func lsof(pid: Int32, contains socketPath: String) async -> Bool {
         guard FileManager.default.isExecutableFile(atPath: lsofExecutableURL.path) else { return false }
-        // Bounded via the shared runner: stderr is discarded (never an unread pipe that can wedge
-        // the child), stdout is drained concurrently, and the whole call is bounded by
-        // `lsofTimeout` so a hung `lsof` can never wedge the focus path forever. Ownership is
-        // unproven on any failure, so the conservative fallback is always `false`, never a crash
-        // or hang. Mirrors `ProcessInspector.snapshot()`.
-        guard let result = try? runner.run(executable: lsofExecutableURL, arguments: lsofArguments(pid), timeout: lsofTimeout, maxOutputBytes: 1024 * 1024) else {
+        // Bounded via the shared runner (stderr discarded, stdout drained, `lsofTimeout`).
+        // Ownership is unproven on any failure, so the fallback is always `false`.
+        guard let result = try? await runner.run(executable: lsofExecutableURL, arguments: lsofArguments(pid), timeout: lsofTimeout, maxOutputBytes: 1024 * 1024) else {
             return false
         }
         guard result.terminationStatus == 0 else { return false }

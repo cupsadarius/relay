@@ -19,7 +19,7 @@ struct AgentProcessContextCapture: AgentProcessContextCapturing {
     let processInspector: ProcessInspector
 
     func capture(parentPID: Int32) async -> AgentProcessContext {
-        guard let snapshot = try? processInspector.snapshot() else {
+        guard let snapshot = try? await processInspector.snapshot() else {
             return .init(ancestry: [], tty: nil)
         }
         let records = snapshot.ancestry(from: parentPID)

@@ -22,7 +22,7 @@ struct TmuxClient: TmuxCommandRunning {
     }
 
     func listClients(socketPath: String) async throws -> [TmuxClientListing] {
-        let output = try run(["-S", socketPath, "list-clients", "-F", "#{client_name}\\t#{client_pid}"])
+        let output = try await run(["-S", socketPath, "list-clients", "-F", "#{client_name}\\t#{client_pid}"])
         return output.split(whereSeparator: \.isNewline).compactMap { line in
             let parts = line.split(separator: "\t", maxSplits: 1).map(String.init)
             guard parts.count == 2, let pid = Int32(parts[1]) else { return nil }
@@ -31,12 +31,12 @@ struct TmuxClient: TmuxCommandRunning {
     }
 
     func activePane(socketPath: String, clientName: String) async throws -> String {
-        try run(["-S", socketPath, "display-message", "-p", "-c", clientName, "#{pane_id}"])
+        try await run(["-S", socketPath, "display-message", "-p", "-c", clientName, "#{pane_id}"])
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func run(_ arguments: [String]) throws -> String {
-        let result = try runner.run(executable: URL(fileURLWithPath: executable), arguments: arguments, timeout: timeout, maxOutputBytes: 256 * 1024)
+    private func run(_ arguments: [String]) async throws -> String {
+        let result = try await runner.run(executable: URL(fileURLWithPath: executable), arguments: arguments, timeout: timeout, maxOutputBytes: 256 * 1024)
         guard result.terminationStatus == 0 else { throw TmuxError.commandFailed }
         return String(decoding: result.stdout, as: UTF8.self)
     }

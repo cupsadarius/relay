@@ -53,6 +53,6 @@ actor AgentSessionRegistry {
 /// entirely for this cycle rather than risking a false "dead" verdict on a session that's
 /// actually still running.
 func pruneDeadSessions(in registry: AgentSessionRegistry, using processInspector: ProcessInspector) async {
-    guard let snapshot = try? processInspector.snapshot() else { return }
+    guard let snapshot = try? await processInspector.snapshot() else { return }
     await registry.prune(isAlive: { pid in snapshot.record(pid: pid) != nil })
 }

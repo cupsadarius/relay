@@ -4,46 +4,71 @@ import XCTest
 final class BoundedProcessRunnerTests: XCTestCase {
     private let runner = BoundedProcessRunner()
 
-    func testSuccessReturnsStdoutAndZeroStatus() throws {
-        let result = try runner.run(executable: URL(fileURLWithPath: "/bin/echo"), arguments: ["hello"], timeout: 5, maxOutputBytes: 1024)
+    private func expectError(_ expected: BoundedProcessError, _ body: () async throws -> ProcessResult) async {
+        do {
+            _ = try await body()
+            XCTFail("expected \(expected)")
+        } catch {
+            XCTAssertEqual(error as? BoundedProcessError, expected)
+        }
+    }
+
+    func testSuccessReturnsStdoutAndZeroStatus() async throws {
+        let result = try await runner.run(executable: URL(fileURLWithPath: "/bin/echo"), arguments: ["hello"], timeout: 5, maxOutputBytes: 1024)
         XCTAssertEqual(result.terminationStatus, 0)
         XCTAssertEqual(String(decoding: result.stdout, as: UTF8.self), "hello\n")
     }
-    func testNonZeroExitReportsStatusNotThrow() throws {
-        let result = try runner.run(executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "exit 3"], timeout: 5, maxOutputBytes: 1024)
+
+    func testNonZeroExitReportsStatusNotThrow() async throws {
+        let result = try await runner.run(executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "exit 3"], timeout: 5, maxOutputBytes: 1024)
         XCTAssertEqual(result.terminationStatus, 3)
     }
-    func testOversizedOutputThrows() {
-        XCTAssertThrowsError(try runner.run(executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "yes ABCDEFGH | head -c 1000000"], timeout: 5, maxOutputBytes: 4096)) { error in
-            XCTAssertEqual(error as? BoundedProcessError, .outputTooLarge)
+
+    func testOversizedOutputThrows() async {
+        await expectError(.outputTooLarge) {
+            try await runner.run(executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "yes ABCDEFGH | head -c 1000000"], timeout: 5, maxOutputBytes: 4096)
         }
     }
-    func testBlockedProcessTimesOut() {
+
+    func testBlockedProcessTimesOut() async {
         let start = Date()
-        XCTAssertThrowsError(try runner.run(executable: URL(fileURLWithPath: "/bin/sleep"), arguments: ["30"], timeout: 0.3, maxOutputBytes: 1024)) { error in
-            XCTAssertEqual(error as? BoundedProcessError, .timedOut)
+        await expectError(.timedOut) {
+            try await runner.run(executable: URL(fileURLWithPath: "/bin/sleep"), arguments: ["30"], timeout: 0.3, maxOutputBytes: 1024)
         }
         XCTAssertLessThan(Date().timeIntervalSince(start), 5)
     }
-    func testStderrFloodDoesNotDeadlock() throws {
-        let result = try runner.run(executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "yes ERR | head -c 200000 1>&2; echo done"], timeout: 5, maxOutputBytes: 4096)
+
+    func testStderrFloodDoesNotDeadlock() async throws {
+        let result = try await runner.run(executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "yes ERR | head -c 200000 1>&2; echo done"], timeout: 5, maxOutputBytes: 4096)
         XCTAssertEqual(result.terminationStatus, 0)
         XCTAssertEqual(String(decoding: result.stdout, as: UTF8.self), "done\n")
     }
-    func testMissingExecutableThrowsLaunchFailedInsteadOfCrashing() {
-        // `Process.run()` throws synchronously when the executable path
-        // doesn't exist (or isn't executable). The runner must map that into
-        // its own `.launchFailed` case rather than letting the underlying
-        // NSError propagate or crashing the process.
-        XCTAssertThrowsError(
-            try runner.run(
+
+    func testMissingExecutableThrowsLaunchFailedInsteadOfCrashing() async {
+        await expectError(.launchFailed) {
+            try await runner.run(
                 executable: URL(fileURLWithPath: "/nonexistent/definitely-not-a-binary-\(UUID().uuidString)"),
-                arguments: [],
-                timeout: 5,
-                maxOutputBytes: 1024
+                arguments: [], timeout: 5, maxOutputBytes: 1024
             )
-        ) { error in
-            XCTAssertEqual(error as? BoundedProcessError, .launchFailed)
         }
+    }
+
+    /// With the old semaphore-based runner, each run pinned a cooperative-pool thread, so
+    /// 3x-pool-width concurrent `sleep 0.5`s took >= 3 rounds (~1.5 s). Suspending runs overlap.
+    /// Capped at 24 so that even on a many-core machine this stays well below any OS or GCD
+    /// thread limit (each run owns one drain `Thread` while its child sleeps).
+    func testConcurrentRunsDoNotSerialiseOnTheCooperativePool() async throws {
+        let runner = BoundedProcessRunner()
+        let count = min(ProcessInfo.processInfo.activeProcessorCount * 3, 24)
+        let start = Date()
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for _ in 0..<count {
+                group.addTask {
+                    _ = try await runner.run(executable: URL(fileURLWithPath: "/bin/sleep"), arguments: ["0.5"], timeout: 5, maxOutputBytes: 64)
+                }
+            }
+            try await group.waitForAll()
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(start), 1.4)
     }
 }
