@@ -8,7 +8,7 @@ struct DictationSettingsView: View {
             Section("Dictation") {
                 Picker("Mode", selection: Binding(
                     get: { model.settings.dictationMode },
-                    set: { model.setDictationMode($0) }
+                    set: { model.settingsController.setDictationMode($0) }
                 )) {
                     ForEach(DictationMode.allCases, id: \.self) { mode in
                         Text(mode == .holdToTalk ? "Hold to Talk" : "Toggle").tag(mode)

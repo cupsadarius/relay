@@ -37,6 +37,7 @@ final class RelayAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        model.settingsController.flushPendingSave()
         model.integrationSetup.stop()
     }
 }

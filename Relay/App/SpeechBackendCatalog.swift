@@ -50,7 +50,7 @@ extension AppModel {
     }
 
     private func applySpeechBackendOrder(_ order: [String]) {
-        setSTTBackendOrder(order)
+        settingsController.setSTTBackendOrder(order)
         sttBackends = Catalog.applyingOrder(order, to: sttBackends)
         setSpeechBackendMessage(nil)
     }

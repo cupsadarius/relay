@@ -50,7 +50,7 @@ extension AppModel {
     }
 
     private func applyTTSBackendOrder(_ order: [String]) {
-        setTTSBackendOrder(order)
+        settingsController.setTTSBackendOrder(order)
         ttsBackends = Catalog.applyingOrder(order, to: ttsBackends)
         setTTSBackendMessage(nil)
     }

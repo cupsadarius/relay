@@ -34,7 +34,7 @@ struct IntegrationsSettingsView: View {
             Section("Agent responses") {
                 Toggle(isOn: Binding(
                     get: { model.settings.autoReadEnabled },
-                    set: { model.setAutoReadEnabled($0) }
+                    set: { model.settingsController.setAutoReadEnabled($0) }
                 )) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Automatically speak confidently focused Claude/Codex sessions")

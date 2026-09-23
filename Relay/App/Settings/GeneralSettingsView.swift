@@ -34,7 +34,7 @@ struct GeneralSettingsView: View {
     private var liveTranscriptionBinding: Binding<Bool> {
         Binding(
             get: { model.settings.liveTranscriptionEnabled },
-            set: { model.setLiveTranscriptionEnabled($0) }
+            set: { model.settingsController.setLiveTranscriptionEnabled($0) }
         )
     }
 

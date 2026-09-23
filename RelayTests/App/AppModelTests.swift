@@ -524,7 +524,7 @@ final class AppModelTests: XCTestCase {
         let hotkeys = SpyHotkeyManager()
         let dictation = SpyDictationCoordinator()
         let model = makeModel(hotkeys: hotkeys, dictation: dictation)
-        model.setDictationMode(.toggle)
+        model.settingsController.setDictationMode(.toggle)
 
         hotkeys.send(.dictate, .pressed)
         hotkeys.send(.dictate, .released)
@@ -554,7 +554,7 @@ final class AppModelTests: XCTestCase {
         let hotkeys = SpyHotkeyManager()
         let dictation = SpyDictationCoordinator(blockFinish: true)
         let model = makeModel(hotkeys: hotkeys, dictation: dictation)
-        model.setDictationMode(.toggle)
+        model.settingsController.setDictationMode(.toggle)
 
         hotkeys.send(.dictate, .pressed)
         while dictation.events != ["start"] { await Task.yield() }
@@ -583,32 +583,13 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(hotkeys.registrations.count, 1, "toggling auto-read must not rebuild the hotkey matcher")
     }
 
-    /// `toggleAutoRead()` is the shared method behind both the `toggleAutoRead` hotkey (tested
-    /// above) and the menu bar's auto-read control — calling it directly exercises the same path
-    /// the menu item invokes.
-    func testToggleAutoReadMethodTogglesSettingAndStatusText() {
-        let store = SpySettingsStore(settings: .defaults)
-        let model = makeModel(store: store)
-        XCTAssertTrue(model.settings.autoReadEnabled)
-
-        model.toggleAutoRead()
-        XCTAssertFalse(model.settings.autoReadEnabled)
-        XCTAssertEqual(model.statusText, "Auto-read disabled")
-        XCTAssertEqual(store.saved.map(\.autoReadEnabled), [false])
-
-        model.toggleAutoRead()
-        XCTAssertTrue(model.settings.autoReadEnabled)
-        XCTAssertEqual(model.statusText, "Auto-read enabled")
-        XCTAssertEqual(store.saved.map(\.autoReadEnabled), [false, true])
-    }
-
     func testChangingASettingPersistsAndReregistersImmediately() {
         let store = SpySettingsStore(settings: .defaults)
         let hotkeys = SpyHotkeyManager()
         let model = makeModel(store: store, hotkeys: hotkeys)
         let replacement = HotkeyDefinition.chord(keyCode: 49, modifiers: [.command])
 
-        model.setHotkey(replacement, for: .readSelection)
+        model.settingsController.setHotkey(replacement, for: .readSelection)
 
         XCTAssertEqual(model.settings.hotkeys[.readSelection], replacement)
         XCTAssertEqual(store.saved.last?.hotkeys[.readSelection], replacement)
@@ -621,23 +602,11 @@ final class AppModelTests: XCTestCase {
         let model = makeModel(store: store, hotkeys: hotkeys)
         let existing = try! XCTUnwrap(model.settings.hotkeys[.replayLast])
 
-        model.setHotkey(existing, for: .readSelection)
+        model.settingsController.setHotkey(existing, for: .readSelection)
 
         XCTAssertEqual(model.settings, .defaults)
         XCTAssertTrue(store.saved.isEmpty)
         XCTAssertEqual(hotkeys.registrations.count, 1)
-    }
-
-    func testDuplicateHotkeyRejectionSurfacesActionableConflictMessage() {
-        let hotkeys = SpyHotkeyManager()
-        let model = makeModel(hotkeys: hotkeys)
-        let existing = try! XCTUnwrap(model.settings.hotkeys[.replayLast])
-
-        model.setHotkey(existing, for: .readSelection)
-
-        let expected = "Read Selection conflicts with Replay Last. Choose a different shortcut."
-        XCTAssertEqual(model.statusText, expected)
-        XCTAssertEqual(model.hotkeyConflictMessage, expected)
     }
 
     func testRemoveHotkeyClearsTheBindingAndPersists() {
@@ -645,23 +614,11 @@ final class AppModelTests: XCTestCase {
         let hotkeys = SpyHotkeyManager()
         let model = makeModel(store: store, hotkeys: hotkeys)
 
-        model.removeHotkey(for: .readSelection)
+        model.settingsController.removeHotkey(for: .readSelection)
 
         XCTAssertNil(model.settings.hotkeys[.readSelection])
         XCTAssertNil(store.saved.last?.hotkeys[.readSelection])
         XCTAssertNil(hotkeys.registrations.last?.hotkeys[.readSelection])
-    }
-
-    func testRemoveHotkeyClearsAnExistingConflictMessage() {
-        let hotkeys = SpyHotkeyManager()
-        let model = makeModel(hotkeys: hotkeys)
-        let existing = try! XCTUnwrap(model.settings.hotkeys[.replayLast])
-        model.setHotkey(existing, for: .readSelection)
-        XCTAssertNotNil(model.hotkeyConflictMessage)
-
-        model.removeHotkey(for: .readSelection)
-
-        XCTAssertNil(model.hotkeyConflictMessage)
     }
 
     func testModifierOnlyAndDoubleTapModifierConflictIsRejected() {
@@ -669,7 +626,7 @@ final class AppModelTests: XCTestCase {
         let hotkeys = SpyHotkeyManager()
         let model = makeModel(store: store, hotkeys: hotkeys)
 
-        model.setHotkey(.doubleTapModifier(.function), for: .readSelection)
+        model.settingsController.setHotkey(.doubleTapModifier(.function), for: .readSelection)
 
         XCTAssertEqual(model.settings, .defaults)
         XCTAssertTrue(store.saved.isEmpty)
@@ -816,7 +773,7 @@ final class AppModelTests: XCTestCase {
         let model = makeModel(store: store, hotkeys: hotkeys)
         let replacement = HotkeyDefinition.chord(keyCode: 49, modifiers: [.command])
 
-        model.setHotkey(replacement, for: .readSelection)
+        model.settingsController.setHotkey(replacement, for: .readSelection)
 
         XCTAssertEqual(hotkeys.registrations.count, 2)
         XCTAssertEqual(hotkeys.registrations.last?.hotkeys[.readSelection], replacement)

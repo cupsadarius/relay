@@ -12,10 +12,10 @@ struct KeybindsSettingsView: View {
                         HotkeyRecorder(
                             definition: model.settings.hotkeys[action]
                         ) { definition in
-                            model.setHotkey(definition, for: action)
+                            model.settingsController.setHotkey(definition, for: action)
                         }
                         Button {
-                            model.removeHotkey(for: action)
+                            model.settingsController.removeHotkey(for: action)
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                         }
@@ -25,7 +25,7 @@ struct KeybindsSettingsView: View {
                     }
                 }
 
-                if let conflict = model.hotkeyConflictMessage {
+                if let conflict = model.settingsController.hotkeyConflictMessage {
                     Text(conflict)
                         .foregroundStyle(.red)
                         .accessibilityIdentifier("hotkey-conflict-message")

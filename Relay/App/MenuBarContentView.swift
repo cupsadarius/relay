@@ -20,7 +20,7 @@ struct MenuBarContentView: View {
             }
             .disabled(!model.integrationSetup.latestResponseAvailable)
             Button(model.settings.autoReadEnabled ? "Auto-read: On" : "Auto-read: Off") {
-                model.toggleAutoRead()
+                model.settingsController.toggleAutoRead()
             }
             Divider()
             Button("Settings...") { windowFocus.openSettings() }

@@ -1,20 +1,5 @@
 import Foundation
 
-/// A live, mutable box holding the latest `AppSettings` snapshot. `AppModel` is the sole writer
-/// (via `updateSettings`), while every production service `RelayRuntime` constructs that needs to
-/// read settings without depending on `AppModel` itself (the TTS/STT routers,
-/// `DictationCoordinator`, `AgentAutoReadCoordinator`) reads through an `@MainActor`-isolated
-/// closure captured over this box at construction time. That keeps every reader on the same
-/// isolation domain as the one writer, with no synchronization beyond `@MainActor` itself.
-@MainActor
-final class SettingsBox {
-    var value: AppSettings
-
-    init(_ value: AppSettings) {
-        self.value = value
-    }
-}
-
 /// Session-intelligence services: the ephemeral in-memory agent-session registry, the
 /// frontmost-app monitor, the process inspector (used both for focus resolution and for pruning
 /// dead-process sessions), and the resulting `FocusResolutionService`. Resolver order is fixed:
@@ -44,72 +29,6 @@ struct SpeechInputServices {
     let sttRegistry: [String: any SpeechToTextBackend]
     let speechModelManagers: [String: any SpeechModelManaging]
     let dictationCoordinator: (any DictationCoordinating)?
-    /// The write half of Whisper's model-selection seam, exposed so `AppModel(runtime:)` can
-    /// re-point it at `AppModel.setSelectedSpeechModel` once `AppModel` exists -- see
-    /// `WhisperSelectionWriterBox`'s own doc comment for why this postponed-wiring step exists.
-    let whisperSelectionWriter: WhisperSelectionWriterBox
-}
-
-/// Thread-safe (lock-protected, `@unchecked Sendable`) cache of Whisper's currently-selected
-/// model id. Backs the `WhisperModelSelection` GETTER closure `RelayRuntime.makeProduction()`
-/// wires into both `WhisperBackend` and `WhisperModelManager`.
-///
-/// Deliberately NOT `SettingsBox`: `WhisperModelSelection` is a plain, non-actor-isolated
-/// `@Sendable () -> WhisperModelID?` (see that typealias's doc comment), and it is called from
-/// `WhisperBackend.availability()` -- running on `WhisperBackend`'s OWN actor, not `MainActor` --
-/// so it cannot touch a `@MainActor`-isolated `SettingsBox` without an `await` the closure's
-/// signature has no room for. This cache is the synchronous, cross-actor-safe source of truth for
-/// the CURRENT SESSION's selection; `AppSettings.selectedSpeechModelByBackend["whisper"]` on disk
-/// is the durable copy read once at `makeProduction()` to seed it, and written back to on every
-/// change via `WhisperSelectionWriterBox`/`AppModel.setSelectedSpeechModel`.
-final class WhisperSelectionCache: @unchecked Sendable {
-    private let lock = NSLock()
-    private var modelID: WhisperModelID?
-
-    init(_ initial: WhisperModelID?) {
-        modelID = initial
-    }
-
-    func read() -> WhisperModelID? {
-        lock.lock()
-        defer { lock.unlock() }
-        return modelID
-    }
-
-    func write(_ newValue: WhisperModelID?) {
-        lock.lock()
-        modelID = newValue
-        lock.unlock()
-    }
-}
-
-/// Mutable box for the write half of Whisper's model-selection seam
-/// (`WhisperModelSelectionWriter`, `@MainActor`-isolated -- see that typealias's doc comment).
-/// `RelayRuntime.makeProduction()` constructs `WhisperModelManager` (and the closure
-/// `setSelectedModel` wraps) before `AppModel` -- the app's sole settings writer, via
-/// `updateSettings` (see `SettingsBox`'s own doc comment) -- exists to give that write a home.
-/// `AppModel(runtime:)` re-points `persist` at `AppModel.setSelectedSpeechModel` immediately after
-/// constructing `AppModel` (`DictationCoordinator`'s status closure, by contrast, is wired once at
-/// construction time via the shared `StatusSink` and never re-pointed).
-///
-/// `write(_:)` always updates `WhisperSelectionCache` synchronously first (so `WhisperBackend`/
-/// `WhisperModelManager` see the new selection immediately, from any actor, regardless of whether
-/// `persist` has been wired yet) and only THEN calls `persist`, which defaults to a no-op: nothing
-/// can actually reach `write(_:)` before `AppModel` exists, since `WhisperModelManager.selectModel`
-/// is only ever invoked through `AppModel.selectSpeechModel`.
-@MainActor
-final class WhisperSelectionWriterBox {
-    private let cache: WhisperSelectionCache
-    var persist: (WhisperModelID?) -> Void = { _ in }
-
-    init(cache: WhisperSelectionCache) {
-        self.cache = cache
-    }
-
-    func write(_ modelID: WhisperModelID?) {
-        cache.write(modelID)
-        persist(modelID)
-    }
 }
 
 /// Agent-integration services: the fixed-path Unix-socket receiver, the manager that decodes and
@@ -139,9 +58,7 @@ struct IntegrationServices {
 @MainActor
 final class RelayRuntime {
     let status: StatusSink
-    let settingsStore: any SettingsStoring
-    let settings: AppSettings
-    let settingsBox: SettingsBox
+    let settingsController: SettingsController
     let diagnostics: DiagnosticsRecorder
     let integrationDiagnosticsLog: IntegrationDiagnosticsLog
     let permissionService: any GlobalPermissionAuthorizing
@@ -158,9 +75,7 @@ final class RelayRuntime {
 
     init(
         status: StatusSink,
-        settingsStore: any SettingsStoring,
-        settings: AppSettings,
-        settingsBox: SettingsBox,
+        settingsController: SettingsController,
         diagnostics: DiagnosticsRecorder,
         integrationDiagnosticsLog: IntegrationDiagnosticsLog,
         permissionService: any GlobalPermissionAuthorizing,
@@ -176,9 +91,7 @@ final class RelayRuntime {
         preprocessor: RulesSpeechPreprocessor
     ) {
         self.status = status
-        self.settingsStore = settingsStore
-        self.settings = settings
-        self.settingsBox = settingsBox
+        self.settingsController = settingsController
         self.diagnostics = diagnostics
         self.integrationDiagnosticsLog = integrationDiagnosticsLog
         self.permissionService = permissionService
@@ -199,18 +112,15 @@ final class RelayRuntime {
     static func makeProduction() -> RelayRuntime {
         let status = StatusSink()
         let diagnostics = DiagnosticsRecorder()
-        let settingsStore = SettingsStore(diagnostics: diagnostics)
-        let settings = settingsStore.load()
-        let settingsBox = SettingsBox(settings)
-        let overlayModel = ActivityOverlayModel()
-
-        let whisperSelectionCache = WhisperSelectionCache(
-            settings.selectedSpeechModelByBackend["whisper"].flatMap(WhisperModelID.init(rawValue:))
+        let settingsController = SettingsController(
+            store: SettingsStore(diagnostics: diagnostics),
+            statusSink: status
         )
-        let whisperSelectionWriter = WhisperSelectionWriterBox(cache: whisperSelectionCache)
+        let settings = settingsController.snapshot
+        let overlayModel = ActivityOverlayModel()
         let graph = SpeechBackendGraph.make(
-            whisperSelection: { whisperSelectionCache.read() },
-            setWhisperSelection: { whisperSelectionWriter.write($0) }
+            whisperSelection: settingsController.whisperSelection,
+            setWhisperSelection: settingsController.whisperSelectionWriter
         )
         let ttsRegistry = graph.ttsRegistry
         let sttRegistry = graph.sttRegistry
@@ -218,17 +128,17 @@ final class RelayRuntime {
         let ttsPlayer = StreamingAudioPlayer()
         let router = TTSRouter(
             backends: ttsRegistry,
-            backendOrder: { settingsBox.value.ttsBackendOrder },
+            backendOrder: { settings.value.ttsBackendOrder },
             player: ttsPlayer
         )
         let coordinator = SpeechCoordinator(
             router: router,
             options: {
                 TTSOptions(
-                    voiceIdentifier: settingsBox.value.ttsVoiceIdentifier,
-                    rate: settingsBox.value.ttsRate,
-                    kokoroVoice: settingsBox.value.kokoroVoice,
-                    pocketVoice: settingsBox.value.pocketVoice
+                    voiceIdentifier: settings.value.ttsVoiceIdentifier,
+                    rate: settings.value.ttsRate,
+                    kokoroVoice: settings.value.kokoroVoice,
+                    pocketVoice: settings.value.pocketVoice
                 )
             },
             overlay: overlayModel
@@ -271,17 +181,7 @@ final class RelayRuntime {
             focus: focusResolution,
             preprocess: { RulesSpeechPreprocessor().prepare(text: $0, mode: .automatic) },
             speech: coordinator,
-            // `@MainActor` here (not merely `@Sendable`): `settingsBox.value` is only ever
-            // WRITTEN on the MainActor (`AppModel.updateSettings`), so every reader must also
-            // run there. This closure is invoked from `AgentAutoReadCoordinator`'s own actor
-            // isolation as `await autoReadEnabled()`; being `@MainActor`-isolated makes that
-            // call hop to the main actor to read `settingsBox.value`, landing in the same
-            // isolation domain as every write — rather than reading the mutable, heap-backed
-            // `AppSettings` struct across domains with no synchronization. A `@MainActor`
-            // closure converts implicitly to the coordinator's plain
-            // `@Sendable () async -> Bool` parameter type; the hop happens at the call site, not
-            // by widening that parameter.
-            autoReadEnabled: { @MainActor in settingsBox.value.autoReadEnabled },
+            autoReadEnabled: { settings.value.autoReadEnabled },
             diagnostics: integrationDiagnosticsLog,
             processInspector: processInspector
         )
@@ -293,7 +193,7 @@ final class RelayRuntime {
             sttRouter: STTRouter(
                 backends: sttRegistry,
                 backendOrder: {
-                    let configured = settingsBox.value.sttBackendOrder.filter { sttRegistry[$0] != nil }
+                    let configured = settings.value.sttBackendOrder.filter { sttRegistry[$0] != nil }
                     return configured.isEmpty ? ["apple-speech"] : configured
                 }
             ),
@@ -303,7 +203,7 @@ final class RelayRuntime {
             status: { status.post($0) },
             activity: overlayModel,
             diagnostics: diagnostics,
-            liveTranscriptionEnabled: { @MainActor in settingsBox.value.liveTranscriptionEnabled }
+            liveTranscriptionEnabled: { settings.value.liveTranscriptionEnabled }
         )
         let hookEnvelopeReceiver = HookEnvelopeReceiver(diagnostics: integrationDiagnosticsLog)
 
@@ -324,9 +224,7 @@ final class RelayRuntime {
         )
         return RelayRuntime(
             status: status,
-            settingsStore: settingsStore,
-            settings: settings,
-            settingsBox: settingsBox,
+            settingsController: settingsController,
             diagnostics: diagnostics,
             integrationDiagnosticsLog: integrationDiagnosticsLog,
             permissionService: PermissionService(),
@@ -349,8 +247,7 @@ final class RelayRuntime {
             speechIn: SpeechInputServices(
                 sttRegistry: sttRegistry,
                 speechModelManagers: graph.speechModelManagers,
-                dictationCoordinator: dictation,
-                whisperSelectionWriter: whisperSelectionWriter
+                dictationCoordinator: dictation
             ),
             integrations: IntegrationServices(
                 socketPath: IntegrationServices.productionSocketPath,

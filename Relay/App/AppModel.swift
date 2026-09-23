@@ -40,9 +40,7 @@ final class AppModel {
     /// `AppSettings` — re-synced to the service on every write via `setLaunchAtLogin`, so it
     /// can't drift from what's actually registered.
     private(set) var launchAtLoginEnabled: Bool
-    private(set) var settings: AppSettings
     private(set) var dictationPhase: HotkeyPhase?
-    private(set) var hotkeyConflictMessage: String?
     private(set) var permissionSnapshot: PermissionSnapshot
     private(set) var eventTapStatus: HotkeyRegistrationStatus = .unavailable("Not checked")
     var diagnosticsEntries: [DiagnosticEntry] { diagnostics.entries.reversed() }
@@ -59,13 +57,11 @@ final class AppModel {
     var overlayModel: ActivityOverlayModel { runtime.speechOut.overlayModel }
     var sttRegistry: [String: any SpeechToTextBackend] { runtime.speechIn.sttRegistry }
     var ttsRegistry: [String: any TextToSpeechBackend] { runtime.speechOut.ttsRegistry }
-    private var settingsStore: any SettingsStoring { runtime.settingsStore }
     private var selectionReader: any SelectionReading { runtime.selectionReader }
     private var preprocessor: RulesSpeechPreprocessor { runtime.preprocessor }
     private var speechCoordinator: any SpeechCoordinating { runtime.speechOut.speechCoordinator }
     private var dictationCoordinator: (any DictationCoordinating)? { runtime.speechIn.dictationCoordinator }
     private var hotkeyManager: any HotkeyManaging { runtime.hotkeyManager }
-    private var settingsState: SettingsBox { runtime.settingsBox }
     private var permissionService: any GlobalPermissionAuthorizing { runtime.permissionService }
     private var microphonePermissions: any MicrophonePermissionStatusProviding { runtime.microphonePermissions }
     private var privacySettingsOpener: any PrivacySettingsOpening { runtime.privacySettingsOpener }
@@ -80,6 +76,9 @@ final class AppModel {
     private var integrationDiagnosticsLog: IntegrationDiagnosticsLog { runtime.integrationDiagnosticsLog }
 
     @ObservationIgnored let integrationSetup: IntegrationSetupModel
+    @ObservationIgnored let settingsController: SettingsController
+    /// Read-only settings for views; writes go through `settingsController`.
+    var settings: AppSettings { settingsController.current }
     @ObservationIgnored let modelController: SpeechModelController
     @ObservationIgnored let voiceCatalog: SpeechVoiceCatalog
     @ObservationIgnored var refreshGeneration = 0
@@ -101,6 +100,7 @@ final class AppModel {
     init(runtime: RelayRuntime) {
         self.runtime = runtime
         integrationSetup = IntegrationSetupModel(runtime: runtime)
+        settingsController = runtime.settingsController
         modelController = SpeechModelController(
             managers: Self.modelManagers(
                 dictation: runtime.speechIn.speechModelManagers,
@@ -112,15 +112,11 @@ final class AppModel {
         permissionSnapshot = runtime.permissionService.snapshot()
         microphonePermissionGranted = runtime.microphonePermissions.isGranted()
         launchAtLoginEnabled = runtime.loginItemService.isEnabled
-        settings = runtime.settings
         configureModelController()
+        settingsController.onHotkeysChanged = { [weak self] _ in self?.registerHotkeys() }
         registerHotkeys()
         observeAppActivation()
         bindOverlayPresenter()
-        // Remaining post-init wiring; removed in Task 3 when settings get their own owner.
-        runtime.speechIn.whisperSelectionWriter.persist = { [weak self] modelID in
-            self?.setSelectedSpeechModel(backendID: "whisper", modelID: modelID?.rawValue)
-        }
         initialSpeechBackendRefresh = Task { [weak self] in
             await self?.refreshSpeechBackendStatuses()
             await self?.modelController.refresh(domain: .dictation)
@@ -163,62 +159,19 @@ final class AppModel {
         )
     }
 
-    func setHotkey(_ definition: HotkeyDefinition, for action: HotkeyAction) {
-        if let conflictingAction = HotkeyAction.allCases.first(where: {
-            guard $0 != action, let existing = settings.hotkeys[$0] else { return false }
-            return definition.conflicts(with: existing)
-        }) {
-            let message = "\(action.title) conflicts with \(conflictingAction.title). Choose a different shortcut."
-            hotkeyConflictMessage = message
-            statusText = message
-            return
-        }
-        hotkeyConflictMessage = nil
-        updateSettings { $0.hotkeys[action] = definition }
-    }
-
-    func removeHotkey(for action: HotkeyAction) {
-        hotkeyConflictMessage = nil
-        updateSettings { $0.hotkeys[action] = nil }
-    }
-
-    func setDictationMode(_ mode: DictationMode) {
-        updateSettings { $0.dictationMode = mode }
-    }
-
-    func setVoiceIdentifier(_ identifier: String?) {
-        updateSettings { $0.ttsVoiceIdentifier = identifier }
-    }
-
-    func setKokoroVoice(_ voice: String?) {
-        updateSettings { $0.kokoroVoice = voice }
-    }
-
-    func setPocketVoice(_ voice: String?) {
-        updateSettings { $0.pocketVoice = voice }
-    }
-
     func selectVoice(backendID: String, voiceID: String) {
         guard let value = voiceCatalog.storedValue(for: voiceID, backendID: backendID) else { return }
         switch backendID {
-        case "apple-tts": setVoiceIdentifier(value)
-        case "kokoro": setKokoroVoice(value)
-        case "pocket-tts": setPocketVoice(value)
+        case "apple-tts": settingsController.setVoiceIdentifier(value)
+        case "kokoro": settingsController.setKokoroVoice(value)
+        case "pocket-tts": settingsController.setPocketVoice(value)
         default: break
         }
     }
 
-    func setSpeechRate(_ rate: Float) {
-        updateSettings { $0.ttsRate = rate }
-    }
-
     func setActivityOverlayStyle(_ style: ActivityOverlayStyle) {
-        updateSettings { $0.activityOverlayStyle = style }
+        settingsController.setActivityOverlayStyle(style)
         overlayPresenter.update(state: overlayModel.state, style: style)
-    }
-
-    func setLiveTranscriptionEnabled(_ enabled: Bool) {
-        updateSettings { $0.liveTranscriptionEnabled = enabled }
     }
 
     /// Registers/unregisters Relay as a login item via `loginItemService`
@@ -240,46 +193,8 @@ final class AppModel {
     private func bindOverlayPresenter() {
         overlayModel.setStateHandler { [weak self] state in
             guard let self else { return }
-            overlayPresenter.update(state: state, style: settingsState.value.activityOverlayStyle)
+            overlayPresenter.update(state: state, style: settingsController.current.activityOverlayStyle)
         }
-    }
-
-    private func updateSettings(_ update: (inout AppSettings) -> Void) {
-        let previousHotkeys = settings.hotkeys
-        update(&settings)
-        settingsState.value = settings
-        // Only a change to the hotkey DEFINITIONS needs to rebuild `HotkeyMatcher` (which
-        // `registerHotkeys()` does via `hotkeyManager.register`). Rebuilding it on every settings
-        // write — voice, rate, backend order, auto-read, etc. — discarded any in-flight
-        // chord/double-tap gesture state for no reason; the event tap itself is unaffected either
-        // way (already idempotently guarded inside `GlobalHotkeyManager.register`).
-        if settings.hotkeys != previousHotkeys {
-            registerHotkeys()
-        }
-        do {
-            try settingsStore.save(settings)
-        } catch {
-            statusText = "Could not save settings: \(error.localizedDescription)"
-        }
-    }
-
-    /// The single write path `SpeechBackendCatalog.swift` uses to persist `sttBackendOrder`,
-    /// kept narrow so that file doesn't need broader access to `updateSettings`.
-    func setSTTBackendOrder(_ order: [String]) {
-        updateSettings { $0.sttBackendOrder = order }
-    }
-
-    /// The single write path `TTSBackendCatalog.swift` uses to persist `ttsBackendOrder`, kept
-    /// narrow so that file doesn't need broader access to `updateSettings`.
-    func setTTSBackendOrder(_ order: [String]) {
-        updateSettings { $0.ttsBackendOrder = order }
-    }
-
-    /// Persists a multi-model STT backend's currently-selected model id (e.g. Whisper's). Never
-    /// called directly by `SpeechBackendCatalog.swift`; reached from Whisper's model manager
-    /// through the writer wired in init.
-    func setSelectedSpeechModel(backendID: String, modelID: String?) {
-        updateSettings { $0.selectedSpeechModelByBackend[backendID] = modelID }
     }
 
     private func registerHotkeys() {
@@ -392,7 +307,7 @@ final class AppModel {
         case .replayLast:
             startSpeechAction { await $0.replayLast() }
         case .toggleAutoRead:
-            toggleAutoRead()
+            settingsController.toggleAutoRead()
         }
     }
 
@@ -404,24 +319,6 @@ final class AppModel {
             guard let self, !Task.isCancelled else { return }
             await action(self)
         }
-    }
-
-    /// Flips `settings.autoReadEnabled` and updates `statusText` to reflect the new value.
-    /// Shared by the `toggleAutoRead` hotkey and the menu bar's auto-read control so neither
-    /// path duplicates the toggle logic.
-    func toggleAutoRead() {
-        setAutoReadEnabled(!settings.autoReadEnabled)
-    }
-
-    /// Sets `settings.autoReadEnabled` explicitly and updates `statusText` to reflect the new
-    /// value. Used by the Integrations settings tab's toggle; `toggleAutoRead()` (the
-    /// `.toggleAutoRead` hotkey and menu bar control) is expressed in terms of this so neither
-    /// path duplicates the persist-and-announce logic. A no-op when the value is unchanged, so
-    /// flipping the same settings-tab toggle repeatedly doesn't spam `statusText`.
-    func setAutoReadEnabled(_ enabled: Bool) {
-        guard enabled != settings.autoReadEnabled else { return }
-        updateSettings { $0.autoReadEnabled = enabled }
-        statusText = settings.autoReadEnabled ? "Auto-read enabled" : "Auto-read disabled"
     }
 
     private func enqueueDictation(

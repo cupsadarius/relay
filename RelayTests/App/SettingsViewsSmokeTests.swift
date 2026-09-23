@@ -41,12 +41,12 @@ final class SettingsViewsSmokeTests: XCTestCase {
         let initial = model.settings.autoReadEnabled
         _ = MenuBarContentView(model: model)
 
-        model.toggleAutoRead()
+        model.settingsController.toggleAutoRead()
 
         XCTAssertEqual(model.settings.autoReadEnabled, !initial)
         _ = MenuBarContentView(model: model)
 
-        model.toggleAutoRead()
+        model.settingsController.toggleAutoRead()
         XCTAssertEqual(model.settings.autoReadEnabled, initial)
     }
 }

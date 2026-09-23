@@ -60,7 +60,6 @@ extension RelayRuntime {
         let overlayModel = overlayModel ?? ActivityOverlayModel()
         let overlayPresenter = overlayPresenter ?? NoOpActivityOverlayPresenter()
         let frontmostApps = frontmostApps ?? StubFrontmostAppMonitor(pid: nil)
-        let settings = settingsStore.load()
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent("relay-tests-\(UUID().uuidString)", isDirectory: true)
         let helperPath = "/Applications/Relay.app/Contents/Helpers/RelayHook"
@@ -76,9 +75,7 @@ extension RelayRuntime {
         let socketPath = hookSocketPath ?? "/tmp/relay-rt-\(UUID().uuidString.prefix(8)).sock"
         return RelayRuntime(
             status: status,
-            settingsStore: settingsStore,
-            settings: settings,
-            settingsBox: SettingsBox(settings),
+            settingsController: SettingsController(store: settingsStore, statusSink: status),
             diagnostics: diagnostics,
             integrationDiagnosticsLog: integrationDiagnosticsLog,
             permissionService: permissionService,
@@ -106,8 +103,7 @@ extension RelayRuntime {
             speechIn: SpeechInputServices(
                 sttRegistry: sttRegistry,
                 speechModelManagers: speechModelManagers,
-                dictationCoordinator: dictationCoordinator,
-                whisperSelectionWriter: WhisperSelectionWriterBox(cache: WhisperSelectionCache(nil))
+                dictationCoordinator: dictationCoordinator
             ),
             integrations: IntegrationServices(
                 socketPath: socketPath,

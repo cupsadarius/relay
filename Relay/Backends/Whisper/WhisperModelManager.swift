@@ -9,11 +9,9 @@ import Foundation
 /// `AppSettings`' persisted selection, wired up in `RelayRuntime.makeProduction()`. In tests it is
 /// a fake closure pair the test owns directly.
 ///
-/// `@MainActor`, unlike the getter: production's writer (`RelayRuntime.makeProduction()`) needs
-/// to reach `AppModel.setSelectedSpeechModel` -- the app's sole settings writer, MainActor-
-/// isolated -- so the write can go through `AppModel.updateSettings` and land on disk, rather
-/// than a production service mutating `AppSettings`/`SettingsBox` directly. `selectModel` is only
-/// ever reached through `AppModel.selectSpeechModel` (already MainActor), so awaiting a
+/// `@MainActor`, unlike the getter: production's writer is `SettingsController.whisperSelectionWriter`,
+/// so the write persists through Relay's single settings writer. `selectModel` is only ever
+/// reached through `AppModel.selectSpeechModel` (already MainActor), so awaiting a
 /// MainActor-isolated closure from there is a same-actor hop, not a real suspension.
 typealias WhisperModelSelectionWriter = @MainActor @Sendable (WhisperModelID?) -> Void
 

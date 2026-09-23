@@ -27,10 +27,17 @@ struct TTSSettingsView: View {
             }
             Section("Speech") {
                 HStack {
-                    Slider(value: Binding(
-                        get: { Double(model.settings.ttsRate) },
-                        set: { model.setSpeechRate(Float($0)) }
-                    ), in: 0.1...1.0, step: 0.05)
+                    Slider(
+                        value: Binding(
+                            get: { Double(model.settings.ttsRate) },
+                            set: { model.settingsController.setSpeechRate(Float($0)) }
+                        ),
+                        in: 0.1...1.0,
+                        step: 0.05,
+                        onEditingChanged: { editing in
+                            if !editing { model.settingsController.flushPendingSave() }
+                        }
+                    )
                     Text(model.settings.ttsRate, format: .number.precision(.fractionLength(2)))
                         .monospacedDigit().frame(width: 38, alignment: .trailing)
                 }
