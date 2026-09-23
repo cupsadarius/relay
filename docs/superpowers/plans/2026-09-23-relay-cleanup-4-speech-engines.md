@@ -83,7 +83,7 @@ Output to expect:
 
 ## Execution Notes (fill in while executing)
 
-- **Task 8 spike: which thread runs Apple TTS `write` callbacks:** `_____` (record the `SPIKE apple-tts-write-callback:` line printed by `AppleTTSWriteCallbackSpikeTests`, the macOS build, and whether the test was skipped).
+- **Task 8 spike: which thread runs Apple TTS `write` callbacks:** not skipped (system voices were installed). `SPIKE apple-tts-write-callback: main=62 background=0 nonEmptyBuffers=61`, macOS 27.0 (arm64). All callbacks arrived on the main thread; `main > 0` means the old `NSCondition`-based bridge risked blocking the main actor `next()` also needs (a deadlock risk), confirming Task 9's never-blocking, explicitly-`@Sendable` callback is the correct fix regardless of which thread Apple uses.
 - Deviations from this plan and why: `_____`
 
 ## File Structure
