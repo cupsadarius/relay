@@ -158,35 +158,7 @@ final class FluidAudioPocketTTSEngineTests: XCTestCase {
         XCTAssertEqual(loadLocalCalls, 0, "modelsArePresent() must never trigger a load")
     }
 
-    func testConcurrentLocalLoadsShareASingleUnderlyingLoad() async throws {
-        let loader = FakePocketTTSModelLoader()
-        await loader.setPresent(true)
-        await loader.setShouldGateLoad(true)
-        let engine = FluidAudioPocketTTSEngine(modelLoader: loader)
-
-        let task1 = Task { try await engine.load(allowDownload: false) }
-        let task2 = Task { try await engine.load(allowDownload: false) }
-
-        // Give both tasks every opportunity to reach the loader before we inspect call counts;
-        // a buggy (non-single-flighted) implementation would call loadLocal() a second time here.
-        while await loader.loadLocalCallCount < 1 {
-            await Task.yield()
-        }
-        for _ in 0..<5 {
-            await Task.yield()
-        }
-        let callCountBeforeGateOpens = await loader.loadLocalCallCount
-
-        await loader.openGate()
-        try await task1.value
-        try await task2.value
-
-        XCTAssertEqual(callCountBeforeGateOpens, 1, "A second concurrent load must not reach the loader while the first is in flight")
-        let finalCallCount = await loader.loadLocalCallCount
-        XCTAssertEqual(finalCallCount, 1, "Two concurrent loads must only invoke the underlying loader once")
-    }
-
-    func testFailedLocalLoadDoesNotCacheAFalsePresentSoARetryReconsultsTheLoader() async throws {
+    func testLoaderFailureMapsToLoadFailed() async {
         let loader = FakePocketTTSModelLoader()
         await loader.setPresent(true)
         await loader.setLoadError(FakeLoaderError.boom)
@@ -194,34 +166,10 @@ final class FluidAudioPocketTTSEngineTests: XCTestCase {
 
         do {
             try await engine.load(allowDownload: false)
-            XCTFail("Expected a load failure")
+            XCTFail("Expected loadFailed")
         } catch {
             XCTAssertEqual(error as? PocketTTSEngineError, .loadFailed)
         }
-
-        await loader.setLoadError(nil)
-        try await engine.load(allowDownload: false)
-
-        _ = try await engine.synthesizeStream(text: "hi", voice: "alba")
-        let presentCalls = await loader.modelsArePresentCallCount
-        XCTAssertEqual(presentCalls, 2, "A failed load must not cache a positive presence result, so the retry re-checks it")
-        let loadLocalCalls = await loader.loadLocalCallCount
-        XCTAssertEqual(loadLocalCalls, 2, "The retry must reach the loader again after the first failure")
-    }
-
-    func testPresenceCheckIsCachedAcrossRepeatedSuccessfulLocalLoads() async throws {
-        let loader = FakePocketTTSModelLoader()
-        await loader.setPresent(true)
-        let engine = FluidAudioPocketTTSEngine(modelLoader: loader)
-
-        try await engine.load(allowDownload: false)
-        try await engine.load(allowDownload: false)
-        try await engine.load(allowDownload: false)
-
-        let presentCalls = await loader.modelsArePresentCallCount
-        XCTAssertEqual(presentCalls, 1, "A positive presence result should be cached for the engine's lifetime")
-        let loadLocalCalls = await loader.loadLocalCallCount
-        XCTAssertEqual(loadLocalCalls, 1, "Once loaded, further load() calls must be no-ops")
     }
 
     func testAllowDownloadTrueSkipsThePresenceCheckAndForwardsProgress() async throws {
@@ -328,8 +276,6 @@ private actor FakePocketTTSSession: PocketTTSModelSession {
 private actor FakePocketTTSModelLoader: PocketTTSModelLoading {
     private var present = false
     private var loadError: Error?
-    private var shouldGateLoad = false
-    private var gateContinuation: CheckedContinuation<Void, Never>?
     private(set) var modelsArePresentCallCount = 0
     private(set) var loadLocalCallCount = 0
     private(set) var downloadCallCount = 0
@@ -341,15 +287,6 @@ private actor FakePocketTTSModelLoader: PocketTTSModelLoading {
 
     func setLoadError(_ error: Error?) {
         loadError = error
-    }
-
-    func setShouldGateLoad(_ value: Bool) {
-        shouldGateLoad = value
-    }
-
-    func openGate() {
-        gateContinuation?.resume()
-        gateContinuation = nil
     }
 
     func lastSessionReceivedArgs() async -> (String, String)? {
@@ -373,12 +310,6 @@ private actor FakePocketTTSModelLoader: PocketTTSModelLoading {
 
     func loadLocal() async throws -> any PocketTTSModelSession {
         loadLocalCallCount += 1
-
-        if shouldGateLoad {
-            await withCheckedContinuation { continuation in
-                gateContinuation = continuation
-            }
-        }
 
         if let loadError {
             throw loadError

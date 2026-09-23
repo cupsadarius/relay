@@ -81,35 +81,32 @@ extension PocketTTSEngine {
 /// presence gate on `load(allowDownload: false)` is therefore the ONLY protection against
 /// `initialize()` reaching the network when a caller asked for a local-only load - there is no
 /// way to close that gap further without patching FluidAudio. Only `load(allowDownload: true)` is
-/// meant to reach the network.
+/// meant to reach the network. Single-flight loading and the local-validation gate live in
+/// `ModelSessionLoader`.
 actor FluidAudioPocketTTSEngine: PocketTTSEngine {
-    /// Which flavor of load is in flight, tracked alongside its task. A caller with a different
-    /// `allowDownload` value decides whether to join it, ignore it and start its own, or refuse
-    /// to wait on it - see `load(allowDownload:progress:)`.
-    private enum LoadKind: Equatable {
-        case localOnly
-        case download
-    }
+    private static let logger = Logger(subsystem: "dev.relaymac.Relay", category: "pocket-tts")
 
     private let modelLoader: any PocketTTSModelLoading
-    private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "pocket-tts")
-
-    private var session: (any PocketTTSModelSession)?
-    private var inFlightLoad: (task: Task<Void, Error>, kind: LoadKind)?
-    /// Caches a positive `modelsArePresent()` result for as long as it remains trustworthy:
-    /// cleared on any load failure, since FluidAudio's own failure handling can delete and
-    /// redownload files out from under us (see the type-level doc comment), so a stale `true`
-    /// could let a later `allowDownload: false` call reach the network ungated. Never caches a
-    /// negative result, since the user may download the model between calls. Only ever set by a
-    /// `localOnly` load's own presence check - a `download` load never touches it directly.
-    private var validatedModelsPresent: Bool
+    private let sessionLoader: ModelSessionLoader<any PocketTTSModelSession>
 
     init(
         modelLoader: (any PocketTTSModelLoading)? = nil,
         validatedModelsPresent: Bool = false
     ) {
-        self.modelLoader = modelLoader ?? FluidAudioPocketTTSModelLoader(cacheDirectory: Self.defaultCacheDirectory())
-        self.validatedModelsPresent = validatedModelsPresent
+        let modelLoader = modelLoader ?? FluidAudioPocketTTSModelLoader(cacheDirectory: Self.defaultCacheDirectory())
+        self.modelLoader = modelLoader
+        let logger = Self.logger
+        sessionLoader = ModelSessionLoader(
+            validatedModelsPresent: validatedModelsPresent,
+            modelsNotDownloaded: { PocketTTSEngineError.modelsNotDownloaded },
+            mapLoadFailure: { _ in
+                logger.debug("PocketTTS model load failed")
+                return PocketTTSEngineError.loadFailed
+            },
+            validateLocal: { await modelLoader.modelsArePresent() },
+            loadLocal: { try await modelLoader.loadLocal() },
+            downloadAndLoad: { progress in try await modelLoader.downloadAndLoad(progress: progress) }
+        )
     }
 
     func modelsArePresent() async -> Bool {
@@ -117,13 +114,7 @@ actor FluidAudioPocketTTSEngine: PocketTTSEngine {
     }
 
     func removeModels() async throws {
-        if let inFlightLoad {
-            inFlightLoad.task.cancel()
-            _ = try? await inFlightLoad.task.value
-            clearIfCurrent(inFlightLoad.task)
-        }
-        session = nil
-        validatedModelsPresent = false
+        await sessionLoader.reset()
         try await modelLoader.removeModels()
         guard await !modelLoader.modelsArePresent() else {
             throw PocketTTSEngineError.loadFailed
@@ -131,43 +122,7 @@ actor FluidAudioPocketTTSEngine: PocketTTSEngine {
     }
 
     func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws {
-        if session != nil {
-            return
-        }
-
-        if let inFlightLoad {
-            switch (inFlightLoad.kind, allowDownload) {
-            case (.localOnly, false), (.download, true):
-                // Same kind of load already running: just join it.
-                try await awaitAndClear(inFlightLoad.task)
-                return
-
-            case (.localOnly, true):
-                // A local-only load is running. A download caller wants a fresh download
-                // regardless of that load's outcome, so it waits for it to get out of the way
-                // (ignoring whether it succeeded or failed) and only then starts its own
-                // download - unless the local-only load already produced a session.
-                _ = try? await inFlightLoad.task.value
-                clearIfCurrent(inFlightLoad.task)
-                if session != nil {
-                    return
-                }
-                try await startLoad(allowDownload: true, progress: progress)
-                return
-
-            case (.download, false):
-                // A download is running. Only worth waiting on if we already know the model is
-                // locally present; otherwise fail fast rather than block a caller that only
-                // asked for a local load on a transfer it never requested.
-                guard validatedModelsPresent else {
-                    throw PocketTTSEngineError.modelsNotDownloaded
-                }
-                try await awaitAndClear(inFlightLoad.task)
-                return
-            }
-        }
-
-        try await startLoad(allowDownload: allowDownload, progress: progress)
+        try await sessionLoader.load(allowDownload: allowDownload, progress: progress)
     }
 
     /// Does not remap errors that occur while draining the returned stream: a stream, once
@@ -175,83 +130,11 @@ actor FluidAudioPocketTTSEngine: PocketTTSEngine {
     /// source failure propagates to the caller as-is. The only error this method itself throws is
     /// the "not loaded" guard (`PocketTTSEngineError.synthesisFailed`), before any session call.
     func synthesizeStream(text: String, voice: String) async throws -> AsyncThrowingStream<[Float], Error> {
-        guard let session else {
+        guard let session = await sessionLoader.session else {
             throw PocketTTSEngineError.synthesisFailed
         }
 
         return try await session.synthesizeStream(text: text, voice: voice)
-    }
-
-    /// Starts a fresh load of the given kind, registers it as in flight, and awaits it.
-    private func startLoad(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws {
-        let kind: LoadKind = allowDownload ? .download : .localOnly
-        let task = Task { try await self.performLoad(allowDownload: allowDownload, progress: progress) }
-        inFlightLoad = (task, kind)
-        try await awaitAndClear(task)
-    }
-
-    /// Awaits `task`, then clears `inFlightLoad` - but only if it still refers to this exact
-    /// task, so a newer load started while we were suspended (e.g. by a joiner that decided to
-    /// start its own load once we finished) is never clobbered. A failure also invalidates any
-    /// cached presence result, since we can no longer trust the on-disk state matches what was
-    /// last checked.
-    private func awaitAndClear(_ task: Task<Void, Error>) async throws {
-        do {
-            try await task.value
-            clearIfCurrent(task)
-        } catch is CancellationError {
-            clearIfCurrent(task)
-            throw CancellationError()
-        } catch {
-            clearIfCurrent(task)
-            validatedModelsPresent = false
-            throw error
-        }
-    }
-
-    private func clearIfCurrent(_ task: Task<Void, Error>) {
-        if inFlightLoad?.task == task {
-            inFlightLoad = nil
-        }
-    }
-
-    private func performLoad(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws {
-        if !allowDownload {
-            guard await modelsAreValidatedLocally() else {
-                throw PocketTTSEngineError.modelsNotDownloaded
-            }
-        }
-
-        let loadedSession: any PocketTTSModelSession
-        do {
-            loadedSession =
-                if allowDownload {
-                    try await modelLoader.downloadAndLoad(progress: progress)
-                } else {
-                    try await modelLoader.loadLocal()
-                }
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            logger.debug("PocketTTS model load failed")
-            throw PocketTTSEngineError.loadFailed
-        }
-
-        session = loadedSession
-    }
-
-    /// Network-free. Returns the cached positive result when available; otherwise asks the
-    /// loader's hand-rolled filesystem check.
-    private func modelsAreValidatedLocally() async -> Bool {
-        if validatedModelsPresent {
-            return true
-        }
-
-        let present = await modelLoader.modelsArePresent()
-        if present {
-            validatedModelsPresent = true
-        }
-        return present
     }
 
     private static func defaultCacheDirectory() -> URL {
