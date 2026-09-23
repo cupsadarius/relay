@@ -375,6 +375,75 @@ final class StopHookConfigFileTests: XCTestCase {
         XCTAssertFalse(text.contains(#"\/"#))
     }
 
+    // MARK: - Write robustness
+
+    func testResolvedWriteTargetFollowsARelativeSymlinkChainToTheRealFile() throws {
+        let subDirectory = tempDirectory.appendingPathComponent("sub", isDirectory: true)
+        let realDirectory = tempDirectory.appendingPathComponent("real", isDirectory: true)
+        try FileManager.default.createDirectory(at: subDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: realDirectory, withIntermediateDirectories: true)
+
+        let realFile = realDirectory.appendingPathComponent("c.json")
+        try Data(#"{"keep":1}"#.utf8).write(to: realFile)
+
+        let linkB = subDirectory.appendingPathComponent("b.json")
+        try FileManager.default.createSymbolicLink(atPath: linkB.path, withDestinationPath: "../real/c.json")
+        let linkA = tempDirectory.appendingPathComponent("a.json")
+        try FileManager.default.createSymbolicLink(atPath: linkA.path, withDestinationPath: "sub/b.json")
+
+        let resolved = try StopHookConfigFile.resolvedWriteTarget(for: linkA)
+
+        XCTAssertEqual(resolved.standardizedFileURL.path, realFile.standardizedFileURL.path)
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: linkA.path), "sub/b.json")
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: linkB.path), "../real/c.json")
+    }
+
+    func testResolvedWriteTargetThrowsOnASymlinkLoopWithoutChangingAnything() throws {
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let link1 = tempDirectory.appendingPathComponent("l1.json")
+        let link2 = tempDirectory.appendingPathComponent("l2.json")
+        try FileManager.default.createSymbolicLink(atPath: link1.path, withDestinationPath: link2.path)
+        try FileManager.default.createSymbolicLink(atPath: link2.path, withDestinationPath: link1.path)
+
+        XCTAssertThrowsError(try StopHookConfigFile.resolvedWriteTarget(for: link1)) { error in
+            XCTAssertEqual((error as? POSIXError)?.code, .ELOOP)
+        }
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: link1.path), link2.path)
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: link2.path), link1.path)
+    }
+
+    func testFailedAtomicWriteLeavesNoTempFileAndOriginalPlusBackupUntouched() throws {
+        try writeRaw(#"{"keep":1}"#)
+        try makeFile().install()
+        let originalData = try Data(contentsOf: fileURL)
+        let originalBackup = try Data(contentsOf: backupURL)
+
+        // Remove write permission on the directory so creating the atomic-replace temp file
+        // fails cleanly, instead of ever exposing a partial file.
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: tempDirectory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: tempDirectory.path) }
+
+        XCTAssertThrowsError(try makeFile(provider: .codex, timeout: 3).install())
+
+        let leftoverTempFiles = try FileManager.default.contentsOfDirectory(atPath: tempDirectory.path)
+            .filter { $0.hasPrefix(".") && $0.contains(".relay-") }
+        XCTAssertTrue(leftoverTempFiles.isEmpty, "no partial temp file should remain: \(leftoverTempFiles)")
+        XCTAssertEqual(try Data(contentsOf: fileURL), originalData)
+        XCTAssertEqual(try Data(contentsOf: backupURL), originalBackup)
+    }
+
+    func testSuccessfulInstallLeavesNoTempFilesBehind() throws {
+        try writeRaw(#"{"keep":1}"#)
+        XCTAssertEqual(chmod(fileURL.path, 0o600), 0)
+
+        try makeFile().install()
+
+        XCTAssertEqual(try posixPermissions(fileURL), 0o600)
+        let leftoverTempFiles = try FileManager.default.contentsOfDirectory(atPath: tempDirectory.path)
+            .filter { $0.hasPrefix(".") && $0.contains(".relay-") }
+        XCTAssertTrue(leftoverTempFiles.isEmpty, "no partial temp file should remain: \(leftoverTempFiles)")
+    }
+
     // MARK: - Per-build ownership
 
     private let releaseHelper = "/Users/test/Library/Application Support/Relay/bin/RelayHook"

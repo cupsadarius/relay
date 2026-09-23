@@ -285,7 +285,7 @@ struct StopHookConfigFile: Sendable {
         if let original, NSDictionary(dictionary: original).isEqual(to: root) { return }
 
         let fileManager = FileManager.default
-        let target = Self.resolvedWriteTarget(for: fileURL)
+        let target = try Self.resolvedWriteTarget(for: fileURL)
         try fileManager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
 
         let existingPermissions = (try? fileManager.attributesOfItem(atPath: target.path))?[.posixPermissions] as? NSNumber
@@ -308,7 +308,9 @@ struct StopHookConfigFile: Sendable {
 
     /// Follows `url` through at most 16 symlink hops (absolute or relative destinations) and
     /// returns the real file to write. A non-link (or missing path) is returned unchanged.
-    static func resolvedWriteTarget(for url: URL) -> URL {
+    /// Throws `POSIXError(.ELOOP)` — without writing anything — if it is still a symlink after
+    /// 16 hops, rather than risk writing through a symlink loop.
+    static func resolvedWriteTarget(for url: URL) throws -> URL {
         var current = url
         for _ in 0..<16 {
             guard let destination = try? FileManager.default.destinationOfSymbolicLink(atPath: current.path) else {
@@ -318,7 +320,7 @@ struct StopHookConfigFile: Sendable {
                 ? URL(fileURLWithPath: destination)
                 : current.deletingLastPathComponent().appendingPathComponent(destination)
         }
-        return current
+        throw POSIXError(.ELOOP)
     }
 
     /// Copies `target` to `<target>.relay-backup` unless that backup already exists.
@@ -328,22 +330,63 @@ struct StopHookConfigFile: Sendable {
         try FileManager.default.copyItem(at: target, to: backup)
     }
 
-    /// Writes `data` to a sibling temp file created with `permissions`, then `rename(2)`s it over
-    /// `target`: readers never observe a partial file, and the mode is right from the first byte.
+    /// Writes `data` to a private sibling temp file, `fsync`s it, then `rename(2)`s it over
+    /// `target`: readers never observe a partial file, and the mode is right from the very first
+    /// byte on disk — the file is created (`O_EXCL`, mode `0600`) and `fchmod`'d to `permissions`
+    /// before any content is written, so a restrictive target (e.g. `0600`) is never briefly
+    /// exposed at a looser umask-filtered mode. On ANY failure the temp file descriptor is closed
+    /// and the temp file removed before the error is thrown; `target` is never touched.
     private static func atomicallyReplace(_ target: URL, with data: Data, permissions: Int) throws {
         let temporary = target.deletingLastPathComponent()
             .appendingPathComponent(".\(target.lastPathComponent).relay-\(UUID().uuidString)")
-        guard FileManager.default.createFile(
-            atPath: temporary.path,
-            contents: data,
-            attributes: [.posixPermissions: permissions]
-        ) else {
-            throw CocoaError(.fileWriteUnknown)
+
+        let fd = temporary.path.withCString { path in
+            open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, mode_t(0o600))
         }
-        guard rename(temporary.path, target.path) == 0 else {
-            let code = errno
+        guard fd >= 0 else {
+            throw errnoError()
+        }
+
+        do {
+            // `open`'s mode argument is filtered by the process umask; `fchmod` sets the exact
+            // mode regardless, so the file is never briefly world- or group-readable (or, for a
+            // looser target, briefly MORE restrictive than it should end up).
+            guard fchmod(fd, mode_t(permissions)) == 0 else { throw errnoError() }
+            try writeAll(data, to: fd)
+            guard fsync(fd) == 0 else { throw errnoError() }
+        } catch {
+            close(fd)
             try? FileManager.default.removeItem(at: temporary)
-            throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+            throw error
         }
+        close(fd)
+
+        guard rename(temporary.path, target.path) == 0 else {
+            let error = errnoError()
+            try? FileManager.default.removeItem(at: temporary)
+            throw error
+        }
+    }
+
+    /// Writes every byte of `data` to `fd`, looping over short writes and retrying on `EINTR`.
+    private static func writeAll(_ data: Data, to fd: Int32) throws {
+        try data.withUnsafeBytes { (buffer: UnsafeRawBufferPointer) in
+            guard let base = buffer.baseAddress, buffer.count > 0 else { return }
+            var offset = 0
+            while offset < buffer.count {
+                let written = Darwin.write(fd, base.advanced(by: offset), buffer.count - offset)
+                if written > 0 {
+                    offset += written
+                } else if written < 0, errno == EINTR {
+                    continue
+                } else {
+                    throw errnoError()
+                }
+            }
+        }
+    }
+
+    private static func errnoError() -> POSIXError {
+        POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
     }
 }

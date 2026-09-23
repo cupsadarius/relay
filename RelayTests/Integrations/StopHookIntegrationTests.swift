@@ -56,6 +56,13 @@ final class StopHookIntegrationTests: XCTestCase {
         XCTAssertNoThrow(try StopHookIntegration.claudeCode.decode(envelope(provider: .claudeCode, rawPayload: raw)))
     }
 
+    /// Claude Code does not use `turn_id`; a wrong-typed value there must never fail decoding of
+    /// an otherwise-valid Claude payload (only Codex structurally requires it as a string).
+    func testClaudeCodeDecodesStopEventWithNonStringTurnID() throws {
+        let raw = payload(extra: ["turn_id": 12345])
+        XCTAssertNoThrow(try StopHookIntegration.claudeCode.decode(envelope(provider: .claudeCode, rawPayload: raw)))
+    }
+
     func testMissingOrBlankFinalMessageIsRejectedForBothProviders() {
         for (integration, turnID) in [(StopHookIntegration.claudeCode, nil), (StopHookIntegration.codex, "t")] as [(StopHookIntegration, String?)] {
             for raw in [payload(message: nil, turnID: turnID), payload(message: "   \n", turnID: turnID)] {

@@ -17,6 +17,19 @@ struct StopHookPayload: Decodable {
         case turnID = "turn_id"
         case lastAssistantMessage = "last_assistant_message"
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionID = try container.decode(String.self, forKey: .sessionID)
+        cwd = try container.decode(String.self, forKey: .cwd)
+        hookEventName = try container.decode(String.self, forKey: .hookEventName)
+        // `turn_id` is only structurally meaningful for Codex (enforced separately by
+        // `StopHookIntegration.requiresTurnID`); Claude Code payloads may omit it or send any
+        // shape at all, so a wrong type here must never fail decoding of an otherwise-valid
+        // Claude payload. Missing or wrong-typed both simply resolve to `nil`.
+        turnID = try? container.decode(String.self, forKey: .turnID)
+        lastAssistantMessage = try container.decodeIfPresent(String.self, forKey: .lastAssistantMessage)
+    }
 }
 
 /// Why a hook envelope was rejected. Never carries payload content — only the structural reason.
