@@ -11,10 +11,15 @@ struct IntegrationsSettingsView: View {
                     Text(model.isSocketListening ? "Listening" : "Not listening")
                         .foregroundStyle(model.isSocketListening ? .green : .orange)
                     Spacer()
-                    Text(AppModel.integrationSocketPath)
+                    Text(model.hookSocketPath)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
+                }
+                if let message = model.socketStatusMessage {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.red)
                 }
             }
 

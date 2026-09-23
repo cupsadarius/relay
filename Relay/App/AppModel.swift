@@ -63,6 +63,10 @@ final class AppModel {
     /// Whether the Relay agent-hook Unix socket is currently listening. Only ever flipped by
     /// `startIntegrations()`/`stopIntegrations()`, called from the real app lifecycle.
     private(set) var isSocketListening = false
+    /// Why the hook socket could not be opened, when the user can act on it (e.g. another Relay
+    /// instance owns it). Shown under the socket status in Integrations settings. `nil` while
+    /// listening, and before `startIntegrations()` has run.
+    private(set) var socketStatusMessage: String?
     /// Install-time status per provider, refreshed by `installIntegration`/`uninstallIntegration`/
     /// `checkIntegration`. Independent of `integrationManager.status`, which tracks only runtime
     /// (event-driven) activity; `integrationStatus(for:)` merges the two.
@@ -139,6 +143,9 @@ final class AppModel {
     /// read-only via `integrationDiagnosticsEntries()`/`clearIntegrationDiagnostics()` for the
     /// Diagnostics window.
     @ObservationIgnored private let integrationDiagnosticsLog: IntegrationDiagnosticsLog
+    /// Where `startIntegrations()` opens the hook socket. Always `integrationSocketPath` in
+    /// production; injectable so tests can use a temp path.
+    @ObservationIgnored let hookSocketPath: String
 
     /// Builds the real production `AppModel` around `RelayRuntime`'s freshly constructed
     /// dependency graph. `AppModel` itself never builds that graph — see `RelayRuntime
@@ -218,7 +225,8 @@ final class AppModel {
         ),
         frontmostApps: any FrontmostAppMonitoring = FrontmostAppMonitor(),
         processInspector: ProcessInspector = ProcessInspector(),
-        integrationDiagnosticsLog: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog()
+        integrationDiagnosticsLog: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog(),
+        hookSocketPath: String = AppModel.integrationSocketPath
     ) {
         let settings = settingsStore.load()
         self.settingsStore = settingsStore
@@ -257,6 +265,7 @@ final class AppModel {
         self.frontmostApps = frontmostApps
         self.processInspector = processInspector
         self.integrationDiagnosticsLog = integrationDiagnosticsLog
+        self.hookSocketPath = hookSocketPath
         activationObserver = nil
         dictationTask = nil
         permissionSnapshot = permissionService.snapshot()
@@ -342,6 +351,7 @@ final class AppModel {
         self.frontmostApps = frontmostApps
         self.processInspector = processInspector
         self.integrationDiagnosticsLog = integrationDiagnosticsLog
+        hookSocketPath = Self.integrationSocketPath
         activationObserver = nil
         dictationTask = nil
         permissionSnapshot = permissionService.snapshot()
@@ -858,12 +868,22 @@ final class AppModel {
     ///
     /// - Important: called ONLY from the real app lifecycle (`RelayApp.applicationDidFinishLaunching`).
     ///   Never called from any initializer, so constructing an `AppModel` in a test never opens a
-    ///   real socket. A failure to start the socket never crashes the app; `isSocketListening` is
-    ///   always set from `hookEnvelopeReceiver.isListening` afterward, so it stays authoritative
-    ///   even when the start attempt throws (e.g. `.alreadyStarted` on a redundant call) while the
-    ///   socket the receiver already holds open remains listening.
+    ///   real socket. A failure to start the socket never crashes the app: `.alreadyStarted` (a
+    ///   redundant call) is ignored, and any other failure is recorded in
+    ///   `integrationDiagnosticsLog` and surfaced through `socketStatusMessage`.
+    ///   `isSocketListening` is always set from `hookEnvelopeReceiver.isListening` afterward, so
+    ///   it stays authoritative either way.
     func startIntegrations() {
-        try? hookEnvelopeReceiver.start(path: Self.integrationSocketPath)
+        do {
+            try hookEnvelopeReceiver.start(path: hookSocketPath)
+            socketStatusMessage = nil
+        } catch UnixSocketServerError.alreadyStarted {
+            // A redundant call while the receiver already listens: nothing to report.
+        } catch {
+            let label = (error as? UnixSocketServerError)?.diagnosticsLabel ?? "unexpected-error"
+            integrationDiagnosticsLog.append(stage: "socket-start", outcome: "failed", detail: label)
+            socketStatusMessage = Self.socketStartFailureMessage(for: error)
+        }
         isSocketListening = hookEnvelopeReceiver.isListening
         integrationManager.start()
         refreshInstalledHelperIfNeeded()
@@ -896,6 +916,18 @@ final class AppModel {
         case .notInstalled, .configurationError, nil:
             false
         }
+    }
+
+    static let anotherInstanceOwnsSocketMessage =
+        "Another Relay instance is already listening for agent hooks. Quit it, then relaunch Relay."
+    static let socketStartFailedMessage =
+        "Relay could not open the agent hook socket. See Diagnostics for details."
+
+    private static func socketStartFailureMessage(for error: Error) -> String {
+        if case UnixSocketServerError.activeListenerPresent = error {
+            return anotherInstanceOwnsSocketMessage
+        }
+        return socketStartFailedMessage
     }
 
     /// Stops dispatching agent-hook events and stops/unlinks the Unix socket.

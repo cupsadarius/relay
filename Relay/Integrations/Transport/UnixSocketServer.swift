@@ -30,6 +30,27 @@ enum UnixSocketServerError: Error, Equatable {
     case lockAcquisitionFailed(Int32)
 }
 
+extension UnixSocketServerError {
+    /// Fixed, privacy-safe label for `IntegrationDiagnosticsLog` entries: the case name only,
+    /// never a path or errno text.
+    var diagnosticsLabel: String {
+        switch self {
+        case .alreadyStarted: "already-started"
+        case .pathTooLong: "path-too-long"
+        case .directoryCreationFailed: "directory-creation-failed"
+        case .staleSocketCheckFailed: "stale-socket-check-failed"
+        case .unsafeStaleSocket: "unsafe-stale-socket"
+        case .staleSocketRemovalFailed: "stale-socket-removal-failed"
+        case .socketCreationFailed: "socket-creation-failed"
+        case .bindFailed: "bind-failed"
+        case .chmodFailed: "chmod-failed"
+        case .listenFailed: "listen-failed"
+        case .activeListenerPresent: "active-listener-present"
+        case .lockAcquisitionFailed: "lock-acquisition-failed"
+        }
+    }
+}
+
 /// A minimal local Unix-domain socket server for receiving newline-delimited
 /// UTF-8 JSON lines from the bundled `RelayHook` helper.
 ///

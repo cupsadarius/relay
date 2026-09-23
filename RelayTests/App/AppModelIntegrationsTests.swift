@@ -67,7 +67,8 @@ final class AppModelIntegrationsTests: XCTestCase {
         helperInstaller: HelperInstaller? = nil,
         bundledHelperURL: URL? = nil,
         integrationManager: IntegrationManager? = nil,
-        hookEnvelopeReceiver: HookEnvelopeReceiver = HookEnvelopeReceiver()
+        hookEnvelopeReceiver: HookEnvelopeReceiver = HookEnvelopeReceiver(),
+        hookSocketPath: String? = nil
     ) -> AppModel {
         AppModel(
             settingsStore: FakeSettingsStore(),
@@ -80,7 +81,8 @@ final class AppModelIntegrationsTests: XCTestCase {
             claudeCodeInstaller: claudeCodeInstaller ?? makeClaudeInstaller(),
             codexInstaller: codexInstaller ?? makeCodexInstaller(),
             helperInstaller: helperInstaller ?? makeHelperInstaller(),
-            bundledHelperURL: bundledHelperURL ?? nonexistentBundledHelperURL
+            bundledHelperURL: bundledHelperURL ?? nonexistentBundledHelperURL,
+            hookSocketPath: hookSocketPath ?? AppModel.integrationSocketPath
         )
     }
 
@@ -385,6 +387,30 @@ final class AppModelIntegrationsTests: XCTestCase {
 
         model.startIntegrations() // throws .alreadyStarted again
         XCTAssertTrue(model.isSocketListening)
+        // A redundant start is not a problem worth reporting.
+        XCTAssertNil(model.socketStatusMessage)
+        XCTAssertFalse(model.integrationDiagnosticsEntries().contains { $0.stage == "socket-start" })
+    }
+
+    /// Uses a short `/tmp` path (a unix socket path must fit in `sun_path`, 104 bytes) that is
+    /// never the production socket. A second `UnixSocketServer` already holds that directory's
+    /// single-instance lock, standing in for another running Relay.
+    func testAnotherInstanceOwningTheSocketIsSurfacedAndRecorded() throws {
+        let directory = "/tmp/relay-it-\(UUID().uuidString.prefix(8))"
+        let socketPath = "\(directory)/relay.sock"
+        defer { try? FileManager.default.removeItem(atPath: directory) }
+        let otherInstance = UnixSocketServer()
+        try otherInstance.start(path: socketPath) { _ in }
+        defer { otherInstance.stop() }
+        let model = makeModel(hookSocketPath: socketPath)
+
+        model.startIntegrations()
+
+        XCTAssertFalse(model.isSocketListening)
+        XCTAssertEqual(model.socketStatusMessage, AppModel.anotherInstanceOwnsSocketMessage)
+        XCTAssertTrue(model.integrationDiagnosticsEntries().contains {
+            $0.stage == "socket-start" && $0.outcome == "failed" && $0.detail == "active-listener-present"
+        })
     }
 
     // MARK: - Launch-time helper refresh
