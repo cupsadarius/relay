@@ -23,13 +23,11 @@ final class SystemMicrophonePermissionStatusProvider: MicrophonePermissionStatus
 enum PrivacySettingsPane: Equatable {
     case microphone
     case accessibility
-    case inputMonitoring
 
     var url: URL {
         let anchor = switch self {
         case .microphone: "Privacy_Microphone"
         case .accessibility: "Privacy_Accessibility"
-        case .inputMonitoring: "Privacy_ListenEvent"
         }
         return URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)")!
     }
@@ -64,10 +62,7 @@ protocol GlobalPermissionAuthorizing: AnyObject {
 
 protocol NativePermissionChecking: AnyObject {
     func canListenForEvents() -> Bool
-    func canPostEvents() -> Bool
     func isAccessibilityTrusted() -> Bool
-    func requestListenForEvents()
-    func requestPostEvents()
     func requestAccessibilityTrust()
 }
 
@@ -85,10 +80,7 @@ final class PermissionService: GlobalPermissionAuthorizing {
 
 final class SystemNativePermissions: NativePermissionChecking {
     func canListenForEvents() -> Bool { CGPreflightListenEventAccess() }
-    func canPostEvents() -> Bool { CGPreflightPostEventAccess() }
     func isAccessibilityTrusted() -> Bool { AXIsProcessTrusted() }
-    func requestListenForEvents() { _ = CGRequestListenEventAccess() }
-    func requestPostEvents() { _ = CGRequestPostEventAccess() }
     func requestAccessibilityTrust() { _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary) }
 }
 

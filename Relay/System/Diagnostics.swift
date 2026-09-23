@@ -125,7 +125,6 @@ struct DiagnosticEntry: Identifiable, Equatable, Sendable {
 
 enum DiagnosticTimestampFormatter {
     static let local: DateFormatter = { let f = DateFormatter(); f.dateFormat = "HH:mm:ss"; return f }()
-    static let fixed: DateFormatter = { let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = TimeZone(secondsFromGMT: 0); f.dateFormat = "HH:mm:ss"; return f }()
 }
 
 struct DiagnosticsCounters: Equatable, Sendable { var received = 0; var matched = 0; var dispatched = 0 }

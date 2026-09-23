@@ -106,10 +106,9 @@ import XCTest
         XCTAssertEqual(entry.copyLine(formatter: DiagnosticTimestampFormatter.fixed), "00:00:00 Speech stopped")
     }
 
-    func testAccessibilityTrustGrantsEffectiveGlobalHotkeysWhenPostingIsUnavailable() {
+    func testAccessibilityTrustGrantsEffectiveGlobalHotkeysWithoutInputMonitoring() {
         let native = FakeNativePermissions(
             inputMonitoring: false,
-            canPostEvents: false,
             isAccessibilityTrusted: true
         )
         let service = PermissionService(native: native)
@@ -121,59 +120,53 @@ import XCTest
         XCTAssertTrue(snapshot.globalHotkeysGranted)
     }
 
-    func testPermissionServiceRequestsAccessibilityWhenTrustIsMissingEvenIfPostingIsAllowed() {
+    func testPermissionServiceRequestsAccessibilityWhenTrustIsMissing() {
         let native = FakeNativePermissions(
             inputMonitoring: false,
-            canPostEvents: true,
             isAccessibilityTrusted: false
         )
         let service = PermissionService(native: native)
 
         service.requestPermissions()
 
-        XCTAssertEqual(native.requestListenCount, 0)
-        XCTAssertEqual(native.requestPostCount, 0)
         XCTAssertEqual(native.requestAccessibilityCount, 1)
     }
 
-    func testPermissionServiceDoesNotRequestAccessibilityWhenTrustedButPostingIsUnavailable() {
+    func testPermissionServiceDoesNotRequestAccessibilityWhenTrusted() {
         let native = FakeNativePermissions(
             inputMonitoring: false,
-            canPostEvents: false,
             isAccessibilityTrusted: true
         )
         let service = PermissionService(native: native)
 
         service.requestPermissions()
 
-        XCTAssertEqual(native.requestListenCount, 0)
-        XCTAssertEqual(native.requestPostCount, 0)
         XCTAssertEqual(native.requestAccessibilityCount, 0)
     }
 }
 
 private final class FakeNativePermissions: NativePermissionChecking {
     var inputMonitoring: Bool
-    var postEvents: Bool
     var accessibilityTrusted: Bool
-    private(set) var requestListenCount = 0
-    private(set) var requestPostCount = 0
     private(set) var requestAccessibilityCount = 0
 
-    init(
-        inputMonitoring: Bool,
-        canPostEvents: Bool,
-        isAccessibilityTrusted: Bool
-    ) {
+    init(inputMonitoring: Bool, isAccessibilityTrusted: Bool) {
         self.inputMonitoring = inputMonitoring
-        postEvents = canPostEvents
         accessibilityTrusted = isAccessibilityTrusted
     }
 
     func canListenForEvents() -> Bool { inputMonitoring }
-    func canPostEvents() -> Bool { postEvents }
     func isAccessibilityTrusted() -> Bool { accessibilityTrusted }
-    func requestListenForEvents() { requestListenCount += 1 }
-    func requestPostEvents() { requestPostCount += 1 }
     func requestAccessibilityTrust() { requestAccessibilityCount += 1 }
+}
+
+/// Deterministic UTC/POSIX variant of `DiagnosticTimestampFormatter.local`, for tests only.
+extension DiagnosticTimestampFormatter {
+    static let fixed: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        f.dateFormat = "HH:mm:ss"
+        return f
+    }()
 }

@@ -809,9 +809,8 @@ final class AppModelTests: XCTestCase {
 
         model.openPrivacySettings(.microphone)
         model.openPrivacySettings(.accessibility)
-        model.openPrivacySettings(.inputMonitoring)
 
-        XCTAssertEqual(opener.opened, [.microphone, .accessibility, .inputMonitoring])
+        XCTAssertEqual(opener.opened, [.microphone, .accessibility])
     }
 
     /// "Open Microphone Settings" (Security tab) must call the injectable opener seam exactly
