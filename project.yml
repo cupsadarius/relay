@@ -62,6 +62,8 @@ targets:
     platform: macOS
     sources:
       - path: RelayHook
+      - path: Relay/Integrations/Domain/HookEnvelope.swift
+      - path: Relay/Integrations/Domain/AgentProvider.swift
     settings:
       base:
         PRODUCT_NAME: RelayHook

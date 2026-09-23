@@ -52,6 +52,7 @@
 		41C36E1E85F8E70D46A0A087 /* HookTransportClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 275F0AFDBD57596BB855D04B /* HookTransportClient.swift */; };
 		427B55EA5FEAC493E6E7C6B0 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = E97D595D58978F2A8CD9294F /* main.swift */; };
 		4296D32985ECDC7B8CFFE767 /* SettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB39A03EC23AD1E4215B5A4 /* SettingsStoreTests.swift */; };
+		43A6E977B0C1F4D025356E92 /* AgentProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A5013145E15E5C746C59782 /* AgentProvider.swift */; };
 		458711DCB7F0780003DE325F /* ActivityOverlayModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84A0C0F43582E9D7B099E3FB /* ActivityOverlayModelTests.swift */; };
 		4608679CC210E16C4D702708 /* FluidAudioKokoroEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1541D758E496D69D90CB308E /* FluidAudioKokoroEngine.swift */; };
 		46E222475824FE8C2FD2B071 /* ClaudeCodeIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7C79B2E08F2B4993BD03EFE /* ClaudeCodeIntegrationTests.swift */; };
@@ -150,6 +151,7 @@
 		B0895093AA56F05821B4493E /* WhisperBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9200D8D23AD5235ED457245 /* WhisperBackendTests.swift */; };
 		B1B199377BCA2ADDA51CFEF0 /* WhisperBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = E726C3F1EF3E8B6F07832CA8 /* WhisperBackend.swift */; };
 		B2E2ACBD73D895AA81FBD1B4 /* AppModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5BF4958844B2771537AF08D /* AppModelTests.swift */; };
+		B34F5900EDA73F687FD7891D /* HookEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0007CFDD668AB6C9B6207607 /* HookEnvelope.swift */; };
 		B5059A51D144C468B1843122 /* RelayApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75C54FA6D0E67AA81510F66A /* RelayApp.swift */; };
 		B631E9FA3300F54A251324C1 /* ClaudeCodeInstallerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FBBD2C60B929603A4187FB1 /* ClaudeCodeInstallerTests.swift */; };
 		B65DB48D76D9E762F4D8DF4C /* AppleSpeechBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49DEB5422690339D2759CC63 /* AppleSpeechBackendTests.swift */; };
@@ -1158,7 +1160,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				43A6E977B0C1F4D025356E92 /* AgentProvider.swift in Sources */,
 				F5ADF1BA04287F3867763907 /* BoundedStdinReader.swift in Sources */,
+				B34F5900EDA73F687FD7891D /* HookEnvelope.swift in Sources */,
 				41C36E1E85F8E70D46A0A087 /* HookTransportClient.swift in Sources */,
 				427B55EA5FEAC493E6E7C6B0 /* main.swift in Sources */,
 			);

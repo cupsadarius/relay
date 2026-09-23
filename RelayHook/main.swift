@@ -4,26 +4,11 @@ import Foundation
 import Darwin
 #endif
 
-// MARK: - Wire-only types
+// MARK: - Wire format
 //
-// RelayHook is a standalone executable and cannot import the Relay app
-// target, so the wire format is intentionally duplicated here. Keep these in
-// sync with `Relay/Integrations/Domain/HookEnvelope.swift` and
-// `AgentProvider.swift`. Wire schema version is `1`.
-
-private enum WireAgentProvider: String, Codable {
-    case claudeCode = "claude-code"
-    case codex = "codex"
-}
-
-private struct WireHookEnvelope: Codable {
-    let schemaVersion: Int
-    let provider: WireAgentProvider
-    let rawPayload: String
-    let parentPID: Int32
-    let environment: [String: String]
-    let capturedAt: Date
-}
+// `HookEnvelope` and `AgentProvider` are compiled into this target straight
+// from `Relay/Integrations/Domain/` (see `project.yml`), so the helper and the
+// app always share one definition of the wire schema. Wire schema version is `1`.
 
 // MARK: - Constants
 
@@ -54,18 +39,18 @@ private func debugLog(_ message: @autoclosure () -> String) {
 
 // MARK: - Argument parsing
 
-private func parseProvider(from arguments: [String]) -> WireAgentProvider? {
+private func parseProvider(from arguments: [String]) -> AgentProvider? {
     var index = 0
     while index < arguments.count {
         let argument = arguments[index]
         if argument == "--provider" {
             let valueIndex = index + 1
             guard valueIndex < arguments.count else { return nil }
-            return WireAgentProvider(rawValue: arguments[valueIndex])
+            return AgentProvider(rawValue: arguments[valueIndex])
         }
         if argument.hasPrefix("--provider=") {
             let value = String(argument.dropFirst("--provider=".count))
-            return WireAgentProvider(rawValue: value)
+            return AgentProvider(rawValue: value)
         }
         index += 1
     }
@@ -109,7 +94,7 @@ func runRelayHook() {
         }
     }
 
-    let envelope = WireHookEnvelope(
+    let envelope = HookEnvelope(
         schemaVersion: 1,
         provider: provider,
         rawPayload: rawPayload,
