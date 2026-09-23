@@ -85,6 +85,8 @@ final class STTRouter {
             } catch let error as SpeechBackendError where error.isFallbackWorthy {
                 lastError = error
                 lastErrorBackendName = backend.displayName
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
                 lastFailedBackendDisplayName = backend.displayName
                 throw error

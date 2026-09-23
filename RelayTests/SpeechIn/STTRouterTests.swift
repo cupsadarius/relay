@@ -254,6 +254,21 @@ final class STTRouterTests: XCTestCase {
         XCTAssertEqual(first.transcriptionCount, 0)
     }
 
+    func testCancellationDuringTranscriptionPropagatesWithoutRecordingAFailedBackend() async {
+        let cancelling = CancellingSTTBackend(id: "first")
+        let router = makeRouter([cancelling])
+
+        do {
+            _ = try await router.transcribe(audio: audio, options: .init())
+            XCTFail("Expected cancellation")
+        } catch is CancellationError {
+            // expected
+        } catch {
+            XCTFail("Unexpected \(error)")
+        }
+        XCTAssertNil(router.lastFailedBackendDisplayName, "a cancellation is not a backend failure")
+    }
+
     func testTranscribeWithoutAPrecedingLookupPerformsItsOwnFullWalk() async throws {
         let first = FakeSTTBackend(id: "first")
         first.availabilityValue = .unavailable("offline")
@@ -349,7 +364,7 @@ final class STTRouterTests: XCTestCase {
         XCTAssertEqual(second.transcriptionCount, 0)
     }
 
-    private func makeRouter(_ backends: [FakeSTTBackend]) -> STTRouter {
+    private func makeRouter(_ backends: [any SpeechToTextBackend]) -> STTRouter {
         STTRouter(
             backends: Dictionary(uniqueKeysWithValues: backends.map { ($0.id, $0) }),
             backendOrder: { backends.map(\.id) }
@@ -381,5 +396,26 @@ private final class FakeSTTBackend: SpeechToTextBackend {
         transcriptionCount += 1
         if let error { throw error }
         return Transcript(text: id, backendID: id)
+    }
+}
+
+/// A backend whose `transcribe` always throws `CancellationError` directly, simulating the task
+/// being cancelled mid-transcription (as opposed to `Task.checkCancellation()` at the top of the
+/// router's loop, which `testTranscribeStopsAtTheNextBackendWhenTheTaskIsCancelled` already
+/// covers).
+@MainActor
+private final class CancellingSTTBackend: SpeechToTextBackend {
+    let id: String
+    let displayName: String
+
+    init(id: String) {
+        self.id = id
+        displayName = id
+    }
+
+    func availability() async -> BackendAvailability { .available }
+
+    func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
+        throw CancellationError()
     }
 }
