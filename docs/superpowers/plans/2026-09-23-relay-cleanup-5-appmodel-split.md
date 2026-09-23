@@ -4733,6 +4733,8 @@ git add Relay/App/SpeechBackendsModel.swift Relay/App/SpeechModelController.swif
 git commit -m "refactor(app): give speech backends one refresh owner and reduce AppModel to a facade"
 ```
 
+**Post-implementation note (review follow-up):** `apple-tts` has no entry in `SpeechBackendGraph.ttsModelManagers` (`SpeechBackendGraphTests.testRegistersConcreteTextToSpeechBackendsAndOnlyModelBackedManagers` asserts `graph.ttsModelManagers["apple-tts"]` is `nil`), so `SpeechModelController` never holds a `SpeechModelBackendKey(domain: .textToSpeech, backendID: "apple-tts")` and its download/select/remove failure diagnostics (`speechModelDownloadFailed`, `speechModelSelectionFailed`, `speechModelRemovalFailed`, etc.) can never fire for it. `BackendID.appleTTS.displayName` is `"Apple System Voice"` (`Relay/Domain/BackendID.swift`), so if a model manager is ever added for `apple-tts`, those diagnostics strings would read "Apple System Voice model download failed" and so on — currently unreachable, not a bug, just worth knowing before relying on those strings appearing for Apple TTS.
+
 ---
 
 ## Task 11: Clipboard reentrancy, one key-command type, AX dedupe, selection permission error
