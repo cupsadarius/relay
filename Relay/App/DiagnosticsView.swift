@@ -35,6 +35,6 @@ struct DiagnosticsView: View {
     }
 
     private var eventTapText: String {
-        switch model.eventTapStatus { case .registered: "Registered"; case .unavailable: "Unavailable" }
+        switch model.hotkeys.eventTapStatus { case .registered: "Registered"; case .unavailable: "Unavailable" }
     }
 }

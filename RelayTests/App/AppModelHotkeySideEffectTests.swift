@@ -7,45 +7,47 @@ import XCTest
 /// .updateSettings` used to call `registerHotkeys()` unconditionally, which rebuilt
 /// `GlobalHotkeyManager`'s `HotkeyMatcher` (discarding any in-flight chord/double-tap gesture
 /// state) on every settings write, including ones with nothing to do with hotkeys (voice, rate,
-/// backend order, ...). Only a change to the hotkey *definitions* should rebuild the matcher; the
-/// event tap registration (already correctly guarded by `eventTap != nil` in
-/// `GlobalHotkeyManager.register`) is untouched by this fix and must never re-create the tap.
+/// backend order, ...). Only a change to the hotkey *definitions* should rebuild the matcher;
+/// `GlobalHotkeyManager.register`'s `eventTap != nil` guard now lives in `ensureTap()`, and the
+/// matcher is rebuilt by `update(definitions:)` only when definitions change — the event tap
+/// itself is untouched by this fix and must never be re-created.
 @MainActor
 final class AppModelHotkeySideEffectTests: XCTestCase {
     func testChangingVoiceDoesNotRebuildMatcher() {
-        let hotkeys = FakeHotkeyManager()
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(hotkeys: hotkeys)
-        XCTAssertEqual(hotkeys.registrations.count, 1, "initial construction registers once")
+        XCTAssertEqual(hotkeys.updates.count, 1, "initial construction pushes definitions once")
 
         model.settingsController.setVoice("com.apple.voice.some-voice", for: BackendID.appleTTS.rawValue)
 
         XCTAssertEqual(
-            hotkeys.registrations.count, 1,
+            hotkeys.updates.count, 1,
             "a non-hotkey settings change must not rebuild the matcher"
         )
     }
 
     func testChangingHotkeyDefinitionRebuildsMatcher() {
-        let hotkeys = FakeHotkeyManager()
+        let hotkeys = SpyHotkeyManager()
         let model = makeModel(hotkeys: hotkeys)
-        XCTAssertEqual(hotkeys.registrations.count, 1)
+        XCTAssertEqual(hotkeys.updates.count, 1)
 
         model.settingsController.setHotkey(.chord(keyCode: 49, modifiers: [.command]), for: .readSelection)
 
         XCTAssertEqual(
-            hotkeys.registrations.count, 2,
+            hotkeys.updates.count, 2,
             "a hotkey definition change must rebuild the matcher"
         )
         XCTAssertEqual(
-            hotkeys.registrations.last?.hotkeys[.readSelection],
+            hotkeys.updates.last?[.readSelection],
             .chord(keyCode: 49, modifiers: [.command])
         )
     }
 
-    /// Uses the real `GlobalHotkeyManager` (not the settings-recording fake above) so this
-    /// exercises the actual `eventTap != nil` guard rather than a mock's idea of it. The
-    /// injected `tapFactory` stands in for `CGEvent.tapCreate` so the test doesn't depend on this
-    /// machine's Accessibility permission to deterministically produce a non-nil tap.
+    /// Uses the real `GlobalHotkeyManager` (not the settings-recording spy above) so this
+    /// exercises the actual `eventTap != nil` guard (now inside `ensureTap()`) rather than a
+    /// mock's idea of it. The injected `tapFactory` stands in for `CGEvent.tapCreate` so the test
+    /// doesn't depend on this machine's Accessibility permission to deterministically produce a
+    /// non-nil tap.
     func testEventTapNotReRegisteredOnAnyChange() {
         let tapSpy = TapCreationSpy()
         let realHotkeyManager = GlobalHotkeyManager(tapFactory: { mask, userInfo in
@@ -66,19 +68,6 @@ final class AppModelHotkeySideEffectTests: XCTestCase {
 
     private func makeModel(hotkeys: any HotkeyManaging) -> AppModel {
         AppModel(runtime: .testing(hotkeyManager: hotkeys))
-    }
-}
-
-@MainActor
-private final class FakeHotkeyManager: HotkeyManaging {
-    private(set) var registrations: [AppSettings] = []
-
-    func register(
-        settings: AppSettings,
-        handler: @escaping @MainActor (HotkeyAction, HotkeyPhase) -> Void
-    ) -> HotkeyRegistrationStatus {
-        registrations.append(settings)
-        return .registered
     }
 }
 

@@ -264,4 +264,39 @@ final class GlobalHotkeyManagerTests: XCTestCase {
             ]
         )
     }
+
+    func testUpdatingWithUnchangedDefinitionsPreservesAnInFlightChord() {
+        let manager = GlobalHotkeyManager(tapFactory: { _, _ in nil })
+        let recorder = InvocationRecorder()
+        manager.setHandler { recorder.values.append(.init(action: $0, phase: $1)) }
+        let definitions: [HotkeyAction: HotkeyDefinition] = [.readSelection: .chord(keyCode: 15, modifiers: [.option])]
+        manager.update(definitions: definitions)
+
+        manager.receive(.keyDown(keyCode: 15, modifiers: [.option], isRepeat: false))
+        manager.update(definitions: definitions) // e.g. the didBecomeActive recheck
+        manager.receive(.keyUp(keyCode: 15, modifiers: [.option]))
+
+        XCTAssertEqual(recorder.values, [
+            .init(action: .readSelection, phase: .pressed),
+            .init(action: .readSelection, phase: .released),
+        ])
+    }
+
+    func testUpdatingWithChangedDefinitionsRebuildsTheMatcher() {
+        let manager = GlobalHotkeyManager(tapFactory: { _, _ in nil })
+        let recorder = InvocationRecorder()
+        manager.setHandler { recorder.values.append(.init(action: $0, phase: $1)) }
+        manager.update(definitions: [.readSelection: .chord(keyCode: 15, modifiers: [.option])])
+
+        manager.receive(.keyDown(keyCode: 15, modifiers: [.option], isRepeat: false))
+        manager.update(definitions: [.readSelection: .chord(keyCode: 16, modifiers: [.option])])
+        manager.receive(.keyUp(keyCode: 15, modifiers: [.option]))
+
+        XCTAssertEqual(recorder.values, [.init(action: .readSelection, phase: .pressed)])
+    }
+}
+
+@MainActor
+private final class InvocationRecorder {
+    var values: [HotkeyInvocation] = []
 }

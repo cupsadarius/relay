@@ -40,9 +40,7 @@ final class AppModel {
     /// `AppSettings` — re-synced to the service on every write via `setLaunchAtLogin`, so it
     /// can't drift from what's actually registered.
     private(set) var launchAtLoginEnabled: Bool
-    private(set) var dictationPhase: HotkeyPhase?
     private(set) var permissionSnapshot: PermissionSnapshot
-    private(set) var eventTapStatus: HotkeyRegistrationStatus = .unavailable("Not checked")
     var diagnosticsEntries: [DiagnosticEntry] { diagnostics.entries.reversed() }
     var diagnosticsCounters: DiagnosticsCounters { diagnostics.counters }
     /// The most recent dictation capture attempt's privacy-safe metadata (input sample rate,
@@ -52,8 +50,6 @@ final class AppModel {
     var lastMicrophoneCaptureDiagnostics: MicrophoneCaptureDiagnostics? { diagnostics.lastMicrophoneCaptureDiagnostics }
     var overlayModel: ActivityOverlayModel { runtime.speechOut.overlayModel }
     private var speechCoordinator: any SpeechCoordinating { runtime.speechOut.speechCoordinator }
-    private var dictationCoordinator: (any DictationCoordinating)? { runtime.speechIn.dictationCoordinator }
-    private var hotkeyManager: any HotkeyManaging { runtime.hotkeyManager }
     private var permissionService: any GlobalPermissionAuthorizing { runtime.permissionService }
     private var microphonePermissions: any MicrophonePermissionStatusProviding { runtime.microphonePermissions }
     private var privacySettingsOpener: any PrivacySettingsOpening { runtime.privacySettingsOpener }
@@ -69,6 +65,7 @@ final class AppModel {
     @ObservationIgnored let modelController: SpeechModelController
     @ObservationIgnored let voiceCatalog: SpeechVoiceCatalog
     @ObservationIgnored let speechActions: SpeechActions
+    @ObservationIgnored let hotkeys: HotkeyController
     @ObservationIgnored let sttBackendList: BackendListModel
     @ObservationIgnored let ttsBackendList: BackendListModel
     /// The fire-and-forget initial status refresh kicked off from `init`. Exposed so tests can
@@ -78,10 +75,6 @@ final class AppModel {
     /// can await it instead of racing an explicit `ttsBackendList.refresh()` call against it.
     @ObservationIgnored var initialTTSBackendRefresh: Task<Void, Never>?
     @ObservationIgnored private var activationObserver: NSObjectProtocol?
-    @ObservationIgnored private var dictationTask: Task<Void, Never>?
-    /// The in-flight Read Selection / Replay Last action. Each new press of either hotkey, and
-    /// Stop Speech, cancels it, so two quick presses can never both reach the speech coordinator.
-    @ObservationIgnored private var speechActionTask: Task<Void, Never>?
 
     /// The only initializer. Production passes `RelayRuntime.makeProduction()`; tests pass
     /// `RelayRuntime.testing(...)`. No defaults: every dependency comes from `runtime`.
@@ -98,6 +91,7 @@ final class AppModel {
         )
         voiceCatalog = SpeechVoiceCatalog()
         speechActions = SpeechActions(runtime: runtime, voiceCatalog: voiceCatalog)
+        hotkeys = HotkeyController(runtime: runtime, speechActions: speechActions)
         let settings = runtime.settingsController
         sttBackendList = BackendListModel(
             entries: BackendListEntry.entries(runtime.speechIn.sttRegistry),
@@ -117,8 +111,10 @@ final class AppModel {
         microphonePermissionGranted = runtime.microphonePermissions.isGranted()
         launchAtLoginEnabled = runtime.loginItemService.isEnabled
         configureModelController()
-        settingsController.onHotkeysChanged = { [weak self] _ in self?.registerHotkeys() }
-        registerHotkeys()
+        settingsController.onHotkeysChanged = { [weak hotkeys = self.hotkeys] definitions in
+            hotkeys?.definitionsChanged(definitions)
+        }
+        hotkeys.start()
         observeAppActivation()
         bindOverlayPresenter()
         initialSpeechBackendRefresh = Task { [weak self] in
@@ -196,16 +192,6 @@ final class AppModel {
         }
     }
 
-    private func registerHotkeys() {
-        let status = hotkeyManager.register(settings: settings) { [weak self] action, phase in
-            self?.handleHotkey(action, phase: phase)
-        }
-        eventTapStatus = status
-        if case let .unavailable(message) = status {
-            statusText = message
-        }
-    }
-
     func requestPermissions() {
         permissionService.requestPermissions()
         diagnostics.record(.permissionRequested)
@@ -238,7 +224,7 @@ final class AppModel {
         permissionSnapshot = permissionService.snapshot()
         microphonePermissionGranted = microphonePermissions.isGranted()
         diagnostics.record(.permissionRechecked)
-        registerHotkeys()
+        hotkeys.ensureTap()
         Task { [weak self] in await self?.sttBackendList.refresh() }
     }
 
@@ -268,69 +254,8 @@ final class AppModel {
     }
 
     deinit {
-        dictationTask?.cancel()
-        speechActionTask?.cancel()
         if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
     }
-
-    private func handleHotkey(_ action: HotkeyAction, phase: HotkeyPhase) {
-        if action == .dictate {
-            diagnostics.record(.actionDispatched(action: action, phase: phase))
-            dictationPhase = phase
-            guard dictationCoordinator != nil else { return }
-            switch settings.dictationMode {
-            case .holdToTalk:
-                if phase == .pressed { enqueueDictation { await $0.start() } }
-                else { enqueueDictation { await $0.finish() } }
-            case .toggle:
-                guard phase == .pressed else { return }
-                enqueueDictation { await $0.toggle() }
-            }
-            return
-        }
-        guard phase == .pressed else { return }
-
-        diagnostics.record(.actionDispatched(action: action, phase: phase))
-
-        switch action {
-        case .dictate:
-            break
-        case .readSelection:
-            startSpeechAction { await $0.readSelection() }
-        case .stopSpeech:
-            speechActionTask?.cancel()
-            speechActionTask = nil
-            speechActions.stopSpeech()
-        case .replayLast:
-            startSpeechAction { await $0.replayLast() }
-        case .toggleAutoRead:
-            settingsController.toggleAutoRead()
-        }
-    }
-
-    /// Replaces any in-flight speech action with `action`. The cancelled one re-checks
-    /// `Task.isCancelled` before speaking, so it never reaches the speech coordinator.
-    private func startSpeechAction(_ action: @escaping @MainActor (SpeechActions) async -> Void) {
-        speechActionTask?.cancel()
-        let actions = speechActions
-        speechActionTask = Task {
-            guard !Task.isCancelled else { return }
-            await action(actions)
-        }
-    }
-
-    private func enqueueDictation(
-        _ operation: @escaping @MainActor (any DictationCoordinating) async -> Void
-    ) {
-        let previous = dictationTask
-        let coordinator = dictationCoordinator
-        dictationTask = Task { @MainActor in
-            await previous?.value
-            guard let coordinator else { return }
-            await operation(coordinator)
-        }
-    }
-
 }
 
 /// Default presenter for tests and any composition that doesn't host the overlay panel.

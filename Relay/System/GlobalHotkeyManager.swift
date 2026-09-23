@@ -175,11 +175,13 @@ enum HotkeyRegistrationStatus: Equatable, Sendable {
 
 @MainActor
 protocol HotkeyManaging: AnyObject {
+    func setHandler(_ handler: @escaping @MainActor (HotkeyAction, HotkeyPhase) -> Void)
+    /// Creates the event tap if it doesn't exist yet; never re-creates it. Cheap to call often.
     @discardableResult
-    func register(
-        settings: AppSettings,
-        handler: @escaping @MainActor (HotkeyAction, HotkeyPhase) -> Void
-    ) -> HotkeyRegistrationStatus
+    func ensureTap() -> HotkeyRegistrationStatus
+    /// Rebuilds the matcher only when `definitions` differ from the current ones, so an
+    /// unchanged update never discards in-flight chord/double-tap state.
+    func update(definitions: [HotkeyAction: HotkeyDefinition])
 }
 
 @MainActor
@@ -190,6 +192,7 @@ final class GlobalHotkeyManager: HotkeyManaging {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var matcher = HotkeyMatcher(definitions: [:])
+    private var definitions: [HotkeyAction: HotkeyDefinition] = [:]
     private var handler: (@MainActor (HotkeyAction, HotkeyPhase) -> Void)?
     /// Creates the underlying Mach port `register()` treats as "the event tap". Defaults to the
     /// real `CGEvent.tapCreate` call. Injectable only so tests can verify `register()`'s
@@ -226,14 +229,18 @@ final class GlobalHotkeyManager: HotkeyManaging {
         }
     }
 
-    @discardableResult
-    func register(
-        settings: AppSettings,
-        handler: @escaping @MainActor (HotkeyAction, HotkeyPhase) -> Void
-    ) -> HotkeyRegistrationStatus {
-        matcher = HotkeyMatcher(definitions: settings.hotkeys)
+    func setHandler(_ handler: @escaping @MainActor (HotkeyAction, HotkeyPhase) -> Void) {
         self.handler = handler
+    }
 
+    func update(definitions: [HotkeyAction: HotkeyDefinition]) {
+        guard definitions != self.definitions else { return }
+        self.definitions = definitions
+        matcher = HotkeyMatcher(definitions: definitions)
+    }
+
+    @discardableResult
+    func ensureTap() -> HotkeyRegistrationStatus {
         if eventTap != nil {
             diagnostics?.record(.eventTapRegistered)
             return .registered
@@ -306,7 +313,8 @@ final class GlobalHotkeyManager: HotkeyManaging {
         return result
     }
 
-    private func receive(_ input: HotkeyInputEvent) {
+    /// Feeds one decoded input event through the matcher. Internal so tests can drive it without CGEvents.
+    func receive(_ input: HotkeyInputEvent) {
         diagnostics?.record(.keyboardEventReceived)
         for invocation in matcher.match(input) {
             diagnostics?.record(.hotkeyMatched(action: invocation.action, phase: invocation.phase))

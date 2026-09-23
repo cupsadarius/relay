@@ -181,166 +181,12 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.diagnosticsEntries.first?.event, .ttsSubmitted)
     }
 
-    func testReadSelectionReleasedDoesNothing() async {
-        let selection = SpySelectionReader(text: "selected")
-        let speech = SpySpeechCoordinator()
-        let hotkeys = SpyHotkeyManager()
-        let model = makeModel(selection: selection, speech: speech, hotkeys: hotkeys)
-
-        hotkeys.send(.readSelection, .released)
-        await Task.yield()
-
-        XCTAssertTrue(speech.requests.isEmpty)
-        XCTAssertEqual(selection.readCount, 0)
-        XCTAssertEqual(model.diagnosticsCounters.dispatched, 0)
-        XCTAssertFalse(model.diagnosticsEntries.contains { if case .actionDispatched = $0.event { true } else { false } })
-        withExtendedLifetime(model) {}
-    }
-
-    func testStopAndReplayOnlyActWhenPressed() async {
-        let speech = SpySpeechCoordinator()
-        let hotkeys = SpyHotkeyManager()
-        let model = makeModel(speech: speech, hotkeys: hotkeys)
-
-        hotkeys.send(.stopSpeech, .released)
-        hotkeys.send(.replayLast, .released)
-        hotkeys.send(.stopSpeech, .pressed)
-        hotkeys.send(.replayLast, .pressed)
-        // `replayLast()` now hops through `sessionRegistry` (a real actor) before falling back to
-        // `speechCoordinator.replayLast()`, so a single `Task.yield()` is no longer guaranteed to
-        // let it finish; poll instead.
-        await waitUntil { speech.replayCount > 0 }
-
-        XCTAssertEqual(speech.stopCount, 1)
-        XCTAssertEqual(speech.replayCount, 1)
-        withExtendedLifetime(model) {}
-    }
-
-    func testTwoQuickReadSelectionPressesSpeakOnlyOnce() async {
-        let selection = SpySelectionReader(text: "selected")
-        let speech = SpySpeechCoordinator()
-        let hotkeys = SpyHotkeyManager()
-        let model = makeModel(selection: selection, speech: speech, hotkeys: hotkeys)
-
-        hotkeys.send(.readSelection, .pressed)
-        hotkeys.send(.readSelection, .pressed)
-        await waitUntil { !speech.requests.isEmpty }
-        try? await Task.sleep(for: .milliseconds(100))
-
-        XCTAssertEqual(speech.requests.count, 1)
-        withExtendedLifetime(model) {}
-    }
-
-    func testTwoQuickReplayPressesReplayOnlyOnce() async {
-        let speech = SpySpeechCoordinator()
-        let hotkeys = SpyHotkeyManager()
-        let model = makeModel(speech: speech, hotkeys: hotkeys)
-
-        hotkeys.send(.replayLast, .pressed)
-        hotkeys.send(.replayLast, .pressed)
-        await waitUntil { speech.replayCount > 0 }
-        try? await Task.sleep(for: .milliseconds(100))
-
-        XCTAssertEqual(speech.replayCount, 1)
-        withExtendedLifetime(model) {}
-    }
-
-    func testStopSpeechCancelsAPendingReplay() async {
-        let speech = SpySpeechCoordinator()
-        let hotkeys = SpyHotkeyManager()
-        let model = makeModel(speech: speech, hotkeys: hotkeys)
-
-        hotkeys.send(.replayLast, .pressed)
-        hotkeys.send(.stopSpeech, .pressed)
-        try? await Task.sleep(for: .milliseconds(100))
-
-        XCTAssertEqual(speech.replayCount, 0)
-        XCTAssertEqual(speech.stopCount, 1)
-        withExtendedLifetime(model) {}
-    }
-
     func testSelectVoicePersistsThroughProviderNeutralCatalogMapping() {
         let model = makeModel()
 
         model.selectVoice(backendID: "kokoro", voiceID: "kokoro:am_adam")
 
         XCTAssertEqual(model.settings.voiceByBackend["kokoro"], "am_adam")
-    }
-
-    func testHoldToTalkStartsOnPressAndFinishesOnRelease() async {
-        let hotkeys = SpyHotkeyManager()
-        let dictation = SpyDictationCoordinator()
-        let model = makeModel(hotkeys: hotkeys, dictation: dictation)
-
-        hotkeys.send(.dictate, .pressed)
-        hotkeys.send(.dictate, .released)
-        await Task.yield()
-
-        XCTAssertEqual(model.dictationPhase, .released)
-        XCTAssertEqual(dictation.events, ["start", "finish"])
-    }
-
-    func testToggleDictationAlternatesOnPressAndIgnoresRelease() async {
-        let hotkeys = SpyHotkeyManager()
-        let dictation = SpyDictationCoordinator()
-        let model = makeModel(hotkeys: hotkeys, dictation: dictation)
-        model.settingsController.setDictationMode(.toggle)
-
-        hotkeys.send(.dictate, .pressed)
-        hotkeys.send(.dictate, .released)
-        hotkeys.send(.dictate, .pressed)
-        await Task.yield()
-
-        XCTAssertEqual(dictation.events, ["start", "finish"])
-    }
-
-    func testHoldToTalkQueuesReleaseUntilBlockedStartCompletes() async {
-        let hotkeys = SpyHotkeyManager()
-        let dictation = SpyDictationCoordinator(blockStart: true)
-        let model = makeModel(hotkeys: hotkeys, dictation: dictation)
-
-        hotkeys.send(.dictate, .pressed)
-        while dictation.events != ["start"] { await Task.yield() }
-        hotkeys.send(.dictate, .released)
-        await Task.yield()
-        XCTAssertEqual(dictation.events, ["start"])
-
-        dictation.resumeStart()
-        while dictation.events != ["start", "finish"] { await Task.yield() }
-        withExtendedLifetime(model) {}
-    }
-
-    func testToggleQueuesNewPressUntilBlockedFinishCompletes() async {
-        let hotkeys = SpyHotkeyManager()
-        let dictation = SpyDictationCoordinator(blockFinish: true)
-        let model = makeModel(hotkeys: hotkeys, dictation: dictation)
-        model.settingsController.setDictationMode(.toggle)
-
-        hotkeys.send(.dictate, .pressed)
-        while dictation.events != ["start"] { await Task.yield() }
-        hotkeys.send(.dictate, .pressed)
-        while dictation.events != ["start", "finish"] { await Task.yield() }
-        hotkeys.send(.dictate, .pressed)
-        await Task.yield()
-        XCTAssertEqual(dictation.events, ["start", "finish"])
-
-        dictation.resumeFinish()
-        while dictation.events != ["start", "finish", "start"] { await Task.yield() }
-    }
-
-    /// `autoReadEnabled` is not a hotkey definition, so toggling it must persist immediately
-    /// without rebuilding the hotkey matcher (see `AppModelHotkeySideEffectTests` for the
-    /// general rule this is one instance of).
-    func testToggleAutoReadPersistsWithoutReregisteringHotkeys() {
-        let store = SpySettingsStore(settings: .defaults)
-        let hotkeys = SpyHotkeyManager()
-        let model = makeModel(store: store, hotkeys: hotkeys)
-
-        hotkeys.send(.toggleAutoRead, .pressed)
-
-        XCTAssertFalse(model.settings.autoReadEnabled)
-        XCTAssertEqual(store.saved.map(\.autoReadEnabled), [false])
-        XCTAssertEqual(hotkeys.registrations.count, 1, "toggling auto-read must not rebuild the hotkey matcher")
     }
 
     func testChangingASettingPersistsAndReregistersImmediately() {
@@ -353,7 +199,7 @@ final class AppModelTests: XCTestCase {
 
         XCTAssertEqual(model.settings.hotkeys[.readSelection], replacement)
         XCTAssertEqual(store.saved.last?.hotkeys[.readSelection], replacement)
-        XCTAssertEqual(hotkeys.registrations.last?.hotkeys[.readSelection], replacement)
+        XCTAssertEqual(hotkeys.updates.last?[.readSelection], replacement)
     }
 
     func testDuplicateHotkeyIsRejectedWithoutPersistenceOrReregistration() {
@@ -366,7 +212,7 @@ final class AppModelTests: XCTestCase {
 
         XCTAssertEqual(model.settings, .defaults)
         XCTAssertTrue(store.saved.isEmpty)
-        XCTAssertEqual(hotkeys.registrations.count, 1)
+        XCTAssertEqual(hotkeys.updates.count, 1)
     }
 
     func testRemoveHotkeyClearsTheBindingAndPersists() {
@@ -378,7 +224,7 @@ final class AppModelTests: XCTestCase {
 
         XCTAssertNil(model.settings.hotkeys[.readSelection])
         XCTAssertNil(store.saved.last?.hotkeys[.readSelection])
-        XCTAssertNil(hotkeys.registrations.last?.hotkeys[.readSelection])
+        XCTAssertNil(hotkeys.updates.last?[.readSelection])
     }
 
     func testModifierOnlyAndDoubleTapModifierConflictIsRejected() {
@@ -390,17 +236,7 @@ final class AppModelTests: XCTestCase {
 
         XCTAssertEqual(model.settings, .defaults)
         XCTAssertTrue(store.saved.isEmpty)
-        XCTAssertEqual(hotkeys.registrations.count, 1)
-    }
-
-    func testRegistrationFailureSurfacesActionableStatus() {
-        let hotkeys = SpyHotkeyManager(
-            status: .unavailable("Enable Accessibility permission, then reopen Relay.")
-        )
-
-        let model = makeModel(hotkeys: hotkeys)
-
-        XCTAssertEqual(model.statusText, "Enable Accessibility permission, then reopen Relay.")
+        XCTAssertEqual(hotkeys.updates.count, 1)
     }
 
     func testRecheckRetriesHotkeyRegistrationAndRefreshesPermissionSnapshot() {
@@ -411,7 +247,8 @@ final class AppModelTests: XCTestCase {
         model.recheckDiagnostics()
 
         XCTAssertEqual(permissions.snapshotCount, 2)
-        XCTAssertEqual(hotkeys.registrations.count, 2)
+        XCTAssertEqual(hotkeys.ensureTapCount, 2, "recheck retries the tap")
+        XCTAssertEqual(hotkeys.updates.count, 1, "recheck must not rebuild the matcher")
         XCTAssertEqual(model.permissionSnapshot.inputMonitoringGranted, false)
     }
 
@@ -535,8 +372,8 @@ final class AppModelTests: XCTestCase {
 
         model.settingsController.setHotkey(replacement, for: .readSelection)
 
-        XCTAssertEqual(hotkeys.registrations.count, 2)
-        XCTAssertEqual(hotkeys.registrations.last?.hotkeys[.readSelection], replacement)
+        XCTAssertEqual(hotkeys.updates.count, 2)
+        XCTAssertEqual(hotkeys.updates.last?[.readSelection], replacement)
         XCTAssertTrue(model.statusText.contains("Could not save settings"))
     }
 

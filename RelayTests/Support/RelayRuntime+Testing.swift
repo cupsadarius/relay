@@ -198,20 +198,15 @@ final class SpySpeechCoordinator: SpeechCoordinating {
 @MainActor
 final class SpyHotkeyManager: HotkeyManaging {
     private let status: HotkeyRegistrationStatus
-    private var handler: ((HotkeyAction, HotkeyPhase) -> Void)?
-    private(set) var registrations: [AppSettings] = []
+    private var handler: (@MainActor (HotkeyAction, HotkeyPhase) -> Void)?
+    private(set) var updates: [[HotkeyAction: HotkeyDefinition]] = []
+    private(set) var ensureTapCount = 0
 
     init(status: HotkeyRegistrationStatus = .registered) { self.status = status }
 
-    func register(
-        settings: AppSettings,
-        handler: @escaping @MainActor (HotkeyAction, HotkeyPhase) -> Void
-    ) -> HotkeyRegistrationStatus {
-        registrations.append(settings)
-        self.handler = handler
-        return status
-    }
-
+    func setHandler(_ handler: @escaping @MainActor (HotkeyAction, HotkeyPhase) -> Void) { self.handler = handler }
+    func ensureTap() -> HotkeyRegistrationStatus { ensureTapCount += 1; return status }
+    func update(definitions: [HotkeyAction: HotkeyDefinition]) { updates.append(definitions) }
     func send(_ action: HotkeyAction, _ phase: HotkeyPhase) { handler?(action, phase) }
 }
 
