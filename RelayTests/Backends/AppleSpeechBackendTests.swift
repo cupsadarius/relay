@@ -90,6 +90,37 @@ final class AppleSpeechBackendTests: XCTestCase {
         XCTAssertEqual(count, 2)
     }
 
+    func testAnalysisFailureInvalidatesTheCachedAssetPreparationForThatLocale() async throws {
+        let recorder = SpeechOperationRecorder()
+        let failOnce = FailOnce()
+        let backend = AppleSpeechBackend(
+            isMacOS26OrLater: { true },
+            isSpeechTranscriberAvailable: { true },
+            prepareAssets: { locale in await recorder.recordPrepared(locale) },
+            transcribeAudio: { _, locale in
+                await recorder.recordTranscribed(locale)
+                if await failOnce.shouldFail() { throw TestFailure.failed }
+                return "Hello"
+            }
+        )
+        let audio = AudioInput(samples: [0.1], sampleRate: 16_000)
+        let options = STTOptions(localeIdentifier: "fr-FR")
+
+        do {
+            _ = try await backend.transcribe(audio: audio, options: options)
+            XCTFail("Expected the first analysis attempt to fail")
+        } catch {
+            XCTAssertEqual(error as? SpeechBackendError, .inferenceFailed("Apple Speech analysis failed"))
+        }
+        _ = try await backend.transcribe(audio: audio, options: options)
+
+        let operations = await recorder.operations
+        XCTAssertEqual(operations, [
+            .prepared("fr-FR"), .transcribed("fr-FR"),
+            .prepared("fr-FR"), .transcribed("fr-FR"),
+        ], "an analysis failure must invalidate the cached preparation so the next call re-prepares")
+    }
+
     func testTranscribeMapsAssetPreparationFailureToInitializationFailure() async {
         let backend = AppleSpeechBackend(
             isMacOS26OrLater: { true },
@@ -198,6 +229,15 @@ private actor PreparationAttempts {
     func next() -> Int {
         count += 1
         return count
+    }
+}
+
+private actor FailOnce {
+    private var hasFailed = false
+    func shouldFail() -> Bool {
+        guard !hasFailed else { return false }
+        hasFailed = true
+        return true
     }
 }
 

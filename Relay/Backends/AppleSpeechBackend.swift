@@ -58,6 +58,10 @@ final class AppleSpeechBackend: SpeechToTextBackend {
         } catch let error as SpeechBackendError {
             throw error
         } catch {
+            // The cached "installed" state may no longer be true (e.g. the on-device assets were
+            // evicted after this process cached them) -- invalidate it so the next call for this
+            // locale re-prepares instead of skipping straight back into the same failure.
+            installedAssetLocales.withLock { _ = $0.remove(locale.identifier) }
             throw SpeechBackendError.inferenceFailed("Apple Speech analysis failed")
         }
     }
