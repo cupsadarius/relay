@@ -62,10 +62,11 @@ final class AVEngineOutputNode: AudioOutputNode {
                     currentSampleRate: current.sampleRate,
                     currentChannelCount: current.channelCount
                 ) else {
-                    // A benign renegotiation: the engine is still running at the format
-                    // `outputFormat` was fixed to at connect time, so already-scheduled and
-                    // future buffers remain valid. Failing here would end healthy playback on
-                    // every such post (e.g. AirPods switching A2DP <-> HFP).
+                    // Ignore spurious posts where the engine keeps running with the same format:
+                    // AVFoundation stops the engine on a real route change, so `outputFormat`
+                    // (fixed at connect time) still matches what the mixer actually produces, and
+                    // already-scheduled and future buffers remain valid. Failing here would end
+                    // healthy playback on every such spurious post.
                     return
                 }
                 self.onConfigurationChange?()

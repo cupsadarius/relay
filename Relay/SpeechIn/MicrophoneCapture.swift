@@ -395,6 +395,11 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, AudioInputFormatR
             guard self.gate.enter() else { return }
             defer { self.gate.leave() }
 
+            // Reads `engine` directly on whatever thread posted this notification, not on
+            // `engineQueue`. Safe here because it is bracketed by the same gate the tap uses
+            // (above): the gate is only open while a capture is actually running, and `stop()`
+            // closes it and waits out any in-flight callback before tearing the engine down, so
+            // this read cannot race a `tearDownEngine()` that has already started.
             let current = self.engine.inputNode.inputFormat(forBus: 0)
             let installed = self.stateLock.withLock { (self.inputSampleRate, self.installedInputChannelCount) }
             guard AudioEngineRouteChangeDecision.isDisruptive(
@@ -404,10 +409,10 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, AudioInputFormatR
                 currentSampleRate: current.sampleRate,
                 currentChannelCount: current.channelCount
             ) else {
-                // A benign renegotiation (e.g. AirPods switching A2DP <-> HFP): the engine is
-                // still running with the same format the tap was installed against, so nothing
-                // downstream is actually broken. Failing here would end perfectly healthy
-                // dictation sessions on every such post.
+                // Ignore spurious posts where the engine keeps running with the same format:
+                // AVFoundation stops the engine on a real route change, so this combination means
+                // nothing downstream is actually broken. Failing here would end perfectly healthy
+                // dictation sessions on every such spurious post.
                 self.logger.debug("Ignoring a non-disruptive audio route change")
                 return
             }
