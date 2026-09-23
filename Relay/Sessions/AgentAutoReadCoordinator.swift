@@ -14,6 +14,16 @@ struct AgentProcessContext: Sendable, Equatable {
         let records = snapshot.ancestry(from: parentPID)
         return AgentProcessContext(ancestry: records.map(\.pid), tty: records.compactMap(\.tty).first)
     }
+
+    /// Prefers the ancestry `RelayHook` captured itself (exact, and still correct after a
+    /// wrapper shell has exited); falls back to walking `event.parentPID` in `snapshot` for
+    /// envelopes from older helpers. The tty comes from the snapshot either way.
+    static func resolve(for event: AgentResponseEvent, in snapshot: ProcessSnapshot?) -> AgentProcessContext {
+        if let ancestry = event.processAncestry, let agentPID = ancestry.first {
+            return AgentProcessContext(ancestry: ancestry, tty: snapshot?.record(pid: agentPID)?.tty)
+        }
+        return capture(parentPID: event.parentPID, in: snapshot)
+    }
 }
 
 /// Publishes decoded `AgentResponseEvent`s into session intelligence (`AgentSessionRegistry`) and,
@@ -76,13 +86,17 @@ actor AgentAutoReadCoordinator {
     func handle(_ event: AgentResponseEvent) async {
         // One snapshot per event, shared by ancestry capture, pruning, and every focus resolver.
         let snapshot = try? await processInspector.snapshot()
-        let captured = AgentProcessContext.capture(parentPID: event.parentPID, in: snapshot)
+        let captured = AgentProcessContext.resolve(for: event, in: snapshot)
         let session = await registry.upsert(
             response: event,
             processAncestry: captured.ancestry,
             tty: captured.tty
         )
-        diagnostics.append(stage: "coordinator", outcome: "session-upserted", detail: "provider=\(event.provider.rawValue)")
+        diagnostics.append(
+            stage: "coordinator",
+            outcome: "session-upserted",
+            detail: "provider=\(event.provider.rawValue) ancestry=\(event.processAncestry?.isEmpty == false ? "envelope" : "snapshot")"
+        )
 
         guard await autoReadEnabled() else {
             diagnostics.append(stage: "coordinator", outcome: "silent", detail: "auto-read-disabled")

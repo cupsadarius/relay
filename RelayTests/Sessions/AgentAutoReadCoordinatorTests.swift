@@ -249,6 +249,34 @@ final class AgentAutoReadCoordinatorTests: XCTestCase {
             "resolver=generic-terminal confidence=low reason=multiple direct agent sessions share the frontmost terminal process"
         )
     }
+
+    // MARK: - Envelope ancestry
+
+    func testEnvelopeAncestryIsPreferredOverSnapshotCapture() async {
+        let harness = makeCoordinatorHarness(
+            focus: MutableStubFocusResolver(), speech: RecordingSpeechSink(), autoRead: true,
+            processInspector: ProcessInspector(runner: MutableAliveProcessRunner(alivePIDs: [4242, 20]))
+        )
+
+        // parentPID 900 is not in the snapshot: a snapshot walk would yield [].
+        await harness.coordinator.handle(makeAutoReadEvent(text: "done", parentPID: 900, processAncestry: [4242, 20, 1]))
+
+        let session = await harness.registry.sessions().first
+        XCTAssertEqual(session?.processAncestry, [4242, 20, 1])
+        XCTAssertEqual(session?.tty, "ttys001")
+    }
+
+    func testWithoutEnvelopeAncestryFallsBackToSnapshotCapture() async {
+        let harness = makeCoordinatorHarness(
+            focus: MutableStubFocusResolver(), speech: RecordingSpeechSink(), autoRead: true,
+            processInspector: ProcessInspector(runner: MutableAliveProcessRunner(alivePIDs: [222]))
+        )
+
+        await harness.coordinator.handle(makeAutoReadEvent(text: "done", parentPID: 222))
+
+        let session = await harness.registry.sessions().first
+        XCTAssertEqual(session?.processAncestry, [222])
+    }
 }
 
 private final class MutableStubFocusResolver: SessionFocusResolving, @unchecked Sendable {
@@ -359,10 +387,16 @@ private func makeCoordinator(
     makeCoordinatorHarness(focus: focus, speech: speech, autoRead: autoRead, diagnostics: diagnostics, processInspector: processInspector).coordinator
 }
 
-private func makeAutoReadEvent(providerSessionID: String = "a", text: String, parentPID: Int32 = 900) -> AgentResponseEvent {
+private func makeAutoReadEvent(
+    providerSessionID: String = "a",
+    text: String,
+    parentPID: Int32 = 900,
+    processAncestry: [Int32]? = nil
+) -> AgentResponseEvent {
     .init(
         id: UUID(), provider: .claudeCode, providerSessionID: providerSessionID,
         text: text, cwd: "/tmp/repo",
-        parentPID: parentPID, environment: [:], capturedAt: Date()
+        parentPID: parentPID, environment: [:], capturedAt: Date(),
+        processAncestry: processAncestry
     )
 }

@@ -84,7 +84,8 @@ struct StopHookIntegration: RelayIntegration {
             cwd: payload.cwd,
             parentPID: envelope.parentPID,
             environment: envelope.environment,
-            capturedAt: envelope.capturedAt
+            capturedAt: envelope.capturedAt,
+            processAncestry: envelope.processAncestry
         )
     }
 }

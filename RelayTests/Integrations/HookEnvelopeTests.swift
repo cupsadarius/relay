@@ -50,4 +50,18 @@ final class HookEnvelopeTests: XCTestCase {
     func testSocketLineLimitIsTheSharedEnvelopeWireLimit() {
         XCTAssertEqual(UnixSocketServer.maxLineBytes, HookEnvelope.maxWireBytes)
     }
+
+    func testEnvelopeRoundTripsProcessAncestry() throws {
+        let envelope = HookEnvelope(
+            schemaVersion: 1, provider: .codex, rawPayload: "{}", parentPID: 900,
+            environment: [:], capturedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            processAncestry: [800, 700, 1]
+        )
+        XCTAssertEqual(try JSONDecoder().decode(HookEnvelope.self, from: JSONEncoder().encode(envelope)), envelope)
+    }
+
+    func testEnvelopeFromAnOlderHelperDecodesWithoutAncestry() throws {
+        let json = #"{"schemaVersion":1,"provider":"codex","rawPayload":"{}","parentPID":1,"environment":{},"capturedAt":1700000000}"#
+        XCTAssertNil(try JSONDecoder().decode(HookEnvelope.self, from: Data(json.utf8)).processAncestry)
+    }
 }

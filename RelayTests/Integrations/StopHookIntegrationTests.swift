@@ -85,4 +85,10 @@ final class StopHookIntegrationTests: XCTestCase {
             XCTAssertEqual(error as? StopHookIntegrationError, .malformedPayload)
         }
     }
+
+    func testEnvelopeAncestryIsCarriedOntoTheEvent() throws {
+        var hookEnvelope = envelope(provider: .claudeCode, rawPayload: payload())
+        hookEnvelope.processAncestry = [800, 700]
+        XCTAssertEqual(try StopHookIntegration.claudeCode.decode(hookEnvelope).processAncestry, [800, 700])
+    }
 }

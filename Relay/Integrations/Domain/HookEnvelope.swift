@@ -11,6 +11,10 @@ struct HookEnvelope: Codable, Equatable, Sendable {
     let parentPID: Int32
     let environment: [String: String]
     let capturedAt: Date
+    /// Ancestry `RelayHook` captured itself before exiting (agent first, wrapper shells trimmed;
+    /// see `ProcessAncestry.agentAncestry`). Optional so envelopes from older helpers still
+    /// decode; `schemaVersion` stays 1.
+    var processAncestry: [Int32]? = nil
 }
 
 extension HookEnvelope {

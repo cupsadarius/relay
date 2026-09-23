@@ -95,13 +95,17 @@ func runRelayHook() {
         }
     }
 
+    let parentPID = getppid()
     let envelope = HookEnvelope(
         schemaVersion: 1,
         provider: provider,
         rawPayload: rawPayload,
-        parentPID: getppid(),
+        parentPID: parentPID,
         environment: environment,
-        capturedAt: Date()
+        capturedAt: Date(),
+        // Captured synchronously now, while every ancestor (including a transient `sh -c`
+        // wrapper) is still alive. Bounded: at most 16 sysctl calls, no child process.
+        processAncestry: ProcessAncestry.agentAncestry(from: parentPID)
     )
 
     do {
