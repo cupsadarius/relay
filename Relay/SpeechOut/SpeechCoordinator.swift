@@ -17,11 +17,9 @@ protocol SpeechSubmitting: AnyObject {
     func speak(_ request: SpeechRequest) async throws
 }
 
-/// `@unchecked Sendable`: every stored property is mutated only from `@MainActor`-isolated
-/// methods, so cross-isolation callers (e.g. `AgentAutoReadCoordinator`, an `actor`) can safely
-/// hold this behind `any SpeechSubmitting & Sendable` and `await` into it — the actor isolation
-/// itself, not the compiler's Sendable check, is what actually serializes access here.
-extension SpeechCoordinator: SpeechSubmitting, @unchecked Sendable {}
+/// `SpeechCoordinator` is `@MainActor`, so it is already `Sendable`; cross-isolation callers
+/// such as `AgentAutoReadCoordinator` can hold it as `any SpeechSubmitting & Sendable`.
+extension SpeechCoordinator: SpeechSubmitting {}
 
 @MainActor
 final class SpeechCoordinator: SpeechCoordinating {

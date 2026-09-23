@@ -84,10 +84,6 @@ final class TTSRouter {
                 guard generation == routingGeneration else { throw CancellationError() }
                 lastError = error
                 continue
-            } catch let error as SpeechBackendError {
-                guard generation == routingGeneration else { throw CancellationError() }
-                eventHandler?(.failed(sessionID: sessionID), nil)
-                throw error
             } catch {
                 guard generation == routingGeneration else { throw CancellationError() }
                 eventHandler?(.failed(sessionID: sessionID), nil)
