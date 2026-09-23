@@ -134,8 +134,7 @@ struct WhisperModelStore: Sendable {
             let files = try await downloader.download(descriptor, into: stagingDirectory, progress: progress)
             for file in files {
                 let fileURL = stagingDirectory.appendingPathComponent(file.relativePath)
-                let data = try Data(contentsOf: fileURL)
-                guard Self.verify(data: data, against: file.oid) else {
+                guard try Self.verifyFile(at: fileURL, against: file.oid) else {
                     throw WhisperModelStoreError.checksumMismatch
                 }
             }
@@ -171,14 +170,54 @@ struct WhisperModelStore: Sendable {
         cacheDirectory.appendingPathComponent("\(id.rawValue).incomplete", isDirectory: true)
     }
 
-    private static func verify(data: Data, against oid: WhisperFileOID) -> Bool {
+    /// Read size for `verifyFile`. Weight files are about 1 GB, so they are hashed in 1 MiB
+    /// slices rather than loaded whole.
+    static let verificationChunkSize = 1 << 20
+
+    /// Streams the file at `url` through an incremental hasher and compares the digest with
+    /// `oid`. Memory stays at about `chunkSize` whatever the file size. `.gitBlobSHA1` hashes the
+    /// git blob header `"blob <size>\0"` before the content, exactly like `git hash-object`.
+    /// Internal (not private) so tests can compare it against whole-file digests.
+    static func verifyFile(
+        at url: URL,
+        against oid: WhisperFileOID,
+        chunkSize: Int = verificationChunkSize
+    ) throws -> Bool {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+
         switch oid {
         case .sha256(let expected):
-            return hexDigest(SHA256.hash(data: data)) == expected.lowercased()
+            var hasher = SHA256()
+            try forEachChunk(of: handle, chunkSize: chunkSize) { hasher.update(data: $0) }
+            return hexDigest(hasher.finalize()) == expected.lowercased()
         case .gitBlobSHA1(let expected):
-            var content = Data("blob \(data.count)\0".utf8)
-            content.append(data)
-            return hexDigest(Insecure.SHA1.hash(data: content)) == expected.lowercased()
+            let size = try handle.seekToEnd()
+            try handle.seek(toOffset: 0)
+            var hasher = Insecure.SHA1()
+            hasher.update(data: Data("blob \(size)\0".utf8))
+            try forEachChunk(of: handle, chunkSize: chunkSize) { hasher.update(data: $0) }
+            return hexDigest(hasher.finalize()) == expected.lowercased()
+        }
+    }
+
+    /// Calls `body` with successive reads of up to `chunkSize` bytes until EOF. Each read is
+    /// wrapped in its own autorelease pool so bridged buffers are freed per chunk instead of
+    /// piling up until the calling thread's pool drains.
+    private static func forEachChunk(
+        of handle: FileHandle,
+        chunkSize: Int,
+        _ body: (Data) -> Void
+    ) throws {
+        while true {
+            let hasMore: Bool = try autoreleasepool {
+                guard let chunk = try handle.read(upToCount: chunkSize), !chunk.isEmpty else {
+                    return false
+                }
+                body(chunk)
+                return true
+            }
+            if !hasMore { return }
         }
     }
 

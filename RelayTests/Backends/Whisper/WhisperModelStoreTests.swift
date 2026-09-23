@@ -99,6 +99,47 @@ final class WhisperModelStoreTests: XCTestCase {
         XCTAssertFalse(store.presence(of: .tinyEn))
     }
 
+    /// Chunked hashing must produce exactly the whole-file digests (`TestOID` mirrors the old
+    /// `Data(contentsOf:)` algorithm) for a file spanning many chunks, including a final
+    /// partial chunk.
+    func testChunkedVerificationMatchesWholeFileDigests() throws {
+        let data = Data((0..<10_000).map { UInt8($0 % 251) })
+        let fileURL = tempDirectory.appendingPathComponent("weights.bin")
+        try data.write(to: fileURL)
+
+        XCTAssertTrue(try WhisperModelStore.verifyFile(at: fileURL, against: TestOID.sha256(data), chunkSize: 7))
+        XCTAssertTrue(try WhisperModelStore.verifyFile(at: fileURL, against: TestOID.gitBlobSHA1(data), chunkSize: 7))
+        XCTAssertTrue(try WhisperModelStore.verifyFile(at: fileURL, against: TestOID.sha256(data)))
+    }
+
+    func testChunkedVerificationRejectsWrongDigests() throws {
+        let data = Data("config".utf8)
+        let fileURL = tempDirectory.appendingPathComponent("config.json")
+        try data.write(to: fileURL)
+
+        XCTAssertFalse(try WhisperModelStore.verifyFile(
+            at: fileURL,
+            against: .sha256(String(repeating: "0", count: 64)),
+            chunkSize: 4
+        ))
+        XCTAssertFalse(try WhisperModelStore.verifyFile(
+            at: fileURL,
+            against: .gitBlobSHA1(String(repeating: "0", count: 40)),
+            chunkSize: 4
+        ))
+    }
+
+    func testChunkedVerificationOfAnEmptyFileMatchesGitsEmptyBlob() throws {
+        let fileURL = tempDirectory.appendingPathComponent("empty")
+        try Data().write(to: fileURL)
+
+        // `git hash-object` of an empty file.
+        XCTAssertTrue(try WhisperModelStore.verifyFile(
+            at: fileURL,
+            against: .gitBlobSHA1("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391")
+        ))
+    }
+
     func testPresenceTrueOnlyWhenAllFilesPresentAndVerifiedMarkerExists() throws {
         let modelDirectory = tempDirectory.appendingPathComponent(WhisperModelID.tinyEn.rawValue, isDirectory: true)
         try FileManager.default.createDirectory(at: modelDirectory, withIntermediateDirectories: true)
