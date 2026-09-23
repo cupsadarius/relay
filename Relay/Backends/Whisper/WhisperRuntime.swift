@@ -47,8 +47,7 @@ actor WhisperRuntime {
     /// The currently-loaded model, if any. `nil` whenever no model has been activated yet, the
     /// last `activate` failed, or `unload()` was called. Lets other components (e.g.
     /// `WhisperModelManager`) decide whether a model switch or removal needs to unload first,
-    /// without duplicating `WhisperRuntime`'s own
-    /// loaded-state bookkeeping.
+    /// without duplicating `WhisperRuntime`'s own loaded-state bookkeeping.
     var currentModelID: WhisperModelID? {
         loaded?.id
     }
