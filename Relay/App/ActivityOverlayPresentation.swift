@@ -185,7 +185,8 @@ struct ActivityOverlayPresentation: Equatable {
             let effective = time - delay
             var cycle = effective.truncatingRemainder(dividingBy: Self.speakingCyclePeriod)
             if cycle < 0 { cycle += Self.speakingCyclePeriod }
-            let progress = cycle <= Self.speakingHalfCycle
+            let progress =
+                cycle <= Self.speakingHalfCycle
                 ? cycle / Self.speakingHalfCycle
                 : (Self.speakingCyclePeriod - cycle) / Self.speakingHalfCycle
             return CGFloat(1 - progress * Double(1 - Self.waveformMinScale))

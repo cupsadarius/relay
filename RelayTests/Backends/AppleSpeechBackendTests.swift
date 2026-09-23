@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Relay
 
 final class AppleSpeechBackendTests: XCTestCase {
@@ -64,11 +65,13 @@ final class AppleSpeechBackendTests: XCTestCase {
         _ = try await backend.transcribe(audio: audio, options: STTOptions(localeIdentifier: "de-DE"))
 
         let operations = await recorder.operations
-        XCTAssertEqual(operations, [
-            .prepared("fr-FR"), .transcribed("fr-FR"),
-            .transcribed("fr-FR"),
-            .prepared("de-DE"), .transcribed("de-DE"),
-        ])
+        XCTAssertEqual(
+            operations,
+            [
+                .prepared("fr-FR"), .transcribed("fr-FR"),
+                .transcribed("fr-FR"),
+                .prepared("de-DE"), .transcribed("de-DE"),
+            ])
     }
 
     func testFailedAssetPreparationIsRetriedOnTheNextCall() async throws {
@@ -115,10 +118,12 @@ final class AppleSpeechBackendTests: XCTestCase {
         _ = try await backend.transcribe(audio: audio, options: options)
 
         let operations = await recorder.operations
-        XCTAssertEqual(operations, [
-            .prepared("fr-FR"), .transcribed("fr-FR"),
-            .prepared("fr-FR"), .transcribed("fr-FR"),
-        ], "an analysis failure must invalidate the cached preparation so the next call re-prepares")
+        XCTAssertEqual(
+            operations,
+            [
+                .prepared("fr-FR"), .transcribed("fr-FR"),
+                .prepared("fr-FR"), .transcribed("fr-FR"),
+            ], "an analysis failure must invalidate the cached preparation so the next call re-prepares")
     }
 
     func testTranscribeMapsAssetPreparationFailureToInitializationFailure() async {

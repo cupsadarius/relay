@@ -1,5 +1,6 @@
 import FluidAudio
 import XCTest
+
 @testable import Relay
 
 /// Exercises `FluidAudioPocketTTSEngine`'s own loading logic - single-flighting concurrent loads,
@@ -208,7 +209,8 @@ final class FluidAudioPocketTTSEngineTests: XCTestCase {
         // language pack under a versioned subdirectory (`v2.1/<language>/`), computed here the
         // same way rather than hardcoded so this test tracks the loader instead of drifting from
         // it.
-        let modelsDirectory = tempDirectory
+        let modelsDirectory =
+            tempDirectory
             .appendingPathComponent(PocketTtsConstants.defaultModelsSubdirectory)
             .appendingPathComponent(Repo.pocketTts.folderName)
             .appendingPathComponent(PocketTtsLanguage.english.repoSubdirectory)

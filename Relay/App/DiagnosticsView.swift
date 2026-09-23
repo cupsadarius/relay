@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 struct DiagnosticsView: View {
     static let accessibilityPermissionLabel = "Accessibility"
@@ -14,11 +14,20 @@ struct DiagnosticsView: View {
             Text("\(Self.accessibilityPermissionLabel): \(model.permissions.snapshot.accessibilityGranted ? "Granted" : "Not granted")")
             Text("Global Hotkeys (effective): \(model.permissions.snapshot.globalHotkeysGranted ? "Granted" : "Not granted")")
             Text("Global event tap: \(eventTapText)")
-            HStack { Button("Request Accessibility") { model.permissions.requestAccessibility() }; Button("Recheck / Retry") { model.recheckDiagnostics() } }
+            HStack {
+                Button("Request Accessibility") { model.permissions.requestAccessibility() }; Button("Recheck / Retry") { model.recheckDiagnostics() }
+            }
             Divider(); Text("Recent diagnostics")
-            Text("Received: \(model.diagnosticsCounters.received)  Matched: \(model.diagnosticsCounters.matched)  Dispatched: \(model.diagnosticsCounters.dispatched)")
+            Text(
+                "Received: \(model.diagnosticsCounters.received)  Matched: \(model.diagnosticsCounters.matched)  Dispatched: \(model.diagnosticsCounters.dispatched)"
+            )
             List(model.diagnosticsEntries) { Text($0.copyLine()) }
-            HStack { Button("Clear") { model.clearDiagnostics() }; Button("Copy") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(model.diagnosticsCopyText, forType: .string) } }
+            HStack {
+                Button("Clear") { model.clearDiagnostics() };
+                Button("Copy") {
+                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(model.diagnosticsCopyText, forType: .string)
+                }
+            }
             Divider(); Text("Integration Pipeline")
             List(integrationDiagnosticsEntries) { entry in
                 Text("\(DiagnosticTimestampFormatter.local.string(from: entry.timestamp)) [\(entry.stage)] \(entry.outcome) — \(entry.detail)")
@@ -35,6 +44,9 @@ struct DiagnosticsView: View {
     }
 
     private var eventTapText: String {
-        switch model.hotkeys.eventTapStatus { case .registered: "Registered"; case .unavailable: "Unavailable" }
+        switch model.hotkeys.eventTapStatus {
+        case .registered: "Registered";
+        case .unavailable: "Unavailable"
+        }
     }
 }

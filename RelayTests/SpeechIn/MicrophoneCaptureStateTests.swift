@@ -1,5 +1,6 @@
-import XCTest
 import AVFoundation
+import XCTest
+
 @testable import Relay
 
 final class MicrophoneCaptureStateTests: XCTestCase {

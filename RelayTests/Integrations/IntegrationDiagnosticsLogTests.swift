@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+
 @testable import Relay
 
 final class IntegrationDiagnosticsLogTests: XCTestCase {

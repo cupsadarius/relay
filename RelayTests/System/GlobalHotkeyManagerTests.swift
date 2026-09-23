@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Relay
 
 @MainActor
@@ -12,7 +13,7 @@ final class GlobalHotkeyManagerTests: XCTestCase {
 
     func testChordEmitsPressedAndReleasedPhases() {
         var matcher = HotkeyMatcher(definitions: [
-            .readSelection: .chord(keyCode: 15, modifiers: [.option]),
+            .readSelection: .chord(keyCode: 15, modifiers: [.option])
         ])
 
         XCTAssertEqual(
@@ -27,21 +28,23 @@ final class GlobalHotkeyManagerTests: XCTestCase {
 
     func testChordRequiresExactConfiguredModifiers() {
         var matcher = HotkeyMatcher(definitions: [
-            .readSelection: .chord(keyCode: 15, modifiers: [.option]),
+            .readSelection: .chord(keyCode: 15, modifiers: [.option])
         ])
 
         XCTAssertTrue(
-            matcher.match(.keyDown(
-                keyCode: 15,
-                modifiers: [.option, .shift],
-                isRepeat: false
-            )).isEmpty
+            matcher.match(
+                .keyDown(
+                    keyCode: 15,
+                    modifiers: [.option, .shift],
+                    isRepeat: false
+                )
+            ).isEmpty
         )
     }
 
     func testRepeatedKeyDownIsDebounced() {
         var matcher = HotkeyMatcher(definitions: [
-            .readSelection: .chord(keyCode: 15, modifiers: [.option]),
+            .readSelection: .chord(keyCode: 15, modifiers: [.option])
         ])
 
         _ = matcher.match(.keyDown(keyCode: 15, modifiers: [.option], isRepeat: false))
@@ -53,7 +56,7 @@ final class GlobalHotkeyManagerTests: XCTestCase {
 
     func testFunctionOnlyEmitsOnceForPressAndReleaseTransitions() {
         var matcher = HotkeyMatcher(definitions: [
-            .dictate: .modifierOnly(.function),
+            .dictate: .modifierOnly(.function)
         ])
 
         XCTAssertEqual(
@@ -70,7 +73,7 @@ final class GlobalHotkeyManagerTests: XCTestCase {
 
     func testFunctionOnlyDoesNotFireWhenCombinedWithAnotherModifier() {
         var matcher = HotkeyMatcher(definitions: [
-            .dictate: .modifierOnly(.function),
+            .dictate: .modifierOnly(.function)
         ])
 
         XCTAssertTrue(
@@ -82,7 +85,7 @@ final class GlobalHotkeyManagerTests: XCTestCase {
 
     func testFunctionReleaseStillEmitsIfAnotherModifierWasAddedAfterPress() {
         var matcher = HotkeyMatcher(definitions: [
-            .dictate: .modifierOnly(.function),
+            .dictate: .modifierOnly(.function)
         ])
 
         _ = matcher.match(.flagsChanged(modifiers: [.function]))
@@ -123,10 +126,11 @@ final class GlobalHotkeyManagerTests: XCTestCase {
 
     func testDifferentDoubleTapModifiersRouteToDifferentActions() {
         var uptime: TimeInterval = 0
-        var matcher = HotkeyMatcher(definitions: [
-            .dictate: .doubleTapModifier(.control),
-            .readSelection: .doubleTapModifier(.option),
-        ], uptime: { uptime })
+        var matcher = HotkeyMatcher(
+            definitions: [
+                .dictate: .doubleTapModifier(.control),
+                .readSelection: .doubleTapModifier(.option),
+            ], uptime: { uptime })
         XCTAssertTrue(matcher.match(.flagsChanged(modifiers: [.option])).isEmpty)
         uptime = 0.1; XCTAssertTrue(matcher.match(.flagsChanged(modifiers: [])).isEmpty)
         uptime = 0.2
@@ -242,7 +246,7 @@ final class GlobalHotkeyManagerTests: XCTestCase {
 
     func testUnmatchedEventsEmitNothing() {
         var matcher = HotkeyMatcher(definitions: [
-            .readSelection: .chord(keyCode: 15, modifiers: [.option]),
+            .readSelection: .chord(keyCode: 15, modifiers: [.option])
         ])
 
         XCTAssertTrue(
@@ -260,7 +264,7 @@ final class GlobalHotkeyManagerTests: XCTestCase {
         XCTAssertEqual(
             matcher.match(.keyDown(keyCode: 15, modifiers: [.option], isRepeat: false)),
             [
-                .init(action: .readSelection, phase: .pressed),
+                .init(action: .readSelection, phase: .pressed)
             ]
         )
     }
@@ -276,10 +280,12 @@ final class GlobalHotkeyManagerTests: XCTestCase {
         manager.update(definitions: definitions) // e.g. the didBecomeActive recheck
         manager.receive(.keyUp(keyCode: 15, modifiers: [.option]))
 
-        XCTAssertEqual(recorder.values, [
-            .init(action: .readSelection, phase: .pressed),
-            .init(action: .readSelection, phase: .released),
-        ])
+        XCTAssertEqual(
+            recorder.values,
+            [
+                .init(action: .readSelection, phase: .pressed),
+                .init(action: .readSelection, phase: .released),
+            ])
     }
 
     func testUpdatingWithChangedDefinitionsRebuildsTheMatcher() {

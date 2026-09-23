@@ -24,9 +24,11 @@ struct PermissionsSettingsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Button("Open Microphone Settings") { model.permissions.openMicrophoneSettings() }
                         .controlSize(.small)
-                    Text("After a rebuild, macOS can keep the Microphone toggle on while delivering no audio. Use this to toggle Relay's grant off and back on.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "After a rebuild, macOS can keep the Microphone toggle on while delivering no audio. Use this to toggle Relay's grant off and back on."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
                 if let capture = model.permissions.lastMicrophoneCaptureDiagnostics {
                     captureDiagnosticsRow(capture)

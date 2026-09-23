@@ -15,8 +15,8 @@ enum SpeechBackendError: Error, Equatable, Sendable {
     var isFallbackWorthy: Bool {
         switch self {
         case .unavailable, .modelNotDownloaded, .initializationFailed,
-             .unsupportedOS, .unsupportedHardware, .inferenceFailed,
-             .resourceExhausted:
+            .unsupportedOS, .unsupportedHardware, .inferenceFailed,
+            .resourceExhausted:
             true
         case .permissionDenied, .noUsableAudio, .invalidInput:
             false

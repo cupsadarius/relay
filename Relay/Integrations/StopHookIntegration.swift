@@ -62,7 +62,8 @@ struct StopHookIntegration: RelayIntegration {
 
     func decode(_ envelope: HookEnvelope) throws -> AgentResponseEvent {
         guard let data = envelope.rawPayload.data(using: .utf8),
-              let payload = try? decoder.decode(StopHookPayload.self, from: data) else {
+            let payload = try? decoder.decode(StopHookPayload.self, from: data)
+        else {
             throw StopHookIntegrationError.malformedPayload
         }
         if requiresTurnID, payload.turnID == nil {
@@ -72,7 +73,8 @@ struct StopHookIntegration: RelayIntegration {
             throw StopHookIntegrationError.unsupportedHookEvent
         }
         guard let text = payload.lastAssistantMessage,
-              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
             throw StopHookIntegrationError.missingFinalMessage
         }
 

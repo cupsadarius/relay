@@ -1,6 +1,6 @@
 import Foundation
-import os
 import Observation
+import os
 
 enum DiagnosticsEvent: Equatable, Sendable {
     case permissionRechecked, permissionRequested, eventTapRegistered, eventTapUnavailable
@@ -135,7 +135,9 @@ struct DiagnosticEntry: Identifiable, Equatable, Sendable {
 }
 
 enum DiagnosticTimestampFormatter {
-    static let local: DateFormatter = { let f = DateFormatter(); f.dateFormat = "HH:mm:ss"; return f }()
+    static let local: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "HH:mm:ss"; return f
+    }()
 }
 
 struct DiagnosticsCounters: Equatable, Sendable { var received = 0; var matched = 0; var dispatched = 0 }

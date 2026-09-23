@@ -142,9 +142,10 @@ final class SpeechModelController {
     private func applyProgress(_ value: Double, operation: SpeechModelOperationKey) {
         guard downloads.contains(operation) else { return }
         let progress = min(1, max(0, value))
-        guard case let .downloading(current)? = models[operation.backend]?
-            .first(where: { $0.id == operation.modelID })?.installState,
-              progress >= current
+        guard
+            case let .downloading(current)? = models[operation.backend]?
+                .first(where: { $0.id == operation.modelID })?.installState,
+            progress >= current
         else { return }
         setInstallState(.downloading(progress: progress), modelID: operation.modelID, backend: operation.backend)
     }

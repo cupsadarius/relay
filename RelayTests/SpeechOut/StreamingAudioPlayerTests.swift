@@ -1,5 +1,6 @@
 import AVFoundation
 import XCTest
+
 @testable import Relay
 
 /// Tests that exercise real playback are gated behind `requireAudioOutput()` and skip themselves
@@ -23,18 +24,22 @@ final class StreamingAudioPlayerTests: XCTestCase {
 
         try await player.startPlayback(source, sessionID: sessionID)
 
-        XCTAssertEqual(events.values.filter { !$0.isLevel }, [
-            .started(sessionID: sessionID),
-        ])
+        XCTAssertEqual(
+            events.values.filter { !$0.isLevel },
+            [
+                .started(sessionID: sessionID)
+            ])
         XCTAssertEqual(node.scheduledCount, 3)
 
         node.firePlayed(3)
         try await waitUntilAsync { events.values.contains(.finished(sessionID: sessionID)) }
 
-        XCTAssertEqual(events.values.filter { !$0.isLevel }, [
-            .started(sessionID: sessionID),
-            .finished(sessionID: sessionID),
-        ])
+        XCTAssertEqual(
+            events.values.filter { !$0.isLevel },
+            [
+                .started(sessionID: sessionID),
+                .finished(sessionID: sessionID),
+            ])
     }
 
     func testLevelsAreEmittedAsBuffersPlayNotWhenTheyAreScheduled() async throws {
@@ -193,10 +198,12 @@ final class StreamingAudioPlayerTests: XCTestCase {
 
         // No buffers are marked played: cancellation must not wait for a drain.
         try await waitUntilAsync { events.values.contains(.cancelled(sessionID: sessionID)) }
-        XCTAssertEqual(events.values.filter { !$0.isLevel }, [
-            .started(sessionID: sessionID),
-            .cancelled(sessionID: sessionID),
-        ])
+        XCTAssertEqual(
+            events.values.filter { !$0.isLevel },
+            [
+                .started(sessionID: sessionID),
+                .cancelled(sessionID: sessionID),
+            ])
     }
 
     /// Before `.started`, a cancelled source makes `startPlayback` throw `CancellationError` with
@@ -318,17 +325,21 @@ final class StreamingAudioPlayerTests: XCTestCase {
         // startPlayback has already returned here. This short stream never crosses the prebuffer
         // threshold, so `.started` fires via the stream-end fallback - by the time it returns,
         // only .started has been observed, never .finished.
-        XCTAssertEqual(events.values.filter { !$0.isLevel }, [
-            .started(sessionID: sessionID),
-        ])
+        XCTAssertEqual(
+            events.values.filter { !$0.isLevel },
+            [
+                .started(sessionID: sessionID)
+            ])
 
         try await waitUntil { events.values.contains(.finished(sessionID: sessionID)) }
 
         let recorded = events.values.filter { !$0.isLevel }
-        XCTAssertEqual(recorded, [
-            .started(sessionID: sessionID),
-            .finished(sessionID: sessionID),
-        ])
+        XCTAssertEqual(
+            recorded,
+            [
+                .started(sessionID: sessionID),
+                .finished(sessionID: sessionID),
+            ])
         XCTAssertTrue(recorded.allSatisfy { $0.sessionID == sessionID })
     }
 
@@ -349,17 +360,21 @@ final class StreamingAudioPlayerTests: XCTestCase {
 
         try await player.startPlayback(Self.makeFrameStream(frameCount: 20), sampleRate: 24_000, sessionID: sessionID)
 
-        XCTAssertEqual(events.values.filter { !$0.isLevel }, [
-            .started(sessionID: sessionID),
-        ])
+        XCTAssertEqual(
+            events.values.filter { !$0.isLevel },
+            [
+                .started(sessionID: sessionID)
+            ])
 
         try await waitUntil { events.values.contains(.finished(sessionID: sessionID)) }
 
         let recorded = events.values.filter { !$0.isLevel }
-        XCTAssertEqual(recorded, [
-            .started(sessionID: sessionID),
-            .finished(sessionID: sessionID),
-        ])
+        XCTAssertEqual(
+            recorded,
+            [
+                .started(sessionID: sessionID),
+                .finished(sessionID: sessionID),
+            ])
         XCTAssertTrue(recorded.allSatisfy { $0.sessionID == sessionID })
     }
 
@@ -384,10 +399,12 @@ final class StreamingAudioPlayerTests: XCTestCase {
         player.stop()
 
         let recorded = events.values.filter { !$0.isLevel }
-        XCTAssertEqual(recorded, [
-            .started(sessionID: sessionID),
-            .cancelled(sessionID: sessionID),
-        ])
+        XCTAssertEqual(
+            recorded,
+            [
+                .started(sessionID: sessionID),
+                .cancelled(sessionID: sessionID),
+            ])
         XCTAssertFalse(recorded.contains(.finished(sessionID: sessionID)))
     }
 
@@ -418,10 +435,12 @@ final class StreamingAudioPlayerTests: XCTestCase {
         try await waitUntil { events.values.contains(.failed(sessionID: sessionID)) }
 
         let recorded = events.values.filter { !$0.isLevel }
-        XCTAssertEqual(recorded, [
-            .started(sessionID: sessionID),
-            .failed(sessionID: sessionID),
-        ])
+        XCTAssertEqual(
+            recorded,
+            [
+                .started(sessionID: sessionID),
+                .failed(sessionID: sessionID),
+            ])
         XCTAssertFalse(recorded.contains(.finished(sessionID: sessionID)))
     }
 

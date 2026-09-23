@@ -157,10 +157,11 @@ final class RelayRuntime {
         let herdrClient = HerdrSocketClient()
 
         var resolvers: [any FocusResolver] = []
-        resolvers.append(HerdrFocusResolver(
-            herdr: herdrClient,
-            hostOwnership: HerdrHostOwnershipChecker()
-        ))
+        resolvers.append(
+            HerdrFocusResolver(
+                herdr: herdrClient,
+                hostOwnership: HerdrHostOwnershipChecker()
+            ))
         if let tmuxRunner {
             resolvers.append(TmuxFocusResolver(runner: tmuxRunner))
         }

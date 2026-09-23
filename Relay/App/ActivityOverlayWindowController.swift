@@ -1,6 +1,6 @@
+import AppKit
 import CoreGraphics
 import Foundation
-import AppKit
 
 /// Pure policy for hosting the activity capsule: which display to pin to, where to place it,
 /// and when to show or hide it. Failures are isolated here and never propagate to callers.

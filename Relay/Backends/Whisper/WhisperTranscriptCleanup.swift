@@ -47,7 +47,8 @@ enum WhisperTranscriptCleanup {
 
     private static func isNonSpeechMarker(_ bracketed: String) -> Bool {
         let inner = bracketed.dropFirst().dropLast()
-        let normalized = inner
+        let normalized =
+            inner
             .trimmingCharacters(in: .whitespaces)
             .uppercased()
             .replacingOccurrences(of: " ", with: "_")

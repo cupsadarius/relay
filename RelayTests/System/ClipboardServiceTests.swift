@@ -1,5 +1,6 @@
 import AppKit
 import XCTest
+
 @testable import Relay
 
 @MainActor
@@ -75,7 +76,7 @@ final class ClipboardServiceTests: XCTestCase {
         XCTAssertEqual(pasteboard.restoredSnapshots, [], "newer clipboard content must not be overwritten")
     }
 
-/// A second call landing while one is already in flight (e.g. a quick second Read Selection
+    /// A second call landing while one is already in flight (e.g. a quick second Read Selection
     /// press) must join the same copy and see its result, rather than failing with a busy error
     /// or triggering a second ⌘C.
     func testConcurrentCopiesJoinTheSameInFlightCopyRatherThanFailingOrRepeating() async throws {

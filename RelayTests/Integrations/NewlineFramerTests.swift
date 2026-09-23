@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Relay
 
 final class NewlineFramerTests: XCTestCase {
@@ -40,12 +41,13 @@ final class NewlineFramerTests: XCTestCase {
     func testUnterminatedOverflowRequestsCloseReportsItsSizeAndDiscardsTheBuffer() {
         var framer = NewlineFramer(maxLineBytes: 4)
         var unterminated: [Int] = []
-        XCTAssertTrue(framer.append(
-            ArraySlice(bytes("12345")),
-            onLine: { _ in XCTFail() },
-            onOversizedLine: { _ in XCTFail() },
-            onOversizedUnterminated: { unterminated.append($0) }
-        ))
+        XCTAssertTrue(
+            framer.append(
+                ArraySlice(bytes("12345")),
+                onLine: { _ in XCTFail() },
+                onOversizedLine: { _ in XCTFail() },
+                onOversizedUnterminated: { unterminated.append($0) }
+            ))
         XCTAssertEqual(unterminated, [5])
         XCTAssertEqual(framer.bufferedByteCount, 0)
     }

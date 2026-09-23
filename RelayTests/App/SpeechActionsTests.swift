@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Relay
 
 @MainActor
@@ -47,10 +48,11 @@ final class SpeechActionsTests: XCTestCase {
             speechCoordinator: speech
         )
         manager.start()
-        continuation.yield(HookEnvelope(
-            schemaVersion: 1, provider: .claudeCode, rawPayload: "{}",
-            parentPID: 100, environment: [:], capturedAt: latest.capturedAt
-        ))
+        continuation.yield(
+            HookEnvelope(
+                schemaVersion: 1, provider: .claudeCode, rawPayload: "{}",
+                parentPID: 100, environment: [:], capturedAt: latest.capturedAt
+            ))
         let deadline = Date().addingTimeInterval(2)
         while manager.latestResponse == nil, Date() < deadline { await Task.yield() }
         manager.stop()
@@ -66,10 +68,14 @@ final class SpeechActionsTests: XCTestCase {
 
         await actions.readSelection()
 
-        XCTAssertEqual(speech.requests, [SpeechRequest(
-            text: "Intro There is a code block on screen. Please read it there. End",
-            source: .selection, mode: .userRequested, sessionID: nil
-        )])
+        XCTAssertEqual(
+            speech.requests,
+            [
+                SpeechRequest(
+                    text: "Intro There is a code block on screen. Please read it there. End",
+                    source: .selection, mode: .userRequested, sessionID: nil
+                )
+            ])
         XCTAssertEqual(runtime.status.message, "Ready")
         XCTAssertEqual(runtime.diagnostics.entries.last?.event, .ttsSubmitted)
     }

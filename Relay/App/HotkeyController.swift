@@ -67,8 +67,7 @@ final class HotkeyController {
             guard dictation != nil else { return }
             switch settings.current.dictationMode {
             case .holdToTalk:
-                if phase == .pressed { enqueueDictation { await $0.start() } }
-                else { enqueueDictation { await $0.finish() } }
+                if phase == .pressed { enqueueDictation { await $0.start() } } else { enqueueDictation { await $0.finish() } }
             case .toggle:
                 guard phase == .pressed else { return }
                 enqueueDictation { await $0.toggle() }

@@ -23,7 +23,8 @@ struct AVAudioPCMBufferConverter: AppleSpeechBufferConverting {
         guard sampleRate > 0 else { throw ConversionError.unsupportedFormat }
 
         if inputFormat.commonFormat == .pcmFormatFloat32, !inputFormat.isInterleaved,
-           let channels = buffer.floatChannelData {
+            let channels = buffer.floatChannelData
+        {
             return TTSAudioFrame(
                 samples: AudioBufferUtilities.interleave(
                     channels,
@@ -34,20 +35,24 @@ struct AVAudioPCMBufferConverter: AppleSpeechBufferConverting {
             )
         }
 
-        guard let outputFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: sampleRate,
-            channels: AVAudioChannelCount(channelCount),
-            interleaved: true
-        ) else { throw ConversionError.unsupportedFormat }
+        guard
+            let outputFormat = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: sampleRate,
+                channels: AVAudioChannelCount(channelCount),
+                interleaved: true
+            )
+        else { throw ConversionError.unsupportedFormat }
 
         guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
             throw ConversionError.unsupportedFormat
         }
-        guard let outputBuffer = AVAudioPCMBuffer(
-            pcmFormat: outputFormat,
-            frameCapacity: max(buffer.frameCapacity, buffer.frameLength)
-        ) else { throw ConversionError.allocationFailed }
+        guard
+            let outputBuffer = AVAudioPCMBuffer(
+                pcmFormat: outputFormat,
+                frameCapacity: max(buffer.frameCapacity, buffer.frameLength)
+            )
+        else { throw ConversionError.allocationFailed }
 
         let result = AudioBufferUtilities.convert(buffer, into: outputBuffer, using: converter)
         if result.status == .error {

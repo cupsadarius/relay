@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import XCTest
+
 @testable import Relay
 
 /// Minimal blocking AF_UNIX client used only by tests to exercise
@@ -272,7 +273,8 @@ final class UnixSocketServerTests: XCTestCase {
 
         let deadline = Date().addingTimeInterval(2)
         while !diagnostics.snapshot().contains(where: { $0.stage == "socket" && $0.outcome == "dropped" }),
-              Date() < deadline {
+            Date() < deadline
+        {
             try await Task.sleep(for: .milliseconds(10))
         }
         let entry = try XCTUnwrap(diagnostics.snapshot().first { $0.stage == "socket" && $0.outcome == "dropped" })
@@ -381,7 +383,7 @@ final class UnixSocketServerTests: XCTestCase {
         let server = UnixSocketServer()
         try server.start(path: path) { line in
             if line.contains("incomple") {
-                receivedPartialLine.fulfill()   // inverted guard: trips only if the partial is wrongly delivered
+                receivedPartialLine.fulfill() // inverted guard: trips only if the partial is wrongly delivered
             } else {
                 receivedFollowUpLine.fulfill()
             }

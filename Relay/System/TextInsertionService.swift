@@ -53,11 +53,13 @@ final class SystemAccessibilityTextInserter: AccessibilityTextInserting {
 
     func selectedTextRange(of element: AXUIElement) -> CFRange? {
         var attributeValue: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
-            element,
-            kAXSelectedTextRangeAttribute as CFString,
-            &attributeValue
-        ) == .success, let attributeValue else {
+        guard
+            AXUIElementCopyAttributeValue(
+                element,
+                kAXSelectedTextRangeAttribute as CFString,
+                &attributeValue
+            ) == .success, let attributeValue
+        else {
             return nil
         }
         guard CFGetTypeID(attributeValue) == AXValueGetTypeID() else {
@@ -76,11 +78,13 @@ final class SystemAccessibilityTextInserter: AccessibilityTextInserting {
 
     func isSelectedTextSettable(_ element: AXUIElement) -> Bool {
         var settable: DarwinBoolean = false
-        guard AXUIElementIsAttributeSettable(
-            element,
-            kAXSelectedTextAttribute as CFString,
-            &settable
-        ) == .success else {
+        guard
+            AXUIElementIsAttributeSettable(
+                element,
+                kAXSelectedTextAttribute as CFString,
+                &settable
+            ) == .success
+        else {
             return false
         }
         return settable.boolValue
@@ -235,7 +239,8 @@ final class TextInsertionService: TextInserting {
         }
 
         guard accessibility.isSelectedTextSettable(focusedElement),
-              let originalRange = accessibility.selectedTextRange(of: focusedElement) else {
+            let originalRange = accessibility.selectedTextRange(of: focusedElement)
+        else {
             return false
         }
 

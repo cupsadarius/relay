@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import XCTest
+
 @testable import Relay
 
 final class HookTransportClientTests: XCTestCase {

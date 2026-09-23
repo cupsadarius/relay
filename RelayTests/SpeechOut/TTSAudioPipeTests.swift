@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Relay
 
 final class TTSAudioPipeTests: XCTestCase {
@@ -74,7 +75,7 @@ final class TTSAudioPipeTests: XCTestCase {
         let beforeDrain = await progress.value
         XCTAssertEqual(beforeDrain, 2, "the third 1s frame must wait: 2s buffered reached the 2s high watermark")
 
-        _ = try await pipe.source.next()   // 1s buffered: not below the 1s low watermark yet
+        _ = try await pipe.source.next() // 1s buffered: not below the 1s low watermark yet
         // `next()` is an actor call that runs to completion (including any `resumeProducers()`
         // decision) before returning, so the count is already settled here -- no settle() needed.
         let waitingAfterFirstDrain = await pipe.sink.waitingProducerCount
@@ -82,7 +83,7 @@ final class TTSAudioPipeTests: XCTestCase {
         let afterFirstDrain = await progress.value
         XCTAssertEqual(afterFirstDrain, 2, "hysteresis: the producer stays blocked until buffered < low watermark")
 
-        _ = try await pipe.source.next()   // 0s buffered: below low watermark
+        _ = try await pipe.source.next() // 0s buffered: below low watermark
         try await producer.value
         let afterSecondDrain = await progress.value
         XCTAssertEqual(afterSecondDrain, 3)

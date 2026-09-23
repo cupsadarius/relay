@@ -38,8 +38,10 @@ struct SpeechModelRowPresentation: Equatable {
             canDownload: canDownload,
             canSelect: canSelect,
             canRemove: canRemove,
-            downloadHelp: supportsDownload ? (canDownload ? nil : "This model is already downloaded or busy.") : "This provider does not support model downloads.",
-            selectHelp: supportsSelect ? (canSelect ? nil : "Download the model first, or it is already selected.") : "This provider does not support model selection.",
+            downloadHelp: supportsDownload
+                ? (canDownload ? nil : "This model is already downloaded or busy.") : "This provider does not support model downloads.",
+            selectHelp: supportsSelect
+                ? (canSelect ? nil : "Download the model first, or it is already selected.") : "This provider does not support model selection.",
             removeHelp: supportsRemove ? (canRemove ? nil : "Download the model before removing it.") : "This provider does not support model removal."
         )
     }

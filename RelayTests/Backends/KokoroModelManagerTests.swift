@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+
 @testable import Relay
 
 final class KokoroModelManagerTests: XCTestCase {
@@ -49,8 +50,7 @@ private actor FakeManagerKokoroEngine: KokoroEngine {
     func modelsArePresent() async -> Bool { present }
     func removeModels() async throws { removeCount += 1; present = false }
     func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws {
-        if allowDownload { downloadCount += 1; present = true; progress(1) }
-        else { localCount += 1 }
+        if allowDownload { downloadCount += 1; present = true; progress(1) } else { localCount += 1 }
     }
     func phonemes(for text: String) async throws -> String { text }
     func synthesize(phonemes: String, voice: String, speed: Float) async throws -> KokoroPCM {

@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import XCTest
+
 @testable import Relay
 
 /// Exercises `UnixLineRequest` over a real loopback AF_UNIX connection. The

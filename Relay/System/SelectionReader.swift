@@ -75,7 +75,7 @@ final class SelectionReader: SelectionReading {
 
     private func usable(_ selection: String?) -> String? {
         guard let selection,
-              !selection.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            !selection.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
             return nil
         }

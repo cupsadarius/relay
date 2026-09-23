@@ -196,11 +196,12 @@ actor MicrophoneCapture: MicrophoneCapturing, MicrophoneSampleStreaming {
             // Reported EVEN on the zero-frame path below (before the throw): that's the stale
             // post-rebuild microphone grant case the Security settings tab most wants visible.
             // Metadata only — counts, rate, timestamp — never the samples themselves.
-            await onCaptureDiagnostics?(MicrophoneCaptureDiagnostics(
-                inputSampleRate: lastInputSampleRate,
-                frameCount: samples.count,
-                capturedAt: now()
-            ))
+            await onCaptureDiagnostics?(
+                MicrophoneCaptureDiagnostics(
+                    inputSampleRate: lastInputSampleRate,
+                    frameCount: samples.count,
+                    capturedAt: now()
+                ))
             guard !samples.isEmpty else { throw SpeechBackendError.noUsableAudio }
             return AudioInput(samples: samples, sampleRate: 16_000)
         } catch {
@@ -356,13 +357,13 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, AudioInputFormatR
             let input = engine.inputNode
             let inputFormat = input.inputFormat(forBus: 0)
             guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0,
-                  let outputFormat = AVAudioFormat(
+                let outputFormat = AVAudioFormat(
                     commonFormat: .pcmFormatFloat32,
                     sampleRate: 16_000,
                     channels: 1,
                     interleaved: false
-                  ),
-                  let converter = AVAudioConverter(from: inputFormat, to: outputFormat)
+                ),
+                let converter = AVAudioConverter(from: inputFormat, to: outputFormat)
             else {
                 throw MicrophoneCaptureError.unavailable("The current input format is unsupported.")
             }
@@ -402,13 +403,15 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, AudioInputFormatR
             // this read cannot race a `tearDownEngine()` that has already started.
             let current = self.engine.inputNode.inputFormat(forBus: 0)
             let installed = self.stateLock.withLock { (self.inputSampleRate, self.installedInputChannelCount) }
-            guard AudioEngineRouteChangeDecision.isDisruptive(
-                isEngineRunning: self.engine.isRunning,
-                installedSampleRate: installed.0,
-                installedChannelCount: installed.1,
-                currentSampleRate: current.sampleRate,
-                currentChannelCount: current.channelCount
-            ) else {
+            guard
+                AudioEngineRouteChangeDecision.isDisruptive(
+                    isEngineRunning: self.engine.isRunning,
+                    installedSampleRate: installed.0,
+                    installedChannelCount: installed.1,
+                    currentSampleRate: current.sampleRate,
+                    currentChannelCount: current.channelCount
+                )
+            else {
                 // Ignore spurious posts where the engine keeps running with the same format:
                 // AVFoundation stops the engine on a real route change, so this combination means
                 // nothing downstream is actually broken. Failing here would end perfectly healthy
@@ -435,7 +438,7 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, AudioInputFormatR
             }
             return configurationObserver
         }
-        withExtendedLifetime(observer) {}   // released here, outside the lock
+        withExtendedLifetime(observer) {} // released here, outside the lock
         engineQueue.sync { tearDownEngine() }
         if let error { throw error }
     }
@@ -501,7 +504,7 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, AudioInputFormatR
             }
             return (terminalErrorHandler, configurationObserver)
         }
-        withExtendedLifetime(observer) {}   // released here, outside the lock -- matches stop()
+        withExtendedLifetime(observer) {} // released here, outside the lock -- matches stop()
         engineQueue.async { [weak self] in self?.tearDownEngine() }
         if let handler {
             Task { await handler(error) }

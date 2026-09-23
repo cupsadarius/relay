@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+
 @testable import Relay
 
 /// SAFETY: every test in this file points `ClaudeCodeInstaller`/`CodexInstaller` at a unique
@@ -93,15 +94,16 @@ final class IntegrationSetupModelTests: XCTestCase {
         hookEnvelopeReceiver: HookEnvelopeReceiver = HookEnvelopeReceiver(),
         hookSocketPath: String? = nil
     ) -> IntegrationSetupModel {
-        IntegrationSetupModel(runtime: makeRuntime(
-            claudeCodeInstaller: claudeCodeInstaller,
-            codexInstaller: codexInstaller,
-            helperInstaller: helperInstaller,
-            bundledHelperURL: bundledHelperURL,
-            integrationManager: integrationManager,
-            hookEnvelopeReceiver: hookEnvelopeReceiver,
-            hookSocketPath: hookSocketPath
-        ))
+        IntegrationSetupModel(
+            runtime: makeRuntime(
+                claudeCodeInstaller: claudeCodeInstaller,
+                codexInstaller: codexInstaller,
+                helperInstaller: helperInstaller,
+                bundledHelperURL: bundledHelperURL,
+                integrationManager: integrationManager,
+                hookEnvelopeReceiver: hookEnvelopeReceiver,
+                hookSocketPath: hookSocketPath
+            ))
     }
 
     // MARK: - Baseline: no test ever touches a real socket
@@ -299,14 +301,15 @@ final class IntegrationSetupModelTests: XCTestCase {
 
         manager.start()
         defer { manager.stop() }
-        continuation.yield(HookEnvelope(
-            schemaVersion: 1,
-            provider: .claudeCode,
-            rawPayload: "{}",
-            parentPID: 100,
-            environment: [:],
-            capturedAt: Date(timeIntervalSince1970: 1_700_000_000)
-        ))
+        continuation.yield(
+            HookEnvelope(
+                schemaVersion: 1,
+                provider: .claudeCode,
+                rawPayload: "{}",
+                parentPID: 100,
+                environment: [:],
+                capturedAt: Date(timeIntervalSince1970: 1_700_000_000)
+            ))
 
         await waitUntil { model.integrationSetup.latestResponseAvailable }
     }
@@ -334,14 +337,15 @@ final class IntegrationSetupModelTests: XCTestCase {
 
         manager.start()
         defer { manager.stop() }
-        continuation.yield(HookEnvelope(
-            schemaVersion: 1,
-            provider: .claudeCode,
-            rawPayload: "{}",
-            parentPID: 100,
-            environment: [:],
-            capturedAt: event.capturedAt
-        ))
+        continuation.yield(
+            HookEnvelope(
+                schemaVersion: 1,
+                provider: .claudeCode,
+                rawPayload: "{}",
+                parentPID: 100,
+                environment: [:],
+                capturedAt: event.capturedAt
+            ))
 
         await waitUntil { model.status(for: .claudeCode) == .active(lastEventAt: event.capturedAt) }
     }
@@ -387,9 +391,10 @@ final class IntegrationSetupModelTests: XCTestCase {
 
         XCTAssertFalse(model.isSocketListening)
         XCTAssertEqual(model.socketStatusMessage, IntegrationSetupModel.anotherInstanceOwnsSocketMessage)
-        XCTAssertTrue(integrationLog.snapshot().contains {
-            $0.stage == "socket-start" && $0.outcome == "failed" && $0.detail == "active-listener-present"
-        })
+        XCTAssertTrue(
+            integrationLog.snapshot().contains {
+                $0.stage == "socket-start" && $0.outcome == "failed" && $0.detail == "active-listener-present"
+            })
     }
 
     // MARK: - Launch-time helper refresh
@@ -471,9 +476,10 @@ final class IntegrationSetupModelTests: XCTestCase {
 
         model.start()
 
-        XCTAssertTrue(integrationLog.snapshot().contains {
-            $0.stage == "helper" && $0.outcome == "refresh-failed" && $0.detail == "stable-helper-unavailable"
-        })
+        XCTAssertTrue(
+            integrationLog.snapshot().contains {
+                $0.stage == "helper" && $0.outcome == "refresh-failed" && $0.detail == "stable-helper-unavailable"
+            })
         XCTAssertTrue(model.isSocketListening)
     }
 
@@ -502,14 +508,15 @@ final class IntegrationSetupModelTests: XCTestCase {
 
         manager.start()
         defer { manager.stop() }
-        continuation.yield(HookEnvelope(
-            schemaVersion: 1,
-            provider: .claudeCode,
-            rawPayload: "{}",
-            parentPID: 100,
-            environment: [:],
-            capturedAt: event.capturedAt
-        ))
+        continuation.yield(
+            HookEnvelope(
+                schemaVersion: 1,
+                provider: .claudeCode,
+                rawPayload: "{}",
+                parentPID: 100,
+                environment: [:],
+                capturedAt: event.capturedAt
+            ))
         await waitUntil { model.status(for: .claudeCode) == .active(lastEventAt: event.capturedAt) }
 
         model.uninstall(.claudeCode)
@@ -561,14 +568,15 @@ final class IntegrationSetupModelTests: XCTestCase {
         harness.manager.start()
         defer { harness.manager.stop() }
 
-        harness.continuation.yield(HookEnvelope(
-            schemaVersion: 1,
-            provider: .claudeCode,
-            rawPayload: "{}",
-            parentPID: harness.event.parentPID,
-            environment: [:],
-            capturedAt: harness.event.capturedAt
-        ))
+        harness.continuation.yield(
+            HookEnvelope(
+                schemaVersion: 1,
+                provider: .claudeCode,
+                rawPayload: "{}",
+                parentPID: harness.event.parentPID,
+                environment: [:],
+                capturedAt: harness.event.capturedAt
+            ))
 
         await waitUntil { !harness.speech.requests.isEmpty }
 
@@ -588,14 +596,15 @@ final class IntegrationSetupModelTests: XCTestCase {
         harness.manager.start()
         defer { harness.manager.stop() }
 
-        harness.continuation.yield(HookEnvelope(
-            schemaVersion: 1,
-            provider: .claudeCode,
-            rawPayload: "{}",
-            parentPID: harness.event.parentPID,
-            environment: [:],
-            capturedAt: harness.event.capturedAt
-        ))
+        harness.continuation.yield(
+            HookEnvelope(
+                schemaVersion: 1,
+                provider: .claudeCode,
+                rawPayload: "{}",
+                parentPID: harness.event.parentPID,
+                environment: [:],
+                capturedAt: harness.event.capturedAt
+            ))
 
         await waitUntil { model.latestResponseAvailable }
 
@@ -622,14 +631,15 @@ final class IntegrationSetupModelTests: XCTestCase {
         harness.manager.start()
         defer { harness.manager.stop() }
 
-        harness.continuation.yield(HookEnvelope(
-            schemaVersion: 1,
-            provider: .claudeCode,
-            rawPayload: "{}",
-            parentPID: harness.event.parentPID,
-            environment: [:],
-            capturedAt: harness.event.capturedAt
-        ))
+        harness.continuation.yield(
+            HookEnvelope(
+                schemaVersion: 1,
+                provider: .claudeCode,
+                rawPayload: "{}",
+                parentPID: harness.event.parentPID,
+                environment: [:],
+                capturedAt: harness.event.capturedAt
+            ))
 
         await waitUntil { model.latestResponseAvailable }
 

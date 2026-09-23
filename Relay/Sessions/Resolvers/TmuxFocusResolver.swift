@@ -10,8 +10,9 @@ struct TmuxFocusResolver: FocusResolver {
 
     func resolve(session: AgentSession, context: FocusContext) async -> FocusDecision {
         guard let frontmostPID = context.frontmostApplication?.pid,
-              let socket = session.terminalContext.tmuxSocketPath,
-              let producingPane = session.terminalContext.tmuxPaneID else {
+            let socket = session.terminalContext.tmuxSocketPath,
+            let producingPane = session.terminalContext.tmuxPaneID
+        else {
             return .unknown(resolverID: id, reason: "missing frontmost app or tmux identifiers")
         }
         guard let snapshot = context.processSnapshot else {

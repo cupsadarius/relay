@@ -45,7 +45,9 @@ struct HerdrHostOwnershipChecker: HerdrHostOwnershipChecking {
         guard FileManager.default.isExecutableFile(atPath: lsofExecutableURL.path) else { return false }
         // Bounded via the shared runner (stderr discarded, stdout drained, `lsofTimeout`).
         // Ownership is unproven on any failure, so the fallback is always `false`.
-        guard let result = try? await runner.run(executable: lsofExecutableURL, arguments: lsofArguments(pid), timeout: lsofTimeout, maxOutputBytes: 1024 * 1024) else {
+        guard
+            let result = try? await runner.run(executable: lsofExecutableURL, arguments: lsofArguments(pid), timeout: lsofTimeout, maxOutputBytes: 1024 * 1024)
+        else {
             return false
         }
         guard result.terminationStatus == 0 else { return false }

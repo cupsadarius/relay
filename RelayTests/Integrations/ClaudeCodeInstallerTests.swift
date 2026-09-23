@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Relay
 
 /// SAFETY: every test in this file points the installer at a unique
@@ -55,26 +56,31 @@ final class ClaudeCodeInstallerTests: XCTestCase {
     // MARK: - Identification logic
 
     func testRelayOwnedCommandRecognizedRegardlessOfAbsolutePath() {
-        XCTAssertTrue(ClaudeCodeInstaller.isRelayHookCommand(
-            "\"/Applications/Relay.app/Contents/Helpers/RelayHook\" --provider claude-code"
-        ))
-        XCTAssertTrue(ClaudeCodeInstaller.isRelayHookCommand(
-            "\"/Users/me/Downloads/Relay 2.app/Contents/Helpers/RelayHook\" --provider claude-code"
-        ))
+        XCTAssertTrue(
+            ClaudeCodeInstaller.isRelayHookCommand(
+                "\"/Applications/Relay.app/Contents/Helpers/RelayHook\" --provider claude-code"
+            ))
+        XCTAssertTrue(
+            ClaudeCodeInstaller.isRelayHookCommand(
+                "\"/Users/me/Downloads/Relay 2.app/Contents/Helpers/RelayHook\" --provider claude-code"
+            ))
     }
 
     func testUnrelatedCommandsAreNotRecognizedAsRelayOwned() {
         XCTAssertFalse(ClaudeCodeInstaller.isRelayHookCommand("echo hello"))
-        XCTAssertFalse(ClaudeCodeInstaller.isRelayHookCommand(
-            "\"/usr/local/bin/some-other-tool\" --provider claude-code"
-        ))
-        XCTAssertFalse(ClaudeCodeInstaller.isRelayHookCommand(
-            "\"/Applications/Relay.app/Contents/Helpers/RelayHook\" --provider codex"
-        ))
+        XCTAssertFalse(
+            ClaudeCodeInstaller.isRelayHookCommand(
+                "\"/usr/local/bin/some-other-tool\" --provider claude-code"
+            ))
+        XCTAssertFalse(
+            ClaudeCodeInstaller.isRelayHookCommand(
+                "\"/Applications/Relay.app/Contents/Helpers/RelayHook\" --provider codex"
+            ))
         // Same basename, but not the Relay flag suffix.
-        XCTAssertFalse(ClaudeCodeInstaller.isRelayHookCommand(
-            "\"/Applications/Relay.app/Contents/Helpers/RelayHook\""
-        ))
+        XCTAssertFalse(
+            ClaudeCodeInstaller.isRelayHookCommand(
+                "\"/Applications/Relay.app/Contents/Helpers/RelayHook\""
+            ))
     }
 
     // MARK: - Base directory resolution
@@ -111,9 +117,10 @@ final class ClaudeCodeInstallerTests: XCTestCase {
     }
 
     func testStatusIsNotInstalledWhenSettingsExistButRelayHookIsAbsent() throws {
-        try writeRawSettings(#"""
-        { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] } ] } }
-        """#)
+        try writeRawSettings(
+            #"""
+            { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] } ] } }
+            """#)
         XCTAssertEqual(try makeInstaller().status(), .notInstalled)
     }
 

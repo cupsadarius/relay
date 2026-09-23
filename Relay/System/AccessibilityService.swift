@@ -5,11 +5,13 @@ import ApplicationServices
 enum SystemAccessibility {
     static func focusedElementValue() -> CFTypeRef? {
         var focusedValue: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
-            AXUIElementCreateSystemWide(),
-            kAXFocusedUIElementAttribute as CFString,
-            &focusedValue
-        ) == .success else { return nil }
+        guard
+            AXUIElementCopyAttributeValue(
+                AXUIElementCreateSystemWide(),
+                kAXFocusedUIElementAttribute as CFString,
+                &focusedValue
+            ) == .success
+        else { return nil }
         return focusedValue
     }
 

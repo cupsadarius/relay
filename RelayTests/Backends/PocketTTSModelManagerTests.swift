@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+
 @testable import Relay
 
 final class PocketTTSModelManagerTests: XCTestCase {
@@ -43,8 +44,7 @@ private actor FakeManagerPocketEngine: PocketTTSEngine {
     func modelsArePresent() async -> Bool { present }
     func removeModels() async throws { removeCount += 1; present = false }
     func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws {
-        if allowDownload { downloadCount += 1; present = true; progress(1) }
-        else { localCount += 1 }
+        if allowDownload { downloadCount += 1; present = true; progress(1) } else { localCount += 1 }
     }
     func synthesizeStream(text: String, voice: String) async throws -> AsyncThrowingStream<[Float], Error> {
         AsyncThrowingStream { $0.finish() }

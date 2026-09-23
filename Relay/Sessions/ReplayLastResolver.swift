@@ -33,8 +33,9 @@ struct ReplayLastResolver {
             return .focusedSession(focused)
         }
         if let frontmostPID = await frontmostApps.current()?.pid,
-           sessions.contains(where: { $0.processAncestry.contains(frontmostPID) }),
-           globalLatestAvailable() {
+            sessions.contains(where: { $0.processAncestry.contains(frontmostPID) }),
+            globalLatestAvailable()
+        {
             return .globalLatest
         }
         return .lastSpoken

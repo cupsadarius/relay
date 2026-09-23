@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Relay
 
 /// SAFETY: every test targets a unique temporary directory created in `setUp` and removed in
@@ -64,18 +65,21 @@ final class StopHookConfigFileTests: XCTestCase {
     // MARK: - Identification
 
     func testRelayOwnedCommandIsProviderSpecificAndPathIndependent() {
-        XCTAssertTrue(StopHookConfigFile.isRelayHookCommand(
-            "\"/Users/me/Downloads/Relay 2.app/Contents/Helpers/RelayHook\" --provider claude-code",
-            provider: .claudeCode
-        ))
-        XCTAssertFalse(StopHookConfigFile.isRelayHookCommand(
-            "\"/Applications/Relay.app/Contents/Helpers/RelayHook\" --provider claude-code",
-            provider: .codex
-        ))
-        XCTAssertFalse(StopHookConfigFile.isRelayHookCommand(
-            "\"/usr/local/bin/other\" --provider codex",
-            provider: .codex
-        ))
+        XCTAssertTrue(
+            StopHookConfigFile.isRelayHookCommand(
+                "\"/Users/me/Downloads/Relay 2.app/Contents/Helpers/RelayHook\" --provider claude-code",
+                provider: .claudeCode
+            ))
+        XCTAssertFalse(
+            StopHookConfigFile.isRelayHookCommand(
+                "\"/Applications/Relay.app/Contents/Helpers/RelayHook\" --provider claude-code",
+                provider: .codex
+            ))
+        XCTAssertFalse(
+            StopHookConfigFile.isRelayHookCommand(
+                "\"/usr/local/bin/other\" --provider codex",
+                provider: .codex
+            ))
     }
 
     // MARK: - Install
@@ -99,19 +103,20 @@ final class StopHookConfigFileTests: XCTestCase {
     }
 
     func testInstallAppendsToExistingUnrelatedStopHookWithoutDeletingIt() throws {
-        try writeRaw(#"""
-        {
-          "otherTopLevelKey": true,
-          "hooks": {
-            "Stop": [
-              { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] }
-            ],
-            "PreToolUse": [
-              { "matcher": "Bash", "hooks": [ { "type": "command", "command": "/usr/local/bin/audit.sh" } ] }
-            ]
-          }
-        }
-        """#)
+        try writeRaw(
+            #"""
+            {
+              "otherTopLevelKey": true,
+              "hooks": {
+                "Stop": [
+                  { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] }
+                ],
+                "PreToolUse": [
+                  { "matcher": "Bash", "hooks": [ { "type": "command", "command": "/usr/local/bin/audit.sh" } ] }
+                ]
+              }
+            }
+            """#)
 
         try makeFile().install()
 
@@ -173,9 +178,10 @@ final class StopHookConfigFileTests: XCTestCase {
     }
 
     func testInstallThrowsWhenHooksStopContainsNonObjectElementAndLeavesFileUntouched() throws {
-        try writeRaw(#"""
-        { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] }, 123 ] } }
-        """#)
+        try writeRaw(
+            #"""
+            { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] }, 123 ] } }
+            """#)
         let before = try Data(contentsOf: fileURL)
 
         XCTAssertThrowsError(try makeFile().install()) { error in
@@ -185,16 +191,17 @@ final class StopHookConfigFileTests: XCTestCase {
     }
 
     func testInstallMigratesStaleEntryInPlacePreservingItsOtherKeys() throws {
-        try writeRaw(#"""
-        {
-          "hooks": {
-            "Stop": [
-              { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] },
-              { "hooks": [ { "type": "command", "command": "\"/old/App.app/Contents/Helpers/RelayHook\" --provider codex", "timeout": 7 } ] }
-            ]
-          }
-        }
-        """#)
+        try writeRaw(
+            #"""
+            {
+              "hooks": {
+                "Stop": [
+                  { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] },
+                  { "hooks": [ { "type": "command", "command": "\"/old/App.app/Contents/Helpers/RelayHook\" --provider codex", "timeout": 7 } ] }
+                ]
+              }
+            }
+            """#)
 
         try makeFile(provider: .codex, timeout: 3).install()
 
@@ -206,9 +213,10 @@ final class StopHookConfigFileTests: XCTestCase {
     }
 
     func testInstallIgnoresTheOtherProvidersRelayEntry() throws {
-        try writeRaw(#"""
-        { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "\"/x/RelayHook\" --provider codex" } ] } ] } }
-        """#)
+        try writeRaw(
+            #"""
+            { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "\"/x/RelayHook\" --provider codex" } ] } ] } }
+            """#)
 
         try makeFile(provider: .claudeCode).install()
 
@@ -221,9 +229,10 @@ final class StopHookConfigFileTests: XCTestCase {
     // MARK: - Uninstall
 
     func testUninstallRemovesOnlyRelayCommandLeavingOthersIntact() throws {
-        try writeRaw(#"""
-        { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] } ] } }
-        """#)
+        try writeRaw(
+            #"""
+            { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] } ] } }
+            """#)
         let file = makeFile()
         try file.install()
         try file.uninstall()
@@ -232,9 +241,10 @@ final class StopHookConfigFileTests: XCTestCase {
     }
 
     func testUninstallKeepsGroupsThatHaveOtherKeys() throws {
-        try writeRaw(#"""
-        { "hooks": { "Stop": [ { "matcher": "", "hooks": [ { "type": "command", "command": "\"\#(helperPath)\" --provider claude-code" } ] } ] } }
-        """#)
+        try writeRaw(
+            #"""
+            { "hooks": { "Stop": [ { "matcher": "", "hooks": [ { "type": "command", "command": "\"\#(helperPath)\" --provider claude-code" } ] } ] } }
+            """#)
 
         try makeFile().uninstall()
 
@@ -253,14 +263,15 @@ final class StopHookConfigFileTests: XCTestCase {
     }
 
     func testUninstallPreservesUnrelatedHookEvents() throws {
-        try writeRaw(#"""
-        {
-          "hooks": {
-            "Stop": [ { "hooks": [ { "type": "command", "command": "\"\#(helperPath)\" --provider claude-code" } ] } ],
-            "PreToolUse": [ { "matcher": "Bash", "hooks": [ { "type": "command", "command": "/usr/local/bin/audit.sh" } ] } ]
-          }
-        }
-        """#)
+        try writeRaw(
+            #"""
+            {
+              "hooks": {
+                "Stop": [ { "hooks": [ { "type": "command", "command": "\"\#(helperPath)\" --provider claude-code" } ] } ],
+                "PreToolUse": [ { "matcher": "Bash", "hooks": [ { "type": "command", "command": "/usr/local/bin/audit.sh" } ] } ]
+              }
+            }
+            """#)
 
         try makeFile().uninstall()
 
@@ -275,9 +286,10 @@ final class StopHookConfigFileTests: XCTestCase {
     }
 
     func testUninstallDoesNotRewriteFileWhenNoRelayHookIsPresent() throws {
-        try writeRaw(#"""
-        { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] } ] } }
-        """#)
+        try writeRaw(
+            #"""
+            { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] } ] } }
+            """#)
         let before = try Data(contentsOf: fileURL)
 
         try makeFile().uninstall()
@@ -465,9 +477,10 @@ final class StopHookConfigFileTests: XCTestCase {
     }
 
     private func writeLegacyEntry() throws {
-        try writeRaw(#"""
-        { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "\"/Applications/Old Relay.app/Contents/Helpers/RelayHook\" --provider codex", "timeout": 7 } ] } ] } }
-        """#)
+        try writeRaw(
+            #"""
+            { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "\"/Applications/Old Relay.app/Contents/Helpers/RelayHook\" --provider codex", "timeout": 7 } ] } ] } }
+            """#)
     }
 
     func testOwnershipClassification() {
@@ -528,13 +541,14 @@ final class StopHookConfigFileTests: XCTestCase {
     }
 
     func testReleaseMigratesTheFirstOfSeveralLegacyEntriesAndDropsTheRest() throws {
-        try writeRaw(#"""
-        { "hooks": { "Stop": [
-          { "hooks": [ { "type": "command", "command": "\"/Applications/Old Relay.app/Contents/Helpers/RelayHook\" --provider codex", "timeout": 7 } ] },
-          { "hooks": [ { "type": "command", "command": "\"/Users/test/Library/Developer/Xcode/DerivedData/Relay-abc/Build/Products/Debug/Relay.app/Contents/Helpers/RelayHook\" --provider codex" } ] },
-          { "matcher": "keep", "hooks": [ { "type": "command", "command": "echo other" } ] }
-        ] } }
-        """#)
+        try writeRaw(
+            #"""
+            { "hooks": { "Stop": [
+              { "hooks": [ { "type": "command", "command": "\"/Applications/Old Relay.app/Contents/Helpers/RelayHook\" --provider codex", "timeout": 7 } ] },
+              { "hooks": [ { "type": "command", "command": "\"/Users/test/Library/Developer/Xcode/DerivedData/Relay-abc/Build/Products/Debug/Relay.app/Contents/Helpers/RelayHook\" --provider codex" } ] },
+              { "matcher": "keep", "hooks": [ { "type": "command", "command": "echo other" } ] }
+            ] } }
+            """#)
 
         try buildFile(.release).install()
 
@@ -574,9 +588,9 @@ final class StopHookConfigFileTests: XCTestCase {
 
     func testReleaseMigratesLegacyOnceAndNeverTouchesTheDebugEntry() throws {
         try writeLegacyEntry()
-        try buildFile(.debug).install()          // legacy + debug
-        try buildFile(.release).install()        // migrates legacy -> release
-        try buildFile(.release).install()        // no-op
+        try buildFile(.debug).install() // legacy + debug
+        try buildFile(.release).install() // migrates legacy -> release
+        try buildFile(.release).install() // no-op
 
         XCTAssertEqual(
             Set(commandStrings(stopGroups(try readJSON()))),
@@ -585,12 +599,13 @@ final class StopHookConfigFileTests: XCTestCase {
     }
 
     func testReleaseLeavesLegacyEntryAloneWhenItAlreadyHasItsOwn() throws {
-        try writeRaw(#"""
-        { "hooks": { "Stop": [
-          { "hooks": [ { "type": "command", "command": "\"/Users/test/Library/Application Support/Relay/bin/RelayHook\" --provider codex" } ] },
-          { "hooks": [ { "type": "command", "command": "\"/Applications/Old Relay.app/Contents/Helpers/RelayHook\" --provider codex" } ] }
-        ] } }
-        """#)
+        try writeRaw(
+            #"""
+            { "hooks": { "Stop": [
+              { "hooks": [ { "type": "command", "command": "\"/Users/test/Library/Application Support/Relay/bin/RelayHook\" --provider codex" } ] },
+              { "hooks": [ { "type": "command", "command": "\"/Applications/Old Relay.app/Contents/Helpers/RelayHook\" --provider codex" } ] }
+            ] } }
+            """#)
         let before = try Data(contentsOf: fileURL)
 
         try buildFile(.release).install()

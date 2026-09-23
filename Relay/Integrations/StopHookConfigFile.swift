@@ -211,8 +211,9 @@ struct StopHookConfigFile: Sendable {
     /// Whether any `Stop` group currently contains a Relay-owned command for `provider`.
     func containsRelayEntry() throws -> Bool {
         guard let root = try readIfExists(),
-              let hooks = root["hooks"] as? [String: Any],
-              let stopGroups = hooks["Stop"] as? [[String: Any]] else {
+            let hooks = root["hooks"] as? [String: Any],
+            let stopGroups = hooks["Stop"] as? [[String: Any]]
+        else {
             return false
         }
         return stopGroups.contains { group in
@@ -224,7 +225,8 @@ struct StopHookConfigFile: Sendable {
 
     private func ownership(ofEntry entry: [String: Any]) -> EntryOwnership? {
         guard entry["type"] as? String == "command",
-              let command = entry["command"] as? String else { return nil }
+            let command = entry["command"] as? String
+        else { return nil }
         return ownership(ofCommand: command)
     }
 
@@ -316,7 +318,8 @@ struct StopHookConfigFile: Sendable {
             guard let destination = try? FileManager.default.destinationOfSymbolicLink(atPath: current.path) else {
                 return current
             }
-            current = destination.hasPrefix("/")
+            current =
+                destination.hasPrefix("/")
                 ? URL(fileURLWithPath: destination)
                 : current.deletingLastPathComponent().appendingPathComponent(destination)
         }

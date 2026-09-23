@@ -68,8 +68,8 @@ struct RulesSpeechPreprocessor {
 
     private func openingFence(in line: Substring) -> Fence? {
         guard let content = markdownIndentedContent(line),
-              let marker = content.first,
-              marker == "`" || marker == "~"
+            let marker = content.first,
+            marker == "`" || marker == "~"
         else {
             return nil
         }

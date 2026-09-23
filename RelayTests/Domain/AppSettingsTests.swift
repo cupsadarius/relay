@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Relay
 
 final class AppSettingsTests: XCTestCase {
@@ -82,11 +83,13 @@ final class AppSettingsTests: XCTestCase {
 
         let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
 
-        XCTAssertEqual(decoded.voiceByBackend, [
-            "apple-tts": "com.apple.voice.x",
-            "kokoro": "am_adam",
-            "pocket-tts": "alba",
-        ])
+        XCTAssertEqual(
+            decoded.voiceByBackend,
+            [
+                "apple-tts": "com.apple.voice.x",
+                "kokoro": "am_adam",
+                "pocket-tts": "alba",
+            ])
         XCTAssertEqual(decoded.dictationMode, .toggle)
         XCTAssertEqual(decoded.schemaVersion, AppSettings.currentSchemaVersion)
     }
@@ -159,13 +162,15 @@ final class AppSettingsTests: XCTestCase {
 
     func testDefaultsUsePhaseOneBackendsAndExpectedHotkeys() {
         XCTAssertEqual(AppSettings.defaults.dictationMode, .holdToTalk)
-        XCTAssertEqual(AppSettings.defaults.hotkeys, [
-            .dictate: .modifierOnly(.function),
-            .readSelection: .chord(keyCode: 15, modifiers: [.option]),
-            .stopSpeech: .chord(keyCode: 53, modifiers: []),
-            .replayLast: .chord(keyCode: 15, modifiers: [.option, .shift]),
-            .toggleAutoRead: .chord(keyCode: 0, modifiers: [.option, .shift]),
-        ])
+        XCTAssertEqual(
+            AppSettings.defaults.hotkeys,
+            [
+                .dictate: .modifierOnly(.function),
+                .readSelection: .chord(keyCode: 15, modifiers: [.option]),
+                .stopSpeech: .chord(keyCode: 53, modifiers: []),
+                .replayLast: .chord(keyCode: 15, modifiers: [.option, .shift]),
+                .toggleAutoRead: .chord(keyCode: 0, modifiers: [.option, .shift]),
+            ])
         XCTAssertEqual(AppSettings.defaults.sttBackendOrder, ["apple-speech"])
         XCTAssertEqual(AppSettings.defaults.ttsBackendOrder, ["pocket-tts", "apple-tts", "kokoro"])
         XCTAssertTrue(AppSettings.defaults.voiceByBackend.isEmpty)

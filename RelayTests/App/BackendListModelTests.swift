@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Relay
 
 @MainActor
@@ -24,7 +25,9 @@ final class BackendListModelTests: XCTestCase {
                 BackendListEntry(id: id, displayName: id.uppercased(), availability: { availability[id] ?? .available })
             },
             order: { [unowned self] in order },
-            setOrder: { [unowned self] in order = $0; writes.append($0) },
+            setOrder: { [unowned self] in
+                order = $0; writes.append($0)
+            },
             refusalMessage: refusal,
             statusSink: statusSink
         )
@@ -176,7 +179,9 @@ final class BackendListModelTests: XCTestCase {
                 BackendListEntry(id: "b", displayName: "B", availability: { .available }),
             ],
             order: { [unowned self] in order },
-            setOrder: { [unowned self] in order = $0; writes.append($0) },
+            setOrder: { [unowned self] in
+                order = $0; writes.append($0)
+            },
             refusalMessage: "",
             statusSink: statusSink
         )

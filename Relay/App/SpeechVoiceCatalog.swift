@@ -24,7 +24,9 @@ struct SpeechVoiceCatalog {
         recommendedKokoroVoice: String = TtsConstants.recommendedVoice,
         pocketVoice: String = PocketTtsConstants.defaultVoice
     ) {
-        self.appleVoices = appleVoices ?? AVSpeechSynthesisVoice.speechVoices()
+        self.appleVoices =
+            appleVoices
+            ?? AVSpeechSynthesisVoice.speechVoices()
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             .map {
                 SpeechVoiceOption(
@@ -86,7 +88,7 @@ struct SpeechVoiceCatalog {
 
     func options(for voiceID: String, backendID: String, settings: AppSettings) -> TTSOptions? {
         guard BackendID.allTextToSpeech.contains(BackendID(rawValue: backendID)),
-              let mapped = storedValue(for: voiceID, backendID: backendID)
+            let mapped = storedValue(for: voiceID, backendID: backendID)
         else { return nil }
         var previewSettings = settings
         previewSettings.voiceByBackend[backendID] = mapped

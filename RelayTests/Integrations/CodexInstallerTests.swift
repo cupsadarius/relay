@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Relay
 
 /// SAFETY: every test in this file points the installer at a unique
@@ -68,26 +69,31 @@ final class CodexInstallerTests: XCTestCase {
     // MARK: - Identification logic
 
     func testRelayOwnedCommandRecognizedRegardlessOfAbsolutePath() {
-        XCTAssertTrue(CodexInstaller.isRelayHookCommand(
-            "\"/Applications/Relay.app/Contents/Helpers/RelayHook\" --provider codex"
-        ))
-        XCTAssertTrue(CodexInstaller.isRelayHookCommand(
-            "\"/Users/me/Downloads/Relay 2.app/Contents/Helpers/RelayHook\" --provider codex"
-        ))
+        XCTAssertTrue(
+            CodexInstaller.isRelayHookCommand(
+                "\"/Applications/Relay.app/Contents/Helpers/RelayHook\" --provider codex"
+            ))
+        XCTAssertTrue(
+            CodexInstaller.isRelayHookCommand(
+                "\"/Users/me/Downloads/Relay 2.app/Contents/Helpers/RelayHook\" --provider codex"
+            ))
     }
 
     func testUnrelatedCommandsAreNotRecognizedAsRelayOwned() {
         XCTAssertFalse(CodexInstaller.isRelayHookCommand("echo hello"))
-        XCTAssertFalse(CodexInstaller.isRelayHookCommand(
-            "\"/usr/local/bin/some-other-tool\" --provider codex"
-        ))
-        XCTAssertFalse(CodexInstaller.isRelayHookCommand(
-            "\"/Applications/Relay.app/Contents/Helpers/RelayHook\" --provider claude-code"
-        ))
+        XCTAssertFalse(
+            CodexInstaller.isRelayHookCommand(
+                "\"/usr/local/bin/some-other-tool\" --provider codex"
+            ))
+        XCTAssertFalse(
+            CodexInstaller.isRelayHookCommand(
+                "\"/Applications/Relay.app/Contents/Helpers/RelayHook\" --provider claude-code"
+            ))
         // Same basename, but not the Relay flag suffix.
-        XCTAssertFalse(CodexInstaller.isRelayHookCommand(
-            "\"/Applications/Relay.app/Contents/Helpers/RelayHook\""
-        ))
+        XCTAssertFalse(
+            CodexInstaller.isRelayHookCommand(
+                "\"/Applications/Relay.app/Contents/Helpers/RelayHook\""
+            ))
     }
 
     // MARK: - Base directory resolution
@@ -128,9 +134,10 @@ final class CodexInstallerTests: XCTestCase {
     }
 
     func testStatusIsNotInstalledWhenHooksExistButRelayHookIsAbsent() throws {
-        try writeRawHooks(#"""
-        { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] } ] } }
-        """#)
+        try writeRawHooks(
+            #"""
+            { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] } ] } }
+            """#)
         XCTAssertEqual(try makeInstaller().status(), .notInstalled)
     }
 
@@ -165,13 +172,15 @@ final class CodexInstallerTests: XCTestCase {
     // MARK: - config.toml `[features] hooks = false`
 
     func testInstallThrowsAndLeavesHooksFileUntouchedWhenConfigTomlDisablesHooks() throws {
-        try writeRawHooks(#"""
-        { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] } ] } }
-        """#)
-        try writeConfigToml(#"""
-        [features]
-        hooks = false
-        """#)
+        try writeRawHooks(
+            #"""
+            { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] } ] } }
+            """#)
+        try writeConfigToml(
+            #"""
+            [features]
+            hooks = false
+            """#)
         let bytesBefore = try Data(contentsOf: hooksURL)
 
         XCTAssertThrowsError(try makeInstaller().install()) { error in
@@ -183,9 +192,10 @@ final class CodexInstallerTests: XCTestCase {
     }
 
     func testInstallThrowsAndLeavesHooksFileUntouchedWhenConfigTomlDisablesHooksWithCRLFLineEndings() throws {
-        try writeRawHooks(#"""
-        { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] } ] } }
-        """#)
+        try writeRawHooks(
+            #"""
+            { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] } ] } }
+            """#)
         try writeConfigToml("[features]\r\nhooks = false\r\n")
         let bytesBefore = try Data(contentsOf: hooksURL)
 
@@ -202,56 +212,62 @@ final class CodexInstallerTests: XCTestCase {
     }
 
     func testInstallSucceedsWhenConfigTomlHooksIsCommentedOut() throws {
-        try writeConfigToml(#"""
-        [features]
-        # hooks = false
-        """#)
+        try writeConfigToml(
+            #"""
+            [features]
+            # hooks = false
+            """#)
 
         XCTAssertNoThrow(try makeInstaller().install())
     }
 
     func testInstallSucceedsWhenFeaturesHeaderLineIsCommentedOut() throws {
-        try writeConfigToml(#"""
-        # [features]
-        hooks = false
-        """#)
+        try writeConfigToml(
+            #"""
+            # [features]
+            hooks = false
+            """#)
 
         XCTAssertNoThrow(try makeInstaller().install())
     }
 
     func testInstallSucceedsWhenHooksFalseIsUnderADifferentTable() throws {
-        try writeConfigToml(#"""
-        [other]
-        hooks = false
-        """#)
+        try writeConfigToml(
+            #"""
+            [other]
+            hooks = false
+            """#)
 
         XCTAssertNoThrow(try makeInstaller().install())
     }
 
     func testInstallSucceedsWhenHooksFalseIsUnderANestedFeaturesTable() throws {
-        try writeConfigToml(#"""
-        [features.experimental]
-        hooks = false
-        """#)
+        try writeConfigToml(
+            #"""
+            [features.experimental]
+            hooks = false
+            """#)
 
         XCTAssertNoThrow(try makeInstaller().install())
     }
 
     func testInstallSucceedsWhenFeaturesHooksIsTrue() throws {
-        try writeConfigToml(#"""
-        [features]
-        hooks = true
-        """#)
+        try writeConfigToml(
+            #"""
+            [features]
+            hooks = true
+            """#)
 
         XCTAssertNoThrow(try makeInstaller().install())
     }
 
     func testInstallSucceedsWithInlineCommentAfterHooksFalseIsStillDetectedAsDisabled() throws {
         // An inline trailing comment must not hide a real disable.
-        try writeConfigToml(#"""
-        [features]
-        hooks = false # temporarily disabled
-        """#)
+        try writeConfigToml(
+            #"""
+            [features]
+            hooks = false # temporarily disabled
+            """#)
 
         XCTAssertThrowsError(try makeInstaller().install()) { error in
             XCTAssertEqual(error as? IntegrationInstallerError, .hooksDisabledInConfig)
@@ -259,10 +275,11 @@ final class CodexInstallerTests: XCTestCase {
     }
 
     func testStatusReportsConfigurationErrorWhenConfigTomlDisablesHooks() throws {
-        try writeConfigToml(#"""
-        [features]
-        hooks = false
-        """#)
+        try writeConfigToml(
+            #"""
+            [features]
+            hooks = false
+            """#)
 
         XCTAssertEqual(
             try makeInstaller().status(),

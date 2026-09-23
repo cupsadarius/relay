@@ -70,8 +70,8 @@ final class KokoroTTSBackend: TextToSpeechBackend {
         case KokoroEngineError.loadFailed:
             .initializationFailed("Kokoro model load failed")
         case KokoroEngineError.synthesisFailed,
-             KokoroEngineError.textTooLong,
-             KokoroEngineError.acousticFramesTooLong:
+            KokoroEngineError.textTooLong,
+            KokoroEngineError.acousticFramesTooLong:
             .inferenceFailed("Kokoro synthesis failed")
         default:
             .initializationFailed("Kokoro model load failed")

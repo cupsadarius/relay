@@ -36,8 +36,10 @@ actor AgentSessionRegistry {
     ///
     /// PID reuse can produce a false negative here (a dead agent's pid gets recycled by an
     /// unrelated live process before this runs) — the TTL check is the backstop for that case.
-    func prune(now: Date = Date(), ttl: TimeInterval = AgentSessionRegistry.defaultTTL,
-               isAlive: @Sendable (Int32) -> Bool) {
+    func prune(
+        now: Date = Date(), ttl: TimeInterval = AgentSessionRegistry.defaultTTL,
+        isAlive: @Sendable (Int32) -> Bool
+    ) {
         for (id, session) in values {
             let agentPID = session.processAncestry.first
             let dead = agentPID.map { !isAlive($0) } ?? false

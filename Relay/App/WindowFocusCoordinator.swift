@@ -29,7 +29,9 @@ final class WindowFocusCoordinator {
     private let finder: any RelayWindowFinding
     private let scheduler: any RelayMainLoopScheduling
 
-    init(application: any RelayApplicationActivating, windows: any RelayWindowPresenting, finder: any RelayWindowFinding, scheduler: any RelayMainLoopScheduling) {
+    init(
+        application: any RelayApplicationActivating, windows: any RelayWindowPresenting, finder: any RelayWindowFinding, scheduler: any RelayMainLoopScheduling
+    ) {
         self.application = application
         self.windows = windows
         self.finder = finder
@@ -124,4 +126,6 @@ final class RelayAppKitWindow: RelayWindowFocusing {
     func makeKeyAndOrderFront() { window.makeKeyAndOrderFront(nil) }
 }
 
-@MainActor struct MainLoopScheduler: RelayMainLoopScheduling { func schedule(_ action: @escaping @MainActor @Sendable () -> Void) { DispatchQueue.main.async(execute: action) } }
+@MainActor struct MainLoopScheduler: RelayMainLoopScheduling {
+    func schedule(_ action: @escaping @MainActor @Sendable () -> Void) { DispatchQueue.main.async(execute: action) }
+}

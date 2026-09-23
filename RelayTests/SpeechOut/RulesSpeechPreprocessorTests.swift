@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Relay
 
 final class RulesSpeechPreprocessorTests: XCTestCase {
@@ -8,16 +9,16 @@ final class RulesSpeechPreprocessorTests: XCTestCase {
     func testAutomaticModeReplacesShortAndLongFencedCodeBlocks() {
         let longCode = String(repeating: "let value = 1; ", count: 12)
         let source = """
-        Before.
-        ```swift
-        print(1)
-        ```
-        Between.
-        ```swift
-        \(longCode)
-        ```
-        After.
-        """
+            Before.
+            ```swift
+            print(1)
+            ```
+            Between.
+            ```swift
+            \(longCode)
+            ```
+            After.
+            """
 
         let output = subject.prepare(text: source, mode: .automatic)
 
@@ -32,16 +33,16 @@ final class RulesSpeechPreprocessorTests: XCTestCase {
     func testUserRequestedModeReplacesShortAndLongFencedCodeBlocks() {
         let longCode = String(repeating: "let value = 1; ", count: 12)
         let source = """
-        Before.
-        ```swift
-        print(1)
-        ```
-        Between.
-        ```swift
-        \(longCode)
-        ```
-        After.
-        """
+            Before.
+            ```swift
+            print(1)
+            ```
+            Between.
+            ```swift
+            \(longCode)
+            ```
+            After.
+            """
 
         let output = subject.prepare(text: source, mode: .userRequested)
 
@@ -55,9 +56,9 @@ final class RulesSpeechPreprocessorTests: XCTestCase {
 
     func testRemovesMarkdownDecorationAndKeepsReadableText() {
         let source = """
-        ## **Release** notes
-        > Read [the migration guide](https://example.com/guide) and `run tests`.
-        """
+            ## **Release** notes
+            > Read [the migration guide](https://example.com/guide) and `run tests`.
+            """
 
         XCTAssertEqual(
             subject.prepare(text: source, mode: .automatic),
@@ -67,11 +68,11 @@ final class RulesSpeechPreprocessorTests: XCTestCase {
 
     func testConvertsBulletsToSentenceBreaks() {
         let source = """
-        Shopping list:
-        - apples
-        * pears
-        + plums
-        """
+            Shopping list:
+            - apples
+            * pears
+            + plums
+            """
 
         XCTAssertEqual(
             subject.prepare(text: source, mode: .automatic),
@@ -90,10 +91,10 @@ final class RulesSpeechPreprocessorTests: XCTestCase {
 
     func testAutomaticModeFailsClosedForUnclosedBacktickFence() {
         let source = """
-        Before.
-        ```swift
-        let secret = true
-        """
+            Before.
+            ```swift
+            let secret = true
+            """
 
         let output = subject.prepare(text: source, mode: .automatic)
 
@@ -104,10 +105,10 @@ final class RulesSpeechPreprocessorTests: XCTestCase {
 
     func testUserRequestedModeFailsClosedForUnclosedTildeFence() {
         let source = """
-        Before.
-          ~~~json
-          { "secret": true }
-        """
+            Before.
+              ~~~json
+              { "secret": true }
+            """
 
         let output = subject.prepare(text: source, mode: .userRequested)
 
@@ -118,14 +119,14 @@ final class RulesSpeechPreprocessorTests: XCTestCase {
 
     func testLongBacktickFenceIgnoresShorterRunsInsideItsContent() {
         let source = """
-        Before.
-        ````text
-        hidden start
-        ```
-        hidden end
-        ````
-        After.
-        """
+            Before.
+            ````text
+            hidden start
+            ```
+            hidden end
+            ````
+            After.
+            """
 
         let output = subject.prepare(text: source, mode: .automatic)
 
@@ -135,12 +136,12 @@ final class RulesSpeechPreprocessorTests: XCTestCase {
 
     func testTildeFenceIsRemovedInUserRequestedMode() {
         let source = """
-        Before.
-        ~~~swift
-        print("hidden")
-        ~~~
-        After.
-        """
+            Before.
+            ~~~swift
+            print("hidden")
+            ~~~
+            After.
+            """
 
         let output = subject.prepare(text: source, mode: .userRequested)
 
@@ -159,11 +160,11 @@ final class RulesSpeechPreprocessorTests: XCTestCase {
 
     func testRemovesClosingAndSetextHeadingMarkersAndNestedBlockquotes() {
         let source = """
-        ## Release notes ##
-        Migration guide
-        ---------------
-        >>> Read this now.
-        """
+            ## Release notes ##
+            Migration guide
+            ---------------
+            >>> Read this now.
+            """
 
         XCTAssertEqual(
             subject.prepare(text: source, mode: .automatic),

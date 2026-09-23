@@ -26,12 +26,13 @@ struct ClipboardSnapshot: Equatable {
                 if let data = item.data(forType: type) {
                     result[type.rawValue] = .data(data)
                 } else if let propertyList = item.propertyList(forType: type),
-                          PropertyListSerialization.propertyList(propertyList, isValidFor: .binary),
-                          let data = try? PropertyListSerialization.data(
-                              fromPropertyList: propertyList,
-                              format: .binary,
-                              options: 0
-                          ) {
+                    PropertyListSerialization.propertyList(propertyList, isValidFor: .binary),
+                    let data = try? PropertyListSerialization.data(
+                        fromPropertyList: propertyList,
+                        format: .binary,
+                        options: 0
+                    )
+                {
                     result[type.rawValue] = .propertyList(data)
                 }
             }
@@ -228,7 +229,7 @@ final class GeneralClipboardPasteboard: ClipboardPasteboard {
     func write(string: String, ownershipToken: Data) -> Bool {
         let item = NSPasteboardItem()
         guard item.setString(string, forType: .string),
-              item.setData(ownershipToken, forType: Self.ownershipTokenType)
+            item.setData(ownershipToken, forType: Self.ownershipTokenType)
         else { return false }
         pasteboard.clearContents()
         return pasteboard.writeObjects([item])
@@ -255,11 +256,13 @@ final class GeneralClipboardPasteboard: ClipboardPasteboard {
                 case let .data(data):
                     item.setData(data, forType: type)
                 case let .propertyList(data):
-                    guard let propertyList = try? PropertyListSerialization.propertyList(
-                        from: data,
-                        options: [],
-                        format: nil
-                    ) else { continue }
+                    guard
+                        let propertyList = try? PropertyListSerialization.propertyList(
+                            from: data,
+                            options: [],
+                            format: nil
+                        )
+                    else { continue }
                     item.setPropertyList(propertyList, forType: type)
                 }
             }
@@ -279,7 +282,7 @@ enum KeyCommandError: Error {
 /// these synthetic events like real keystrokes, so target apps accept them.
 @MainActor
 struct SystemKeyCommand: CopyCommandSending, PasteCommandSending {
-    static let copy = SystemKeyCommand(virtualKey: 8)  // kVK_ANSI_C
+    static let copy = SystemKeyCommand(virtualKey: 8) // kVK_ANSI_C
     static let paste = SystemKeyCommand(virtualKey: 9) // kVK_ANSI_V
 
     let virtualKey: CGKeyCode
@@ -289,8 +292,8 @@ struct SystemKeyCommand: CopyCommandSending, PasteCommandSending {
 
     private func post() throws {
         guard let source = CGEventSource(stateID: .combinedSessionState),
-              let keyDown = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: true),
-              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: false)
+            let keyDown = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: true),
+            let keyUp = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: false)
         else {
             throw KeyCommandError.eventCreationFailed
         }

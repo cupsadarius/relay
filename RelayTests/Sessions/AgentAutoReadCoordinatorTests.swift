@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Relay
 
 @MainActor
@@ -129,9 +130,10 @@ final class AgentAutoReadCoordinatorTests: XCTestCase {
 
         await coordinator.handle(makeAutoReadEvent(providerSessionID: "a", text: "Done."))
 
-        XCTAssertTrue(diagnostics.snapshot().contains {
-            $0.stage == "coordinator" && $0.outcome == "speak-failed" && $0.detail == "provider=claude-code"
-        })
+        XCTAssertTrue(
+            diagnostics.snapshot().contains {
+                $0.stage == "coordinator" && $0.outcome == "speak-failed" && $0.detail == "provider=claude-code"
+            })
     }
 
     func testAutoReadDisabledRecordsSilentDiagnosticsEntry() async {
@@ -281,11 +283,12 @@ final class AgentAutoReadCoordinatorTests: XCTestCase {
     /// The agent process itself may have no tty (e.g. its stdio is piped); the tty must come from
     /// the first ancestor UP the chain that has one, not just the agent's own snapshot record.
     func testEnvelopeAncestryTtyComesFromTheFirstAncestorThatHasOne() async {
-        let runner = FixedProcessTableRunner(table: """
-        900 800 ?? agent
-        800 700 ttys002 zsh
-        700 1 ?? Ghostty
-        """)
+        let runner = FixedProcessTableRunner(
+            table: """
+                900 800 ?? agent
+                800 700 ttys002 zsh
+                700 1 ?? Ghostty
+                """)
         let harness = makeCoordinatorHarness(
             focus: MutableStubFocusResolver(), speech: RecordingSpeechSink(), autoRead: true,
             processInspector: ProcessInspector(runner: runner)

@@ -134,8 +134,12 @@ final class WhisperRuntimeTests: XCTestCase {
         try await runtime.activate(.baseEn)
         try await runtime.activate(.baseEn)
 
-        let loadCount = log.all.filter { if case .loaded(.baseEn) = $0 { return true }; return false }.count
-        let unloadCount = log.all.filter { if case .unloaded = $0 { return true }; return false }.count
+        let loadCount = log.all.filter {
+            if case .loaded(.baseEn) = $0 { return true }; return false
+        }.count
+        let unloadCount = log.all.filter {
+            if case .unloaded = $0 { return true }; return false
+        }.count
         XCTAssertEqual(loadCount, 1)
         XCTAssertEqual(unloadCount, 0)
     }

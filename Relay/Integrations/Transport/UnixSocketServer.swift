@@ -412,7 +412,8 @@ final class UnixSocketServer: @unchecked Sendable {
         let nsError = error as NSError
         if nsError.domain == NSPOSIXErrorDomain { return Int32(nsError.code) }
         if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError,
-           underlying.domain == NSPOSIXErrorDomain {
+            underlying.domain == NSPOSIXErrorDomain
+        {
             return Int32(underlying.code)
         }
         return EIO

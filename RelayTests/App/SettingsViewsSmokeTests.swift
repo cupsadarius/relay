@@ -1,5 +1,6 @@
-import XCTest
 import SwiftUI
+import XCTest
+
 @testable import Relay
 
 final class SettingsViewsSmokeTests: XCTestCase {
@@ -78,7 +79,8 @@ final class SpeechModelRowPresentationTests: XCTestCase {
     }
 
     func testDownloadingShowsProgress() {
-        let status = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloading(progress: 0.42), isSelected: false)
+        let status = SpeechModelStatus(
+            descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloading(progress: 0.42), isSelected: false)
         let presentation = SpeechModelRowPresentation.make(status: status)
 
         XCTAssertEqual(presentation.stateLabel, "Downloading 42%")
@@ -98,27 +100,34 @@ final class SpeechModelRowPresentationTests: XCTestCase {
     }
 
     func testRemoveOfferedOnlyForInactiveDownloaded() {
-        let inactiveDownloaded = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloaded, isSelected: false)
+        let inactiveDownloaded = SpeechModelStatus(
+            descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloaded, isSelected: false)
         XCTAssertTrue(SpeechModelRowPresentation.make(status: inactiveDownloaded).canRemove)
 
-        let activeDownloaded = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloaded, isSelected: true)
+        let activeDownloaded = SpeechModelStatus(
+            descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloaded, isSelected: true)
         XCTAssertTrue(SpeechModelRowPresentation.make(status: activeDownloaded).canRemove)
 
-        let notDownloaded = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .notDownloaded, isSelected: false)
+        let notDownloaded = SpeechModelStatus(
+            descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .notDownloaded, isSelected: false)
         XCTAssertFalse(SpeechModelRowPresentation.make(status: notDownloaded).canRemove)
 
-        let downloading = SpeechModelStatus(descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloading(progress: 0.1), isSelected: false)
+        let downloading = SpeechModelStatus(
+            descriptor: descriptor(), capabilities: [.download, .select, .remove], installState: .downloading(progress: 0.1), isSelected: false)
         XCTAssertFalse(SpeechModelRowPresentation.make(status: downloading).canRemove)
     }
 
     func testEnglishVsMultilingualLabel() {
-        let english = SpeechModelStatus(descriptor: descriptor(detail: "English only"), capabilities: [.download, .select, .remove], installState: .notDownloaded, isSelected: false)
+        let english = SpeechModelStatus(
+            descriptor: descriptor(detail: "English only"), capabilities: [.download, .select, .remove], installState: .notDownloaded, isSelected: false)
         XCTAssertEqual(SpeechModelRowPresentation.make(status: english).detail, "English only")
 
-        let multilingual = SpeechModelStatus(descriptor: descriptor(detail: "Multilingual"), capabilities: [.download, .select, .remove], installState: .notDownloaded, isSelected: false)
+        let multilingual = SpeechModelStatus(
+            descriptor: descriptor(detail: "Multilingual"), capabilities: [.download, .select, .remove], installState: .notDownloaded, isSelected: false)
         XCTAssertEqual(SpeechModelRowPresentation.make(status: multilingual).detail, "Multilingual")
 
-        let missing = SpeechModelStatus(descriptor: descriptor(detail: nil), capabilities: [.download, .select, .remove], installState: .notDownloaded, isSelected: false)
+        let missing = SpeechModelStatus(
+            descriptor: descriptor(detail: nil), capabilities: [.download, .select, .remove], installState: .notDownloaded, isSelected: false)
         XCTAssertEqual(SpeechModelRowPresentation.make(status: missing).detail, "")
     }
 

@@ -6,10 +6,13 @@ struct DictationSettingsView: View {
     var body: some View {
         Form {
             Section("Dictation") {
-                Picker("Mode", selection: Binding(
-                    get: { model.settings.dictationMode },
-                    set: { model.settingsController.setDictationMode($0) }
-                )) {
+                Picker(
+                    "Mode",
+                    selection: Binding(
+                        get: { model.settings.dictationMode },
+                        set: { model.settingsController.setDictationMode($0) }
+                    )
+                ) {
                     ForEach(DictationMode.allCases, id: \.self) { mode in
                         Text(mode == .holdToTalk ? "Hold to Talk" : "Toggle").tag(mode)
                     }

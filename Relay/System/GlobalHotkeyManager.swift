@@ -1,5 +1,5 @@
-@preconcurrency import CoreGraphics
 @preconcurrency import CoreFoundation
+@preconcurrency import CoreGraphics
 import Foundation
 
 enum HotkeyPhase: Equatable, Sendable {
@@ -50,7 +50,7 @@ struct HotkeyMatcher {
             cancelPendingDoubleTap()
             guard !isRepeat else { return [] }
             guard let action = chordAction(keyCode: keyCode, modifiers: modifiers),
-                  activeChordActions.insert(action).inserted
+                activeChordActions.insert(action).inserted
             else { return [] }
             return [HotkeyInvocation(action: action, phase: .pressed)]
 
@@ -58,7 +58,7 @@ struct HotkeyMatcher {
             cancelPendingDoubleTap()
             let actions = HotkeyAction.allCases.filter { action in
                 guard activeChordActions.contains(action),
-                      case let .chord(definedKeyCode, _) = definitions[action]
+                    case let .chord(definedKeyCode, _) = definitions[action]
                 else { return false }
                 return definedKeyCode == keyCode
             }
@@ -120,7 +120,7 @@ struct HotkeyMatcher {
 
         case let .awaitingSecondPress(modifier, action, releasedAt):
             guard modifiers == [modifier],
-                  currentTime - releasedAt <= Self.doubleTapWindow
+                currentTime - releasedAt <= Self.doubleTapWindow
             else {
                 cancelPendingDoubleTap()
                 return []
@@ -130,9 +130,9 @@ struct HotkeyMatcher {
 
         case .idle:
             guard modifiers.count == 1,
-                  let modifier = modifiers.first,
-                  let action = doubleTapAction(for: modifier),
-                  !previousModifiers.contains(modifier)
+                let modifier = modifiers.first,
+                let action = doubleTapAction(for: modifier),
+                !previousModifiers.contains(modifier)
             else { return [] }
             doubleTapState = .firstPress(modifier, action, currentTime)
         }
@@ -186,7 +186,8 @@ protocol HotkeyManaging: AnyObject {
 
 @MainActor
 final class GlobalHotkeyManager: HotkeyManaging {
-    static let permissionFailureMessage = "Global hotkeys need Accessibility permission. Enable Relay in System Settings > Privacy & Security > Accessibility, then retry in Diagnostics. Input Monitoring is an alternative for listen-only access."
+    static let permissionFailureMessage =
+        "Global hotkeys need Accessibility permission. Enable Relay in System Settings > Privacy & Security > Accessibility, then retry in Diagnostics. Input Monitoring is an alternative for listen-only access."
 
     private let diagnostics: DiagnosticsRecorder?
     private var eventTap: CFMachPort?
@@ -246,7 +247,8 @@ final class GlobalHotkeyManager: HotkeyManaging {
             return .registered
         }
 
-        let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
+        let mask =
+            CGEventMask(1 << CGEventType.keyDown.rawValue)
             | CGEventMask(1 << CGEventType.keyUp.rawValue)
             | CGEventMask(1 << CGEventType.flagsChanged.rawValue)
         let pointer = Unmanaged.passUnretained(self).toOpaque()

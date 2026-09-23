@@ -15,8 +15,9 @@ struct ProcessSnapshot: Sendable {
         for raw in output.split(whereSeparator: \.isNewline) {
             let fields = raw.split(maxSplits: 3, whereSeparator: \.isWhitespace).map(String.init)
             guard fields.count == 4,
-                  let pid = Int32(fields[0]),
-                  let ppid = Int32(fields[1]) else { continue }
+                let pid = Int32(fields[0]),
+                let ppid = Int32(fields[1])
+            else { continue }
             let tty = fields[2] == "??" || fields[2] == "?" ? nil : fields[2]
             records[pid] = ProcessRecord(pid: pid, parentPID: ppid, tty: tty, command: fields[3])
         }

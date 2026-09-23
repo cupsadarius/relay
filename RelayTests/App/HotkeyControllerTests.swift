@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Relay
 
 @MainActor
@@ -18,9 +19,11 @@ final class HotkeyControllerTests: XCTestCase {
             hotkeyManager: hotkeys,
             dictationCoordinator: dictation
         )
-        let actions = SpeechActions(runtime: runtime, voiceCatalog: SpeechVoiceCatalog(
-            appleVoices: [], kokoroVoices: [], recommendedKokoroVoice: "af_heart", pocketVoice: "alba"
-        ))
+        let actions = SpeechActions(
+            runtime: runtime,
+            voiceCatalog: SpeechVoiceCatalog(
+                appleVoices: [], kokoroVoices: [], recommendedKokoroVoice: "af_heart", pocketVoice: "alba"
+            ))
         let controller = HotkeyController(runtime: runtime, speechActions: actions)
         controller.start()
         return (controller, runtime)

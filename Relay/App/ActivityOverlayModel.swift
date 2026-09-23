@@ -23,10 +23,10 @@ enum ActivityOverlayState: Equatable, Sendable {
         case .hidden:
             nil
         case let .listening(sessionID, _, _, _),
-             let .processing(sessionID, _),
-             let .preparingSpeech(sessionID, _),
-             let .speaking(sessionID, _, _),
-             let .error(sessionID, _, _):
+            let .processing(sessionID, _),
+            let .preparingSpeech(sessionID, _),
+            let .speaking(sessionID, _, _),
+            let .error(sessionID, _, _):
             sessionID
         }
     }
@@ -101,7 +101,8 @@ final class ActivityOverlayModel {
 
     func updateLevel(_ level: Float, sessionID: UUID) {
         guard case let .listening(activeSessionID, startedAt, _, interimText) = state,
-              activeSessionID == sessionID else { return }
+            activeSessionID == sessionID
+        else { return }
         setState(
             .listening(
                 sessionID: sessionID, startedAt: startedAt, level: min(max(level, 0), 1), interimText: interimText))
@@ -112,13 +113,15 @@ final class ActivityOverlayModel {
     /// processing) so a late update racing the stop of dictation cannot resurrect stale text.
     func updateInterimText(_ text: String, sessionID: UUID) {
         guard case let .listening(activeSessionID, startedAt, level, _) = state,
-              activeSessionID == sessionID else { return }
+            activeSessionID == sessionID
+        else { return }
         setState(.listening(sessionID: sessionID, startedAt: startedAt, level: level, interimText: text))
     }
 
     func process(sessionID: UUID) {
         guard case let .listening(activeSessionID, startedAt, _, _) = state,
-              activeSessionID == sessionID else { return }
+            activeSessionID == sessionID
+        else { return }
         setState(.processing(sessionID: sessionID, startedAt: startedAt))
     }
 
@@ -137,7 +140,8 @@ final class ActivityOverlayModel {
 
     func updateSpeakingLevel(_ level: Float, sessionID: UUID) {
         guard case let .speaking(activeID, startedAt, _) = state,
-              activeID == sessionID else { return }
+            activeID == sessionID
+        else { return }
         setState(.speaking(sessionID: sessionID, startedAt: startedAt, level: min(max(level, 0), 1)))
     }
 
@@ -153,8 +157,9 @@ final class ActivityOverlayModel {
         let generation = terminalGeneration
         scheduler.schedule(after: .milliseconds(180)) { [weak self] in
             guard self?.activeSessionID == sessionID,
-                  self?.isCompleting == true,
-                  self?.terminalGeneration == generation else { return }
+                self?.isCompleting == true,
+                self?.terminalGeneration == generation
+            else { return }
             self?.activeSessionID = nil
             self?.isCompleting = false
             self?.setState(.hidden)
@@ -176,7 +181,8 @@ final class ActivityOverlayModel {
         setState(.error(sessionID: sessionID, category: category, message: message))
         scheduler.schedule(after: .milliseconds(2_500)) { [weak self] in
             guard self?.activeSessionID == sessionID,
-                  self?.terminalGeneration == generation else { return }
+                self?.terminalGeneration == generation
+            else { return }
             self?.activeSessionID = nil
             self?.isCompleting = false
             self?.setState(.hidden)

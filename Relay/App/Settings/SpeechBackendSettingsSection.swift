@@ -57,8 +57,7 @@ struct SpeechBackendSettingsSection<ExpandedContent: View>: View {
         let enabledCount = backends.filter(\.isEnabled).count
         return HStack {
             Button {
-                if expanded { expandedBackendIDs.remove(backend.id) }
-                else { expandedBackendIDs.insert(backend.id) }
+                if expanded { expandedBackendIDs.remove(backend.id) } else { expandedBackendIDs.insert(backend.id) }
             } label: {
                 Image(systemName: expanded ? "chevron.down" : "chevron.right").frame(width: 12)
             }
@@ -71,8 +70,16 @@ struct SpeechBackendSettingsSection<ExpandedContent: View>: View {
             Toggle("", isOn: Binding(get: { backend.isEnabled }, set: { setEnabled(backend.id, $0) })).labelsHidden()
             if backend.isEnabled {
                 VStack(spacing: 2) {
-                    Button { move(backend.id, true) } label: { Image(systemName: "chevron.up") }.disabled(backend.position == 0)
-                    Button { move(backend.id, false) } label: { Image(systemName: "chevron.down") }.disabled(backend.position == enabledCount - 1)
+                    Button {
+                        move(backend.id, true)
+                    } label: {
+                        Image(systemName: "chevron.up")
+                    }.disabled(backend.position == 0)
+                    Button {
+                        move(backend.id, false)
+                    } label: {
+                        Image(systemName: "chevron.down")
+                    }.disabled(backend.position == enabledCount - 1)
                 }.buttonStyle(.borderless)
             }
         }

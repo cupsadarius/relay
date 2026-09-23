@@ -16,9 +16,7 @@ struct GenericTerminalFocusResolver: FocusResolver {
         }
 
         let directCandidates = context.sessions.filter {
-            $0.terminalContext.tmuxPaneID == nil &&
-            $0.terminalContext.herdrPaneID == nil &&
-            $0.processAncestry.contains(frontmostPID)
+            $0.terminalContext.tmuxPaneID == nil && $0.terminalContext.herdrPaneID == nil && $0.processAncestry.contains(frontmostPID)
         }
         guard directCandidates.count == 1, directCandidates[0].id == session.id else {
             return .unknown(resolverID: id, reason: "multiple direct agent sessions share the frontmost terminal process")

@@ -19,7 +19,7 @@ extension HotkeyDefinition {
         if self == other { return true }
         switch (self, other) {
         case let (.modifierOnly(left), .doubleTapModifier(right)),
-             let (.doubleTapModifier(left), .modifierOnly(right)):
+            let (.doubleTapModifier(left), .modifierOnly(right)):
             return left == right
         default:
             return false

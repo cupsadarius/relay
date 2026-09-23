@@ -1,4 +1,5 @@
 import Foundation
+
 @testable import Relay
 
 @MainActor
@@ -64,12 +65,14 @@ extension RelayRuntime {
             .appendingPathComponent("relay-tests-\(UUID().uuidString)", isDirectory: true)
         let helperPath = "/Applications/Relay.app/Contents/Helpers/RelayHook"
         let receiver = hookEnvelopeReceiver ?? HookEnvelopeReceiver(diagnostics: integrationDiagnosticsLog)
-        let manager = integrationManager ?? IntegrationManager(
-            events: receiver.events,
-            integrations: [StopHookIntegration.claudeCode, StopHookIntegration.codex],
-            speechCoordinator: speechCoordinator,
-            diagnostics: integrationDiagnosticsLog
-        )
+        let manager =
+            integrationManager
+            ?? IntegrationManager(
+                events: receiver.events,
+                integrations: [StopHookIntegration.claudeCode, StopHookIntegration.codex],
+                speechCoordinator: speechCoordinator,
+                diagnostics: integrationDiagnosticsLog
+            )
         // Short on purpose: a unix socket path must fit in `sun_path` (104 bytes), and it must
         // never be the production socket.
         let socketPath = hookSocketPath ?? "/tmp/relay-rt-\(UUID().uuidString.prefix(8)).sock"
@@ -86,12 +89,13 @@ extension RelayRuntime {
                 registry: sessionRegistry,
                 frontmostApps: frontmostApps,
                 processInspector: processInspector,
-                focusResolution: focusResolution ?? FocusResolutionService(
-                    registry: sessionRegistry,
-                    frontmostApps: frontmostApps,
-                    processSnapshots: processInspector,
-                    resolvers: []
-                )
+                focusResolution: focusResolution
+                    ?? FocusResolutionService(
+                        registry: sessionRegistry,
+                        frontmostApps: frontmostApps,
+                        processSnapshots: processInspector,
+                        resolvers: []
+                    )
             ),
             speechOut: SpeechOutputServices(
                 ttsRegistry: ttsRegistry,
@@ -109,18 +113,22 @@ extension RelayRuntime {
                 socketPath: socketPath,
                 hookEnvelopeReceiver: receiver,
                 integrationManager: manager,
-                claudeCodeInstaller: claudeCodeInstaller ?? ClaudeCodeInstaller(
-                    baseDirectory: sandbox.appendingPathComponent("claude", isDirectory: true),
-                    helperPath: helperPath
-                ),
-                codexInstaller: codexInstaller ?? CodexInstaller(
-                    baseDirectory: sandbox.appendingPathComponent("codex", isDirectory: true),
-                    helperPath: helperPath
-                ),
-                helperInstaller: helperInstaller ?? HelperInstaller(
-                    baseDirectory: sandbox.appendingPathComponent("appsupport", isDirectory: true)
-                ),
-                bundledHelperURL: bundledHelperURL ?? sandbox
+                claudeCodeInstaller: claudeCodeInstaller
+                    ?? ClaudeCodeInstaller(
+                        baseDirectory: sandbox.appendingPathComponent("claude", isDirectory: true),
+                        helperPath: helperPath
+                    ),
+                codexInstaller: codexInstaller
+                    ?? CodexInstaller(
+                        baseDirectory: sandbox.appendingPathComponent("codex", isDirectory: true),
+                        helperPath: helperPath
+                    ),
+                helperInstaller: helperInstaller
+                    ?? HelperInstaller(
+                        baseDirectory: sandbox.appendingPathComponent("appsupport", isDirectory: true)
+                    ),
+                bundledHelperURL: bundledHelperURL
+                    ?? sandbox
                     .appendingPathComponent("no-such-bundle", isDirectory: true)
                     .appendingPathComponent("RelayHook")
             ),

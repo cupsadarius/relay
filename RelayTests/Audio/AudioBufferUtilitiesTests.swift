@@ -1,5 +1,6 @@
 import AVFoundation
 import XCTest
+
 @testable import Relay
 
 final class AudioBufferUtilitiesTests: XCTestCase {
@@ -55,8 +56,8 @@ final class AudioBufferUtilitiesTests: XCTestCase {
         planar.frameLength = 3
         let channels = try XCTUnwrap(planar.floatChannelData)
         for index in 0..<3 {
-            channels[0][index] = Float(index)        // left: 0 1 2
-            channels[1][index] = Float(index) + 10   // right: 10 11 12
+            channels[0][index] = Float(index) // left: 0 1 2
+            channels[1][index] = Float(index) + 10 // right: 10 11 12
         }
 
         let interleaved = AudioBufferUtilities.interleave(channels, channelCount: 2, frameLength: 3)

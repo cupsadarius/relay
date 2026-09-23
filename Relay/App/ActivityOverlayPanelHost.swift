@@ -1,5 +1,5 @@
-import CoreGraphics
 @preconcurrency import AppKit
+import CoreGraphics
 import SwiftUI
 
 /// Production screen lookup, backed by real `NSScreen`s.
@@ -7,9 +7,10 @@ import SwiftUI
 final class SystemActivityOverlayScreens: ActivityOverlayScreenProviding {
     func screenForNewSession() -> ActivityOverlayScreen? {
         let mouseLocation = NSEvent.mouseLocation
-        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) })
-            ?? NSScreen.main
-            ?? NSScreen.screens.first
+        guard
+            let screen = NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) })
+                ?? NSScreen.main
+                ?? NSScreen.screens.first
         else { return nil }
         return Self.overlayScreen(for: screen)
     }

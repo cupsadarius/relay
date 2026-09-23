@@ -116,15 +116,17 @@ final class WhisperModelManagerTests: XCTestCase {
 
         XCTAssertEqual(models.count, WhisperModelID.allCases.count)
         XCTAssertEqual(models.map(\.id), WhisperModelID.allCases.map(\.rawValue))
-        XCTAssertTrue(models.allSatisfy {
-            $0.capabilities == [.download, .select, .remove]
-        })
+        XCTAssertTrue(
+            models.allSatisfy {
+                $0.capabilities == [.download, .select, .remove]
+            })
 
         for status in models {
-            let expectedInstalled: SpeechModelInstallState = [
-                WhisperModelID.tinyEn.rawValue,
-                WhisperModelID.baseEn.rawValue,
-            ].contains(status.id) ? .downloaded : .notDownloaded
+            let expectedInstalled: SpeechModelInstallState =
+                [
+                    WhisperModelID.tinyEn.rawValue,
+                    WhisperModelID.baseEn.rawValue,
+                ].contains(status.id) ? .downloaded : .notDownloaded
             XCTAssertEqual(status.installState, expectedInstalled, "unexpected installState for \(status.id)")
         }
     }

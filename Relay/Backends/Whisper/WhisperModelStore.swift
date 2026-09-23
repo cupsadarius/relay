@@ -396,13 +396,15 @@ struct HuggingFaceWhisperDownloader: WhisperDownloader {
             nextURL = Self.nextPageURL(from: http)
         }
 
-        return entries
+        return
+            entries
             .filter { $0.type == "file" }
             .filter { !$0.path.contains(".mlpackage/") }
     }
 
     private static func treeURL(repoID: String, subfolder: String?) -> URL {
-        var url = apiBase
+        var url =
+            apiBase
             .appendingPathComponent(repoID)
             .appendingPathComponent("tree/main")
         if let subfolder {

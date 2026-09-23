@@ -1,5 +1,5 @@
-import Foundation
 import Darwin
+import Foundation
 
 protocol HerdrQuerying: Sendable {
     func currentPane(socketPath: String) async throws -> HerdrPaneInfo
@@ -35,9 +35,10 @@ enum UnixLineRequest {
     static func send(path: String, line: String, timeoutMilliseconds: Int32) async throws -> String {
         try await withCheckedThrowingContinuation { continuation in
             ioQueue.async {
-                continuation.resume(with: Result {
-                    try sendBlocking(path: path, line: line, timeoutMilliseconds: timeoutMilliseconds)
-                })
+                continuation.resume(
+                    with: Result {
+                        try sendBlocking(path: path, line: line, timeoutMilliseconds: timeoutMilliseconds)
+                    })
             }
         }
     }

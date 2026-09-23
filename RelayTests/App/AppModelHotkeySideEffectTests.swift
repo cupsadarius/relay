@@ -1,6 +1,7 @@
 import CoreFoundation
 import CoreGraphics
 import XCTest
+
 @testable import Relay
 
 /// Locks in the fix for the "narrow hotkey side effects" reliability item: `AppModel

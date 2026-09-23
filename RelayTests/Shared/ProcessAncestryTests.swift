@@ -1,11 +1,13 @@
 import XCTest
+
 @testable import Relay
 
 final class ProcessAncestryTests: XCTestCase {
     private func table(_ rows: [(Int32, Int32, String)]) -> (Int32) -> ProcessAncestry.Entry? {
-        let entries = Dictionary(uniqueKeysWithValues: rows.map {
-            ($0.0, ProcessAncestry.Entry(pid: $0.0, parentPID: $0.1, command: $0.2))
-        })
+        let entries = Dictionary(
+            uniqueKeysWithValues: rows.map {
+                ($0.0, ProcessAncestry.Entry(pid: $0.0, parentPID: $0.1, command: $0.2))
+            })
         return { entries[$0] }
     }
 

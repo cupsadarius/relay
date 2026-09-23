@@ -31,9 +31,11 @@ struct KeybindsSettingsView: View {
                         .accessibilityIdentifier("hotkey-conflict-message")
                 }
 
-                Text("Click a shortcut to record. Double-tap a modifier (⌘ ⌥ ⌃ ⇧) to bind it. Fn can be recorded alone. ✕ clears. Hotkeys are listen-only, so keys such as Escape still reach the active app.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Click a shortcut to record. Double-tap a modifier (⌘ ⌥ ⌃ ⇧) to bind it. Fn can be recorded alone. ✕ clears. Hotkeys are listen-only, so keys such as Escape still reach the active app."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -100,10 +102,11 @@ private final class HotkeyRecorderButton: NSButton {
             return
         }
         resetModifierTapState()
-        finish(with: .chord(
-            keyCode: event.keyCode,
-            modifiers: Self.modifiers(from: event.modifierFlags)
-        ))
+        finish(
+            with: .chord(
+                keyCode: event.keyCode,
+                modifiers: Self.modifiers(from: event.modifierFlags)
+            ))
     }
 
     override func flagsChanged(with event: NSEvent) {
@@ -133,7 +136,8 @@ private final class HotkeyRecorderButton: NSButton {
         }
 
         if let last = lastRelease, last.modifier == modifier,
-           Date().timeIntervalSince(last.at) <= Self.doubleTapWindow {
+            Date().timeIntervalSince(last.at) <= Self.doubleTapWindow
+        {
             finish(with: .doubleTapModifier(modifier))
             return
         }

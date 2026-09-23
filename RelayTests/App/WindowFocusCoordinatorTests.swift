@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Relay
 
 @MainActor
@@ -116,8 +117,12 @@ final class WindowFocusCoordinatorTests: XCTestCase {
         XCTAssertEqual(events.values, [.activated, .diagnosticsFocused])
     }
 
-    private func makeCoordinator(events: EventLog, finder: FakeWindowFinder, presenter: FakeRelayWindowPresenter, scheduler: FakeMainLoopScheduler? = nil) -> WindowFocusCoordinator {
-        WindowFocusCoordinator(application: FakeApplicationActivator(events: events), windows: presenter, finder: finder, scheduler: scheduler ?? FakeMainLoopScheduler(events: events))
+    private func makeCoordinator(events: EventLog, finder: FakeWindowFinder, presenter: FakeRelayWindowPresenter, scheduler: FakeMainLoopScheduler? = nil)
+        -> WindowFocusCoordinator
+    {
+        WindowFocusCoordinator(
+            application: FakeApplicationActivator(events: events), windows: presenter, finder: finder,
+            scheduler: scheduler ?? FakeMainLoopScheduler(events: events))
     }
 }
 

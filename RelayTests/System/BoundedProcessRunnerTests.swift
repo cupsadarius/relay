@@ -1,5 +1,6 @@
 import Darwin
 import XCTest
+
 @testable import Relay
 
 final class BoundedProcessRunnerTests: XCTestCase {
@@ -27,7 +28,8 @@ final class BoundedProcessRunnerTests: XCTestCase {
 
     func testOversizedOutputThrows() async {
         await expectError(.outputTooLarge) {
-            try await runner.run(executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "yes ABCDEFGH | head -c 1000000"], timeout: 5, maxOutputBytes: 4096)
+            try await runner.run(
+                executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "yes ABCDEFGH | head -c 1000000"], timeout: 5, maxOutputBytes: 4096)
         }
     }
 
@@ -63,7 +65,8 @@ final class BoundedProcessRunnerTests: XCTestCase {
     }
 
     func testStderrFloodDoesNotDeadlock() async throws {
-        let result = try await runner.run(executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "yes ERR | head -c 200000 1>&2; echo done"], timeout: 5, maxOutputBytes: 4096)
+        let result = try await runner.run(
+            executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "yes ERR | head -c 200000 1>&2; echo done"], timeout: 5, maxOutputBytes: 4096)
         XCTAssertEqual(result.terminationStatus, 0)
         XCTAssertEqual(String(decoding: result.stdout, as: UTF8.self), "done\n")
     }

@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Relay
 
 private let emptySnapshot = try! ProcessSnapshot.parse("")
@@ -41,7 +42,8 @@ final class HerdrFocusResolverTests: XCTestCase {
             hostOwnership: StubHerdrHostOwnership(owns: true)
         )
         let session = makeHerdrSession(provider: .codex, sessionID: "c", pane: "w1:p2")
-        let context = FocusContext(frontmostApplication: .init(pid: 20, bundleIdentifier: nil, localizedName: "Ghostty"), sessions: [session], processSnapshot: emptySnapshot)
+        let context = FocusContext(
+            frontmostApplication: .init(pid: 20, bundleIdentifier: nil, localizedName: "Ghostty"), sessions: [session], processSnapshot: emptySnapshot)
         let decision = await resolver.resolve(session: session, context: context)
         XCTAssertEqual(decision.state, .notFocused)
     }

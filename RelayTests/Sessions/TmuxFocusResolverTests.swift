@@ -1,15 +1,17 @@
 import XCTest
+
 @testable import Relay
 
 final class TmuxFocusResolverTests: XCTestCase {
     /// Ghostty (20) -> login (100) -> tmux clients 300 and 301.
-    private let snapshot = try! ProcessSnapshot.parse("""
-      1   0 ??      launchd
-     20   1 ??      Ghostty
-    100  20 ttys001 login
-    300 100 ttys001 tmux
-    301 100 ttys002 tmux
-    """)
+    private let snapshot = try! ProcessSnapshot.parse(
+        """
+          1   0 ??      launchd
+         20   1 ??      Ghostty
+        100  20 ttys001 login
+        300 100 ttys001 tmux
+        301 100 ttys002 tmux
+        """)
 
     private func context(frontmostPID: Int32 = 20, snapshot: ProcessSnapshot?) -> FocusContext {
         FocusContext(

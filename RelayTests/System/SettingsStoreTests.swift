@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Relay
 
 /// Task 6 (Reliability Wave 3): `SettingsStore.load()` used to swallow ANY decode failure

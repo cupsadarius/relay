@@ -10,9 +10,9 @@ enum TTSPlaybackEvent: Equatable, Sendable {
     var sessionID: UUID {
         switch self {
         case let .started(sessionID),
-             let .finished(sessionID),
-             let .cancelled(sessionID),
-             let .failed(sessionID):
+            let .finished(sessionID),
+            let .cancelled(sessionID),
+            let .failed(sessionID):
             sessionID
         case let .level(sessionID, _):
             sessionID

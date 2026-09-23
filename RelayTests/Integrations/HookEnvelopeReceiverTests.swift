@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+
 @testable import Relay
 
 final class HookEnvelopeReceiverTests: XCTestCase {
@@ -203,7 +204,8 @@ final class HookEnvelopeReceiverTests: XCTestCase {
         try receiver.start(path: path)
 
         for pid in 1...20 {
-            let line = #"{"schemaVersion":1,"provider":"codex","rawPayload":"{}","#
+            let line =
+                #"{"schemaVersion":1,"provider":"codex","rawPayload":"{}","#
                 + #""parentPID":\#(pid),"environment":{},"capturedAt":1700000000}"# + "\n"
             try await UnixSocketTestClient.send(line, to: path)
         }
@@ -237,17 +239,20 @@ final class HookEnvelopeReceiverTests: XCTestCase {
         try receiver.start(path: path)
 
         for pid in 1...HookEnvelopeReceiver.eventBufferLimit {
-            let line = #"{"schemaVersion":1,"provider":"codex","rawPayload":"{}","#
+            let line =
+                #"{"schemaVersion":1,"provider":"codex","rawPayload":"{}","#
                 + #""parentPID":\#(pid),"environment":{},"capturedAt":1700000000}"# + "\n"
             try await UnixSocketTestClient.send(line, to: path)
         }
         let fillDeadline = Date().addingTimeInterval(2)
         while diagnostics.snapshot().filter({ $0.outcome == "envelope-decoded" }).count < HookEnvelopeReceiver.eventBufferLimit,
-              Date() < fillDeadline {
+            Date() < fillDeadline
+        {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
 
-        let incoming = #"{"schemaVersion":1,"provider":"claude-code","rawPayload":"{}","parentPID":999,"environment":{},"capturedAt":1700000000}"#
+        let incoming =
+            #"{"schemaVersion":1,"provider":"claude-code","rawPayload":"{}","parentPID":999,"environment":{},"capturedAt":1700000000}"#
             + "\n"
         try await UnixSocketTestClient.send(incoming, to: path)
 

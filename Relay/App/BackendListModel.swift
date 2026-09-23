@@ -83,13 +83,14 @@ final class BackendListModel {
         var fresh: [BackendStatus] = []
         for entry in entries {
             let availability = await entry.availability()
-            fresh.append(BackendStatus(
-                id: entry.id,
-                displayName: entry.displayName,
-                state: Self.state(for: availability),
-                isEnabled: false,
-                position: Int.max
-            ))
+            fresh.append(
+                BackendStatus(
+                    id: entry.id,
+                    displayName: entry.displayName,
+                    state: Self.state(for: availability),
+                    isEnabled: false,
+                    position: Int.max
+                ))
         }
         guard current == generation else { return }
         let order = knownOrder()
@@ -138,12 +139,13 @@ final class BackendListModel {
 
     private func apply(_ order: [String]) {
         writeOrder(order)
-        rows = Self.sorted(rows.map { row in
-            var row = row
-            row.isEnabled = order.contains(row.id)
-            row.position = order.firstIndex(of: row.id) ?? Int.max
-            return row
-        })
+        rows = Self.sorted(
+            rows.map { row in
+                var row = row
+                row.isEnabled = order.contains(row.id)
+                row.position = order.firstIndex(of: row.id) ?? Int.max
+                return row
+            })
         setMessage(nil)
     }
 

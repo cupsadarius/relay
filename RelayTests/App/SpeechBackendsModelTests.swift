@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Relay
 
 @MainActor
@@ -13,14 +14,15 @@ final class SpeechBackendsModelTests: XCTestCase {
     ) -> SpeechBackendsModel {
         let store = store ?? SpySettingsStore()
         let speech = speech ?? SpySpeechCoordinator()
-        return SpeechBackendsModel(runtime: .testing(
-            settingsStore: store,
-            speechCoordinator: speech,
-            sttRegistry: sttRegistry,
-            speechModelManagers: speechModelManagers,
-            ttsRegistry: ttsRegistry,
-            ttsModelManagers: ttsModelManagers
-        ))
+        return SpeechBackendsModel(
+            runtime: .testing(
+                settingsStore: store,
+                speechCoordinator: speech,
+                sttRegistry: sttRegistry,
+                speechModelManagers: speechModelManagers,
+                ttsRegistry: ttsRegistry,
+                ttsModelManagers: ttsModelManagers
+            ))
     }
 
     /// Pins the domain mapping `SpeechBackendsModel` wires into `SpeechModelController`:
@@ -32,10 +34,12 @@ final class SpeechBackendsModelTests: XCTestCase {
             ttsModelManagers: ["kokoro": StubModelManager(backendID: "kokoro", modelIDs: [])]
         )
 
-        XCTAssertEqual(model.models.backendKeys, [
-            SpeechModelBackendKey(domain: .dictation, backendID: "a"),
-            SpeechModelBackendKey(domain: .textToSpeech, backendID: "kokoro"),
-        ])
+        XCTAssertEqual(
+            model.models.backendKeys,
+            [
+                SpeechModelBackendKey(domain: .dictation, backendID: "a"),
+                SpeechModelBackendKey(domain: .textToSpeech, backendID: "kokoro"),
+            ])
     }
 
     func testRefreshingADomainUpdatesReadinessAndModelsTogether() async {

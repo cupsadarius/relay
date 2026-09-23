@@ -149,10 +149,12 @@ private enum AppleSpeechRuntime {
         let transcriber = try await makeTranscriber(locale: locale)
         let modules: [any SpeechModule] = [transcriber]
         let naturalFormat = try makeAudioFormat(sampleRate: audio.sampleRate)
-        guard let compatibleFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
-            compatibleWith: modules,
-            considering: naturalFormat
-        ) else {
+        guard
+            let compatibleFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
+                compatibleWith: modules,
+                considering: naturalFormat
+            )
+        else {
             throw SpeechBackendError.inferenceFailed("No compatible Apple Speech audio format")
         }
         let buffer = try makeBuffer(audio: audio, inputFormat: naturalFormat, outputFormat: compatibleFormat)
@@ -213,12 +215,14 @@ private enum AppleSpeechRuntime {
     }
 
     private static func makeAudioFormat(sampleRate: Double) throws -> AVAudioFormat {
-        guard let format = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: sampleRate,
-            channels: 1,
-            interleaved: false
-        ) else {
+        guard
+            let format = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: sampleRate,
+                channels: 1,
+                interleaved: false
+            )
+        else {
             throw SpeechBackendError.invalidInput
         }
         return format
@@ -229,10 +233,12 @@ private enum AppleSpeechRuntime {
         inputFormat: AVAudioFormat,
         outputFormat: AVAudioFormat
     ) throws -> AVAudioPCMBuffer {
-        guard let inputBuffer = AVAudioPCMBuffer(
-            pcmFormat: inputFormat,
-            frameCapacity: AVAudioFrameCount(audio.samples.count)
-        ), let channelData = inputBuffer.floatChannelData else {
+        guard
+            let inputBuffer = AVAudioPCMBuffer(
+                pcmFormat: inputFormat,
+                frameCapacity: AVAudioFrameCount(audio.samples.count)
+            ), let channelData = inputBuffer.floatChannelData
+        else {
             throw SpeechBackendError.inferenceFailed("Unable to create Apple Speech input buffer")
         }
         audio.samples.withUnsafeBufferPointer { samples in

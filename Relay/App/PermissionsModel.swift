@@ -61,9 +61,10 @@ final class PermissionsModel {
     func requestMicrophone() async {
         _ = await microphone.requestPermission()
         microphoneGranted = microphone.isGranted()
-        statusSink.post(microphoneGranted
-            ? "Microphone permission granted"
-            : "Allow Microphone permission in System Settings to dictate.")
+        statusSink.post(
+            microphoneGranted
+                ? "Microphone permission granted"
+                : "Allow Microphone permission in System Settings to dictate.")
     }
 
     func openPrivacySettings(_ pane: PrivacySettingsPane) {

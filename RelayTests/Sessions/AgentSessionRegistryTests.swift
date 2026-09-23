@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Relay
 
 final class AgentSessionRegistryTests: XCTestCase {
@@ -15,7 +16,7 @@ final class AgentSessionRegistryTests: XCTestCase {
                 "TMUX": "/private/tmp/tmux-501/default,123,0",
                 "TMUX_PANE": "%7",
                 "HERDR_SOCKET_PATH": "/tmp/herdr.sock",
-                "HERDR_PANE_ID": "w1:p2"
+                "HERDR_PANE_ID": "w1:p2",
             ],
             capturedAt: Date(timeIntervalSince1970: 100)
         )
@@ -36,10 +37,12 @@ final class AgentSessionRegistryTests: XCTestCase {
         await registry.upsert(response: b, processAncestry: [202, 20, 1], tty: "/dev/ttys002")
 
         let sessions = await registry.sessions()
-        XCTAssertEqual(Set(sessions.map(\.id)), [
-            AgentSessionID(provider: .claudeCode, providerSessionID: "a"),
-            AgentSessionID(provider: .codex, providerSessionID: "b")
-        ])
+        XCTAssertEqual(
+            Set(sessions.map(\.id)),
+            [
+                AgentSessionID(provider: .claudeCode, providerSessionID: "a"),
+                AgentSessionID(provider: .codex, providerSessionID: "b"),
+            ])
     }
 
     private func makeEvent(provider: AgentProvider, session: String, at: TimeInterval) -> AgentResponseEvent {

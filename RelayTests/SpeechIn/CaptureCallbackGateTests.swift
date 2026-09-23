@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Relay
 
 private final class ReturnedFlag: @unchecked Sendable {

@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Relay
 
 @MainActor
@@ -6,7 +7,8 @@ final class ActivityOverlayModelTests: XCTestCase {
     func testStaleCallbacksCannotMutateNewerSession() {
         let scheduler = FakeOverlayScheduler()
         let model = ActivityOverlayModel(scheduler: scheduler)
-        let old = UUID(), new = UUID()
+        let old = UUID()
+        let new = UUID()
 
         model.begin(sessionID: old)
         model.listen(sessionID: old, startedAt: .distantPast)
@@ -35,7 +37,8 @@ final class ActivityOverlayModelTests: XCTestCase {
     func testOldErrorDismissalCannotHideNewActivity() {
         let scheduler = FakeOverlayScheduler()
         let model = ActivityOverlayModel(scheduler: scheduler)
-        let old = UUID(), new = UUID()
+        let old = UUID()
+        let new = UUID()
 
         model.begin(sessionID: old)
         model.fail(sessionID: old, category: .speechPlayback, message: "Speech playback failed.")

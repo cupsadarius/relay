@@ -148,11 +148,12 @@ struct AppSettings: Codable, Equatable, Sendable {
                 // decode does not advance an unkeyed container, so decoding the raw types here
                 // would stall on the first bad element instead of skipping it.
                 guard let key = try? entries.decode(LossyDecodable<String>.self),
-                      let definition = try? entries.decode(LossyDecodable<HotkeyDefinition>.self)
+                    let definition = try? entries.decode(LossyDecodable<HotkeyDefinition>.self)
                 else { return nil }
                 if let rawAction = key.value,
-                   let action = HotkeyAction(rawValue: rawAction),
-                   let definition = definition.value {
+                    let action = HotkeyAction(rawValue: rawAction),
+                    let definition = definition.value
+                {
                     result[action] = definition
                 }
             }
@@ -162,7 +163,7 @@ struct AppSettings: Codable, Equatable, Sendable {
             var result: [HotkeyAction: HotkeyDefinition] = [:]
             for key in object.allKeys {
                 guard let action = HotkeyAction(rawValue: key.stringValue),
-                      let definition = try? object.decode(HotkeyDefinition.self, forKey: key)
+                    let definition = try? object.decode(HotkeyDefinition.self, forKey: key)
                 else { continue }
                 result[action] = definition
             }

@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Relay
 
 @MainActor
@@ -244,8 +245,11 @@ final class DictationCoordinatorTests: XCTestCase {
             (SpeechBackendError.noUsableAudio, "Dictation failed: No usable audio was captured. Check your microphone and try again."),
             (SpeechBackendError.invalidInput, "Dictation failed: The recorded audio was invalid. Try again."),
             (TextInsertionError.clipboardWriteFailed, "Dictation failed: Relay could not insert text. Grant Accessibility permission and try again."),
-            (TextInsertionError.accessibilityPermissionDenied, "Dictation failed: Allow Accessibility permission in System Settings before inserting dictation."),
-            (TextInsertionError.emptyText, "Dictation failed: No speech was recognized. Try again.")
+            (
+                TextInsertionError.accessibilityPermissionDenied,
+                "Dictation failed: Allow Accessibility permission in System Settings before inserting dictation."
+            ),
+            (TextInsertionError.emptyText, "Dictation failed: No speech was recognized. Try again."),
         ]
         for (error, expected) in cases {
             let events = EventLog()
@@ -306,7 +310,7 @@ final class DictationCoordinatorTests: XCTestCase {
         let cases: [(MicrophoneCaptureError, String)] = [
             (.unavailable("x"), "Microphone is unavailable. Check its connection and permissions."),
             (.alreadyRecording, "Microphone recording is already in progress. Try again shortly."),
-            (.notRecording, "Microphone recording was interrupted. Try again.")
+            (.notRecording, "Microphone recording was interrupted. Try again."),
         ]
         for (error, message) in cases {
             let events = EventLog()
@@ -566,13 +570,15 @@ final class DictationCoordinatorTests: XCTestCase {
         let session = overlay.sessionID!
         await coordinator.finish()
 
-        XCTAssertEqual(overlay.events, [
-            .listening(session),
-            .backendName(session, "First"),
-            .processing(session),
-            .backendName(session, "Second"),
-            .completed(session),
-        ])
+        XCTAssertEqual(
+            overlay.events,
+            [
+                .listening(session),
+                .backendName(session, "First"),
+                .processing(session),
+                .backendName(session, "Second"),
+                .completed(session),
+            ])
     }
 
     func testMicrophoneStopThrowingNoUsableAudioReportsNoUsableAudioCategoryNotMicrophone() async {
@@ -1122,7 +1128,9 @@ private final class FakeBackend: SpeechToTextBackend {
     let error: SpeechBackendError?
     init(events: EventLog, transcript: String, error: SpeechBackendError?) { self.events = events; self.transcript = transcript; self.error = error }
     func availability() async -> BackendAvailability { .available }
-    func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript { events.append("stt.transcribe"); if let error { throw error }; return Transcript(text: transcript, backendID: id) }
+    func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
+        events.append("stt.transcribe"); if let error { throw error }; return Transcript(text: transcript, backendID: id)
+    }
 }
 
 /// Like `FakeBackend`, but with a configurable `id`/`displayName` so tests can exercise a
@@ -1305,7 +1313,6 @@ private final class RecordingActivityOverlay: DictationActivityPublishing {
     func updateInterimText(_ text: String, sessionID: UUID) {
         interimTexts.append(text)
     }
-
 
     func setBackendName(_ name: String, sessionID: UUID) {
         events.append(.backendName(sessionID, name))

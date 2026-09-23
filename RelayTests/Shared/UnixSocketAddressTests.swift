@@ -1,5 +1,6 @@
 import Darwin
 import XCTest
+
 @testable import Relay
 
 final class UnixSocketAddressTests: XCTestCase {
@@ -27,9 +28,10 @@ final class UnixSocketAddressTests: XCTestCase {
         defer { close(fd) }
         let start = Date()
 
-        XCTAssertFalse(UnixSocketAddress.connect(
-            fd, to: "/tmp/relay-missing-\(UUID().uuidString).sock", withDeadline: Date().addingTimeInterval(0.4)
-        ))
+        XCTAssertFalse(
+            UnixSocketAddress.connect(
+                fd, to: "/tmp/relay-missing-\(UUID().uuidString).sock", withDeadline: Date().addingTimeInterval(0.4)
+            ))
         XCTAssertLessThan(Date().timeIntervalSince(start), 0.3)
     }
 

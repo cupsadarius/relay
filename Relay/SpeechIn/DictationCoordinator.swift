@@ -187,8 +187,7 @@ final class DictationCoordinator: DictationCoordinating {
     }
 
     func toggle() async {
-        if case .idle = state { await start() }
-        else { await finish() }
+        if case .idle = state { await start() } else { await finish() }
     }
 
     /// No-op unless `sessionID` is currently starting, recording, or finishing — in particular,

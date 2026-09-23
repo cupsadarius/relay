@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Relay
 
 @MainActor
@@ -163,14 +164,16 @@ final class AppModelTests: XCTestCase {
         hotkeys.send(.readSelection, .pressed)
         await Task.yield()
 
-        XCTAssertEqual(speech.requests, [
-            SpeechRequest(
-                text: "Intro There is a code block on screen. Please read it there. End",
-                source: .selection,
-                mode: .userRequested,
-                sessionID: nil
-            ),
-        ])
+        XCTAssertEqual(
+            speech.requests,
+            [
+                SpeechRequest(
+                    text: "Intro There is a code block on screen. Please read it there. End",
+                    source: .selection,
+                    mode: .userRequested,
+                    sessionID: nil
+                )
+            ])
         // The success path no longer sets a "Speaking…" `statusText`: the overlay's live state
         // drives `activityStatusText` while speech is in flight, and a stale imperative string
         // here is exactly what would survive after the overlay hides once speech ends (e.g. via
@@ -363,14 +366,15 @@ final class AppModelTests: XCTestCase {
             overlay: overlay
         )
         let hotkeys = SpyHotkeyManager()
-        let model = AppModel(runtime: .testing(
-            settingsStore: store,
-            selectionReader: SpySelectionReader(text: "hello"),
-            speechCoordinator: coordinator,
-            hotkeyManager: hotkeys,
-            overlayModel: overlay,
-            ttsRegistry: ["pocket-tts": pocket, "kokoro": kokoro, "apple-tts": apple]
-        ))
+        let model = AppModel(
+            runtime: .testing(
+                settingsStore: store,
+                selectionReader: SpySelectionReader(text: "hello"),
+                speechCoordinator: coordinator,
+                hotkeyManager: hotkeys,
+                overlayModel: overlay,
+                ttsRegistry: ["pocket-tts": pocket, "kokoro": kokoro, "apple-tts": apple]
+            ))
         return (model, hotkeys, pocket, kokoro, apple)
     }
 
@@ -414,27 +418,28 @@ final class AppModelTests: XCTestCase {
         integrationManager: IntegrationManager? = nil,
         processInspector: ProcessInspector? = nil
     ) -> AppModel {
-        AppModel(runtime: .testing(
-            settingsStore: store ?? SpySettingsStore(),
-            selectionReader: selection ?? SpySelectionReader(),
-            speechCoordinator: speech ?? SpySpeechCoordinator(),
-            hotkeyManager: hotkeys ?? SpyHotkeyManager(),
-            permissionService: permissions ?? SpyPermissionService(),
-            microphonePermissions: microphone ?? SpyMicrophonePermission(granted: true),
-            privacySettingsOpener: opener ?? SpyPrivacyOpener(),
-            loginItemService: loginItem ?? SpyLoginItemController(enabled: false),
-            diagnostics: diagnostics ?? DiagnosticsRecorder(capacity: 10),
-            dictationCoordinator: dictation,
-            overlayModel: overlayModel ?? ActivityOverlayModel(),
-            overlayPresenter: overlayPresenter ?? NoOpActivityOverlayPresenter(),
-            sttRegistry: sttRegistry,
-            speechModelManagers: speechModelManagers,
-            integrationManager: integrationManager,
-            sessionRegistry: sessionRegistry ?? AgentSessionRegistry(),
-            frontmostApps: frontmostApps ?? StubFrontmostAppMonitor(pid: nil),
-            focusResolution: focusResolution,
-            processInspector: processInspector ?? ProcessInspector(runner: AllPIDsAliveProcessRunner())
-        ))
+        AppModel(
+            runtime: .testing(
+                settingsStore: store ?? SpySettingsStore(),
+                selectionReader: selection ?? SpySelectionReader(),
+                speechCoordinator: speech ?? SpySpeechCoordinator(),
+                hotkeyManager: hotkeys ?? SpyHotkeyManager(),
+                permissionService: permissions ?? SpyPermissionService(),
+                microphonePermissions: microphone ?? SpyMicrophonePermission(granted: true),
+                privacySettingsOpener: opener ?? SpyPrivacyOpener(),
+                loginItemService: loginItem ?? SpyLoginItemController(enabled: false),
+                diagnostics: diagnostics ?? DiagnosticsRecorder(capacity: 10),
+                dictationCoordinator: dictation,
+                overlayModel: overlayModel ?? ActivityOverlayModel(),
+                overlayPresenter: overlayPresenter ?? NoOpActivityOverlayPresenter(),
+                sttRegistry: sttRegistry,
+                speechModelManagers: speechModelManagers,
+                integrationManager: integrationManager,
+                sessionRegistry: sessionRegistry ?? AgentSessionRegistry(),
+                frontmostApps: frontmostApps ?? StubFrontmostAppMonitor(pid: nil),
+                focusResolution: focusResolution,
+                processInspector: processInspector ?? ProcessInspector(runner: AllPIDsAliveProcessRunner())
+            ))
     }
 }
 

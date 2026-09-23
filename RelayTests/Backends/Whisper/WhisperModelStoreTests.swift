@@ -117,16 +117,18 @@ final class WhisperModelStoreTests: XCTestCase {
         let fileURL = tempDirectory.appendingPathComponent("config.json")
         try data.write(to: fileURL)
 
-        XCTAssertFalse(try WhisperModelStore.verifyFile(
-            at: fileURL,
-            against: .sha256(String(repeating: "0", count: 64)),
-            chunkSize: 4
-        ))
-        XCTAssertFalse(try WhisperModelStore.verifyFile(
-            at: fileURL,
-            against: .gitBlobSHA1(String(repeating: "0", count: 40)),
-            chunkSize: 4
-        ))
+        XCTAssertFalse(
+            try WhisperModelStore.verifyFile(
+                at: fileURL,
+                against: .sha256(String(repeating: "0", count: 64)),
+                chunkSize: 4
+            ))
+        XCTAssertFalse(
+            try WhisperModelStore.verifyFile(
+                at: fileURL,
+                against: .gitBlobSHA1(String(repeating: "0", count: 40)),
+                chunkSize: 4
+            ))
     }
 
     func testChunkedVerificationOfAnEmptyFileMatchesGitsEmptyBlob() throws {
@@ -134,10 +136,11 @@ final class WhisperModelStoreTests: XCTestCase {
         try Data().write(to: fileURL)
 
         // `git hash-object` of an empty file.
-        XCTAssertTrue(try WhisperModelStore.verifyFile(
-            at: fileURL,
-            against: .gitBlobSHA1("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391")
-        ))
+        XCTAssertTrue(
+            try WhisperModelStore.verifyFile(
+                at: fileURL,
+                against: .gitBlobSHA1("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391")
+            ))
     }
 
     func testPresenceTrueOnlyWhenAllFilesPresentAndVerifiedMarkerExists() throws {
@@ -336,7 +339,7 @@ final class WhisperModelStoreTests: XCTestCase {
     func testInvalidatePresenceMakesPresenceFalseWithoutDeletingTheRemainingFiles() async throws {
         let tokenizerData = Data("{\"tokenizer\":\"data\"}".utf8)
         downloader.filesToWrite = [
-            .init(relativePath: "tokenizer.json", data: tokenizerData, oid: TestOID.gitBlobSHA1(tokenizerData)),
+            .init(relativePath: "tokenizer.json", data: tokenizerData, oid: TestOID.gitBlobSHA1(tokenizerData))
         ]
         try await store.download(.tinyEn, progress: { _ in })
         XCTAssertTrue(store.presence(of: .tinyEn))

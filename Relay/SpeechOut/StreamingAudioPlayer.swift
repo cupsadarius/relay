@@ -55,13 +55,15 @@ final class AVEngineOutputNode: AudioOutputNode {
             Task { @MainActor in
                 guard let self else { return }
                 let current = self.engine.mainMixerNode.outputFormat(forBus: 0)
-                guard AudioEngineRouteChangeDecision.isDisruptive(
-                    isEngineRunning: self.engine.isRunning,
-                    installedSampleRate: self.outputFormat.sampleRate,
-                    installedChannelCount: self.outputFormat.channelCount,
-                    currentSampleRate: current.sampleRate,
-                    currentChannelCount: current.channelCount
-                ) else {
+                guard
+                    AudioEngineRouteChangeDecision.isDisruptive(
+                        isEngineRunning: self.engine.isRunning,
+                        installedSampleRate: self.outputFormat.sampleRate,
+                        installedChannelCount: self.outputFormat.channelCount,
+                        currentSampleRate: current.sampleRate,
+                        currentChannelCount: current.channelCount
+                    )
+                else {
                     // Ignore spurious posts where the engine keeps running with the same format:
                     // AVFoundation stops the engine on a real route change, so `outputFormat`
                     // (fixed at connect time) still matches what the mixer actually produces, and
@@ -322,8 +324,7 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
     }
 
     private func waitForSchedulingCapacity(sessionID: UUID) async {
-        while
-            currentSessionID == sessionID,
+        while currentSessionID == sessionID,
             started,
             scheduledDuration - playedDuration >= Self.maxScheduledAheadSeconds
         {
@@ -401,12 +402,14 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
 
         let sourceFormat: AVAudioFormat
         if converterInputFormat != frame.format || converter == nil {
-            guard let format = AVAudioFormat(
-                commonFormat: .pcmFormatFloat32,
-                sampleRate: frame.format.sampleRate,
-                channels: AVAudioChannelCount(channelCount),
-                interleaved: false
-            ) else { throw StreamingAudioPlayerError.invalidSourceFormat }
+            guard
+                let format = AVAudioFormat(
+                    commonFormat: .pcmFormatFloat32,
+                    sampleRate: frame.format.sampleRate,
+                    channels: AVAudioChannelCount(channelCount),
+                    interleaved: false
+                )
+            else { throw StreamingAudioPlayerError.invalidSourceFormat }
             guard let newConverter = AVAudioConverter(from: format, to: outputFormat) else {
                 throw StreamingAudioPlayerError.converterCreationFailed
             }
@@ -421,10 +424,12 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
         guard let converter else { throw StreamingAudioPlayerError.converterCreationFailed }
 
         let framesPerChannel = frame.samples.count / channelCount
-        guard let sourceBuffer = AVAudioPCMBuffer(
-            pcmFormat: sourceFormat,
-            frameCapacity: AVAudioFrameCount(framesPerChannel)
-        ) else { throw StreamingAudioPlayerError.bufferAllocationFailed }
+        guard
+            let sourceBuffer = AVAudioPCMBuffer(
+                pcmFormat: sourceFormat,
+                frameCapacity: AVAudioFrameCount(framesPerChannel)
+            )
+        else { throw StreamingAudioPlayerError.bufferAllocationFailed }
         sourceBuffer.frameLength = AVAudioFrameCount(framesPerChannel)
 
         if let channels = sourceBuffer.floatChannelData {
@@ -478,4 +483,3 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
         continuation.resume(throwing: error)
     }
 }
-
