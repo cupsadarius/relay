@@ -97,6 +97,33 @@ final class ClipboardServiceTests: XCTestCase {
         XCTAssertEqual(pasteboard.restoredSnapshots, [original])
     }
 
+    /// A cancelled caller must not lose the user's original clipboard: the restore that fires
+    /// when the copy is detected must still happen before cancellation is honored.
+    func testCancellationDuringTheWaitStillRestoresBeforeThrowingCancellationError() async throws {
+        let original = ClipboardSnapshot(items: [
+            ClipboardItemSnapshot(representations: [
+                "public.utf8-plain-text": .data(Data("original".utf8))
+            ])
+        ])
+        let pasteboard = FakeClipboardPasteboard(changeCount: 1, snapshot: original, copiedString: "selected")
+        var task: Task<String?, Error>!
+        let waiter = FakeClipboardWaiter {
+            task.cancel()
+            pasteboard.changeCount = 2
+        }
+        let service = ClipboardService(pasteboard: pasteboard, copyCommand: FakeCopyCommand(), waiter: waiter)
+
+        task = Task { try await service.copyCurrentSelection() }
+
+        do {
+            _ = try await task.value
+            XCTFail("expected CancellationError")
+        } catch {
+            XCTAssertTrue(error is CancellationError, "expected CancellationError, got \(error)")
+        }
+        XCTAssertEqual(pasteboard.restoredSnapshots, [original])
+    }
+
     func testSnapshotCapturesEveryDataRepresentableType() {
         let item = NSPasteboardItem()
         let textType = NSPasteboard.PasteboardType.string

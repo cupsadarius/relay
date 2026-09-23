@@ -90,10 +90,12 @@ final class SelectionReaderTests: XCTestCase {
         XCTAssertEqual(clipboard.copySelectionCallCount, 0)
     }
 
-    func testABusyClipboardReportsNoSelectionRatherThanCrashingOrHanging() async {
+    /// A cancelled clipboard copy must surface as a `CancellationError`, not get mapped to the
+    /// generic "no selection" error like every other clipboard failure.
+    func testRethrowsCancellationRatherThanMappingToNoSelection() async {
         let reader = SelectionReader(
             accessibility: FakeAccessibilitySelection(value: nil),
-            clipboard: FakeClipboardSelection(value: nil, error: ClipboardCopyError.busy),
+            clipboard: FakeClipboardSelection(value: nil, error: CancellationError()),
             canReadSelection: { true }
         )
 
@@ -101,7 +103,7 @@ final class SelectionReaderTests: XCTestCase {
             _ = try await reader.readSelection()
             XCTFail("expected error")
         } catch {
-            XCTAssertEqual(error as? SelectionReadingError, .noUsableSelection)
+            XCTAssertTrue(error is CancellationError, "expected CancellationError, got \(error)")
         }
     }
 }

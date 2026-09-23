@@ -62,6 +62,10 @@ final class SelectionReader: SelectionReading {
             if let selection = usable(try await clipboard.copyCurrentSelection()) {
                 return .init(text: selection, source: .clipboard)
             }
+        } catch is CancellationError {
+            // A cancelled caller doesn't want a substitute "no selection" error — it wants to
+            // know its own request was cancelled, not that the selection was empty.
+            throw CancellationError()
         } catch {
             throw SelectionReadingError.noUsableSelection
         }

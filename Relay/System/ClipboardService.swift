@@ -111,6 +111,12 @@ final class ClipboardService: ClipboardReading {
 
     /// Sends ⌘C, waits up to 200 ms for the pasteboard to change, reads the string, then puts the
     /// user's clipboard back — but only if nothing else has written it since the copy landed.
+    ///
+    /// Cancellation is only honored AFTER the clipboard has been made safe again: the wait always
+    /// runs its full window (see `SleepingClipboardWaiter`), and any landed copy is restored,
+    /// before `Task.checkCancellation()` can turn this into a thrown `CancellationError`. A
+    /// cancelled caller must never leave the user's original clipboard un-restored just because it
+    /// stopped waiting for the result.
     func copyCurrentSelection() async throws -> String? {
         guard !isCopying else { throw ClipboardCopyError.busy }
         isCopying = true
@@ -120,6 +126,7 @@ final class ClipboardService: ClipboardReading {
         let originalChangeCount = pasteboard.changeCount
         try copyCommand.sendCopy()
 
+        var result: String?
         for _ in 0..<10 {
             await waiter.wait(milliseconds: 20)
             let copiedChangeCount = pasteboard.changeCount
@@ -129,10 +136,12 @@ final class ClipboardService: ClipboardReading {
             if pasteboard.changeCount == copiedChangeCount {
                 pasteboard.restore(original)
             }
-            return copied
+            result = copied
+            break
         }
         // The copy never landed: the clipboard is still the user's; nothing to restore.
-        return nil
+        try Task.checkCancellation()
+        return result
     }
 }
 
@@ -233,8 +242,12 @@ struct SystemKeyCommand: CopyCommandSending, PasteCommandSending {
 
 @MainActor
 struct SleepingClipboardWaiter: ClipboardWaiting {
+    /// Always sleeps the full duration. An unstructured `Task` here is not part of the caller's
+    /// structured-concurrency cancellation tree, so cancelling `copyCurrentSelection` cannot cut
+    /// this sleep short — which would otherwise make the whole 10-iteration wait loop finish
+    /// almost instantly, well before the real ⌘C has landed, leaving the clipboard unrestored.
     func wait(milliseconds: Int) async {
-        try? await Task.sleep(for: .milliseconds(milliseconds))
+        await Task { try? await Task.sleep(for: .milliseconds(milliseconds)) }.value
     }
 }
 
