@@ -8,11 +8,11 @@
 
 **Tech Stack:** Swift 6 strict concurrency, AVFoundation, Speech, Synchronization (`Mutex`), FluidAudio 0.15.7, WhisperKit 1.1.0, XcodeGen, XCTest, macOS 26.0+, arm64.
 
-**Branch:** `cleanup/4-speech-engines`. Run this plan only after cleanup plans 1, 2 and 3 are merged into `main`.
+**Branch:** `cleanup/4-speech-engines`, cut from current `main`. Cleanup plans 1 and 2 are already merged into `main`. Plan 3 (`cleanup/3-integrations-sessions`) is NOT merged; this plan runs in parallel with it and must not wait for it.
 
 ---
 
-## Assumptions from plans 1–3 (re-read every file before you edit it)
+## Assumptions from plans 1–2 (merged) and plan 3 (parallel) (re-read every file before you edit it)
 
 This plan's snippets are written on top of the end state of `docs/superpowers/plans/2026-09-23-relay-cleanup-1-quick-fixes.md` and `docs/superpowers/plans/2026-09-23-relay-cleanup-2-dead-code.md`. When a snippet here and the file disagree on something those plans changed, keep what the plans did and apply only the change this task describes.
 
@@ -30,7 +30,7 @@ This plan's snippets are written on top of the end state of `docs/superpowers/pl
     - Four `STTRouterTests` (`testRecordsTheBackendWhoseErrorWasThrown`, `testRecordsASkippedBackendWhenItsAvailabilityErrorIsThrown`, `testClearsTheFailedBackendAfterASuccessfulTranscription`, `testInterimFailuresNeverTouchTheFailedBackend`) and `DictationCoordinatorTests.testModelNotDownloadedStatusNamesTheSkippedBackend` pin this. Task 14 keeps all of them passing.
 - **Plan 2 already deleted:**
   - Whole-WAV `synthesize(text:…)` on the Kokoro and Pocket engines and their sessions.
-  - `KokoroEngineError.textTooLong`.
+  - (Correction, verified on `main`: `KokoroEngineError.textTooLong` was NOT deleted. It still maps `KokoroAneError.phonemeSequenceTooLong` in `FluidAudioKokoroEngine.synthesize(phonemes:voice:speed:)` and is pinned by `testSynthesizeMapsPhonemeSequenceTooLongToTextTooLong`. Leave it alone.)
   - The throwing protocol-extension defaults.
   - The pause/resume chain (`pause()`/`resume()` on the player and output node, `pauseSpeaking`/`continueSpeaking` where they were only used for that).
   - `STTCapabilities`/`TTSCapabilities` and every `capabilities` property.
@@ -44,8 +44,8 @@ This plan's snippets are written on top of the end state of `docs/superpowers/pl
   - `CandidatePlayback.committed`, the `.scheduled` playback event, `ParakeetBackend.downloadModels`, stale comments and `SPIKE` labels.
 
   Test fakes in this plan therefore declare **no** `capabilities` property, **no** `prepare()` and **no** `pause`/`resume` members. If one of those members is still a protocol requirement when you run a task, add it back to the fake as a trivial stub.
-- **Plan 3:** this plan does not depend on anything it changed. Rebase first.
-- Before starting, skim plans 1 and 2 for every file this plan touches. If a file changed underneath this plan, re-read it and apply the intent of the step.
+- **Plan 3 (not merged, runs in parallel):** this plan does not depend on anything plan 3 changes, and must not edit what plan 3 owns: `Relay/Integrations/`, `Relay/Sessions/` (including `AgentAutoReadCoordinator`), `Shared/RelayPaths.swift`/`Shared/BuildFlavor.swift`, `project.yml`, and the Whisper cache-directory wiring in `Relay/App/RelayRuntime.swift`. No step in this plan edits `RelayRuntime.swift`; if one ever needs to, keep the edit minimal and note "may conflict with plan 3 Task 4 (Whisper cache path) — resolve by keeping both changes". The expected merge conflict with plan 3 is `Relay.xcodeproj/project.pbxproj` (both plans add files): resolve it by taking either side and re-running `xcodegen generate`, never by hand-merging.
+- The snippets below were re-checked against `main` after plans 1 and 2 merged (line numbers and quoted "replace X" code are current). Still re-read every file before editing it; if a file changed underneath this plan, apply the intent of the step.
 
 ## Global Constraints
 
@@ -53,6 +53,8 @@ This plan's snippets are written on top of the end state of `docs/superpowers/pl
 - Stage files by explicit path only. Never use `git add -A` or `git add .`.
 - Commit messages are Conventional Commits. They **must not** contain `Co-Authored-By:`, `Claude-Session:` or any "Generated with Claude Code" line. A message ends at its last real line.
 - Run `xcodegen generate` after you add or delete any Swift file. Never hand-edit `project.pbxproj`.
+- **Never add `group:` entries to `project.yml`** (xcodegen 2.46 hangs on them). This plan needs no `project.yml` change at all: new files under `Relay/` and `RelayTests/` (including the new `Relay/Audio/` and `RelayTests/Audio/` folders) are picked up by the existing `path: Relay` / `path: RelayTests` sources.
+- **Every `xcodebuild` command uses `-derivedDataPath /tmp/relay-dd-cleanup4`** (already in every command below), so this worktree never shares DerivedData with plan 3 or the main checkout. Add it to any ad-hoc `xcodebuild` you run.
 - The full test suite must be green at the end of every task.
 - Privacy rule:
   - Never log or put in an error: speech text, transcripts, phonemes, PCM, or raw `error.localizedDescription` from speech frameworks.
@@ -65,13 +67,13 @@ This plan's snippets are written on top of the end state of `docs/superpowers/pl
 Test command template (the user's form):
 
 ```bash
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/<Class>/<method>
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/<Class>/<method>
 ```
 
 Full suite:
 
 ```bash
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4
 ```
 
 Output to expect:
@@ -135,14 +137,14 @@ cd .worktrees/cleanup-4-speech-engines
 git log --oneline -5
 ```
 
-Expected: the log shows the merge commits for cleanup plans 1, 2 and 3. If it doesn't, stop: this plan must run after they merge.
+Expected: the log shows the merge commits for cleanup plans 1 and 2. If it doesn't, stop: this plan must run after they merge. Plan 3 is not expected in the log; do not wait for it and do not rebase onto `cleanup/3-integrations-sessions`.
 
 - [ ] **Step 2: Generate the project and run the full suite**
 
 ```bash
 xcodegen generate
 git status --short
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4
 ```
 
 Expected: `git status --short` prints nothing (the pbxproj regenerates identically), and the run ends with `** TEST SUCCEEDED **`. If the pbxproj shows a diff, commit it on its own first with `git add Relay.xcodeproj/project.pbxproj && git commit -m "chore: regenerate Xcode project"`.
@@ -325,7 +327,7 @@ private actor PipeProgress {
 
 - [ ] **Step 2: Run the pipe tests**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/TTSAudioPipeTests`
+Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/TTSAudioPipeTests`
 Expected: `** TEST SUCCEEDED **` with 11 tests.
 
 - [ ] **Step 3: Commit**
@@ -775,7 +777,7 @@ private actor LoaderProbe {
 
 ```bash
 xcodegen generate
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/ModelSessionLoaderTests
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/ModelSessionLoaderTests
 ```
 
 Expected: build failure, `error: cannot find 'ModelSessionLoader' in scope`.
@@ -956,7 +958,7 @@ actor ModelSessionLoader<Session: Sendable> {
 
 - [ ] **Step 4: Run the loader tests**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/ModelSessionLoaderTests`
+Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/ModelSessionLoaderTests`
 Expected: `** TEST SUCCEEDED **` with 18 tests.
 
 - [ ] **Step 5: Commit**
@@ -1021,7 +1023,7 @@ Keep the rest (they cover the model directory, padding, error mapping, and the w
 
 - [ ] **Step 3: Run the new test (it passes against the old engine too: the mapping already exists)**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/FluidAudioParakeetEngineTests`
+Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/FluidAudioParakeetEngineTests`
 Expected: `** TEST SUCCEEDED **`. This is the safety net for the refactor that follows.
 
 - [ ] **Step 4: Replace the engine's load machinery**
@@ -1105,12 +1107,12 @@ actor FluidAudioParakeetEngine: ParakeetEngine {
 }
 ```
 
-In the type-level doc comment, drop any sentence that describes `LoadKind`, `inFlightLoad` or `validatedModelsPresent` in this type. Replace them with: "Single-flight loading and the local-validation gate live in `ModelSessionLoader`."
+The type-level doc comment (lines 28–37 today) describes no `LoadKind`/`inFlightLoad`/`validatedModelsPresent` internals, so keep it and append one line: "Single-flight loading and the local-validation gate live in `ModelSessionLoader`." The per-property doc comments on `LoadKind` and `validatedModelsPresent` go away with the properties. The instance `private let logger` becomes the `private static let logger` shown above.
 
 - [ ] **Step 5: Run the Parakeet tests and the backend tests**
 
 ```bash
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/FluidAudioParakeetEngineTests -only-testing:RelayTests/ParakeetBackendTests -only-testing:RelayTests/ModelSessionLoaderTests
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/FluidAudioParakeetEngineTests -only-testing:RelayTests/ParakeetBackendTests -only-testing:RelayTests/ModelSessionLoaderTests
 ```
 
 Expected: `** TEST SUCCEEDED **`.
@@ -1129,7 +1131,7 @@ git commit -m "refactor(speech): load Parakeet through ModelSessionLoader"
 ## Task 4: Migrate `FluidAudioKokoroEngine` onto the loader (review item 1, part 3)
 
 **Files:**
-- Modify: `Relay/Backends/FluidAudioKokoroEngine.swift` (the actor body, currently about lines 140–357)
+- Modify: `Relay/Backends/FluidAudioKokoroEngine.swift` (the actor body, currently lines 104–305)
 - Modify: `RelayTests/Backends/FluidAudioKokoroEngineTests.swift`
 
 - [ ] **Step 1: Swap duplicated loader tests for one mapping test**
@@ -1165,7 +1167,7 @@ Remove the unused gate members (`shouldGateLoad`, `gateContinuation`, `setShould
 
 - [ ] **Step 2: Run the Kokoro engine tests on the old code**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/FluidAudioKokoroEngineTests`
+Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/FluidAudioKokoroEngineTests`
 Expected: `** TEST SUCCEEDED **`.
 
 - [ ] **Step 3: Replace the engine's load machinery**
@@ -1231,7 +1233,7 @@ Leave the rest of each method body unchanged. `modelsArePresent()` and `defaultC
 - [ ] **Step 4: Run Kokoro engine, backend and model-manager tests**
 
 ```bash
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/FluidAudioKokoroEngineTests -only-testing:RelayTests/KokoroTTSBackendTests -only-testing:RelayTests/KokoroModelManagerTests
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/FluidAudioKokoroEngineTests -only-testing:RelayTests/KokoroTTSBackendTests -only-testing:RelayTests/KokoroModelManagerTests
 ```
 
 Expected: `** TEST SUCCEEDED **`.
@@ -1248,7 +1250,7 @@ git commit -m "refactor(speech): load Kokoro through ModelSessionLoader"
 ## Task 5: Migrate `FluidAudioPocketTTSEngine` onto the loader (review item 1, part 4)
 
 **Files:**
-- Modify: `Relay/Backends/FluidAudioPocketTTSEngine.swift` (the actor body, currently about lines 98–289)
+- Modify: `Relay/Backends/FluidAudioPocketTTSEngine.swift` (the actor body, currently lines 85–261)
 - Modify: `RelayTests/Backends/FluidAudioPocketTTSEngineTests.swift`
 
 - [ ] **Step 1: Swap duplicated loader tests for one mapping test**
@@ -1280,7 +1282,7 @@ Remove the unused gate members from `FakePocketTTSModelLoader`, the same way as 
 
 - [ ] **Step 2: Run the Pocket engine tests on the old code**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/FluidAudioPocketTTSEngineTests`
+Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/FluidAudioPocketTTSEngineTests`
 Expected: `** TEST SUCCEEDED **`.
 
 - [ ] **Step 3: Replace the engine's load machinery**
@@ -1338,7 +1340,7 @@ In `actor FluidAudioPocketTTSEngine`:
 - [ ] **Step 4: Run Pocket engine, backend and model-manager tests**
 
 ```bash
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/FluidAudioPocketTTSEngineTests -only-testing:RelayTests/PocketTTSBackendTests -only-testing:RelayTests/PocketTTSModelManagerTests
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/FluidAudioPocketTTSEngineTests -only-testing:RelayTests/PocketTTSBackendTests -only-testing:RelayTests/PocketTTSModelManagerTests
 ```
 
 Expected: `** TEST SUCCEEDED **`.
@@ -1363,7 +1365,7 @@ git commit -m "refactor(speech): load PocketTTS through ModelSessionLoader"
 `ModelSessionLoader` is not a fit here. Whisper transitions are keyed by model id, must unload the old context before loading the new one, have no download kinds, and must wait out running transcriptions. So the runtime gets one keyed in-flight *transition* (activate to an id, or unload to `nil`), plus an in-use counter.
 
 **Files:**
-- Modify: `Relay/Backends/Whisper/WhisperRuntime.swift` (the `actor WhisperRuntime` block, currently lines 31–101)
+- Modify: `Relay/Backends/Whisper/WhisperRuntime.swift` (the `actor WhisperRuntime` block and its doc comment, currently lines 31–100). This is `WhisperRuntime.swift`, not `Relay/App/RelayRuntime.swift`; plan 3 does not touch this file.
 - Modify: `RelayTests/Backends/Whisper/WhisperRuntimeTests.swift`
 
 - [ ] **Step 1: Write the failing tests**
@@ -1562,7 +1564,7 @@ Add these methods inside `final class WhisperRuntimeTests`:
 
 - [ ] **Step 2: Run to confirm failure**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/WhisperRuntimeTests`
+Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/WhisperRuntimeTests`
 
 Expected: `** TEST FAILED **`, with these tests failing:
 - `testConcurrentActivateOfTheSameModelLoadsOnce` (2 loads).
@@ -1573,7 +1575,7 @@ Expected: `** TEST FAILED **`, with these tests failing:
 
 - [ ] **Step 3: Implement**
 
-Replace the `actor WhisperRuntime { ... }` block and its doc comment (lines 31–101) with:
+Replace the `actor WhisperRuntime { ... }` block and its doc comment (lines 31–100, from `/// Owns the single heavyweight Whisper inference context…` through the actor's closing `}` just before `/// Live \`WhisperEngine\` backed by WhisperKit.`) with:
 
 ```swift
 /// Owns the single heavyweight Whisper inference context Relay ever keeps resident.
@@ -1700,7 +1702,7 @@ actor WhisperRuntime {
 - [ ] **Step 4: Run the Whisper tests**
 
 ```bash
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/WhisperRuntimeTests -only-testing:RelayTests/WhisperBackendTests -only-testing:RelayTests/WhisperModelManagerTests
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/WhisperRuntimeTests -only-testing:RelayTests/WhisperBackendTests -only-testing:RelayTests/WhisperModelManagerTests
 ```
 
 Expected: `** TEST SUCCEEDED **`. The old tests still pass, including `testSwitchUnloadsPreviousBeforeLoadingNext` and `testFailedActivateLeavesNoLoadedContext`.
@@ -1819,7 +1821,7 @@ private actor ProducerEnded {
 
 ```bash
 xcodegen generate
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/PipedTTSAudioSourceTests
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/PipedTTSAudioSourceTests
 ```
 
 Expected: build failure, `cannot find 'PipedTTSAudioSource' in scope`.
@@ -1879,11 +1881,11 @@ struct PipedTTSAudioSource: TTSAudioSource {
 }
 ```
 
-Use the actual `TTSAudioPipe` API names: `make(highWatermark:lowWatermark:)`, `Sink.yield/finish/fail/cancel`, `Source.next/cancel`. They are unchanged since `450b4af`. If plan 1 or 2 renamed any of them, use the new names.
+These are the actual `TTSAudioPipe` API names on `main`: `make(highWatermark:lowWatermark:)` (defaults 30/15), `Sink.yield/finish/fail/cancel`, `Source.next/cancel`.
 
 - [ ] **Step 4: Run the new tests**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/PipedTTSAudioSourceTests`
+Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/PipedTTSAudioSourceTests`
 Expected: `** TEST SUCCEEDED **`.
 
 - [ ] **Step 5: Migrate `KokoroTTSAudioSource`**
@@ -1958,7 +1960,7 @@ Replace the body of `struct PocketTTSAudioSource` with:
     }
 ```
 
-This follows plan 1's cancel contract: after `cancel()`, `next()` throws `CancellationError`. If `PocketTTSAudioSourceTests.testCancelStopsIteration` still expects `nil`, plan 1 has not merged. Stop and rebase.
+This follows plan 1's cancel contract (merged): after `cancel()`, `next()` throws `CancellationError`, pinned by `PocketTTSAudioSourceTests.testCancelMakesNextThrowCancellationError`. Keep the existing `/// Throws \`CancellationError\` after \`cancel()\`, per the \`TTSAudioSource\` contract.` doc comment on `next()`.
 
 - [ ] **Step 7: Replace the test-only `FloatStreamTestSource` glue**
 
@@ -1987,7 +1989,7 @@ private struct FloatStreamTestSource: TTSAudioSource {
 - [ ] **Step 8: Run the source and player tests**
 
 ```bash
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/KokoroTTSAudioSourceTests -only-testing:RelayTests/PocketTTSAudioSourceTests -only-testing:RelayTests/StreamingAudioPlayerTests -only-testing:RelayTests/PipedTTSAudioSourceTests
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/KokoroTTSAudioSourceTests -only-testing:RelayTests/PocketTTSAudioSourceTests -only-testing:RelayTests/StreamingAudioPlayerTests -only-testing:RelayTests/PipedTTSAudioSourceTests
 ```
 
 Expected: `** TEST SUCCEEDED **`.
@@ -2073,7 +2075,7 @@ private final class WriteCallbackProbe: @unchecked Sendable {
 
 ```bash
 xcodegen generate
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/AppleTTSWriteCallbackSpikeTests 2>&1 | grep -E "SPIKE apple-tts-write-callback|skipped|TEST (SUCCEEDED|FAILED)"
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/AppleTTSWriteCallbackSpikeTests 2>&1 | grep -E "SPIKE apple-tts-write-callback|skipped|TEST (SUCCEEDED|FAILED)"
 ```
 
 Expected: either a `SPIKE apple-tts-write-callback: main=… background=… nonEmptyBuffers=…` line followed by `** TEST SUCCEEDED **`, or a skip. Write the exact line into **Execution Notes** at the top of this plan.
@@ -2191,7 +2193,7 @@ private final class UncheckedBufferCallback: @unchecked Sendable {
 
 - [ ] **Step 2: Run to confirm failure**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/AppleTTSAudioSourceTests`
+Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/AppleTTSAudioSourceTests`
 Expected: build failure, `extra arguments at positions #6, #7 in call` (no `highWatermark` parameter yet).
 
 - [ ] **Step 3: Implement**
@@ -2334,12 +2336,12 @@ final class AppleTTSAudioSource: TTSAudioSource, @unchecked Sendable {
 }
 ```
 
-If plan 1 changed how an unknown voice identifier is resolved inside this method (the Apple fallback), keep plan 1's resolution lines in place of the `if let voiceIdentifier…` block.
+The `if let voiceIdentifier…` block matches `main` exactly and IS plan 1's unknown-voice fallback: an identifier `AVSpeechSynthesisVoice(identifier:)` cannot resolve leaves `utterance.voice` at the system default (documented on `AppleTTSBackend.makeAudioSource`, pinned by `testMakeAudioSourceFallsBackToTheDefaultVoiceForAnUnknownVoiceIdentifier`). Keep it verbatim.
 
 - [ ] **Step 4: Run the Apple TTS tests**
 
 ```bash
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/AppleTTSAudioSourceTests -only-testing:RelayTests/AppleTTSBackendTests
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/AppleTTSAudioSourceTests -only-testing:RelayTests/AppleTTSBackendTests
 ```
 
 Expected: `** TEST SUCCEEDED **`.
@@ -2365,10 +2367,10 @@ git commit -m "fix(speech): never block Apple TTS write callbacks; feed the shar
 - Create: `Relay/Audio/AudioBufferUtilities.swift`
 - Create: `RelayTests/Audio/AudioBufferUtilitiesTests.swift`
 - Modify:
-  - `Relay/SpeechOut/StreamingAudioPlayer.swift`: `ConversionInputState` (lines 70–81), deinterleave (387–402), converter call (410–423), `levelGain` and `level(forFrame:)` (101–103, 461–473), and the use at line 204.
-  - `Relay/SpeechOut/AppleTTSAudioSource.swift`: `AVAudioPCMBufferConverter` (lines 19–98).
+  - `Relay/SpeechOut/StreamingAudioPlayer.swift`: `ConversionInputState` and its doc comment (lines 66–77), deinterleave (391–405), converter call (414–427), `levelGain` and `level(forFrame:)` (97–99, 465–477), and the use at line 190.
+  - `Relay/SpeechOut/AppleTTSAudioSource.swift`: `AVAudioPCMBufferConverter` (lines 12–99; fast path 25–40, `try convert(...)` at 57, private `convert` 71–90, `SingleBufferInput` 92–98).
   - `Relay/SpeechIn/MicrophoneCapture.swift`: `MicrophoneLevelMeter` (lines 27–36), its use at line 151, the converter call (412–416), and `AVAudioInputBufferSupplier` (448–467).
-  - `Relay/Backends/AppleSpeechBackend.swift`: the converter call (269–278) and `AudioBufferInputSupplier` (286–300).
+  - `Relay/Backends/AppleSpeechBackend.swift`: the converter call inside `AppleSpeechRuntime.convert(_:to:)` (242–254) and `AudioBufferInputSupplier` (259–273).
   - `RelayTests/SpeechOut/StreamingAudioPlayerTests.swift` and `RelayTests/SpeechIn/MicrophoneCaptureStateTests.swift`: move the level tests.
 
 - [ ] **Step 1: Write the failing tests**
@@ -2469,7 +2471,7 @@ final class AudioBufferUtilitiesTests: XCTestCase {
 
 ```bash
 xcodegen generate
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/AudioBufferUtilitiesTests
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/AudioBufferUtilitiesTests
 ```
 
 Expected: build failure, `cannot find 'AudioBufferUtilities' in scope`.
@@ -2589,7 +2591,7 @@ private final class SingleBufferFeeder: @unchecked Sendable {
 
 - [ ] **Step 4: Run the utility tests**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/AudioBufferUtilitiesTests`
+Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/AudioBufferUtilitiesTests`
 Expected: `** TEST SUCCEEDED **`.
 
 - [ ] **Step 5: Migrate `StreamingAudioPlayer`**
@@ -2704,7 +2706,7 @@ git commit -m "refactor(audio): share converter feeder, RMS meter, and interleav
 ## Task 11: Emit speaking levels when audio has played, not when it is scheduled (review item 5)
 
 **Files:**
-- Modify: `Relay/SpeechOut/StreamingAudioPlayer.swift` (`schedule` about line 303, `handlePlayed` about line 314)
+- Modify: `Relay/SpeechOut/StreamingAudioPlayer.swift` (`schedule` at line 307, `handlePlayed` at line 318 before Task 10; a few lines earlier after it)
 - Modify: `RelayTests/SpeechOut/StreamingAudioPlayerTests.swift`
 
 - [ ] **Step 1: Write the failing test**
@@ -2733,7 +2735,7 @@ Add to `StreamingAudioPlayerTests`:
 
 - [ ] **Step 2: Run to confirm failure**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/StreamingAudioPlayerTests/testLevelsAreEmittedAsBuffersPlayNotWhenTheyAreScheduled`
+Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/StreamingAudioPlayerTests/testLevelsAreEmittedAsBuffersPlayNotWhenTheyAreScheduled`
 Expected: `** TEST FAILED **`, `XCTAssertEqual failed: ("10") is not equal to ("0")`.
 
 - [ ] **Step 3: Implement**
@@ -2773,7 +2775,7 @@ Leave the `pump` catch branches as they are. Plan 1 Task 5 made the `catch is Ca
 - [ ] **Step 4: Run the player and speech-coordinator tests**
 
 ```bash
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/StreamingAudioPlayerTests -only-testing:RelayTests/SpeechCoordinatorTests -only-testing:RelayTests/SpeechCoordinatorWatchdogTests -only-testing:RelayTests/TTSRouterTests
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/StreamingAudioPlayerTests -only-testing:RelayTests/SpeechCoordinatorTests -only-testing:RelayTests/SpeechCoordinatorWatchdogTests -only-testing:RelayTests/TTSRouterTests
 ```
 
 Expected: `** TEST SUCCEEDED **`.
@@ -2847,7 +2849,7 @@ private final class ChangeCounter: @unchecked Sendable {
 
 ```bash
 xcodegen generate
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/AudioEngineConfigurationObserverTests
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/AudioEngineConfigurationObserverTests
 ```
 
 Expected: build failure, `cannot find 'AudioEngineConfigurationObserver' in scope`.
@@ -2887,7 +2889,7 @@ final class AudioEngineConfigurationObserver: @unchecked Sendable {
 
 - [ ] **Step 4: Run the observer tests**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/AudioEngineConfigurationObserverTests`
+Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/AudioEngineConfigurationObserverTests`
 Expected: `** TEST SUCCEEDED **`.
 
 - [ ] **Step 5: Write the failing player tests**
@@ -2982,7 +2984,7 @@ Add the tests:
 
 - [ ] **Step 6: Run to confirm failure**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/StreamingAudioPlayerTests`
+Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/StreamingAudioPlayerTests`
 Expected: build failure, `type 'StreamingAudioPlayerError' has no member 'outputConfigurationChanged'`.
 
 - [ ] **Step 7: Implement in the player**
@@ -3060,7 +3062,7 @@ with
 
 - [ ] **Step 8: Run the player tests**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/StreamingAudioPlayerTests -only-testing:RelayTests/AudioEngineConfigurationObserverTests`
+Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/StreamingAudioPlayerTests -only-testing:RelayTests/AudioEngineConfigurationObserverTests`
 Expected: `** TEST SUCCEEDED **`.
 
 - [ ] **Step 9: Full suite, then commit**
@@ -3160,7 +3162,7 @@ final class CaptureCallbackGateTests: XCTestCase {
 
 ```bash
 xcodegen generate
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/CaptureCallbackGateTests
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/CaptureCallbackGateTests
 ```
 
 Expected: build failure, `cannot find 'CaptureCallbackGate' in scope`.
@@ -3241,7 +3243,7 @@ final class CaptureCallbackGate: @unchecked Sendable {
 
 - [ ] **Step 4: Run the gate tests**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/CaptureCallbackGateTests`
+Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/CaptureCallbackGateTests`
 Expected: `** TEST SUCCEEDED **`.
 
 - [ ] **Step 5: Rebuild `AVAudioEngineSource` on the gate**
@@ -3410,7 +3412,7 @@ Behavior compared with today:
 - [ ] **Step 6: Run the microphone and dictation tests**
 
 ```bash
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/MicrophoneCaptureStateTests -only-testing:RelayTests/CaptureCallbackGateTests -only-testing:RelayTests/DictationCoordinatorTests
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/MicrophoneCaptureStateTests -only-testing:RelayTests/CaptureCallbackGateTests -only-testing:RelayTests/DictationCoordinatorTests
 ```
 
 Expected: `** TEST SUCCEEDED **`. These tests use fake sources, so they pin the `MicrophoneCapture` state machine. The live source is covered by the gate and observer tests plus the manual check below.
@@ -3434,7 +3436,7 @@ git commit -m "fix(dictation): never tear down the mic tap under its own lock; f
 
 **Files:**
 - Modify: `Relay/SpeechIn/STTRouter.swift` (whole file)
-- Modify: `Relay/SpeechIn/DictationCoordinator.swift` (stored state near line 58, `start()` at line 147–152, `cancel(sessionID:)`, and `runProcessingPipeline` at line 343)
+- Modify: `Relay/SpeechIn/DictationCoordinator.swift` (stored state: `announcedBackendName` at line 60; the backend lookup in `start()` at lines 148–152; `cancel(sessionID:)` at line 194 with `finishRequested = false` at 201; the final `sttRouter.transcribe` in `runProcessingPipeline` at line 343)
 - Modify: `RelayTests/SpeechIn/STTRouterTests.swift`
 - Modify: `RelayTests/SpeechIn/DictationCoordinatorTests.swift`
 
@@ -3555,7 +3557,7 @@ In `STTRouterTests`:
 
 - [ ] **Step 2: Run to confirm failure**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/STTRouterTests`
+Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/STTRouterTests`
 Expected: build failure, `value of type 'STTRouter' has no member 'selectBackend'`.
 
 - [ ] **Step 3: Implement the router (on top of plan 1 Task 7's version)**
@@ -3813,12 +3815,12 @@ private final class ToggleAvailabilityBackend: SpeechToTextBackend {
 }
 ```
 
-`FakeMicrophone(events:)` in this file also appends events, such as microphone start and stop. If `events.values` then holds more than the transcribe entry, assert `XCTAssertEqual(events.values.filter { $0.hasPrefix("stt.") }, ["stt.transcribe.second"])` instead.
+`makeCoordinator` builds its default `FakeMicrophone` with its own private `EventLog`, so the test's `events` only ever sees the backend entries and the exact assertion holds. If it ever picks up `microphone.*` entries, assert `XCTAssertEqual(events.values.filter { $0.hasPrefix("stt.") }, ["stt.transcribe.second"])` instead.
 
 - [ ] **Step 6: Run router and coordinator tests**
 
 ```bash
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/STTRouterTests -only-testing:RelayTests/DictationCoordinatorTests
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/STTRouterTests -only-testing:RelayTests/DictationCoordinatorTests
 grep -rn "preferredBackendDisplayName\|cachedCandidateOrder" Relay RelayTests
 ```
 
@@ -3905,7 +3907,7 @@ private actor PreparationAttempts {
 
 - [ ] **Step 2: Run to confirm failure**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/AppleSpeechBackendTests`
+Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/AppleSpeechBackendTests`
 
 Expected: `** TEST FAILED **`:
 - `testAssetsArePreparedOncePerLocale` shows extra `.prepared("fr-FR")`.
@@ -3959,7 +3961,7 @@ That path lives inside the private runtime and cannot be reached without the rea
 - [ ] **Step 4: Run the backend tests and the privacy grep**
 
 ```bash
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/AppleSpeechBackendTests
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/AppleSpeechBackendTests
 grep -n "localizedDescription" Relay/Backends/AppleSpeechBackend.swift
 ```
 
@@ -3983,7 +3985,7 @@ This is a pure refactor: `RulesSpeechPreprocessorTests` already pins the output.
 
 - [ ] **Step 1: Run the existing tests (baseline)**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/RulesSpeechPreprocessorTests`
+Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/RulesSpeechPreprocessorTests`
 Expected: `** TEST SUCCEEDED **`.
 
 - [ ] **Step 2: Implement**
@@ -4036,7 +4038,7 @@ If the compiler reports `static property 'rules' is not concurrency-safe` (an SD
 
 - [ ] **Step 3: Run the tests again**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/RulesSpeechPreprocessorTests`
+Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/RulesSpeechPreprocessorTests`
 Expected: `** TEST SUCCEEDED **`.
 
 - [ ] **Step 4: Full suite, then commit**
@@ -4053,7 +4055,7 @@ git commit -m "perf(speech): compile speech preprocessor regexes once"
 FluidAudio declares no speed range for KokoroAne. Relay's valid input is `AppSettings.validTTSRateRange` (0.1…1.0) mapped by `rate / 0.5`, which gives 0.2…2.0. That is exactly what the existing slow and fast tests pin. The clamp keeps an unnormalized or NaN `TTSOptions.rate` from ever reaching the model.
 
 **Files:**
-- Modify: `Relay/Backends/KokoroTTSBackend.swift` (line 40)
+- Modify: `Relay/Backends/KokoroTTSBackend.swift` (lines 34–36: the two-line rate comment and `let speed = options.rate / 0.5`)
 - Modify: `RelayTests/Backends/KokoroTTSBackendTests.swift`
 
 - [ ] **Step 1: Write the failing test**
@@ -4072,7 +4074,7 @@ Add to `KokoroTTSBackendTests`:
 
 - [ ] **Step 2: Run to confirm failure**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/KokoroTTSBackendTests/testSpeedIsClampedToTheSupportedRange`
+Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/KokoroTTSBackendTests/testSpeedIsClampedToTheSupportedRange`
 Expected: build failure, `type 'KokoroTTSBackend' has no member 'speed'`.
 
 - [ ] **Step 3: Implement**
@@ -4099,7 +4101,7 @@ In `makeAudioSource`, replace the comment and `let speed = options.rate / 0.5` w
 
 - [ ] **Step 4: Run the Kokoro backend tests**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/KokoroTTSBackendTests`
+Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/KokoroTTSBackendTests`
 Expected: `** TEST SUCCEEDED **`. The old proportional-mapping tests still pass.
 
 - [ ] **Step 5: Full suite, then commit**
@@ -4116,8 +4118,10 @@ git commit -m "fix(speech): clamp Kokoro speed to the supported range"
 The compiler proves this change: a `@MainActor` class is already `Sendable`.
 
 **Files:**
-- Modify: `Relay/SpeechOut/SpeechCoordinator.swift` (about lines 28–32)
-- Modify: `Relay/SpeechOut/TTSRouter.swift` (about lines 84–92)
+- Modify: `Relay/SpeechOut/SpeechCoordinator.swift` (lines 20–24)
+- Modify: `Relay/SpeechOut/TTSRouter.swift` (lines 87–90)
+
+`AgentAutoReadCoordinator` is owned by plan 3 (which rewrites it). This task only mentions it in a doc comment and runs its tests; do not edit `Relay/Sessions/` or its tests. If plan 3 has merged first and the test class was renamed, drop that `-only-testing` flag and rely on the full suite.
 
 - [ ] **Step 1: `SpeechCoordinator`**
 
@@ -4145,7 +4149,7 @@ Its body is identical to the trailing `catch { … }`, which stays. Keep the `wh
 - [ ] **Step 3: Run the TTS tests**
 
 ```bash
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/TTSRouterTests -only-testing:RelayTests/SpeechCoordinatorTests -only-testing:RelayTests/AgentAutoReadCoordinatorTests
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/TTSRouterTests -only-testing:RelayTests/SpeechCoordinatorTests -only-testing:RelayTests/AgentAutoReadCoordinatorTests
 ```
 
 Expected: `** TEST SUCCEEDED **`, with no new warnings about `SpeechCoordinator` sendability.
@@ -4164,7 +4168,7 @@ git commit -m "refactor(speech): drop redundant Sendable escape hatch and duplic
 Finding (verified in FluidAudio 0.15.7, `PocketTtsSynthesizer.makeStream` and `PocketTtsSession.frames`): FluidAudio's generator yields frames from its own eager `Task` into an **unbounded** `AsyncThrowingStream`, and `yield` never suspends. No wrapper Relay writes can slow synthesis itself; that would need an upstream FluidAudio change. What Relay *can* fix: `PocketTtsManagerSession.synthesizeStream` adds a second forwarding `Task` that drains FluidAudio's stream as fast as it arrives into another unbounded buffer. Replace it with a lazy pull-through, so Relay holds each frame once, and only as far as the bounded `TTSAudioPipe` downstream has asked for it.
 
 **Files:**
-- Modify: `Relay/Backends/FluidAudioPocketTTSEngine.swift` (`PocketTtsManagerSession.synthesizeStream`, about lines 363–382)
+- Modify: `Relay/Backends/FluidAudioPocketTTSEngine.swift` (`PocketTtsManagerSession.synthesizeStream` and its doc comment, lines 329–348 before Task 5; ~70 lines earlier after Task 5 shrinks the actor)
 - Modify: `RelayTests/Backends/FluidAudioPocketTTSEngineTests.swift`
 
 - [ ] **Step 1: Write the failing tests**
@@ -4221,7 +4225,7 @@ private actor PullCounter {
 
 - [ ] **Step 2: Run to confirm failure**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/FluidAudioPocketTTSEngineTests`
+Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/FluidAudioPocketTTSEngineTests`
 Expected: build failure, `cannot find 'PocketTTSFrameStream' in scope`.
 
 - [ ] **Step 3: Implement**
@@ -4289,7 +4293,7 @@ This is safe because access is serial.
 - [ ] **Step 4: Run the Pocket tests**
 
 ```bash
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:RelayTests/FluidAudioPocketTTSEngineTests -only-testing:RelayTests/PocketTTSBackendTests -only-testing:RelayTests/PocketTTSAudioSourceTests
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 -only-testing:RelayTests/FluidAudioPocketTTSEngineTests -only-testing:RelayTests/PocketTTSBackendTests -only-testing:RelayTests/PocketTTSAudioSourceTests
 ```
 
 Expected: `** TEST SUCCEEDED **`.
@@ -4305,13 +4309,13 @@ git commit -m "perf(speech): pull PocketTTS frames lazily instead of double-buff
 
 ## Task 20: Remove the default `= FluidAudioXEngine()` arguments (review item 11)
 
-A default engine argument lets a call site build a second copy of a multi-hundred-MB model by accident. `RelayRuntime` already passes one shared engine to each backend and manager pair (lines 203–208, 234–236).
+A default engine argument lets a call site build a second copy of a multi-hundred-MB model by accident. `RelayRuntime` already passes one shared engine to each backend and manager pair (lines 203–208, 234–236), so this task does NOT edit `Relay/App/RelayRuntime.swift` (plan 3 edits it in parallel). Verified on `main`: no call site constructs any of these six types without `engine:`, so Step 2's grep is expected to be empty.
 
 **Files:**
 - Modify:
-  - `Relay/Backends/KokoroTTSBackend.swift:20`
-  - `Relay/Backends/PocketTTSBackend.swift:21`
-  - `Relay/Backends/ParakeetBackend.swift:53`
+  - `Relay/Backends/KokoroTTSBackend.swift:16`
+  - `Relay/Backends/PocketTTSBackend.swift:17`
+  - `Relay/Backends/ParakeetBackend.swift:50`
   - `Relay/Backends/ParakeetModelManager.swift:34`
   - `Relay/Backends/KokoroModelManager.swift:15`
   - `Relay/Backends/PocketTTSModelManager.swift:14`
@@ -4337,7 +4341,7 @@ Expected: no output. If `SpeechBackendContractsTests` still has `PocketTTSBacken
 
 - [ ] **Step 3: Full suite**
 
-Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO`
+Run: `xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4`
 Expected: `** TEST SUCCEEDED **`.
 
 - [ ] **Step 4: Commit**
@@ -4357,10 +4361,10 @@ git commit -m "refactor(speech): require an explicit shared engine for backends 
 - [ ] **Step 1: Clean full-suite run**
 
 ```bash
-rm -rf ~/Library/Developer/Xcode/DerivedData/Relay-*/Build/Intermediates.noindex/Relay.build
+rm -rf /tmp/relay-dd-cleanup4
 xcodegen generate
 git status --short
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO 2>&1 | tail -5
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -derivedDataPath /tmp/relay-dd-cleanup4 2>&1 | tail -5
 ```
 
 Expected: `git status --short` shows nothing, or only this plan file, and the output ends with `** TEST SUCCEEDED **`.
