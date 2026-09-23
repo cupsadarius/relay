@@ -5,7 +5,6 @@ struct SpeechVoiceRowPresentation: Equatable {
     let selectTitle = "Select"
     let testTitle = "Test"
     var canSelect: Bool { !isActive }
-    let canTest = true
 }
 
 struct SpeechVoiceRow: View {
@@ -25,7 +24,7 @@ struct SpeechVoiceRow: View {
             Text(isActive ? "● Active" : "").font(.caption).foregroundStyle(.green)
                 .frame(minWidth: 70, alignment: .trailing)
             Button(presentation.selectTitle, action: select).disabled(!presentation.canSelect)
-            Button(presentation.testTitle, action: test).disabled(!presentation.canTest)
+            Button(presentation.testTitle, action: test)
         }
         .controlSize(.small)
         .padding(.leading, 20)

@@ -31,9 +31,3 @@ struct DictationSettingsView: View {
         .task { await model.modelController.refresh(domain: .dictation) }
     }
 }
-
-enum SpeechBackendModelDisplayMode: Equatable {
-    case none
-    case nestedList
-    static func make(modelCount: Int) -> Self { modelCount > 0 ? .nestedList : .none }
-}

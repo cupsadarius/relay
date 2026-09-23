@@ -1,6 +1,5 @@
 import Observation
 @preconcurrency import AppKit
-import AVFoundation
 import os
 
 /// Thrown by `AppModel.installBundledHelperIfPresent` when, after attempting to refresh the
@@ -528,12 +527,6 @@ final class AppModel {
         updateSettings { $0.selectedSpeechModelByBackend[backendID] = modelID }
     }
 
-    /// Lets `SpeechBackendCatalog.swift` record diagnostics without widening `diagnostics` past
-    /// this file.
-    func recordDiagnostic(_ event: DiagnosticsEvent) {
-        diagnostics.record(event)
-    }
-
     private func registerHotkeys() {
         let status = hotkeyManager.register(settings: settings) { [weak self] action, phase in
             self?.handleHotkey(action, phase: phase)
@@ -810,27 +803,9 @@ final class AppModel {
         }
     }
 
-    /// Fixed sample sentence spoken by the TTS tab's "Test Voice" button. Never user-authored
-    /// content, so routing it through the normal speak path carries no privacy risk.
+    /// Fixed sample sentence spoken by each voice row's "Test" button (`previewVoice`). Never
+    /// user-authored content, so it carries no privacy risk.
     private static let testVoiceSampleText = "This is a preview of the selected voice and speaking rate."
-
-    /// Speaks a fixed sample sentence through the current TTS backend order and options (voice,
-    /// rate). Used by the TTS settings tab's Test Voice button.
-    func testVoice() async {
-        let request = SpeechRequest(
-            text: Self.testVoiceSampleText,
-            source: .testVoice,
-            mode: .userRequested,
-            sessionID: nil
-        )
-        do {
-            try await speechCoordinator.speak(request)
-            diagnostics.record(.ttsSubmitted)
-        } catch {
-            diagnostics.record(.ttsFailed)
-            statusText = error.localizedDescription
-        }
-    }
 
     func previewVoice(backendID: String, voiceID: String) async {
         guard let options = voiceCatalog.options(

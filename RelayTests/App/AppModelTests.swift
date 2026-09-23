@@ -562,31 +562,6 @@ final class AppModelTests: XCTestCase {
         XCTAssertFalse(model.modelController.backendKeys.contains(.init(domain: .textToSpeech, backendID: "apple-tts")))
     }
 
-    func testTestVoiceSpeaksAFixedSampleSentenceThroughTheCurrentSelection() async {
-        let speech = FakeSpeechCoordinator()
-        let model = makeModel(speech: speech)
-
-        await model.testVoice()
-
-        XCTAssertEqual(speech.requests.count, 1)
-        XCTAssertEqual(speech.requests.first?.source, .testVoice)
-        XCTAssertEqual(speech.requests.first?.mode, .userRequested)
-        XCTAssertFalse(speech.requests.first?.text.isEmpty ?? true)
-        // Same rationale as `testReadSelectionPressedPreprocessesAndSpeaksUserRequest`: the
-        // success path leaves `statusText` alone so it can never go stale once the overlay hides.
-        XCTAssertEqual(model.statusText, "Ready")
-        XCTAssertEqual(model.diagnosticsEntries.first?.event, .ttsSubmitted)
-    }
-
-    func testTestVoiceFailureIsLoggedAsTTSFailure() async {
-        let speech = FakeSpeechCoordinator(speakError: TestError.saveFailed)
-        let model = makeModel(speech: speech)
-
-        await model.testVoice()
-
-        XCTAssertEqual(model.diagnosticsEntries.first?.event, .ttsFailed)
-    }
-
     func testPreviewVoiceUsesClickedProviderAndCurrentRateWithoutPersistingSelection() async {
         let speech = FakeSpeechCoordinator()
         var settings = AppSettings.defaults

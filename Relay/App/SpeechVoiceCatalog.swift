@@ -10,15 +10,7 @@ struct SpeechVoiceOption: Identifiable, Equatable, Sendable {
 }
 
 @MainActor
-protocol SpeechVoiceCataloging {
-    func voices(for backendID: String) -> [SpeechVoiceOption]
-    func activeVoiceID(for backendID: String, settings: AppSettings) -> String?
-    func storedValue(for voiceID: String, backendID: String) -> String??
-    func options(for voiceID: String, backendID: String, settings: AppSettings) -> TTSOptions?
-}
-
-@MainActor
-struct SpeechVoiceCatalog: SpeechVoiceCataloging {
+struct SpeechVoiceCatalog {
     private let appleVoices: [SpeechVoiceOption]
     private let kokoroVoices: [String]
     private let recommendedKokoroVoice: String

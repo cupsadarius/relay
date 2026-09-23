@@ -13,9 +13,6 @@ struct SpeechModelRowPresentation: Equatable {
     let selectHelp: String?
     let removeHelp: String?
 
-    var detailLabel: String { detail }
-    var showsRemove: Bool { canRemove }
-
     static func make(status: SpeechModelStatus, backendReady: Bool = true) -> Self {
         let downloaded = status.installState == .downloaded
         let active = backendReady && status.isSelected && downloaded
