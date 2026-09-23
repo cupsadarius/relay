@@ -101,6 +101,12 @@ struct WhisperModelManager: SpeechModelManaging {
     ///    step 1 is what stops new ones.
     /// 3. Delete the remaining files. A model the runtime has no stake in skips straight to this.
     ///
+    /// If step 3 throws (e.g. the filesystem removal fails partway through) after step 1 already
+    /// ran, presence was already invalidated and is not restored: `models()` reports `id` as
+    /// `.notDownloaded` from that point on, same as if removal had fully succeeded. A later
+    /// `downloadModel` call for `id` repairs this by re-verifying and re-promoting its files, so
+    /// there is no state a caller needs to clean up by hand.
+    ///
     /// Removing the selected model is allowed and leaves the selection in place, pointing at a
     /// now-absent model -- `WhisperBackend.availability()` already reports `.modelNotDownloaded`
     /// for that state, so no special-casing is needed here.
