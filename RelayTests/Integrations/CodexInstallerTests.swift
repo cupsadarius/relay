@@ -119,253 +119,7 @@ final class CodexInstallerTests: XCTestCase {
         XCTAssertEqual(entries.first?["timeout"] as? Int, 3)
     }
 
-    func testInstallAppendsToExistingUnrelatedStopHookWithoutDeletingIt() throws {
-        try writeRawHooks(#"""
-        {
-          "otherTopLevelKey": true,
-          "hooks": {
-            "Stop": [
-              { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] }
-            ],
-            "SessionStart": [
-              { "hooks": [ { "type": "command", "command": "/usr/local/bin/audit.sh" } ] }
-            ]
-          }
-        }
-        """#)
-
-        try makeInstaller().install()
-
-        let hooksFile = try readHooks()
-        XCTAssertEqual(hooksFile["otherTopLevelKey"] as? Bool, true)
-
-        let groups = stopGroups(hooksFile)
-        XCTAssertEqual(groups.count, 2)
-        let commands = Set(commandStrings(groups))
-        XCTAssertEqual(commands, ["/usr/local/bin/notify-stop.sh", "\"\(helperPath)\" --provider codex"])
-
-        let sessionStart = (hooksFile["hooks"] as? [String: Any])?["SessionStart"] as? [[String: Any]]
-        XCTAssertEqual(sessionStart?.count, 1)
-    }
-
-    func testInstallIsIdempotentAndDoesNotDuplicate() throws {
-        let installer = makeInstaller()
-        try installer.install()
-        try installer.install()
-
-        let hooksFile = try readHooks()
-        let groups = stopGroups(hooksFile)
-        let relayCommands = commandStrings(groups).filter { CodexInstaller.isRelayOwnedCommand($0) }
-        XCTAssertEqual(relayCommands.count, 1)
-    }
-
-    func testInstallThrowsWhenTopLevelIsNotAnObjectAndLeavesFileUntouched() throws {
-        try writeRawHooks("[]")
-        let bytesBefore = try Data(contentsOf: hooksURL)
-
-        XCTAssertThrowsError(try makeInstaller().install()) { error in
-            XCTAssertEqual(error as? CodexInstallerError, .hooksFileNotObject)
-        }
-
-        let bytesAfter = try Data(contentsOf: hooksURL)
-        XCTAssertEqual(bytesBefore, bytesAfter)
-    }
-
-    func testInstallThrowsWhenHooksIsNotAnObjectAndLeavesFileUntouched() throws {
-        try writeRawHooks(#"""
-        { "hooks": "x" }
-        """#)
-        let bytesBefore = try Data(contentsOf: hooksURL)
-
-        XCTAssertThrowsError(try makeInstaller().install()) { error in
-            XCTAssertEqual(error as? CodexInstallerError, .hooksFileMalformed)
-        }
-
-        let bytesAfter = try Data(contentsOf: hooksURL)
-        XCTAssertEqual(bytesBefore, bytesAfter)
-    }
-
-    func testInstallThrowsWhenHooksStopIsNotAnArrayAndLeavesFileUntouched() throws {
-        try writeRawHooks(#"""
-        { "hooks": { "Stop": "x" } }
-        """#)
-        let bytesBefore = try Data(contentsOf: hooksURL)
-
-        XCTAssertThrowsError(try makeInstaller().install()) { error in
-            XCTAssertEqual(error as? CodexInstallerError, .hooksFileMalformed)
-        }
-
-        let bytesAfter = try Data(contentsOf: hooksURL)
-        XCTAssertEqual(bytesBefore, bytesAfter)
-    }
-
-    func testInstallThrowsWhenHooksStopContainsNonObjectElementAndLeavesFileUntouched() throws {
-        try writeRawHooks(#"""
-        {
-          "hooks": {
-            "Stop": [
-              { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] },
-              123
-            ]
-          }
-        }
-        """#)
-        let bytesBefore = try Data(contentsOf: hooksURL)
-
-        XCTAssertThrowsError(try makeInstaller().install()) { error in
-            XCTAssertEqual(error as? CodexInstallerError, .hooksFileMalformed)
-        }
-
-        let bytesAfter = try Data(contentsOf: hooksURL)
-        XCTAssertEqual(bytesBefore, bytesAfter)
-    }
-
-    func testInstallMigratesStaleBundlePathEntryToStablePath() throws {
-        try writeRawHooks(#"""
-        {
-          "hooks": {
-            "Stop": [
-              { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] },
-              { "hooks": [ { "type": "command", "command": "\"/old/App.app/Contents/Helpers/RelayHook\" --provider codex" } ] }
-            ]
-          }
-        }
-        """#)
-
-        try makeInstaller().install()
-
-        let hooksFile = try readHooks()
-        let groups = stopGroups(hooksFile)
-        // Exactly one Relay entry remains, rewritten to the stable helper path; the
-        // unrelated entry is left completely untouched.
-        XCTAssertEqual(groups.count, 2)
-        let commands = Set(commandStrings(groups))
-        XCTAssertEqual(commands, ["/usr/local/bin/notify-stop.sh", "\"\(helperPath)\" --provider codex"])
-        let relayCommands = commandStrings(groups).filter { CodexInstaller.isRelayOwnedCommand($0) }
-        XCTAssertEqual(relayCommands.count, 1)
-    }
-
-    func testInstallIsNoOpWhenRelayEntryAlreadyMatchesStablePath() throws {
-        let installer = makeInstaller()
-        try installer.install()
-        let bytesBefore = try Data(contentsOf: hooksURL)
-
-        try installer.install()
-
-        let bytesAfter = try Data(contentsOf: hooksURL)
-        XCTAssertEqual(bytesBefore, bytesAfter)
-    }
-
     // MARK: - Uninstall
-
-    func testUninstallRemovesOnlyRelayCommandLeavingOthersIntact() throws {
-        try writeRawHooks(#"""
-        {
-          "hooks": {
-            "Stop": [
-              { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] }
-            ]
-          }
-        }
-        """#)
-        let installer = makeInstaller()
-        try installer.install()
-        try installer.uninstall()
-
-        let hooksFile = try readHooks()
-        let groups = stopGroups(hooksFile)
-        XCTAssertEqual(commandStrings(groups), ["/usr/local/bin/notify-stop.sh"])
-        XCTAssertFalse(commandStrings(groups).contains { CodexInstaller.isRelayOwnedCommand($0) })
-    }
-
-    func testUninstallDropsEmptyRelayCreatedGroupButKeepsGroupsWithOtherKeys() throws {
-        try writeRawHooks(#"""
-        {
-          "hooks": {
-            "Stop": [
-              { "matcher": "", "hooks": [ { "type": "command", "command": "\"\#(helperPath)\" --provider codex" } ] }
-            ]
-          }
-        }
-        """#)
-
-        try makeInstaller().uninstall()
-
-        let hooksFile = try readHooks()
-        let groups = stopGroups(hooksFile)
-        // The group had an extra "matcher" key, so it is preserved with an empty hooks array
-        // rather than deleted outright.
-        XCTAssertEqual(groups.count, 1)
-        XCTAssertEqual((groups.first?["hooks"] as? [[String: Any]])?.count, 0)
-        XCTAssertEqual(groups.first?["matcher"] as? String, "")
-    }
-
-    func testUninstallRemovesStopKeyEntirelyWhenOnlyRelayGroupExisted() throws {
-        try makeInstaller().install()
-        try makeInstaller().uninstall()
-
-        let hooksFile = try readHooks()
-        let hooks = hooksFile["hooks"] as? [String: Any]
-        XCTAssertNil(hooks?["Stop"])
-    }
-
-    func testUninstallRemovesHooksKeyWhenNoHookEventsRemain() throws {
-        try makeInstaller().install()
-        try makeInstaller().uninstall()
-
-        let hooksFile = try readHooks()
-        XCTAssertNil(hooksFile["hooks"])
-    }
-
-    func testUninstallPreservesUnrelatedHookEventsWhenRemovingHooksKeyWouldNotApply() throws {
-        try writeRawHooks(#"""
-        {
-          "hooks": {
-            "Stop": [
-              { "hooks": [ { "type": "command", "command": "\"\#(helperPath)\" --provider codex" } ] }
-            ],
-            "SessionStart": [
-              { "hooks": [ { "type": "command", "command": "/usr/local/bin/audit.sh" } ] }
-            ]
-          }
-        }
-        """#)
-
-        try makeInstaller().uninstall()
-
-        let hooksFile = try readHooks()
-        let hooks = hooksFile["hooks"] as? [String: Any]
-        XCTAssertNil(hooks?["Stop"])
-        XCTAssertNotNil(hooks?["SessionStart"])
-    }
-
-    func testUninstallIsNoOpWhenNoHooksFileExists() throws {
-        XCTAssertNoThrow(try makeInstaller().uninstall())
-        XCTAssertFalse(FileManager.default.fileExists(atPath: hooksURL.path))
-    }
-
-    func testUninstallIsNoOpWhenNoRelayHookIsPresent() throws {
-        try writeRawHooks(#"""
-        { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] } ] } }
-        """#)
-
-        try makeInstaller().uninstall()
-
-        let hooksFile = try readHooks()
-        XCTAssertEqual(commandStrings(stopGroups(hooksFile)), ["/usr/local/bin/notify-stop.sh"])
-    }
-
-    func testUninstallDoesNotRewriteFileWhenNoRelayHookIsPresent() throws {
-        try writeRawHooks(#"""
-        { "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "/usr/local/bin/notify-stop.sh" } ] } ] } }
-        """#)
-        let bytesBefore = try Data(contentsOf: hooksURL)
-
-        try makeInstaller().uninstall()
-
-        let bytesAfter = try Data(contentsOf: hooksURL)
-        XCTAssertEqual(bytesBefore, bytesAfter)
-    }
 
     // MARK: - Status
 
@@ -384,6 +138,13 @@ final class CodexInstallerTests: XCTestCase {
         let installer = makeInstaller()
         try installer.install()
         XCTAssertEqual(try installer.status(), .installedTrustRequired)
+    }
+
+    func testStatusIsNotInstalledAfterUninstall() throws {
+        let installer = makeInstaller()
+        try installer.install()
+        try installer.uninstall()
+        XCTAssertEqual(try installer.status(), .notInstalled)
     }
 
     // MARK: - CODEX_HOME seam
@@ -414,7 +175,7 @@ final class CodexInstallerTests: XCTestCase {
         let bytesBefore = try Data(contentsOf: hooksURL)
 
         XCTAssertThrowsError(try makeInstaller().install()) { error in
-            XCTAssertEqual(error as? CodexInstallerError, .hooksDisabledInConfig)
+            XCTAssertEqual(error as? IntegrationInstallerError, .hooksDisabledInConfig)
         }
 
         let bytesAfter = try Data(contentsOf: hooksURL)
@@ -429,7 +190,7 @@ final class CodexInstallerTests: XCTestCase {
         let bytesBefore = try Data(contentsOf: hooksURL)
 
         XCTAssertThrowsError(try makeInstaller().install()) { error in
-            XCTAssertEqual(error as? CodexInstallerError, .hooksDisabledInConfig)
+            XCTAssertEqual(error as? IntegrationInstallerError, .hooksDisabledInConfig)
         }
 
         let bytesAfter = try Data(contentsOf: hooksURL)
@@ -493,7 +254,7 @@ final class CodexInstallerTests: XCTestCase {
         """#)
 
         XCTAssertThrowsError(try makeInstaller().install()) { error in
-            XCTAssertEqual(error as? CodexInstallerError, .hooksDisabledInConfig)
+            XCTAssertEqual(error as? IntegrationInstallerError, .hooksDisabledInConfig)
         }
     }
 

@@ -1032,7 +1032,7 @@ final class AppModel {
     /// Maps a thrown installer error to a user-facing `.configurationError`, without ever
     /// including the underlying error's text (which may carry file paths or content).
     private static func configurationErrorStatus(for provider: AgentProvider, error: Error) -> IntegrationStatus {
-        if provider == .codex, case CodexInstallerError.hooksDisabledInConfig = error {
+        if provider == .codex, case IntegrationInstallerError.hooksDisabledInConfig = error {
             return .configurationError(CodexInstaller.hooksDisabledMessage)
         }
         switch provider {
