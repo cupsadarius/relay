@@ -10,6 +10,12 @@ packages:
   WhisperKit:
     url: https://github.com/argmaxinc/argmax-oss-swift.git
     exactVersion: 1.1.0
+  MLXSwiftLM:
+    url: https://github.com/ml-explore/mlx-swift-lm.git
+    exactVersion: 3.31.4
+  MLXSwift:
+    url: https://github.com/ml-explore/mlx-swift.git
+    exactVersion: 0.31.6
 targets:
   Relay:
     type: application
@@ -28,6 +34,12 @@ targets:
         product: FluidAudio
       - package: WhisperKit
         product: WhisperKit
+      - package: MLXSwiftLM
+        product: MLXLLM
+      - package: MLXSwiftLM
+        product: MLXLMCommon
+      - package: MLXSwift
+        product: MLX
       - target: RelayHook
     settings:
       base:
