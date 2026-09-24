@@ -31,6 +31,10 @@ actor CleanupGenerationSlot {
     private var active: Active?
     private var closed = false
     private var idleWaiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
+    /// The pending timeout task backing each entry in `idleWaiters` that was given a `limit`
+    /// (review fix 9). Cancelled once its waiter resolves for any other reason, instead of being
+    /// left to sleep out its full duration for nothing.
+    private var idleTimers: [UUID: Task<Void, Never>] = [:]
 
     init(
         preemptWait: Duration = .milliseconds(150),
@@ -101,21 +105,30 @@ actor CleanupGenerationSlot {
         let id = UUID()
         if let limit {
             let sleep = sleep
-            Task {
-                try? await sleep(limit)
-                self.expireWaiter(id)
+            idleTimers[id] = Task {
+                do {
+                    try await sleep(limit)
+                    self.expireWaiter(id)
+                } catch {
+                    // Cancelled by `resumeIdleWaiters()`/`expireWaiter(_:)`: the waiter has
+                    // already been resolved some other way, nothing left to do here.
+                }
             }
         }
         return await withCheckedContinuation { idleWaiters[id] = $0 }
     }
 
     private func expireWaiter(_ id: UUID) {
+        idleTimers.removeValue(forKey: id)
         idleWaiters.removeValue(forKey: id)?.resume(returning: false)
     }
 
     private func resumeIdleWaiters() {
         let waiters = idleWaiters
         idleWaiters = [:]
+        let timers = idleTimers
+        idleTimers = [:]
+        for timer in timers.values { timer.cancel() }
         for waiter in waiters.values { waiter.resume(returning: true) }
     }
 }

@@ -124,6 +124,34 @@ final class CleanupGenerationSlotTests: XCTestCase {
         _ = try? await caller.value
     }
 
+    /// Review fix 9: when the drained wait resolves because the test generation finished (not
+    /// because the 150ms timeout elapsed), the timer task backing that wait is cancelled instead
+    /// of being left to sleep out its full duration. Non-cooperative so the cancelled test
+    /// generation stays pending (rather than resolving immediately) until `finish` below, the
+    /// same way `testProductionFailsOpenWhenATestWillNotDrainIn150Milliseconds` keeps its timeout
+    /// path observable.
+    func testDrainingBeforeTheTimeoutCancelsTheIdleTimer() async throws {
+        let sleeper = TestSleeper()
+        let slot = CleanupGenerationSlot(sleep: sleeper.sleepFunction)
+        let operation = ManualOperation(cooperative: false)
+        let test = Task { try await slot.run(.test) { try await operation.run() } }
+        await eventually { operation.startCount == 1 }
+
+        let production = Task { try await slot.run(.production) { "prod" } }
+        await eventually { sleeper.pending(.milliseconds(150)) == 1 }
+        operation.finish(.success("drained"))
+
+        let output = try await production.value
+        XCTAssertEqual(output, "prod")
+        await eventually { sleeper.pending(.milliseconds(150)) == 0 }
+        do {
+            _ = try await test.value
+            XCTFail("expected preempted")
+        } catch {
+            XCTAssertEqual(error as? CleanupSlotError, .preempted)
+        }
+    }
+
     func testCloseWaitsForTheActiveGenerationAndRejectsNewOnesUntilOpen() async throws {
         let slot = CleanupGenerationSlot()
         let operation = ManualOperation(cooperative: false)
