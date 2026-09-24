@@ -36,6 +36,8 @@ protocol AppleCleanupBackending: Sendable {
     func availability() -> AppleCleanupAvailability
     func supportsLocale(_ locale: Locale) -> Bool
     func prewarm(instructions: String)
+    /// Drops the prewarmed session, if any (memory pressure).
+    func releasePrewarm()
     /// Throws `CleanupSlotError`, `CleanupEngineError.generation`, or `CancellationError`.
     func generate(_ request: CleanupRequest, priority: CleanupPriority) async throws -> String
 }

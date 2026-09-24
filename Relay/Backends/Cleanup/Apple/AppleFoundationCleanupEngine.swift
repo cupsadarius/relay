@@ -25,6 +25,10 @@ final class AppleFoundationCleanupEngine: AppleCleanupEngine {
         prewarmed.withLock { $0 = session }
     }
 
+    func releasePrewarm() {
+        prewarmed.withLock { $0 = nil }
+    }
+
     func respond(_ request: CleanupRequest) async throws -> String {
         let session = Self.session(instructions: request.instructions)
         let options = GenerationOptions(sampling: .greedy, maximumResponseTokens: request.maxOutputTokens)
@@ -50,6 +54,8 @@ final class AppleFoundationCleanupEngine: AppleCleanupEngine {
         return LanguageModelSession(model: .default, transcript: Turns(entries: entries))
     }
 
+    /// `SystemLanguageModel.Availability` is `@frozen`, so the outer switch is exhaustive with no
+    /// `@unknown default`. `UnavailableReason` is not frozen and keeps one.
     static func map(_ availability: SystemLanguageModel.Availability) -> AppleCleanupAvailability {
         switch availability {
         case .available:
@@ -61,11 +67,6 @@ final class AppleFoundationCleanupEngine: AppleCleanupEngine {
             case .modelNotReady: return .unavailable(.modelNotReady)
             @unknown default: return .unavailable(.unknown)
             }
-        @unknown default:
-            // Controller decision (Task 23): `SystemLanguageModel.Availability` is `@frozen` in
-            // this SDK, so this arm is unreachable today (compiler warning, not an error) — kept
-            // so a future SDK that adds a top-level case still maps to something sane.
-            return .unavailable(.unknown)
         }
     }
 

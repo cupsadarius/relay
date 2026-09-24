@@ -285,6 +285,15 @@ final class TranscriptCleanupServiceTests: XCTestCase {
         XCTAssertEqual(apple.prewarmCount, 1)
     }
 
+    func testPrewarmSkipsTheAppleModelForAnUnsupportedLocale() {
+        let apple = FakeAppleCleanup(supportsLocale: false)
+        makeService(selection: .appleSystem, apple: apple).prewarm()
+        let english = FakeAppleCleanup()
+        makeService(selection: .appleSystem, apple: english, locale: Locale(identifier: "fr_FR")).prewarm()
+        XCTAssertEqual(apple.prewarmCount, 0)
+        XCTAssertEqual(english.prewarmCount, 0)
+    }
+
     func testPrewarmDoesNothingWhenDisabledUnavailableOrNotDownloaded() async {
         let mlx = FakeMLXRuntime(present: [])
         let apple = FakeAppleCleanup(availability: .unavailable(.modelNotReady))
@@ -356,6 +365,17 @@ final class TranscriptCleanupServiceTests: XCTestCase {
         pressure.fire()
 
         await eventually { await mlx.unloadCauses == [.memoryPressure] }
+        withExtendedLifetime(service) {}
+    }
+
+    func testMemoryPressureReleasesTheApplePrewarmedSession() async {
+        let pressure = FakeMemoryPressure()
+        let apple = FakeAppleCleanup()
+        let service = makeService(apple: apple, memoryPressure: pressure)
+
+        pressure.fire()
+
+        await eventually { apple.releaseCount == 1 }
         withExtendedLifetime(service) {}
     }
 

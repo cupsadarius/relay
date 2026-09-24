@@ -42,7 +42,8 @@ final class TranscriptCleanupService: TranscriptCleaning {
         self.locale = locale
         self.diagnostics = diagnostics
 
-        memoryPressure?.start { [mlx] in
+        memoryPressure?.start { [mlx, apple] in
+            apple.releasePrewarm()
             Task { await mlx.unload(cause: .memoryPressure) }
         }
         // The service is the runtime's only event consumer. The loop holds `self` weakly and ends
@@ -152,7 +153,7 @@ final class TranscriptCleanupService: TranscriptCleaning {
                 await mlx.touch()
             }
         } else {
-            guard case .available = apple.availability() else { return }
+            guard case .available = apple.availability(), Self.isEnglish(locale()), apple.supportsLocale(locale()) else { return }
             apple.prewarm(instructions: CleanupPrompt.instructions)
         }
     }
