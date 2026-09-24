@@ -49,7 +49,7 @@ Build only: replace `test` with `build`.
 
 Record every spike result here, in this file, in the same commit as the spike's results document.
 
-- **S1 (tokenizer parity, Task 1):** _pending_. Record `PASS → ArgmaxCore bridge` or `FAIL → swift-transformers 1.3.4 Tokenizers fallback (Task 1 Step 9)`.
+- **S1 (tokenizer parity, Task 1):** **PASS → ArgmaxCore bridge.** 0/30 encode mismatches, 0/30 decode mismatches, `<|im_end|>` = 151645, offline load confirmed (Wi-Fi off). See `docs/superpowers/spikes/2026-09-24-dictation-cleanup-spike-results.md`.
 - **S3 (MLX timing, Task 3):** _pending_. Record load time and warm p50/p95 for each model, and the decision letter (A/B/C).
 - **S2 (FoundationModels background rate limiting, Task 4, manual):** _pending_. Record the paced and burst `rateLimited` rates per macOS version and the decision (`ship` / `note` / `hide`). Task 23 applies it.
 

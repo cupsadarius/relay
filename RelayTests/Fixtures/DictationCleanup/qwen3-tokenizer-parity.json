@@ -1,0 +1,513 @@
+{
+ "tokenizerSHA256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+ "transformersVersion": "4.56.2",
+ "imEndID": 151645,
+ "cases": [
+  {
+   "text": "Hello, world.",
+   "ids": [
+    9707,
+    11,
+    1879,
+    13
+   ]
+  },
+  {
+   "text": "uh so I think we should um ship it on friday",
+   "ids": [
+    12540,
+    773,
+    358,
+    1744,
+    582,
+    1265,
+    4443,
+    8284,
+    432,
+    389,
+    79313
+   ]
+  },
+  {
+   "text": "set the port to 3, no, 4",
+   "ids": [
+    746,
+    279,
+    2635,
+    311,
+    220,
+    18,
+    11,
+    902,
+    11,
+    220,
+    19
+   ]
+  },
+  {
+   "text": "<|im_start|>system\nClean up the text.<|im_end|>\n",
+   "ids": [
+    151644,
+    8948,
+    198,
+    27529,
+    705,
+    279,
+    1467,
+    13,
+    151645,
+    198
+   ]
+  },
+  {
+   "text": "<|im_start|>user\nhello /no_think<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+   "ids": [
+    151644,
+    872,
+    198,
+    14990,
+    608,
+    2152,
+    5854,
+    766,
+    151645,
+    198,
+    151644,
+    77091,
+    198,
+    151667,
+    271,
+    151668,
+    271
+   ]
+  },
+  {
+   "text": "<think>reasoning</think>",
+   "ids": [
+    151667,
+    19895,
+    287,
+    151668
+   ]
+  },
+  {
+   "text": "<|endoftext|>",
+   "ids": [
+    151643
+   ]
+  },
+  {
+   "text": "func refresh(token: String) -> Bool { return !token.isEmpty }",
+   "ids": [
+    2830,
+    10408,
+    13274,
+    25,
+    923,
+    8,
+    1464,
+    12608,
+    314,
+    470,
+    753,
+    5839,
+    9208,
+    335
+   ]
+  },
+  {
+   "text": "let userService = AuthService.shared",
+   "ids": [
+    1149,
+    30662,
+    284,
+    38598,
+    18062
+   ]
+  },
+  {
+   "text": "user_id, account_id, __init__",
+   "ids": [
+    872,
+    842,
+    11,
+    2692,
+    842,
+    11,
+    1304,
+    2327,
+    563
+   ]
+  },
+  {
+   "text": "open src/app.swift I mean src/main.swift",
+   "ids": [
+    2508,
+    2286,
+    10640,
+    13290,
+    358,
+    3076,
+    2286,
+    15351,
+    13290
+   ]
+  },
+  {
+   "text": "~/Library/Application Support/Relay/Models",
+   "ids": [
+    22714,
+    16915,
+    88204,
+    9186,
+    14,
+    6740,
+    352,
+    14,
+    16969
+   ]
+  },
+  {
+   "text": "./config/app_settings.json and ../build/Debug",
+   "ids": [
+    1725,
+    1676,
+    10640,
+    10853,
+    4323,
+    323,
+    22082,
+    5834,
+    14,
+    7939
+   ]
+  },
+  {
+   "text": "run it with --verbose no --quiet -v",
+   "ids": [
+    6108,
+    432,
+    448,
+    1177,
+    14883,
+    902,
+    1177,
+    43650,
+    481,
+    85
+   ]
+  },
+  {
+   "text": "https://huggingface.co/mlx-community/Qwen3-0.6B-4bit?blobs=true",
+   "ids": [
+    2428,
+    1110,
+    71,
+    35268,
+    1564,
+    6830,
+    59548,
+    87,
+    89786,
+    45274,
+    16948,
+    18,
+    12,
+    15,
+    13,
+    21,
+    33,
+    12,
+    19,
+    4489,
+    30,
+    38145,
+    1279,
+    11265
+   ]
+  },
+  {
+   "text": "www.example.com/docs#setup",
+   "ids": [
+    2136,
+    7724,
+    905,
+    25967,
+    2,
+    15188
+   ]
+  },
+  {
+   "text": "bump to v1.2.3-beta, not 2.0.",
+   "ids": [
+    65,
+    1510,
+    311,
+    348,
+    16,
+    13,
+    17,
+    13,
+    18,
+    67640,
+    11,
+    537,
+    220,
+    17,
+    13,
+    15,
+    13
+   ]
+  },
+  {
+   "text": "commit 3b1b176 and 0xFF",
+   "ids": [
+    17413,
+    220,
+    18,
+    65,
+    16,
+    65,
+    16,
+    22,
+    21,
+    323,
+    220,
+    15,
+    9264
+   ]
+  },
+  {
+   "text": "we saw 1,000 errors at 50% load",
+   "ids": [
+    896,
+    5485,
+    220,
+    16,
+    11,
+    15,
+    15,
+    15,
+    5975,
+    518,
+    220,
+    20,
+    15,
+    4,
+    2795
+   ]
+  },
+  {
+   "text": "\"quoted text\" and 'single quotes' and don't",
+   "ids": [
+    1,
+    63725,
+    1467,
+    1,
+    323,
+    364,
+    15338,
+    17194,
+    6,
+    323,
+    1513,
+    944
+   ]
+  },
+  {
+   "text": "“curly quotes” and ‘single curly’",
+   "ids": [
+    2073,
+    2352,
+    398,
+    17194,
+    854,
+    323,
+    3369,
+    15338,
+    68103,
+    527
+   ]
+  },
+  {
+   "text": "emoji 🎉🚀 and flags 🇷🇴",
+   "ids": [
+    37523,
+    11162,
+    236,
+    231,
+    145836,
+    323,
+    8042,
+    11162,
+    229,
+    115,
+    146514
+   ]
+  },
+  {
+   "text": "中文测试：你好，世界。",
+   "ids": [
+    104811,
+    81705,
+    5122,
+    108386,
+    3837,
+    99489,
+    1773
+   ]
+  },
+  {
+   "text": "日本語のテキストとカタカナ",
+   "ids": [
+    101059,
+    102819,
+    15767,
+    56833,
+    61803,
+    70534,
+    19182,
+    70393,
+    46207,
+    70393,
+    95352
+   ]
+  },
+  {
+   "text": "한국어 문장입니다",
+   "ids": [
+    23573,
+    124785,
+    31079,
+    53435,
+    40853,
+    78952
+   ]
+  },
+  {
+   "text": "  leading and trailing spaces  ",
+   "ids": [
+    220,
+    6388,
+    323,
+    27748,
+    12621,
+    256
+   ]
+  },
+  {
+   "text": "tabs\tand\nnewlines\r\n",
+   "ids": [
+    30993,
+    52477,
+    198,
+    931,
+    7969,
+    319
+   ]
+  },
+  {
+   "text": "ÄÖÜ äöü ß é è ñ",
+   "ids": [
+    86975,
+    63361,
+    52491,
+    12709,
+    2956,
+    2391,
+    1683,
+    253,
+    3958,
+    11422,
+    1683,
+    109
+   ]
+  },
+  {
+   "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "ids": [
+    69440,
+    69440,
+    69440,
+    69440,
+    69440,
+    69440,
+    69440,
+    69440,
+    69440,
+    69440,
+    69440,
+    69440,
+    69440,
+    69440,
+    69440,
+    69440,
+    69440,
+    69440,
+    69440,
+    69440,
+    69440,
+    69440,
+    69440,
+    69440,
+    69440
+   ]
+  },
+  {
+   "text": "The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. ",
+   "ids": [
+    785,
+    3974,
+    13876,
+    38835,
+    34208,
+    916,
+    279,
+    15678,
+    5562,
+    13,
+    576,
+    3974,
+    13876,
+    38835,
+    34208,
+    916,
+    279,
+    15678,
+    5562,
+    13,
+    576,
+    3974,
+    13876,
+    38835,
+    34208,
+    916,
+    279,
+    15678,
+    5562,
+    13,
+    576,
+    3974,
+    13876,
+    38835,
+    34208,
+    916,
+    279,
+    15678,
+    5562,
+    13,
+    576,
+    3974,
+    13876,
+    38835,
+    34208,
+    916,
+    279,
+    15678,
+    5562,
+    13,
+    220
+   ]
+  }
+ ]
+}

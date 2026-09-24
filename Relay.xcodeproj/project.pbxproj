@@ -166,6 +166,7 @@
 		9FE03DC36147EFCCF7FD4D45 /* FocusModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3332E401CE6B77C9E9402E3 /* FocusModels.swift */; };
 		A15BB32BD4ADCD03C2E06DDB /* AudioEngineConfigurationObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB762454C8D84D6E76309FF /* AudioEngineConfigurationObserver.swift */; };
 		A6E1A60876F04F0F1C465F34 /* SpeechModelManaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1051DD5EB76A94B3E60AA1D /* SpeechModelManaging.swift */; };
+		ABE5EBD671CC3D39BAE5C9CC /* ArgmaxTokenizerBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02299D7BB8936275862AFC37 /* ArgmaxTokenizerBridge.swift */; };
 		AC21C5CAF0A02A9029C1127C /* UnixSocketServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91ED1D7A6F95F0D69DB81AEF /* UnixSocketServer.swift */; };
 		ACDE15917036721CB1E97F72 /* WhisperModelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CBE40EFE5F3963B9976AA13 /* WhisperModelStore.swift */; };
 		ACF9928864FA603052194AC3 /* SpeechModelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C548A33FC956251EDBE84B56 /* SpeechModelController.swift */; };
@@ -258,10 +259,12 @@
 		F5ADF1BA04287F3867763907 /* BoundedStdinReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51D70AE0856B4E8045598BF7 /* BoundedStdinReader.swift */; };
 		F5BC49420AA4B9A6AFD3D984 /* ReplayLastResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE91E448A235BFDED76BB9FA /* ReplayLastResolverTests.swift */; };
 		F5F6C241001C32251E08702D /* PCMFramer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C52A3EAD989A599CE25D4ED4 /* PCMFramer.swift */; };
+		F622D4398F3FC51984677C4B /* qwen3-tokenizer-parity.json in Resources */ = {isa = PBXBuildFile; fileRef = ACCB3EE88ACF5841948A19F8 /* qwen3-tokenizer-parity.json */; };
 		F9565864D90DAB867000F0A0 /* RulesSpeechPreprocessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01700458AA3E57B79695FD7 /* RulesSpeechPreprocessor.swift */; };
 		FABE05EEA8CE668B5ABF36B1 /* SpeechVoiceRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58D5614D78B7D50ED2D78984 /* SpeechVoiceRow.swift */; };
 		FBB3CAB15383FEA0F8DD3B5A /* BuildFlavorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC35E2F74ED8791FA8C4CC75 /* BuildFlavorTests.swift */; };
 		FC7E8DB4267BEA6CA620A14E /* AgentSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C8084505DDA7AD9AACEA069 /* AgentSession.swift */; };
+		FD2982B28924118EF2F689EF /* QwenTokenizerParityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9EAE55317D5EECC192544FD /* QwenTokenizerParityTests.swift */; };
 		FD8ACDA2DE0E5905707C8859 /* HerdrSocketClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13B9E204D55C00E48942AA2 /* HerdrSocketClientTests.swift */; };
 		FEEB68ED69E952C82B735A84 /* DictationCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8319285D2256A603BD08A571 /* DictationCoordinatorTests.swift */; };
 /* End PBXBuildFile section */
@@ -286,6 +289,7 @@
 /* Begin PBXFileReference section */
 		0007CFDD668AB6C9B6207607 /* HookEnvelope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookEnvelope.swift; sourceTree = "<group>"; };
 		011596DF76B7BD1E561353DC /* TmuxClientBoundsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxClientBoundsTests.swift; sourceTree = "<group>"; };
+		02299D7BB8936275862AFC37 /* ArgmaxTokenizerBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArgmaxTokenizerBridge.swift; sourceTree = "<group>"; };
 		032A9782E9C2C931DFB89322 /* ActivityOverlayPanelHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverlayPanelHost.swift; sourceTree = "<group>"; };
 		035CD1C6FBA0F8F91F652E6F /* WindowFocusCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowFocusCoordinatorTests.swift; sourceTree = "<group>"; };
 		0426F6B17538598D1ECA3EB8 /* ParakeetBackendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParakeetBackendTests.swift; sourceTree = "<group>"; };
@@ -459,6 +463,7 @@
 		AC1EE06D54321DF43FE4A78E /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
 		AC232F60ABB4C877E9AFBAC8 /* ClaudeCodeInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCodeInstaller.swift; sourceTree = "<group>"; };
 		AC8E4CB0A5BAC6C92FA2A8E6 /* BackendIDTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendIDTests.swift; sourceTree = "<group>"; };
+		ACCB3EE88ACF5841948A19F8 /* qwen3-tokenizer-parity.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "qwen3-tokenizer-parity.json"; sourceTree = "<group>"; };
 		AE11899BF95D51FEF77A4A4C /* SettingsViewsSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewsSmokeTests.swift; sourceTree = "<group>"; };
 		B1FC20A718A0939B4DDA9CB0 /* FocusResolutionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusResolutionService.swift; sourceTree = "<group>"; };
 		B2640FB004F58617990C7498 /* Relay.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Relay.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -494,6 +499,7 @@
 		D3040811122AB7731EB71724 /* AgentSessionRegistryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSessionRegistryTests.swift; sourceTree = "<group>"; };
 		D4A3AE84BABE6230BCA922FB /* IntegrationDiagnosticsLogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrationDiagnosticsLogTests.swift; sourceTree = "<group>"; };
 		D52815C78FFC96732B4BC0DE /* DiagnosticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsTests.swift; sourceTree = "<group>"; };
+		D9EAE55317D5EECC192544FD /* QwenTokenizerParityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QwenTokenizerParityTests.swift; sourceTree = "<group>"; };
 		DA1878571E35A1485700DA5C /* TTSRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSRouter.swift; sourceTree = "<group>"; };
 		DAA71CF6D19AFEA28AC72CE1 /* ActivityOverlayModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverlayModel.swift; sourceTree = "<group>"; };
 		DBE263E8F61285140D13E858 /* SpeechActionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechActionsTests.swift; sourceTree = "<group>"; };
@@ -690,6 +696,7 @@
 				1BD1713F6B25B17ED9F3EEA7 /* PocketTTSBackendTests.swift */,
 				4A6DAA18E009C573645251DD /* PocketTTSModelManagerTests.swift */,
 				CBF5F56E780A70C3E1007687 /* StreamingTranscriberTests.swift */,
+				A2CD4E5FEE88256B9EBB6596 /* Cleanup */,
 				4C0DE990A0B635E41CAE93F6 /* Whisper */,
 			);
 			path = Backends;
@@ -818,6 +825,30 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		92947ED99300A33C70EA3DE1 /* Cleanup */ = {
+			isa = PBXGroup;
+			children = (
+				02299D7BB8936275862AFC37 /* ArgmaxTokenizerBridge.swift */,
+			);
+			path = Cleanup;
+			sourceTree = "<group>";
+		};
+		9A7C4337FC7AA12C635DC277 /* DictationCleanup */ = {
+			isa = PBXGroup;
+			children = (
+				ACCB3EE88ACF5841948A19F8 /* qwen3-tokenizer-parity.json */,
+			);
+			path = DictationCleanup;
+			sourceTree = "<group>";
+		};
+		A2CD4E5FEE88256B9EBB6596 /* Cleanup */ = {
+			isa = PBXGroup;
+			children = (
+				D9EAE55317D5EECC192544FD /* QwenTokenizerParityTests.swift */,
+			);
+			path = Cleanup;
+			sourceTree = "<group>";
+		};
 		A3B1078494319AB67E3172D5 /* App */ = {
 			isa = PBXGroup;
 			children = (
@@ -895,6 +926,14 @@
 				237C5A35DC1554EE6636311B /* Tmux */,
 			);
 			path = Sessions;
+			sourceTree = "<group>";
+		};
+		AFA2887F0199995AA87937AC /* Fixtures */ = {
+			isa = PBXGroup;
+			children = (
+				9A7C4337FC7AA12C635DC277 /* DictationCleanup */,
+			);
+			path = Fixtures;
 			sourceTree = "<group>";
 		};
 		B00C176C2A4AEE47AE970F01 /* Herdr */ = {
@@ -979,6 +1018,7 @@
 				887DB4ADA3775E932C1B5211 /* PocketTTSBackend.swift */,
 				A4D03283F020BF1BCD520856 /* PocketTTSModelManager.swift */,
 				C211838CBF61D21F08089E93 /* StreamingTranscriber.swift */,
+				92947ED99300A33C70EA3DE1 /* Cleanup */,
 				D6EFC6141A246F0DABA1F1A5 /* Whisper */,
 			);
 			path = Backends;
@@ -1057,6 +1097,7 @@
 				2BDD539D109C84431C88F668 /* Audio */,
 				31FBF222EAD919F3755F2425 /* Backends */,
 				A89903B3BCFD871D73F30B39 /* Domain */,
+				AFA2887F0199995AA87937AC /* Fixtures */,
 				1DC21581A672696A8892A074 /* Integrations */,
 				A9C98CE98619F32B501C1C85 /* Sessions */,
 				CE5EC27FB27E250A9F3858CE /* Shared */,
@@ -1130,6 +1171,7 @@
 			buildConfigurationList = E227B8FDC7CB304FEE66DF90 /* Build configuration list for PBXNativeTarget "RelayTests" */;
 			buildPhases = (
 				A5E928E34BD5CECB56D64538 /* Sources */,
+				3774D22157465511C4814F16 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -1203,6 +1245,14 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		3774D22157465511C4814F16 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F622D4398F3FC51984677C4B /* qwen3-tokenizer-parity.json in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B2BD664DAF308B86A7FDF1AC /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -1310,6 +1360,7 @@
 				8602F959E709BCBCB4B52245 /* ProcessAncestryTests.swift in Sources */,
 				62C9E5019CD4CCFDE401F3AA /* ProcessInspectorTests.swift in Sources */,
 				91CA532F4429D5B65476BEBC /* ProjectSmokeTests.swift in Sources */,
+				FD2982B28924118EF2F689EF /* QwenTokenizerParityTests.swift in Sources */,
 				CF6FF8CED61660A0B5B60BD1 /* RelayPathsTests.swift in Sources */,
 				7AEFCA937759E4B5F26FD384 /* RelayRuntime+Testing.swift in Sources */,
 				F5BC49420AA4B9A6AFD3D984 /* ReplayLastResolverTests.swift in Sources */,
@@ -1391,6 +1442,7 @@
 				9BBA5EDA12BC819F71FCA950 /* AppleSpeechModelManager.swift in Sources */,
 				9E0C7944EDBB2859454D8F58 /* AppleTTSAudioSource.swift in Sources */,
 				312A67F8371459CA07993365 /* AppleTTSBackend.swift in Sources */,
+				ABE5EBD671CC3D39BAE5C9CC /* ArgmaxTokenizerBridge.swift in Sources */,
 				2879114B6434D250B07AA5A5 /* AudioBufferUtilities.swift in Sources */,
 				A15BB32BD4ADCD03C2E06DDB /* AudioEngineConfigurationObserver.swift in Sources */,
 				7B16DB1EF1E1476A3EF26699 /* AudioEngineRouteChangeDecision.swift in Sources */,
