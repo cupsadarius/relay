@@ -61,7 +61,8 @@ The Qwen model goes through `SpeechModelManaging` like the Whisper models. The A
 ## 3. Non-goals
 
 - No cloud inference, including Private Cloud Compute.
-- No custom prompts, style controls or summarization.
+- No style controls or summarization. (The prompt itself IS user-editable — §10 addendum — but its
+  shape stays fixed: instructions plus demonstration examples, nothing else.)
 - No automatic model choice and no fallback from one cleanup model to another.
 - No cleanup of interim (live) transcription.
 - No rewriting of selected text.
@@ -481,6 +482,45 @@ Before the model runs, a deterministic pre-pass applies the literal corrections 
 - **Validation:** the output is validated against the pre-passed text as the input (§11). The validator also rejects, as `.literalInvented`, an output that holds a replaced old value more often than the pre-passed text still does. For each phrase rewrite it rejects, as `.literalInvented`, an output that contains the old phrase (case-insensitive, whole words) unless the pre-passed text still contains it, and, as `.literalMissing`, an output that lacks the new phrase. This catches a model that reverts the pre-pass.
 - **Fallback:** every fallback returns the ORIGINAL rules-cleaned text, never the pre-passed text, so fail-open never changes meaning (§8.1).
 
+### 10.2 Editable prompt (`CleanupPromptOverride`)
+
+The user can edit the prompt in Settings (§16). This is a deliberate, narrow exception to the
+original "no custom prompts" non-goal (§3): the shape stays fixed (instructions plus demonstration
+examples, nothing else), and the safety validator (§11) still runs unchanged on every output
+regardless of what is saved.
+
+```swift
+struct CleanupPromptOverride: Codable, Equatable, Sendable {
+    var instructions: String
+    var examples: [CleanupExample]
+}
+```
+
+- **Default.** `AppSettings.cleanupPromptOverride: CleanupPromptOverride?` is `nil` by default, meaning
+  the fixed `CleanupPrompt.instructions` / `CleanupPrompt.examples` (unchanged; never renamed).
+  `CleanupPrompt.effective(_ override:)` returns the pair to actually use: the override's, or the
+  defaults when `override` is `nil`. Every call site (production, the Test tool, both backends)
+  goes through `effective(_:)`, never through `CleanupPrompt.instructions` / `.examples` directly,
+  except the live eval (§19), which is pinned to the defaults on purpose.
+- **Validation (`CleanupPrompt.validate(_:)`), at Save.** Blocks Save: empty instructions (after
+  trimming), instructions over 4,000 characters, more than 12 examples, or an example with an empty
+  input or output. The first blocking issue is shown inline in the editor, and Save is disabled
+  while any exist. Separately, and NEVER blocking Save: an example whose output would fail
+  `CleanupSafetyValidator.validate(input:output:)` against its own input is flagged as a warning —
+  the validator still guards every real generation no matter what was saved.
+- **Plumbing.** `AppSettings` carries `cleanupPromptOverride` as a fourth optional field, decoded
+  per-field like every other optional (missing or malformed decodes to `nil`; no schema bump).
+  `SettingsController.cleanupPromptOverride` is a `@Sendable () -> CleanupPromptOverride?` read
+  seam, the same shape as `whisperSelection`/`cleanupSelection`. `TranscriptCleanupService` and
+  `DictationCleanupTester` take it as an injected closure and call
+  `CleanupPrompt.effective(promptOverride())` once per request (and once for Apple prewarm) to
+  build the `CleanupRequest`. `CleanupRequest` itself carries `instructions` and `examples` as
+  request data; both backends render whatever is on the request — `QwenChatTemplate` and
+  `MLXLoadedCleanupModel.chatMessages(for:)` for MLX, `AppleFoundationCleanupEngine.session
+  (instructions:examples:)` for Apple — never a static constant of their own.
+- **Privacy (§18).** The prompt is user-authored text like the transcript itself: it is never
+  logged, and never appears in a diagnostic message or in `DiagnosticsRecorder.copyText`.
+
 ## 11. Safety validation (`CleanupSafetyValidator`)
 
 The validator is pure and deterministic, and it runs on both engines. The same validator judges production and Test runs. Its input is the pre-passed text (§10.1). Checks run in this order: `empty`, `reasoningMarkup`, `wrapper`, `refusal`, `tooLong`, `literalInvented`, `literalMissing`, then the phrase-rewrite and replaced-value checks of §10.1, then `contentDropped` (§11.8).
@@ -786,10 +826,10 @@ In `Relay/App/SpeechBackendsModel.swift`:
 
 These additive fields go in `Relay/Domain/AppSettings.swift`, in four places:
 
-1. **Stored properties**, after `selectedSpeechModelByBackend` (31): `var dictationCleanupEnabled: Bool` and `var selectedCleanupModelID: String?`.
-2. **`CodingKeys`** (53-59): `case dictationCleanupEnabled, selectedCleanupModelID`.
-3. **`init(from:)`**, after 100-103: `dictationCleanupEnabled = field(.dictationCleanupEnabled, default: fallback.dictationCleanupEnabled)` and `selectedCleanupModelID = field(.selectedCleanupModelID, default: fallback.selectedCleanupModelID)`.
-4. **Memberwise init** (225-249): parameters `dictationCleanupEnabled: Bool = false` and `selectedCleanupModelID: String? = nil`, with their assignments. `defaults` (251-266) needs no change, because the parameters have default values.
+1. **Stored properties**, after `selectedSpeechModelByBackend` (31): `var dictationCleanupEnabled: Bool`, `var selectedCleanupModelID: String?`, and `var cleanupPromptOverride: CleanupPromptOverride?` (§10.2).
+2. **`CodingKeys`** (53-59): `case dictationCleanupEnabled, selectedCleanupModelID, cleanupPromptOverride`.
+3. **`init(from:)`**, after 100-103: `dictationCleanupEnabled = field(.dictationCleanupEnabled, default: fallback.dictationCleanupEnabled)`, `selectedCleanupModelID = field(.selectedCleanupModelID, default: fallback.selectedCleanupModelID)`, and `cleanupPromptOverride = field(.cleanupPromptOverride, default: fallback.cleanupPromptOverride)` — the same whole-value per-field lossy decode as every other optional: a missing key or a malformed value (e.g. a badly shaped example) falls back to `nil` without disturbing any other field.
+4. **Memberwise init** (225-249): parameters `dictationCleanupEnabled: Bool = false`, `selectedCleanupModelID: String? = nil`, and `cleanupPromptOverride: CleanupPromptOverride? = nil`, with their assignments. `defaults` (251-266) needs no change, because the parameters have default values.
 
 - **No schema bump.** `currentSchemaVersion` stays 2 (37). The per-field decode already handles missing keys.
 - **Downgrade:** an older build ignores the unknown keys and drops them on its next save. The user loses the toggle and the selection, which is harmless because the default is off.
@@ -812,9 +852,12 @@ var cleanupSelection: CleanupModelSelection {        // @Sendable () -> CleanupM
 }
 var cleanupSelectionWriter: CleanupModelSelectionWriter { { [weak self] in self?.setSelectedCleanupModel($0) } }
 var cleanupEnabled: @Sendable () -> Bool { let snapshot = snapshot; return { snapshot.value.dictationCleanupEnabled } }
+var cleanupPromptOverride: @Sendable () -> CleanupPromptOverride? { let snapshot = snapshot; return { snapshot.value.cleanupPromptOverride } }
 ```
 
 A stale or unknown `selectedCleanupModelID` resolves to `nil`, meaning no selection and `.notAttempted`, at read time. The stored string is left alone.
+
+`cleanupPromptOverride` (§10.2) follows the same read-seam shape: production (`TranscriptCleanupService`) and the Test tool (`DictationCleanupTester`) take it as an injected `@Sendable () -> CleanupPromptOverride?` closure and resolve it through `CleanupPrompt.effective(_:)` once per request. `setCleanupPromptOverride(_:)` writes it through the controller like every other setting; passing `nil` resets to the default prompt.
 
 ## 16. UI
 
@@ -841,6 +884,18 @@ Section "Dictation Cleanup":
 - Do not reuse `SpeechBackendSettingsSection`. It is built around a backend list with enable and priority controls, and cleanup has neither. There are no priority arrows.
 - A **"Test Cleanup…"** button under the rows opens the Test sheet with the selected model, or the first usable one.
 - Messages come from `model.speechBackends.models.messages[.dictationCleanup]`.
+- **Prompt row (§10.2).** Below the toggle and its caption, above the provider rows: a row showing
+  "Prompt", a subtitle of "Default" or "Custom" (`model.settings.cleanupPromptOverride == nil`),
+  and an "Edit…" button (`.controlSize(.small)`, matching the other row buttons). "Edit…" opens
+  `CleanupPromptEditorSheet` as a sheet.
+- **`CleanupPromptEditorSheet`.** Follows `DictationCleanupTestSheet`'s look. Edits a draft
+  `CleanupPromptOverride` copy (seeded from the saved override, or from `CleanupPrompt`'s defaults
+  when there is none); nothing is written until Save. Contents: a `TextEditor` for the
+  instructions; an editable list of examples, each an Input and an Output `TextField` plus Add and
+  Remove; "Reset to Default" (writes `nil` and closes); Cancel; and Save, disabled while
+  `CleanupPrompt.validate(draft)` reports a blocking error (shown inline, live, as the draft
+  changes) and showing a non-blocking warning banner when any example would fail the safety
+  validator.
 
 ## 17. Test tool
 
