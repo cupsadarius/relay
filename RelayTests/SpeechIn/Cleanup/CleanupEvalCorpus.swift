@@ -29,3 +29,22 @@ enum CleanupEvalCorpus {
         return try JSONDecoder().decode([CleanupEvalCase].self, from: Data(contentsOf: url))
     }
 }
+
+/// How the live eval compares a model output with a case's `reference` and `acceptable` outputs.
+enum CleanupEvalScoring {
+    /// Spec §19 "reference match": normalized for whitespace and case only.
+    static func referenceKey(_ text: String) -> String {
+        text.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
+    /// `referenceKey` that also ignores sentence punctuation (`, ; : ! ? .` before whitespace or
+    /// the end), so correction application and cue-negative over-corrections judge the words a
+    /// model kept, not its commas. Punctuation inside a literal ("1.5", "1,000", "https://") stays.
+    static func contentKey(_ text: String) -> String {
+        referenceKey(text.replacing(/[,;:!?.]+(?=\s|$)/, with: " "))
+    }
+
+    static func matches(_ output: String, good: [String], key: (String) -> String) -> Bool {
+        Set(good.map(key)).contains(key(output))
+    }
+}

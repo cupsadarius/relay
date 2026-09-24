@@ -62,7 +62,6 @@ final class CleanupModelEvalTests: XCTestCase {
     private func evaluate(_ id: CleanupModelID, generate: (CleanupRequest) async throws -> String) async throws {
         let corpus = try CleanupEvalCorpus.load().filter { $0.category != "nonEnglish" }
         let validator = CleanupSafetyValidator()
-        let normalize: (String) -> String = { $0.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ") }
         func request(_ input: String) -> CleanupRequest {
             CleanupRequest(modelID: id, instructions: CleanupPrompt.instructions, input: input, maxOutputTokens: CleanupPrompt.maxOutputTokens(for: input))
         }
@@ -84,14 +83,16 @@ final class CleanupModelEvalTests: XCTestCase {
             latencies.append(Self.milliseconds(clock.now - started))
 
             let verdict = validator.validate(input: testCase.input, output: output)
-            let good = Set(([testCase.reference] + testCase.acceptable).map(normalize))
-            var matches = false
+            let good = [testCase.reference] + testCase.acceptable
+            // `contentMatches` ignores sentence punctuation: correction application and cue-negative
+            // over-corrections judge the words kept. `referenceMatchRate` stays strict (spec §19).
+            var contentMatches = false
             switch verdict {
             case let .accept(cleaned):
                 accepted += 1
-                matches = good.contains(normalize(cleaned))
-                if matches { referenceMatches += 1 }
-                if testCase.category == "cueNegative", !matches { cueNegativeOverCorrections += 1 }
+                if CleanupEvalScoring.matches(cleaned, good: good, key: CleanupEvalScoring.referenceKey) { referenceMatches += 1 }
+                contentMatches = CleanupEvalScoring.matches(cleaned, good: good, key: CleanupEvalScoring.contentKey)
+                if testCase.category == "cueNegative", !contentMatches { cueNegativeOverCorrections += 1 }
             case .reject(.wrapper), .reject(.reasoningMarkup):
                 wrapperOrMarkup += 1
             case .reject:
@@ -99,7 +100,7 @@ final class CleanupModelEvalTests: XCTestCase {
             }
             if testCase.category.hasPrefix("correction."), testCase.category != "correction.retractionOnly" {
                 corrections.total += 1
-                if matches { corrections.applied += 1 }
+                if contentMatches { corrections.applied += 1 }
             }
             if testCase.category == "alreadyClean" {
                 alreadyClean.total += 1
