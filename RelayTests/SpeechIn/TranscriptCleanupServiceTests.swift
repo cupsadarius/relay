@@ -219,6 +219,17 @@ final class TranscriptCleanupServiceTests: XCTestCase {
         XCTAssertEqual(result.outcome, .cleaned)
     }
 
+    /// A model that reverts the phrase pre-pass falls back to the original text.
+    func testAModelThatRevertsAPhraseRewriteFallsBack() async throws {
+        let input = "uh change the user service no wait the auth service to use refresh tokens and don't change the API"
+        let mlx = FakeMLXRuntime(handler: { _, _ in "Change the user service to use refresh tokens. Don't change the API." })
+        let (result, _) = try await clean(makeService(mlx: mlx), input)
+        let inputs = await mlx.generateRequests.map(\.input)
+        XCTAssertEqual(inputs, ["uh change the auth service to use refresh tokens and don't change the API"])
+        XCTAssertEqual(result.outcome, .fellBack(.validationRejected(.literalInvented)))
+        XCTAssertEqual(result.text, input)
+    }
+
     func testDisabledCleanupDoesNotPrePass() async throws {
         let service = makeService(enabled: false)
         let (result, _) = try await clean(service, "set the port to 3, no, 4")

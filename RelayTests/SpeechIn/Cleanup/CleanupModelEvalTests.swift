@@ -84,7 +84,7 @@ final class CleanupModelEvalTests: XCTestCase {
             let output = (try? await generate(request(prePassed.text))) ?? ""
             latencies.append(Self.milliseconds(clock.now - started))
 
-            let verdict = validator.validate(input: prePassed.text, output: output, replaced: prePassed.replaced)
+            let verdict = validator.validate(input: prePassed.text, output: output, replaced: prePassed.replaced, phrases: prePassed.phrases)
             let good = [testCase.reference] + testCase.acceptable
             // `contentMatches` ignores sentence punctuation: correction application and cue-negative
             // over-corrections judge the words kept. `referenceMatchRate` stays strict (spec §19).

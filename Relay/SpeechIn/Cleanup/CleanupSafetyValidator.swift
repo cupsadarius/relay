@@ -20,10 +20,22 @@ struct CleanupSafetyValidator: Sendable {
 
     /// `input` is the pre-passed text the model received; `replaced` holds the comparison keys
     /// (`canonicalDigits ?? value`) of the old values the pre-pass removed (spec §10.1). An output
-    /// may not hold a replaced value more often than `input` still does.
-    func validate(input: String, output: String, replaced: [String]) -> ValidationVerdict {
+    /// may not hold a replaced value more often than `input` still does. For each phrase rewrite,
+    /// the output may not contain the old phrase and must contain the new one (case-insensitive,
+    /// whole words), so a model cannot revert the pre-pass.
+    func validate(input: String, output: String, replaced: [String], phrases: [PhraseRewrite] = []) -> ValidationVerdict {
         let verdict = validate(input: input, output: output)
-        guard case let .accept(cleaned) = verdict, !replaced.isEmpty else { return verdict }
+        guard case let .accept(cleaned) = verdict else { return verdict }
+        if !phrases.isEmpty {
+            let words = Self.lowercasedWords(of: cleaned)
+            for phrase in phrases {
+                if Self.contains(phrase.old, in: words), !Self.contains(phrase.old, in: Self.lowercasedWords(of: input)) {
+                    return .reject(.literalInvented)
+                }
+                if !Self.contains(phrase.new, in: words) { return .reject(.literalMissing) }
+            }
+        }
+        guard !replaced.isEmpty else { return verdict }
         func counts(_ text: String) -> [String: Int] {
             ProtectedLiteralExtractor.extractAll(from: text).reduce(into: [:]) { $0[$1.canonicalDigits ?? $1.value, default: 0] += 1 }
         }
@@ -158,6 +170,18 @@ struct CleanupSafetyValidator: Sendable {
         var words = trimmedLeadingFillers(of: prefixForm(input)).split(separator: " ").map(String.init)
         if words.count >= 2, words[0] == words[1] { words.removeFirst() }
         return words.joined(separator: " ")
+    }
+
+    /// Lowercased words: runs of letters, digits, `'`, `’` and `-`.
+    private static func lowercasedWords(of text: String) -> [String] {
+        text.lowercased().split(whereSeparator: { !($0.isLetter || $0.isNumber || "'’-".contains($0)) }).map(String.init)
+    }
+
+    /// Whether the space-separated `phrase` occurs as consecutive whole words in `words`.
+    private static func contains(_ phrase: String, in words: [String]) -> Bool {
+        let target = phrase.split(separator: " ").map(String.init)
+        guard !target.isEmpty, words.count >= target.count else { return false }
+        return (0...(words.count - target.count)).contains { Array(words[$0..<$0 + target.count]) == target }
     }
 
     /// Whether `literal` is the first token of `text` — nothing but whitespace precedes it.

@@ -167,7 +167,7 @@ final class DictationCleanupTester {
             finish(.failed)
         case let .value(raw):
             let report: Report
-            switch validator.validate(input: prePassed.text, output: raw, replaced: prePassed.replaced) {
+            switch validator.validate(input: prePassed.text, output: raw, replaced: prePassed.replaced, phrases: prePassed.phrases) {
             case let .accept(cleaned):
                 report = Report(rawOutput: raw, verdict: "Would insert", wouldInsert: cleaned, loadTime: loadTime, generationTime: generationTime)
             case let .reject(rejection):

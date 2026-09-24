@@ -266,6 +266,25 @@ final class CleanupSafetyValidatorTests: XCTestCase {
         XCTAssertEqual(validator.validate(input: "port four", output: "Port 3.", replaced: ["3"]), .reject(.literalInvented))
     }
 
+    /// Spec §11: after a phrase rewrite the output may not bring back the old phrase and must keep
+    /// the new one (case-insensitive, whole words).
+    func testAPhraseRewriteMayNotBeReverted() {
+        let input = "uh change the auth service to use refresh tokens and don't change the API"
+        let phrases = [PhraseRewrite(old: "user service", new: "auth service")]
+        func check(_ output: String) -> ValidationVerdict {
+            validator.validate(input: input, output: output, replaced: [], phrases: phrases)
+        }
+        XCTAssertEqual(check("Change the user service to use refresh tokens. Don't change the API."), .reject(.literalInvented))
+        XCTAssertEqual(check("Change the auth service and the User Service to use refresh tokens. Don't change the API."), .reject(.literalInvented))
+        XCTAssertEqual(check("Change the service to use refresh tokens. Don't change the API."), .reject(.literalMissing))
+        XCTAssertEqual(
+            check("Change the Auth Service to use refresh tokens. Don't change the API."),
+            .accept("Change the Auth Service to use refresh tokens. Don't change the API."))
+        XCTAssertEqual(
+            check("Change the auth service to use refresh tokens; don't change the superuser services."),
+            .accept("Change the auth service to use refresh tokens; don't change the superuser services."))
+    }
+
     func testRejectionLabelsAreFixedStrings() {
         XCTAssertEqual(
             ValidationRejection.allCases.map(\.label),

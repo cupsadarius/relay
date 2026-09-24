@@ -133,7 +133,7 @@ final class TranscriptCleanupService: TranscriptCleaning {
         case let .failure(error):
             return fellBack(text, id, Self.reason(for: error, model: id), elapsed: elapsed)
         case let .value(raw):
-            switch validator.validate(input: prePassed.text, output: raw, replaced: prePassed.replaced) {
+            switch validator.validate(input: prePassed.text, output: raw, replaced: prePassed.replaced, phrases: prePassed.phrases) {
             case let .accept(cleaned):
                 diagnostics?.record(.dictationCleanup(.finished(model: id, elapsed: CleanupLatencyBucket(elapsed))))
                 return TranscriptCleanupResult(text: cleaned, modelID: id, outcome: .cleaned, elapsed: elapsed)
