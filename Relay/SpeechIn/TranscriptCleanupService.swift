@@ -28,6 +28,7 @@ final class TranscriptCleanupService: TranscriptCleaning {
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
         now: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
         locale: @escaping @Sendable () -> Locale = { .current },
+        memoryPressure: (any MemoryPressureMonitoring)? = nil,
         diagnostics: DiagnosticsRecorder?
     ) {
         self.isEnabled = isEnabled
@@ -40,6 +41,28 @@ final class TranscriptCleanupService: TranscriptCleaning {
         self.now = now
         self.locale = locale
         self.diagnostics = diagnostics
+
+        memoryPressure?.start { [mlx] in
+            Task { await mlx.unload(cause: .memoryPressure) }
+        }
+        // The service is the runtime's only event consumer. The loop holds `self` weakly and ends
+        // with the stream.
+        let events = mlx.events
+        Task { [weak self] in
+            for await event in events {
+                guard let self else { return }
+                self.record(event)
+            }
+        }
+    }
+
+    private func record(_ event: MLXCleanupRuntimeEvent) {
+        switch event {
+        case let .loaded(id, elapsed):
+            diagnostics?.record(.dictationCleanup(.modelLoaded(model: id, elapsed: CleanupLatencyBucket(elapsed))))
+        case let .unloaded(id, cause):
+            diagnostics?.record(.dictationCleanup(.modelUnloaded(model: id, cause: cause)))
+        }
     }
 
     func cleanForInsertion(

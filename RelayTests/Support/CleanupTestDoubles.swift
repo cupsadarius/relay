@@ -214,6 +214,11 @@ actor FakeMLXRuntime: MLXCleanupRuntimeServing {
         self.handler = handler
     }
 
+    // Controller decision (Task 25): finish the stream on deinit so the service's
+    // `for await event in events` loop ends instead of piling up as a suspended task once a
+    // test's fake and service go out of scope.
+    deinit { eventSink.finish() }
+
     nonisolated func isPresent(_ id: CleanupModelID) -> Bool { present.withLock { $0.contains(id) } }
     nonisolated func setPresent(_ ids: Set<CleanupModelID>) { present.withLock { $0 = ids } }
     func setReadiness(_ readiness: MLXCleanupReadiness) { readinessValue = readiness }
@@ -340,6 +345,12 @@ final class FakeMLXEngine: MLXCleanupEngine {
     }
 
     func clearCache() async { state.withLock { $0.clearCacheCount += 1 } }
+}
+
+final class FakeMemoryPressure: MemoryPressureMonitoring {
+    private let handler = Mutex<(@Sendable () -> Void)?>(nil)
+    func start(_ handler: @escaping @Sendable () -> Void) { self.handler.withLock { $0 = handler } }
+    func fire() { handler.withLock { $0 }?() }
 }
 
 /// A `Sendable` box for mutable test state shared with `@Sendable` closures. A bare `Mutex` is

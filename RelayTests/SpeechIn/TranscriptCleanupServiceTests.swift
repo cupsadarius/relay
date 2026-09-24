@@ -14,6 +14,7 @@ final class TranscriptCleanupServiceTests: XCTestCase {
         mlx: FakeMLXRuntime = FakeMLXRuntime(),
         sleeper: TestSleeper = TestSleeper(),
         locale: Locale? = nil,
+        memoryPressure: (any MemoryPressureMonitoring)? = nil,
         diagnostics: DiagnosticsRecorder? = nil
     ) -> TranscriptCleanupService {
         let locale = locale ?? english
@@ -26,6 +27,7 @@ final class TranscriptCleanupServiceTests: XCTestCase {
             sleep: sleeper.sleepFunction,
             now: { instant },
             locale: { locale },
+            memoryPressure: memoryPressure,
             diagnostics: diagnostics
         )
     }
@@ -303,5 +305,35 @@ final class TranscriptCleanupServiceTests: XCTestCase {
         for secret in secrets {
             XCTAssertFalse(text.contains(secret), "diagnostics leaked a literal")
         }
+    }
+
+    func testMemoryPressureUnloadsTheRuntime() async {
+        let pressure = FakeMemoryPressure()
+        let mlx = FakeMLXRuntime()
+        let service = makeService(mlx: mlx, memoryPressure: pressure)
+
+        pressure.fire()
+
+        await eventually { await mlx.unloadCauses == [.memoryPressure] }
+        withExtendedLifetime(service) {}
+    }
+
+    func testRuntimeEventsBecomeStructuralDiagnostics() async {
+        let diagnostics = DiagnosticsRecorder()
+        let mlx = FakeMLXRuntime()
+        let service = makeService(mlx: mlx, diagnostics: diagnostics)
+
+        mlx.eventSink.yield(.loaded(.qwen3_0_6b, elapsed: .milliseconds(3200)))
+        mlx.eventSink.yield(.unloaded(.qwen3_0_6b, cause: .idle))
+
+        await eventually { diagnostics.entries.count == 2 }
+        XCTAssertEqual(
+            diagnostics.entries.map(\.event),
+            [
+                .dictationCleanup(.modelLoaded(model: .qwen3_0_6b, elapsed: .over2Point5Seconds)),
+                .dictationCleanup(.modelUnloaded(model: .qwen3_0_6b, cause: .idle)),
+            ]
+        )
+        withExtendedLifetime(service) {}
     }
 }

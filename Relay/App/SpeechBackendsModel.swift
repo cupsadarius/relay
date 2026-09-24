@@ -95,10 +95,19 @@ final class SpeechBackendsModel {
     /// ran the two domains as two concurrent tasks; on the main actor they interleaved anyway, and
     /// one ordered task is simpler to await in tests. Worst case the TTS rows appear after the
     /// dictation probes finish (a few hundred ms at launch, before Settings is usually open).
+    /// Ends with the launch-time cleanup prewarm (spec §9.1).
     func refreshAll() async {
         await refresh(.dictation)
         await refresh(.textToSpeech)
         await refresh(.dictationCleanup)
+        cleanup.prewarm()
+    }
+
+    /// The Settings toggle. Turning cleanup on prewarms the selected model; it never downloads or
+    /// selects anything (spec §16).
+    func setCleanupEnabled(_ enabled: Bool) {
+        settings.setDictationCleanupEnabled(enabled)
+        if enabled { cleanup.prewarm() }
     }
 
     func selectVoice(backendID: String, voiceID: String) {

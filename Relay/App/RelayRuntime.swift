@@ -135,6 +135,7 @@ final class RelayRuntime {
             selection: settingsController.cleanupSelection,
             apple: graph.appleCleanup,
             mlx: graph.mlxCleanupRuntime,
+            memoryPressure: DispatchMemoryPressureMonitor(),
             diagnostics: diagnostics
         )
         let cleanupTester = DictationCleanupTester(apple: graph.appleCleanup, mlx: graph.mlxCleanupRuntime)

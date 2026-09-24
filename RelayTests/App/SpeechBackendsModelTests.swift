@@ -221,6 +221,29 @@ final class SpeechBackendsModelTests: XCTestCase {
         XCTAssertEqual(retired, 1)
         operation.finish(.success("late"))
     }
+
+    func testTurningCleanupOnPersistsAndPrewarms() {
+        let store = SpySettingsStore()
+        let cleaner = SpyTranscriptCleaner()
+        let model = makeModel(store: store, transcriptCleanup: cleaner)
+
+        model.setCleanupEnabled(true)
+        XCTAssertEqual(store.saved.last?.dictationCleanupEnabled, true)
+        XCTAssertEqual(cleaner.prewarmCount, 1)
+
+        model.setCleanupEnabled(false)
+        XCTAssertEqual(store.saved.last?.dictationCleanupEnabled, false)
+        XCTAssertEqual(cleaner.prewarmCount, 1)
+    }
+
+    func testLaunchRefreshPrewarmsOnceAtTheEnd() async {
+        let cleaner = SpyTranscriptCleaner()
+        let model = makeModel(transcriptCleanup: cleaner)
+
+        await model.refreshAll()
+
+        XCTAssertEqual(cleaner.prewarmCount, 1)
+    }
 }
 
 private actor StubSTTBackend: SpeechToTextBackend {
