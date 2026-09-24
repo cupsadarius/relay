@@ -33,8 +33,9 @@ struct MLXLoadedCleanupModel: LoadedMLXCleanupModel {
 
     /// `onFirstChunk` exists for spike S3's first-token timing only.
     func generate(_ request: CleanupRequest, onFirstChunk: (@Sendable () -> Void)?) async throws -> String {
+        let examples = CleanupPrompt.examples.flatMap { [Chat.Message.user($0.input), .assistant($0.output)] }
         let input = try await container.prepare(
-            input: UserInput(chat: [.system(request.instructions), .user(request.input)])
+            input: UserInput(chat: [.system(request.instructions)] + examples + [.user(request.input)])
         )
         let parameters = GenerateParameters(
             maxTokens: request.maxOutputTokens,

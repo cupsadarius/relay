@@ -21,13 +21,13 @@ final class AppleFoundationCleanupEngine: AppleCleanupEngine {
 
     func prewarm(instructions: String) {
         guard case .available = SystemLanguageModel.default.availability else { return }
-        let session = LanguageModelSession(model: .default, instructions: instructions)
+        let session = Self.session(instructions: instructions)
         session.prewarm(promptPrefix: nil)
         prewarmed.withLock { $0 = session }
     }
 
     func respond(_ request: CleanupRequest) async throws -> String {
-        let session = LanguageModelSession(model: .default, instructions: request.instructions)
+        let session = Self.session(instructions: request.instructions)
         let options = GenerationOptions(temperature: Self.temperature, maximumResponseTokens: request.maxOutputTokens)
         do {
             return try await session.respond(to: request.input, options: options).content
@@ -36,6 +36,19 @@ final class AppleFoundationCleanupEngine: AppleCleanupEngine {
         } catch {
             throw Self.engineError(for: error)
         }
+    }
+
+    /// A fresh session whose transcript holds the instructions and `CleanupPrompt.examples` as
+    /// prior prompt/response turns — the same turns the MLX backend renders (spec §10).
+    static func session(instructions: String) -> LanguageModelSession {
+        typealias Turns = FoundationModels.Transcript
+        func text(_ content: String) -> [Turns.Segment] { [.text(Turns.TextSegment(content: content))] }
+        var entries: [Turns.Entry] = [.instructions(Turns.Instructions(segments: text(instructions), toolDefinitions: []))]
+        for example in CleanupPrompt.examples {
+            entries.append(.prompt(Turns.Prompt(segments: text(example.input))))
+            entries.append(.response(Turns.Response(assetIDs: [], segments: text(example.output))))
+        }
+        return LanguageModelSession(model: .default, transcript: Turns(entries: entries))
     }
 
     static func map(_ availability: SystemLanguageModel.Availability) -> AppleCleanupAvailability {
