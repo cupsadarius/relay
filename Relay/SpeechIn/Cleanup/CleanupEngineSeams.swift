@@ -55,5 +55,6 @@ protocol MLXCleanupRuntimeServing: Sendable {
     func touch() async
     func unload(cause: CleanupUnloadCause) async
     func unload(ifInvolving id: CleanupModelID) async
-    func retireGeneration() async
+    /// Retires the active generation only when `id` is the model actually loaded.
+    func retireGeneration(ifInvolving id: CleanupModelID) async
 }

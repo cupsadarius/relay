@@ -23,7 +23,7 @@ private struct SpeechModelOperationKey: Hashable, Sendable {
 final class SpeechModelController {
     typealias Managers = [SpeechModelBackendKey: any SpeechModelManaging]
     typealias BackendRefresh = @MainActor @Sendable (SpeechModelDomain) async -> Void
-    typealias PreRemoval = @MainActor @Sendable (SpeechModelBackendKey) async -> Void
+    typealias PreRemoval = @MainActor @Sendable (SpeechModelBackendKey, String) async -> Void
 
     private(set) var models: [SpeechModelBackendKey: [SpeechModelStatus]] = [:]
     private(set) var messages: [SpeechModelDomain: String] = [:]
@@ -40,7 +40,7 @@ final class SpeechModelController {
         managers: Managers,
         diagnostics: DiagnosticsRecorder,
         refreshBackends: @escaping BackendRefresh = { _ in },
-        beforeRemoval: @escaping PreRemoval = { _ in }
+        beforeRemoval: @escaping PreRemoval = { _, _ in }
     ) {
         self.managers = managers
         self.diagnostics = diagnostics
@@ -110,7 +110,7 @@ final class SpeechModelController {
     func remove(_ modelID: String, in backend: SpeechModelBackendKey) async {
         guard let manager = managers[backend] else { return }
         do {
-            await beforeRemoval(backend)
+            await beforeRemoval(backend, modelID)
             try await manager.removeModel(modelID)
             diagnostics.record(.speechModelRemovalFinished(backendName: BackendID.displayName(for: backend.backendID)))
             messages.removeValue(forKey: backend.domain)

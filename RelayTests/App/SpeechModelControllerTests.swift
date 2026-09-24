@@ -78,7 +78,7 @@ final class SpeechModelControllerTests: XCTestCase {
             managers: [key: manager],
             diagnostics: DiagnosticsRecorder(),
             refreshBackends: { refreshedDomains.append($0) },
-            beforeRemoval: { _ in }
+            beforeRemoval: { _, _ in }
         )
 
         await controller.select("tiny", in: key)
@@ -98,13 +98,32 @@ final class SpeechModelControllerTests: XCTestCase {
             managers: [key: manager],
             diagnostics: DiagnosticsRecorder(),
             refreshBackends: { _ in await events.append("backend-refresh") },
-            beforeRemoval: { _ in await events.append("pre-remove") }
+            beforeRemoval: { _, _ in await events.append("pre-remove") }
         )
 
         await controller.remove("model", in: key)
 
         let recordedEvents = await events.values
         XCTAssertEqual(recordedEvents, ["pre-remove", "manager-remove", "model-refresh", "backend-refresh"])
+    }
+
+    /// Review fix 11: `beforeRemoval` needs the specific model id being removed, not just the
+    /// backend key, so a caller (`SpeechBackendsModel`) can act only on the model actually
+    /// involved instead of every removal in the domain.
+    func testRemovePassesTheModelIDToPreRemoval() async {
+        let key = SpeechModelBackendKey(domain: .textToSpeech, backendID: "kokoro")
+        let manager = ControllerModelManager(statuses: [status("model", state: .downloaded)])
+        var seen: (SpeechModelBackendKey, String)?
+        let controller = SpeechModelController(
+            managers: [key: manager],
+            diagnostics: DiagnosticsRecorder(),
+            beforeRemoval: { backend, modelID in seen = (backend, modelID) }
+        )
+
+        await controller.remove("model", in: key)
+
+        XCTAssertEqual(seen?.0, key)
+        XCTAssertEqual(seen?.1, "model")
     }
 
     func testFailedSelectAndRemovePreserveRowsAndPublishStableMessages() async {
@@ -135,7 +154,7 @@ final class SpeechModelControllerTests: XCTestCase {
             managers: [key: manager],
             diagnostics: DiagnosticsRecorder(),
             refreshBackends: { refreshedDomains.append($0) },
-            beforeRemoval: { _ in }
+            beforeRemoval: { _, _ in }
         )
         await controller.refresh(domain: .textToSpeech)
         await manager.setRemoveFailure(TestFailure(), resultingStatuses: [absent])

@@ -62,15 +62,19 @@ final class SpeechBackendsModel {
                 case .dictationCleanup: cleanup.prewarm()
                 }
             },
-            beforeRemoval: { key in
+            beforeRemoval: { key, modelID in
                 switch key.domain {
                 case .textToSpeech:
                     // Never delete a TTS model out from under an utterance that is streaming from it.
                     speechCoordinator.stop()
                 case .dictationCleanup:
                     // Stop a Test and retire a long generation so unload(ifInvolving:) can drain.
+                    // Review fix 11: only when the model being removed is the one loaded — removing
+                    // a different cleanup model must not disturb an unrelated running generation.
                     cleanupTester?.cancelRunningTest(reason: .modelRemoved)
-                    await cleanupRuntime?.retireGeneration()
+                    if let id = CleanupModelID(rawValue: modelID) {
+                        await cleanupRuntime?.retireGeneration(ifInvolving: id)
+                    }
                 case .dictation:
                     break
                 }

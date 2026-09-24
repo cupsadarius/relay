@@ -208,17 +208,23 @@ final class SpeechBackendsModelTests: XCTestCase {
         let runtime = FakeMLXRuntime(handler: { _, _ in try await operation.run() })
         let tester = DictationCleanupTester(apple: FakeAppleCleanup(), mlx: runtime, sleep: TestSleeper().sleepFunction)
         let model = makeModel(
-            cleanupModelManagers: ["mlx-cleanup": StubModelManager(backendID: "mlx-cleanup", modelIDs: ["q"])],
+            cleanupModelManagers: ["mlx-cleanup": StubModelManager(backendID: "mlx-cleanup", modelIDs: [CleanupModelID.qwen3_0_6b.rawValue])],
             cleanupTester: tester, cleanupRuntime: runtime
         )
         tester.run(model: .qwen3_0_6b)
         await eventually { operation.startCount == 1 }
 
-        await model.models.remove("q", in: SpeechModelBackendKey(domain: .dictationCleanup, backendID: "mlx-cleanup"))
+        await model.models.remove(
+            CleanupModelID.qwen3_0_6b.rawValue, in: SpeechModelBackendKey(domain: .dictationCleanup, backendID: "mlx-cleanup")
+        )
 
         await eventually { tester.phase == .cancelledModelRemoved }
         let retired = await runtime.retireCount
         XCTAssertEqual(retired, 1)
+        // Review fix 11: the specific model id being removed is passed through to the runtime,
+        // not a blanket retire.
+        let retiredInvolving = await runtime.retiredInvolving
+        XCTAssertEqual(retiredInvolving, [.qwen3_0_6b])
         operation.finish(.success("late"))
     }
 

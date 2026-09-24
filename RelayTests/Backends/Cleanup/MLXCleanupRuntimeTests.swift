@@ -194,7 +194,7 @@ final class MLXCleanupRuntimeTests: XCTestCase {
         let caller = Task { try await runtime.generate(self.request(), priority: .test) }
         await eventually { operation.startCount == 1 }
 
-        await runtime.retireGeneration()
+        await runtime.retireGeneration(ifInvolving: .qwen3_0_6b)
 
         do {
             _ = try await caller.value
@@ -205,6 +205,22 @@ final class MLXCleanupRuntimeTests: XCTestCase {
         await runtime.unload(ifInvolving: .qwen3_0_6b)
         let readiness = await runtime.readiness(for: .qwen3_0_6b)
         XCTAssertEqual(readiness, .notLoaded)
+    }
+
+    /// Review fix 11: retiring must not disturb a generation that belongs to a different model
+    /// than the one being removed.
+    func testRetireGenerationIfInvolvingIgnoresOtherModels() async throws {
+        let operation = ManualOperation(cooperative: false)
+        let runtime = makeRuntime(engine: FakeMLXEngine(handler: { _ in try await operation.run() }))
+        try await runtime.ensureLoaded(.qwen3_0_6b)
+        let caller = Task { try await runtime.generate(self.request(), priority: .test) }
+        await eventually { operation.startCount == 1 }
+
+        await runtime.retireGeneration(ifInvolving: .qwen3_1_7b)
+
+        operation.finish(.success("done"))
+        let output = try await caller.value
+        XCTAssertEqual(output, "done")
     }
 
     /// Controller decision: a cancelled caller's late zombie result must be discarded and never

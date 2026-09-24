@@ -101,7 +101,10 @@ actor MLXCleanupRuntime: MLXCleanupRuntimeServing {
         if loaded?.id == id { await unload(cause: .removal) }
     }
 
-    func retireGeneration() async {
+    /// Retires the active generation only when `id` is the model actually loaded — a generation
+    /// for a different model must not be disturbed by removing this one (review fix 11).
+    func retireGeneration(ifInvolving id: CleanupModelID) async {
+        guard loaded?.id == id else { return }
         await slot.retire()
     }
 

@@ -198,6 +198,7 @@ actor FakeMLXRuntime: MLXCleanupRuntimeServing {
     private(set) var unloadCauses: [CleanupUnloadCause] = []
     private(set) var unloadInvolving: [CleanupModelID] = []
     private(set) var retireCount = 0
+    private(set) var retiredInvolving: [CleanupModelID] = []
 
     init(
         present: Set<CleanupModelID> = [.qwen3_0_6b, .qwen3_1_7b],
@@ -239,7 +240,10 @@ actor FakeMLXRuntime: MLXCleanupRuntimeServing {
         unloadInvolving.append(id)
         log?.append("unloadIfInvolving \(id.rawValue)")
     }
-    func retireGeneration() { retireCount += 1 }
+    func retireGeneration(ifInvolving id: CleanupModelID) {
+        retireCount += 1
+        retiredInvolving.append(id)
+    }
 }
 
 @MainActor
