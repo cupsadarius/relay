@@ -84,7 +84,9 @@ struct CleanupSafetyValidator: Sendable {
             if let digits = literal.canonicalDigits, outputValues.contains(digits) { return true }
             return SpokenNumberParser.contains(literal.value.split(separator: " ").map(String.init), in: outputWords)
         }
-        let corrections = SelfCorrectionDetector.analyze(input, literals: inputLiterals)
+        // Only unambiguous pairs may exempt a missing old value (spec §11.4).
+        let detected = SelfCorrectionDetector.analyze(input, literals: inputLiterals)
+        let corrections = SelfCorrectionDetector.exemptingPairs(of: detected, literals: inputLiterals, in: input)
         for (index, literal) in inputLiterals.enumerated() where !isPresent(literal) {
             let exempt = corrections.chainTargets(from: index).contains { isPresent(inputLiterals[$0]) }
             if !exempt { return .reject(.literalMissing) }
@@ -95,6 +97,18 @@ struct CleanupSafetyValidator: Sendable {
         func sequenceKey(_ literal: ProtectedLiteral) -> String { literal.kind == .spokenNumber ? (literal.canonicalDigits ?? literal.value) : literal.value }
         if corrections.pairs.isEmpty, inputLiterals.map(sequenceKey) != outputLiterals.map(sequenceKey) {
             return .reject(.literalMissing)
+        }
+        // Spec §11.4: for an ambiguous pair (detected, but not exempting) whose two values are both
+        // kept, the cue word between them must be kept too. Dropping it changes the meaning:
+        // "out of 10, no 2 people agree" → "Out of 10, 2 people agree."
+        for pair in detected.pairs where !corrections.pairs.contains(pair) {
+            guard let cue = SelfCorrectionDetector.cueWord(of: pair, literals: inputLiterals, in: input),
+                let oldIndex = outputLiterals.firstIndex(where: { sequenceKey($0) == sequenceKey(inputLiterals[pair.old]) }),
+                let newIndex = outputLiterals[(oldIndex + 1)...].firstIndex(where: { sequenceKey($0) == sequenceKey(inputLiterals[pair.new]) })
+            else { continue }
+            let between = cleaned[outputLiterals[oldIndex].range.upperBound..<outputLiterals[newIndex].range.lowerBound].lowercased()
+            let words = between.split(whereSeparator: { !$0.isLetter && $0 != "'" && $0 != "’" }).map(String.init)
+            if !words.contains(cue) { return .reject(.literalMissing) }
         }
         return .accept(cleaned)
     }

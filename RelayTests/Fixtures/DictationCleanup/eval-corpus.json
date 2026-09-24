@@ -63,7 +63,7 @@
   {"id": "cueNeg-07", "category": "cueNegative", "input": "do step 1, wait 10 seconds, then step 2", "reference": "Do step 1, wait 10 seconds, then step 2.", "acceptable": ["Do step 1, wait 10 seconds, then step 2."], "mustReject": []},
   {"id": "cueNeg-08", "category": "cueNegative", "input": "press 4, wait one second, press 5", "reference": "Press 4, wait one second, press 5.", "acceptable": ["Press 4, wait one second, press 5."], "mustReject": []},
   {"id": "cueNeg-09", "category": "cueNegative", "input": "5 yes, 3 no, 2 abstain", "reference": "5 yes, 3 no, 2 abstain.", "acceptable": ["5 yes, 3 no, 2 abstain."], "mustReject": []},
-  {"id": "cueNeg-10", "category": "cueNegative", "input": "out of 10, no 2 people agree", "reference": "Out of 10, no 2 people agree.", "acceptable": ["Out of 10, no 2 people agree."], "mustReject": []},
-  {"id": "cueNeg-11", "category": "cueNegative", "input": "we shipped 5, actually 3 were late", "reference": "We shipped 5, actually 3 were late.", "acceptable": ["We shipped 5, actually 3 were late."], "mustReject": []},
+  {"id": "cueNeg-10", "category": "cueNegative", "input": "out of 10, no 2 people agree", "reference": "Out of 10, no 2 people agree.", "acceptable": ["Out of 10, no 2 people agree."], "mustReject": [{"output": "Out of 10, 2 people agree.", "reason": "literalMissing"}]},
+  {"id": "cueNeg-11", "category": "cueNegative", "input": "we shipped 5, actually 3 were late", "reference": "We shipped 5, actually 3 were late.", "acceptable": ["We shipped 5, actually 3 were late."], "mustReject": [{"output": "We shipped 3 were late.", "reason": "literalMissing"}]},
   {"id": "cueNeg-12", "category": "cueNegative", "input": "invited 5, no 1 came", "reference": "Invited 5, no 1 came.", "acceptable": ["Invited 5, no 1 came."], "mustReject": []}
 ]

@@ -72,6 +72,60 @@ enum SelfCorrectionDetector {
         return SelfCorrectionAnalysis(pairs: pairs)
     }
 
+    /// Count and time words: a new value followed by one of these reads as a count ("no 2 people
+    /// agree", "wait 10 seconds"), not a correction.
+    static let countAndTimeWords: Set<String> = [
+        "second", "seconds", "sec", "secs", "minute", "minutes", "min", "mins", "hour", "hours", "day", "days", "week", "weeks",
+        "month", "months", "year", "years", "ms", "millisecond", "milliseconds", "time", "times", "people", "person", "persons",
+        "item", "items", "user", "users", "thing", "things", "one", "ones", "more", "less", "fewer", "other", "others", "of", "left",
+    ]
+
+    /// The pairs that may exempt a missing old value (spec §11.4). A multi-word cue ("no wait",
+    /// "scratch that", "or rather", "I mean") keeps every detected pair. A single-word cue ("no",
+    /// "wait", "actually", "sorry") keeps a pair only when the text between the values is exactly
+    /// ` cue ` or `, cue, ` (or ` words cue ` where the new value repeats those words: "4 threads
+    /// actually 8 threads"), the new value is not followed by a count or time word, and the cue is
+    /// not "no" before a one.
+    static func exemptingPairs(of analysis: SelfCorrectionAnalysis, literals: [ProtectedLiteral], in text: String) -> SelfCorrectionAnalysis {
+        SelfCorrectionAnalysis(pairs: analysis.pairs.filter { isUnambiguous($0, literals: literals, in: text) })
+    }
+
+    /// The last word between a pair's two values: the cue that formed the pair.
+    static func cueWord(of pair: CorrectionPair, literals: [ProtectedLiteral], in text: String) -> String? {
+        let old = literals[pair.old]
+        let new = literals[pair.new]
+        guard old.range.upperBound <= new.range.lowerBound else { return nil }
+        return text[old.range.upperBound..<new.range.lowerBound].lowercased()
+            .split(whereSeparator: { $0.isWhitespace || ",;".contains($0) }).last.map(String.init)
+    }
+
+    private static func isUnambiguous(_ pair: CorrectionPair, literals: [ProtectedLiteral], in text: String) -> Bool {
+        let old = literals[pair.old]
+        let new = literals[pair.new]
+        guard old.range.upperBound <= new.range.lowerBound else { return false }
+        let between = text[old.range.upperBound..<new.range.lowerBound].lowercased()
+        let words = between.split(whereSeparator: { $0.isWhitespace || ",;".contains($0) }).map(String.init)
+        if cues.contains(where: { $0.count > 1 && words.count >= $0.count && Array(words.suffix($0.count)) == $0 }) { return true }
+
+        guard let cue = words.last, cues.contains([cue]) else { return false }
+        let repeated = Array(words.dropLast())
+        let after = text[new.range.upperBound...]
+        if repeated.isEmpty {
+            guard between == " \(cue) " || between == ", \(cue), " else { return false }
+            let gap = after.prefix { $0 == " " }
+            let next = after[gap.endIndex...].prefix { $0.isLetter || $0.isNumber }.lowercased()
+            if !gap.isEmpty, countAndTimeWords.contains(next) { return false }
+        } else {
+            // " words cue " with plain spaces, and the same words right after the new value.
+            guard between == " " + (repeated + [cue]).joined(separator: " ") + " " else { return false }
+            let following = after.lowercased().split(whereSeparator: { $0.isWhitespace || ",;.!?".contains($0) })
+                .prefix(repeated.count).map(String.init)
+            guard following == repeated else { return false }
+        }
+        if cue == "no", new.canonicalDigits == "1" || new.value == "1" || new.value.lowercased() == "one" { return false }
+        return true
+    }
+
     /// Protected literals are atomic tokens. `,`/`;` are soft separators; `.`/`!`/`?` are clause
     /// boundaries. Word tokens are lowercased.
     private static func tokenize(_ text: String, literals: [ProtectedLiteral]) -> [Token] {

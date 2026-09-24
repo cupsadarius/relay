@@ -173,6 +173,53 @@ final class CleanupSafetyValidatorTests: XCTestCase {
         XCTAssertEqual(verdict("as an AI researcher I disagree", "As an AI researcher, I disagree."), .accept("As an AI researcher, I disagree."))
     }
 
+    /// Spec §11.4: a single-word cue exempts a missing old value only with symmetric separators,
+    /// no count or time word after the new value, and no "no one" / "no 1".
+    func testAmbiguousSingleWordCuesDoNotExemptAMissingValue() {
+        let cases: [(String, String)] = [
+            ("out of 10, no 2 people agree", "Out of 10, 2 people agree."),
+            ("we shipped 5, actually 3 were late", "We shipped 3 were late."),
+            ("out of 10 no 2 people agree", "Out of 2 people agree."),
+            ("do step 1 wait 10 seconds then step 2", "Do step 10 seconds, then step 2."),
+            ("invited 5 no one came", "Invited one came."),
+            ("invited 5 no 1 came", "Invited 1 came."),
+            ("we have 3 servers but actually 5 are down", "We have 5 are down."),
+            ("5 yes, 3 no, 2 abstain", "5 yes, 2 abstain."),
+        ]
+        for (input, output) in cases {
+            XCTAssertEqual(verdict(input, output), .reject(.literalMissing), input)
+        }
+    }
+
+    /// For an ambiguous pair, keeping both values and the cue word is fine; dropping the cue is not.
+    func testAnAmbiguousPairMustKeepItsCueWord() {
+        XCTAssertEqual(verdict("out of 10, no 2 people agree", "Out of 10, no 2 people agree."), .accept("Out of 10, no 2 people agree."))
+        XCTAssertEqual(verdict("5 yes, 3 no, 2 abstain", "5 yes, 3 no, 2 abstain."), .accept("5 yes, 3 no, 2 abstain."))
+        XCTAssertEqual(verdict("we shipped 5, actually 3 were late", "We shipped 5. Actually, 3 were late."), .accept("We shipped 5. Actually, 3 were late."))
+        XCTAssertEqual(verdict("we shipped 5, actually 3 were late", "We shipped 5, 3 were late."), .reject(.literalMissing))
+    }
+
+    /// Every correction with symmetric separators still exempts the old value.
+    func testSymmetricCorrectionsStillExemptTheOldValue() {
+        let cases: [(String, String)] = [
+            ("set the port to 3, no, 4", "Set the port to 4."),
+            ("set the port to 3 no 4", "Set the port to 4."),
+            ("use node 18 wait 20 for the build", "Use Node 20 for the build."),
+            ("run it with 4 threads actually 8 threads", "Run it with 8 threads."),
+            ("allocate 16 no 32 gigabytes", "Allocate 32 gigabytes."),
+            ("bump the timeout to 30 no wait 45 seconds", "Bump the timeout to 45 seconds."),
+            ("3, no, 4, no wait, 5 workers", "5 workers."),
+            ("port three no four", "Port 4."),
+            ("the file is config.yaml sorry config.yml", "The file is config.yml."),
+            ("version 1.2 actually 1.3", "Version 1.3."),
+            ("open src/app.swift I mean src/main.swift", "Open src/main.swift."),
+            ("set retries to 5 scratch that 3", "Set retries to 3."),
+        ]
+        for (input, output) in cases {
+            XCTAssertEqual(verdict(input, output), .accept(output), input)
+        }
+    }
+
     /// Final review: openings that slipped past the first refusal list.
     func testRefusalBypassesAreRejected() {
         for output in [
