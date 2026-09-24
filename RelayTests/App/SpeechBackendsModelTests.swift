@@ -244,6 +244,18 @@ final class SpeechBackendsModelTests: XCTestCase {
 
         XCTAssertEqual(cleaner.prewarmCount, 1)
     }
+
+    func testCleanupRowsAreOrderedAppleThenSmallThenLarge() async {
+        let model = makeModel(cleanupModelManagers: [
+            "mlx-cleanup": StubModelManager(backendID: "mlx-cleanup", modelIDs: ["mlx.qwen3-1.7b-4bit", "mlx.qwen3-0.6b-4bit"]),
+            "apple-foundation-cleanup": StubModelManager(backendID: "apple-foundation-cleanup", modelIDs: ["apple.system-language-model"]),
+        ])
+
+        await model.refresh(.dictationCleanup)
+
+        XCTAssertEqual(model.cleanupRows.map(\.id), ["apple.system-language-model", "mlx.qwen3-0.6b-4bit", "mlx.qwen3-1.7b-4bit"])
+        XCTAssertEqual(model.cleanupRows.first?.key, SpeechModelBackendKey(domain: .dictationCleanup, backendID: "apple-foundation-cleanup"))
+    }
 }
 
 private actor StubSTTBackend: SpeechToTextBackend {

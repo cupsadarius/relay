@@ -1,5 +1,12 @@
 import Foundation
 
+struct CleanupModelRowItem: Identifiable, Equatable {
+    let key: SpeechModelBackendKey
+    let status: SpeechModelStatus
+    var id: String { status.id }
+    var modelID: CleanupModelID? { CleanupModelID(rawValue: status.id) }
+}
+
 /// Everything Settings shows about speech backends: per-domain readiness lists, per-backend model
 /// lists, and the voice catalog. The single owner of refreshing them — views, launch and the
 /// activation recheck all go through `refresh(_:)` / `refreshAll()`.
@@ -69,6 +76,15 @@ final class SpeechBackendsModel {
                 }
             }
         )
+    }
+
+    /// Every cleanup model row, in `CleanupModelID.allCases` order (Apple, Qwen 0.6B, Qwen 1.7B).
+    var cleanupRows: [CleanupModelRowItem] {
+        let order = CleanupModelID.allCases.map(\.rawValue)
+        return models.models
+            .filter { $0.key.domain == .dictationCleanup }
+            .flatMap { key, rows in rows.map { CleanupModelRowItem(key: key, status: $0) } }
+            .sorted { (order.firstIndex(of: $0.id) ?? .max) < (order.firstIndex(of: $1.id) ?? .max) }
     }
 
     func list(for domain: SpeechModelDomain) -> BackendListModel? {

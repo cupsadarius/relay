@@ -29,8 +29,12 @@ struct DictationSettingsView: View {
             ) { _ in EmptyView() }
             Text("Relay tries enabled backends in order and falls back to the next one. Models download only when you choose Download.")
                 .font(.caption).foregroundStyle(.secondary)
+            DictationCleanupSettingsSection(model: model)
         }
         .formStyle(.grouped)
-        .task { await model.speechBackends.refresh(.dictation) }
+        .task {
+            await model.speechBackends.refresh(.dictation)
+            await model.speechBackends.refresh(.dictationCleanup)
+        }
     }
 }

@@ -50,6 +50,14 @@ final class SettingsViewsSmokeTests: XCTestCase {
         model.settingsController.toggleAutoRead()
         XCTAssertEqual(model.settings.autoReadEnabled, initial)
     }
+
+    @MainActor
+    func testDictationCleanupViewsConstruct() {
+        let model = AppModel(runtime: .testing())
+        _ = DictationCleanupSettingsSection(model: model)
+        let tester = DictationCleanupTester(apple: FakeAppleCleanup(), mlx: FakeMLXRuntime())
+        _ = DictationCleanupTestSheet(tester: tester, models: [.appleSystem, .qwen3_0_6b], initialModel: .qwen3_0_6b)
+    }
 }
 
 final class SpeechModelRowPresentationTests: XCTestCase {
