@@ -53,5 +53,6 @@
   {"id": "spoken-04", "category": "spokenNumber", "input": "we grew to five million users", "reference": "We grew to five million users.", "acceptable": ["We grew to five million users."], "mustReject": [{"output": "We grew to five billion users.", "reason": "literalInvented"}]},
   {"id": "wrapper-02", "category": "wrapperOutput", "input": "here's the plan ship it friday", "reference": "Here's the plan, ship it Friday.", "acceptable": ["Here's the plan, ship it Friday."], "mustReject": [{"output": "Here's the cleaned text: Here's the plan, ship it Friday.", "reason": "wrapper"}]},
   {"id": "cueNeg-06", "category": "cueNegative", "input": "set timeout to 30 no retries 5", "reference": "Set timeout to 30, no, retries 5.", "acceptable": ["Set timeout to 30, no, retries 5."], "mustReject": [{"output": "Set retries to 5.", "reason": "literalMissing"}]},
+  {"id": "invented-07", "category": "inventedLiteral", "input": "port 3 and timeout 4", "reference": "Port 3 and timeout 4.", "acceptable": ["Port 3 and timeout 4."], "mustReject": [{"output": "Port 4 and timeout 3.", "reason": "literalMissing"}]},
   {"id": "nonEnglish-01", "category": "nonEnglish", "locale": "fr_FR", "input": "euh on d\u00e9ploie vendredi", "reference": "euh on d\u00e9ploie vendredi", "acceptable": [], "mustReject": []}
 ]

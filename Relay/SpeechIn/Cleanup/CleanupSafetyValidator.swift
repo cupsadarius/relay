@@ -49,6 +49,13 @@ struct CleanupSafetyValidator: Sendable {
             let exempt = corrections.chainTargets(from: index).contains { isPresent(inputLiterals[$0]) }
             if !exempt { return .reject(.literalMissing) }
         }
+        // Review fix 5: with no correction in play, the output cannot reassign which value went
+        // with which literal — every input literal is already known to be present (the loop above
+        // would have rejected otherwise), so its order in the output must match the input's order.
+        func sequenceKey(_ literal: ProtectedLiteral) -> String { literal.kind == .spokenNumber ? (literal.canonicalDigits ?? literal.value) : literal.value }
+        if corrections.pairs.isEmpty, inputLiterals.map(sequenceKey) != outputLiterals.map(sequenceKey) {
+            return .reject(.literalMissing)
+        }
         return .accept(cleaned)
     }
 

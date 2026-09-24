@@ -101,6 +101,13 @@ final class CleanupSafetyValidatorTests: XCTestCase {
         XCTAssertEqual(verdict("set 3 then wait for the build and then 4", "Set 4."), .reject(.literalMissing))
     }
 
+    /// Review fix 5: with no correction in play, both literals being present is not enough — the
+    /// output cannot swap which value goes with which literal.
+    func testReorderingLiteralsWithNoCorrectionIsRejected() {
+        XCTAssertEqual(verdict("port 3 and timeout 4", "Port 4 and timeout 3."), .reject(.literalMissing))
+        XCTAssertEqual(verdict("port 3 and timeout 4", "Port 3 and timeout 4."), .accept("Port 3 and timeout 4."))
+    }
+
     func testSpokenNumbersAreSatisfiedByWordsOrDigits() {
         XCTAssertEqual(verdict("retry three times", "Retry 3 times."), .accept("Retry 3 times."))
         XCTAssertEqual(verdict("retry three times", "Retry three times."), .accept("Retry three times."))
