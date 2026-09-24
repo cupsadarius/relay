@@ -77,8 +77,10 @@ enum ProtectedLiteralExtractor {
         return literals.sorted { $0.range.lowerBound < $1.range.lowerBound }
     }
 
-    /// `~/…`, `./…`, `../…`, `/…` with at least one segment, or any `/`-token with a segment
-    /// containing `.` or `_` (so "and/or" and "TCP/IP" are not paths).
+    /// `~/…`, `./…`, `../…`, `/…` with at least one segment, or a bare `token/token…` where every
+    /// segment is lowercase ASCII letters, digits, `.`, `_` or `-`, and at least one segment is
+    /// longer than 3 characters (review fix 6) — long enough that "and/or" and "TCP/IP" (uppercase)
+    /// stay unprotected while "origin/main" and "src/app.swift" are.
     static func isPath(_ token: String) -> Bool {
         for prefix in ["~/", "./", "../"] where token.hasPrefix(prefix) {
             return token.count > prefix.count
@@ -87,7 +89,12 @@ enum ProtectedLiteralExtractor {
             return token.dropFirst().contains { $0 != "/" }
         }
         let segments = token.split(separator: "/")
-        return segments.count >= 2 && segments.contains { $0.contains(".") || $0.contains("_") }
+        guard segments.count >= 2, segments.allSatisfy({ $0.allSatisfy(isPathSegmentCharacter) }) else { return false }
+        return segments.contains { $0.count > 3 }
+    }
+
+    private static func isPathSegmentCharacter(_ character: Character) -> Bool {
+        character.isASCII && (character.isLowercase || character.isNumber || ".-_".contains(character))
     }
 
     static func isHex(_ token: String) -> Bool {

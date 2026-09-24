@@ -31,6 +31,9 @@ final class ProtectedLiteralExtractorTests: XCTestCase {
             ["path:~/Library/Logs", "path:./build", "path:/usr/bin", "path:src/app.swift"]
         )
         XCTAssertEqual(literals("and/or TCP/IP"), [])
+        // Review fix 6: a bare slash token is a path once a segment is longer than 3 characters,
+        // even with no dot or underscore in it.
+        XCTAssertEqual(literals("checkout origin/main"), ["path:origin/main"])
     }
 
     func testFlags() {
