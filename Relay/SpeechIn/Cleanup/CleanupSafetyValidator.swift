@@ -20,7 +20,23 @@ struct CleanupSafetyValidator: Sendable {
         if Double(cleaned.count) > Double(input.count) * 1.75 + 16 { return .reject(.tooLong) }
 
         let inputLiterals = ProtectedLiteralExtractor.extractAll(from: input)
-        let outputLiterals = ProtectedLiteralExtractor.extractAll(from: cleaned)
+        var outputLiterals = ProtectedLiteralExtractor.extractAll(from: cleaned)
+
+        // Review fix 7: a camelCase or dotted (`.identifier`) literal that is the FIRST token of
+        // both the input and the output may have its first character's case changed — a sentence
+        // that opens with it is capitalized like any other sentence. Once matched, its output
+        // value is normalized to the input's exact value so every check below (invented, missing,
+        // order) treats the two as identical, the same as any other exact match. A literal that is
+        // not the very first token (e.g. "readme.md" in "open readme.md") never qualifies.
+        if let inputFirst = inputLiterals.first, Self.isFirstToken(inputFirst, in: input), inputFirst.kind == .identifier,
+            let outIndex = outputLiterals.indices.first(where: { Self.isFirstToken(outputLiterals[$0], in: cleaned) }),
+            outputLiterals[outIndex].kind == .identifier,
+            Self.differsOnlyInFirstCharacterCase(outputLiterals[outIndex].value, inputFirst.value)
+        {
+            let literal = outputLiterals[outIndex]
+            outputLiterals[outIndex] = ProtectedLiteral(
+                kind: literal.kind, value: inputFirst.value, canonicalDigits: literal.canonicalDigits, range: literal.range)
+        }
 
         // `allowed` covers every kind, keyed by exact value, plus the canonical digit form of
         // each input spoken number. `allowedSpokenPhrases` covers the input's spoken-number word
@@ -80,6 +96,18 @@ struct CleanupSafetyValidator: Sendable {
             if prefix.hasSuffix(":") || rest.first.map({ !$0.isLetter }) ?? true { return true }
         }
         return output.contains("```") && !input.contains("```")
+    }
+
+    /// Whether `literal` is the first token of `text` — nothing but whitespace precedes it.
+    private static func isFirstToken(_ literal: ProtectedLiteral, in text: String) -> Bool {
+        text[text.startIndex..<literal.range.lowerBound].allSatisfy(\.isWhitespace)
+    }
+
+    /// Whether `candidate` and `original` are identical except possibly for the case of their
+    /// first character (review fix 7): "UserService" vs. "userService", but not "Userservice".
+    private static func differsOnlyInFirstCharacterCase(_ candidate: String, _ original: String) -> Bool {
+        guard candidate.count == original.count, let first = candidate.first, let originalFirst = original.first else { return false }
+        return first.lowercased() == originalFirst.lowercased() && candidate.dropFirst() == original.dropFirst()
     }
 
     /// `text`, trimmed of whitespace and any leading filler words ("uh", "um", "so", "okay", "ok").

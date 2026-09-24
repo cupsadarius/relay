@@ -133,6 +133,16 @@ final class CleanupSafetyValidatorTests: XCTestCase {
         XCTAssertEqual(verdict("set retries to", "Set retries to four."), .reject(.literalInvented))
     }
 
+    /// Review fix 7: a camelCase/dotted literal that opens both the input and the output may have
+    /// its first character's case changed, like any other sentence-initial word. A literal that
+    /// is not itself the first token (`testInventedLiteralsAreRejected`'s "readme.md" case) never
+    /// qualifies.
+    func testSentenceStartCapitalizationOfAFirstTokenLiteralIsAllowed() {
+        XCTAssertEqual(verdict("userService crashed", "UserService crashed."), .accept("UserService crashed."))
+        // Changing more than just the case of the first character is still invented.
+        XCTAssertEqual(verdict("userService crashed", "UserSERVICE crashed."), .reject(.literalInvented))
+    }
+
     func testApostrophesAreNotQuotes() {
         XCTAssertEqual(verdict("don't change Bob's config", "Don't change Bob's config."), .accept("Don't change Bob's config."))
     }

@@ -55,5 +55,6 @@
   {"id": "cueNeg-06", "category": "cueNegative", "input": "set timeout to 30 no retries 5", "reference": "Set timeout to 30, no, retries 5.", "acceptable": ["Set timeout to 30, no, retries 5."], "mustReject": [{"output": "Set retries to 5.", "reason": "literalMissing"}]},
   {"id": "invented-07", "category": "inventedLiteral", "input": "port 3 and timeout 4", "reference": "Port 3 and timeout 4.", "acceptable": ["Port 3 and timeout 4."], "mustReject": [{"output": "Port 4 and timeout 3.", "reason": "literalMissing"}]},
   {"id": "paths-02", "category": "paths", "input": "checkout origin/main", "reference": "Checkout origin/main.", "acceptable": ["Checkout origin/main."], "mustReject": [{"output": "Checkout origin/dev.", "reason": "literalInvented"}]},
+  {"id": "identifiers-02", "category": "identifiers", "input": "userService crashed", "reference": "UserService crashed.", "acceptable": ["UserService crashed.", "userService crashed."], "mustReject": [{"output": "UserSERVICE crashed.", "reason": "literalInvented"}]},
   {"id": "nonEnglish-01", "category": "nonEnglish", "locale": "fr_FR", "input": "euh on d\u00e9ploie vendredi", "reference": "euh on d\u00e9ploie vendredi", "acceptable": [], "mustReject": []}
 ]
