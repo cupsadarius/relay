@@ -1,12 +1,5 @@
 import Foundation
 
-struct CleanupModelRowItem: Identifiable, Equatable {
-    let key: SpeechModelBackendKey
-    let status: SpeechModelStatus
-    var id: String { status.id }
-    var modelID: CleanupModelID? { CleanupModelID(rawValue: status.id) }
-}
-
 /// Everything Settings shows about speech backends: per-domain readiness lists, per-backend model
 /// lists, and the voice catalog. The single owner of refreshing them — views, launch and the
 /// activation recheck all go through `refresh(_:)` / `refreshAll()`.
@@ -82,13 +75,39 @@ final class SpeechBackendsModel {
         )
     }
 
-    /// Every offered cleanup model row, in `CleanupModelID.allCases` order: Apple first, then Qwen 1.7B.
-    var cleanupRows: [CleanupModelRowItem] {
+    /// One `BackendStatus` per cleanup provider, Apple Intelligence then Qwen (MLX) — the two
+    /// entries `SpeechBackendSettingsSection` renders as provider rows. State is derived from
+    /// each provider's own models: `.ready` when a usable, downloaded one exists among them,
+    /// `.modelNotDownloaded` when none is downloaded yet, else `.unsupported` or `.unavailable`
+    /// from the first unusable reason.
+    var cleanupBackends: [BackendStatus] {
+        [BackendID.appleFoundationCleanup, .mlxCleanup].enumerated().map { index, backendID in
+            let rows = models.models[SpeechModelBackendKey(domain: .dictationCleanup, backendID: backendID.rawValue)] ?? []
+            return BackendStatus(
+                id: backendID.rawValue, displayName: backendID.displayName,
+                state: Self.cleanupProviderState(for: rows), isEnabled: true, position: index
+            )
+        }
+    }
+
+    /// Every cleanup model that can currently be tested — downloaded and usable — Apple first,
+    /// then Qwen 0.6B, then 1.7B. Feeds the Test sheet's model picker.
+    var cleanupTestableModels: [CleanupModelID] {
         let order = CleanupModelID.allCases.map(\.rawValue)
         return models.models
             .filter { $0.key.domain == .dictationCleanup }
-            .flatMap { key, rows in rows.map { CleanupModelRowItem(key: key, status: $0) } }
+            .flatMap(\.value)
+            .filter { $0.installState == .downloaded && $0.usability == .usable }
             .sorted { (order.firstIndex(of: $0.id) ?? .max) < (order.firstIndex(of: $1.id) ?? .max) }
+            .compactMap { CleanupModelID(rawValue: $0.id) }
+    }
+
+    static func cleanupProviderState(for rows: [SpeechModelStatus]) -> BackendStatus.State {
+        if rows.contains(where: { $0.installState == .downloaded && $0.usability == .usable }) { return .ready }
+        if let reason = rows.compactMap(\.usability.unusableReason).first {
+            return reason == AppleUnavailability.deviceNotEligible.rowText ? .unsupported : .unavailable
+        }
+        return .modelNotDownloaded
     }
 
     func list(for domain: SpeechModelDomain) -> BackendListModel? {

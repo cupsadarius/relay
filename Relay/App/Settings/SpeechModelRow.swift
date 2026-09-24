@@ -58,6 +58,9 @@ struct SpeechModelRow: View {
     let backend: SpeechModelBackendKey
     let backendReady: Bool
     let controller: SpeechModelController
+    /// An optional trailing action after Remove, e.g. cleanup's "Test" (`SpeechVoiceRow`'s Test
+    /// is the same idea, one row up). `nil` for domains with nothing extra to offer.
+    var extraAction: (title: String, enabled: Bool, help: String?, action: () -> Void)? = nil
     @State private var confirmsRemoval = false
 
     var body: some View {
@@ -83,6 +86,13 @@ struct SpeechModelRow: View {
             Button("Remove", role: .destructive) { confirmsRemoval = true }
                 .disabled(!presentation.canRemove)
                 .help(presentation.removeHelp ?? "Delete this model from this Mac")
+            if let extraAction {
+                if let help = extraAction.help {
+                    Button(extraAction.title, action: extraAction.action).disabled(!extraAction.enabled).help(help)
+                } else {
+                    Button(extraAction.title, action: extraAction.action).disabled(!extraAction.enabled)
+                }
+            }
         }
         .controlSize(.small)
         .padding(.leading, 20)

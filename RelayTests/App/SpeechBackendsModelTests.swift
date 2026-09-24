@@ -251,7 +251,7 @@ final class SpeechBackendsModelTests: XCTestCase {
         XCTAssertEqual(cleaner.prewarmCount, 1)
     }
 
-    func testCleanupRowsAreOrderedAppleThenSmallThenLarge() async {
+    func testCleanupBackendsAreAppleThenQwenInThatOrder() async {
         let model = makeModel(cleanupModelManagers: [
             "mlx-cleanup": StubModelManager(backendID: "mlx-cleanup", modelIDs: ["mlx.qwen3-1.7b-4bit", "mlx.qwen3-0.6b-4bit"]),
             "apple-foundation-cleanup": StubModelManager(backendID: "apple-foundation-cleanup", modelIDs: ["apple.system-language-model"]),
@@ -259,8 +259,55 @@ final class SpeechBackendsModelTests: XCTestCase {
 
         await model.refresh(.dictationCleanup)
 
-        XCTAssertEqual(model.cleanupRows.map(\.id), ["apple.system-language-model", "mlx.qwen3-0.6b-4bit", "mlx.qwen3-1.7b-4bit"])
-        XCTAssertEqual(model.cleanupRows.first?.key, SpeechModelBackendKey(domain: .dictationCleanup, backendID: "apple-foundation-cleanup"))
+        XCTAssertEqual(model.cleanupBackends.map(\.id), ["apple-foundation-cleanup", "mlx-cleanup"])
+        XCTAssertEqual(model.cleanupBackends.map(\.displayName), ["Apple Intelligence", "Qwen (MLX)"])
+        // StubModelManager always reports its models downloaded and usable.
+        XCTAssertEqual(model.cleanupBackends.map(\.state), [.ready, .ready])
+    }
+
+    func testCleanupTestableModelsAreDownloadedUsableAppleFirstThenSmallThenLarge() async {
+        let model = makeModel(cleanupModelManagers: [
+            "mlx-cleanup": StubModelManager(backendID: "mlx-cleanup", modelIDs: ["mlx.qwen3-1.7b-4bit", "mlx.qwen3-0.6b-4bit"]),
+            "apple-foundation-cleanup": StubModelManager(backendID: "apple-foundation-cleanup", modelIDs: ["apple.system-language-model"]),
+        ])
+
+        await model.refresh(.dictationCleanup)
+
+        XCTAssertEqual(model.cleanupTestableModels, [.appleSystem, .qwen3_0_6b, .qwen3_1_7b])
+    }
+
+    func testCleanupProviderStateIsReadyWhenAUsableDownloadedModelExists() {
+        let rows = [
+            speechModelStatus(id: "a", installState: .notDownloaded),
+            speechModelStatus(id: "b", installState: .downloaded, usability: .usable),
+        ]
+        XCTAssertEqual(SpeechBackendsModel.cleanupProviderState(for: rows), .ready)
+    }
+
+    func testCleanupProviderStateIsModelNotDownloadedWhenNothingIsDownloadedOrUnusable() {
+        let rows = [speechModelStatus(id: "a", installState: .notDownloaded), speechModelStatus(id: "b", installState: .downloading(progress: 0.5))]
+        XCTAssertEqual(SpeechBackendsModel.cleanupProviderState(for: rows), .modelNotDownloaded)
+        XCTAssertEqual(SpeechBackendsModel.cleanupProviderState(for: []), .modelNotDownloaded)
+    }
+
+    func testCleanupProviderStateIsUnsupportedForADeviceNotEligibleReason() {
+        let rows = [speechModelStatus(id: "a", installState: .downloaded, usability: .unusable(reason: AppleUnavailability.deviceNotEligible.rowText))]
+        XCTAssertEqual(SpeechBackendsModel.cleanupProviderState(for: rows), .unsupported)
+    }
+
+    func testCleanupProviderStateIsUnavailableForAnyOtherUnusableReason() {
+        let reason = AppleUnavailability.appleIntelligenceNotEnabled.rowText
+        let rows = [speechModelStatus(id: "a", installState: .downloaded, usability: .unusable(reason: reason))]
+        XCTAssertEqual(SpeechBackendsModel.cleanupProviderState(for: rows), .unavailable)
+    }
+
+    private func speechModelStatus(
+        id: String, installState: SpeechModelInstallState, usability: SpeechModelUsability = .usable
+    ) -> SpeechModelStatus {
+        SpeechModelStatus(
+            descriptor: .init(id: id, displayName: id, detail: nil), capabilities: [.select], installState: installState, isSelected: false,
+            usability: usability
+        )
     }
 }
 

@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct SpeechBackendSettingsSection<ExpandedContent: View>: View {
+struct SpeechBackendSettingsSection<LeadingContent: View, ExpandedContent: View>: View {
     let title: String
     let backends: [BackendStatus]
     let domain: SpeechModelDomain
@@ -8,7 +8,15 @@ struct SpeechBackendSettingsSection<ExpandedContent: View>: View {
     let message: String?
     let setEnabled: (String, Bool) -> Void
     let move: (String, Bool) -> Void
+    /// `false` hides the per-provider enable toggle and the up/down order arrows — for domains
+    /// with no per-provider enable and no priority order (dictation cleanup). STT and TTS keep
+    /// the default and are unchanged.
+    let showsProviderControls: Bool
     let hasExpandedContent: (String) -> Bool
+    /// An optional trailing action for a model row beyond Download/Select/Remove, e.g. cleanup's
+    /// "Test". `nil` for a row with nothing extra to offer.
+    let rowExtraAction: (SpeechModelStatus) -> (title: String, enabled: Bool, help: String?, action: () -> Void)?
+    let leadingContent: () -> LeadingContent
     let expandedContent: (String) -> ExpandedContent
     @State private var expandedBackendIDs: Set<String> = []
 
@@ -20,7 +28,10 @@ struct SpeechBackendSettingsSection<ExpandedContent: View>: View {
         message: String?,
         setEnabled: @escaping (String, Bool) -> Void,
         move: @escaping (String, Bool) -> Void,
+        showsProviderControls: Bool = true,
         hasExpandedContent: @escaping (String) -> Bool = { _ in false },
+        rowExtraAction: @escaping (SpeechModelStatus) -> (title: String, enabled: Bool, help: String?, action: () -> Void)? = { _ in nil },
+        @ViewBuilder leadingContent: @escaping () -> LeadingContent = { EmptyView() },
         @ViewBuilder expandedContent: @escaping (String) -> ExpandedContent
     ) {
         self.title = title
@@ -30,12 +41,16 @@ struct SpeechBackendSettingsSection<ExpandedContent: View>: View {
         self.message = message
         self.setEnabled = setEnabled
         self.move = move
+        self.showsProviderControls = showsProviderControls
         self.hasExpandedContent = hasExpandedContent
+        self.rowExtraAction = rowExtraAction
+        self.leadingContent = leadingContent
         self.expandedContent = expandedContent
     }
 
     var body: some View {
         Section(title) {
+            leadingContent()
             ForEach(backends) { backend in
                 let key = SpeechModelBackendKey(domain: domain, backendID: backend.id)
                 let rows = controller.models[key] ?? []
@@ -44,7 +59,10 @@ struct SpeechBackendSettingsSection<ExpandedContent: View>: View {
                 backendRow(backend, rows: rows, expandable: expandable, expanded: expanded)
                 if expandable, expanded {
                     ForEach(rows) { status in
-                        SpeechModelRow(status: status, backend: key, backendReady: backend.state == .ready, controller: controller)
+                        SpeechModelRow(
+                            status: status, backend: key, backendReady: backend.state == .ready, controller: controller,
+                            extraAction: rowExtraAction(status)
+                        )
                     }
                     expandedContent(backend.id)
                 }
@@ -67,20 +85,22 @@ struct SpeechBackendSettingsSection<ExpandedContent: View>: View {
                 Text(subtitle(backend, rows: rows, expanded: expanded)).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Toggle("", isOn: Binding(get: { backend.isEnabled }, set: { setEnabled(backend.id, $0) })).labelsHidden()
-            if backend.isEnabled {
-                VStack(spacing: 2) {
-                    Button {
-                        move(backend.id, true)
-                    } label: {
-                        Image(systemName: "chevron.up")
-                    }.disabled(backend.position == 0)
-                    Button {
-                        move(backend.id, false)
-                    } label: {
-                        Image(systemName: "chevron.down")
-                    }.disabled(backend.position == enabledCount - 1)
-                }.buttonStyle(.borderless)
+            if showsProviderControls {
+                Toggle("", isOn: Binding(get: { backend.isEnabled }, set: { setEnabled(backend.id, $0) })).labelsHidden()
+                if backend.isEnabled {
+                    VStack(spacing: 2) {
+                        Button {
+                            move(backend.id, true)
+                        } label: {
+                            Image(systemName: "chevron.up")
+                        }.disabled(backend.position == 0)
+                        Button {
+                            move(backend.id, false)
+                        } label: {
+                            Image(systemName: "chevron.down")
+                        }.disabled(backend.position == enabledCount - 1)
+                    }.buttonStyle(.borderless)
+                }
             }
         }
     }
