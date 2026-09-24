@@ -463,7 +463,14 @@ The instructions are fixed and live in `CleanupPrompt.instructions`: numbered ru
 Before the model runs, a deterministic pre-pass applies the literal corrections that §11.4 detects: it replaces `L_old` and the cue span with `L_new`, so "port three no four" becomes "port four". The model receives the pre-passed text.
 
 - **When:** only when cleanup runs (enabled, a model selected, the input and locale gates passed), in production (`TranscriptCleanupService`), the Test tool (`DictationCleanupTester`) and the live eval. Never when cleanup is off.
-- **Conservative:** a pair is rewritten only when the text between `L_old` and `L_new` is exactly a cue, optionally preceded by words the replacement repeats ("4 threads actually 8 threads" → "8 threads"), and `L_new` comes right after the cue. Otherwise the pair is left for the model. The whole text is left unchanged when any pair shares a literal with another (a chain such as "3, no, 4, no wait, 5"). "no one" is never a correction. Cue negatives produce no pair (§11.4), so they are unchanged.
+- **Stricter than the detector:** the validator judges the model against the rewritten text, so it cannot catch a wrong rewrite. A detected pair (§11.4) is rewritten only when all of these hold; otherwise the text is left for the model:
+  - the text between `L_old` and `L_new` is exactly ` cue ` (single spaces, no punctuation) or `, cue, `. A comma on only one side ("3 no, 2", "10, no 2") is not a correction;
+  - the cue is `no wait`, `scratch that`, `or rather`, `I mean`, `no` or `sorry`. Bare `wait` ("wait 10 seconds") and bare `actually` ("5, actually 3 were late") are never pre-pass cues; the model and the validator still handle them;
+  - `L_new` is not followed by a unit or count word (seconds, minutes, hours, days, weeks, times, people, items, users, threads, gigabytes and similar; the list is `SelfCorrectionPrePass.unitWords`), so "no 2 people agree" stays;
+  - the cue is not `no` before a one (`one`, `1`, or canonical digits `1`): "no one came", "no 1 came";
+  - no literal belongs to two pairs; a chain such as "3, no, 4, no wait, 5" leaves the whole text unchanged.
+
+  The result is rebuilt from the kept segments of the original text. Cue negatives produce no pair (§11.4), so they are unchanged.
 - **Validation:** the output is validated against the pre-passed text as the input (§11). The validator also rejects, as `.literalInvented`, an output that holds a replaced old value more often than the pre-passed text still does.
 - **Fallback:** every fallback returns the ORIGINAL rules-cleaned text, never the pre-passed text, so fail-open never changes meaning (§8.1).
 

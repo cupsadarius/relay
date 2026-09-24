@@ -59,5 +59,11 @@
   {"id": "spoken-05", "category": "spokenNumber", "input": "one-time setup", "reference": "One-time setup.", "acceptable": ["One-time setup.", "Two-time setup."], "mustReject": []},
   {"id": "spoken-06", "category": "spokenNumber", "input": "twenty twenty-five", "reference": "Twenty twenty-five.", "acceptable": ["Twenty twenty-five."], "mustReject": [{"output": "2025.", "reason": "literalInvented"}]},
   {"id": "spoken-07", "category": "spokenNumber", "input": "nineteen hundred", "reference": "Nineteen hundred.", "acceptable": ["Nineteen hundred."], "mustReject": [{"output": "1900.", "reason": "literalInvented"}]},
-  {"id": "nonEnglish-01", "category": "nonEnglish", "locale": "fr_FR", "input": "euh on d\u00e9ploie vendredi", "reference": "euh on d\u00e9ploie vendredi", "acceptable": [], "mustReject": []}
+  {"id": "nonEnglish-01", "category": "nonEnglish", "locale": "fr_FR", "input": "euh on d\u00e9ploie vendredi", "reference": "euh on d\u00e9ploie vendredi", "acceptable": [], "mustReject": []},
+  {"id": "cueNeg-07", "category": "cueNegative", "input": "do step 1, wait 10 seconds, then step 2", "reference": "Do step 1, wait 10 seconds, then step 2.", "acceptable": ["Do step 1, wait 10 seconds, then step 2."], "mustReject": []},
+  {"id": "cueNeg-08", "category": "cueNegative", "input": "press 4, wait one second, press 5", "reference": "Press 4, wait one second, press 5.", "acceptable": ["Press 4, wait one second, press 5."], "mustReject": []},
+  {"id": "cueNeg-09", "category": "cueNegative", "input": "5 yes, 3 no, 2 abstain", "reference": "5 yes, 3 no, 2 abstain.", "acceptable": ["5 yes, 3 no, 2 abstain."], "mustReject": []},
+  {"id": "cueNeg-10", "category": "cueNegative", "input": "out of 10, no 2 people agree", "reference": "Out of 10, no 2 people agree.", "acceptable": ["Out of 10, no 2 people agree."], "mustReject": []},
+  {"id": "cueNeg-11", "category": "cueNegative", "input": "we shipped 5, actually 3 were late", "reference": "We shipped 5, actually 3 were late.", "acceptable": ["We shipped 5, actually 3 were late."], "mustReject": []},
+  {"id": "cueNeg-12", "category": "cueNegative", "input": "invited 5, no 1 came", "reference": "Invited 5, no 1 came.", "acceptable": ["Invited 5, no 1 came."], "mustReject": []}
 ]
