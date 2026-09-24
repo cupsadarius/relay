@@ -9,10 +9,11 @@ final class DictationCleanupTesterTests: XCTestCase {
     private func makeTester(
         apple: FakeAppleCleanup = FakeAppleCleanup(),
         mlx: FakeMLXRuntime = FakeMLXRuntime(),
-        sleeper: TestSleeper = TestSleeper()
+        sleeper: TestSleeper = TestSleeper(),
+        locale: Locale = Locale(identifier: "en_US")
     ) -> DictationCleanupTester {
         let instant = instant
-        return DictationCleanupTester(apple: apple, mlx: mlx, sleep: sleeper.sleepFunction, now: { instant })
+        return DictationCleanupTester(apple: apple, mlx: mlx, sleep: sleeper.sleepFunction, now: { instant }, locale: { locale })
     }
 
     private func finished(_ tester: DictationCleanupTester) async {
@@ -122,6 +123,29 @@ final class DictationCleanupTesterTests: XCTestCase {
         mlx.run(model: .qwen3_0_6b)
         await finished(mlx)
         XCTAssertEqual(mlx.phase.title, "Model unavailable")
+    }
+
+    /// Same locale gate as production (spec §12.3): a non-English locale, or one the Apple model
+    /// does not support, shows the fallback without generating.
+    func testUnsupportedLocaleShowsTheFallbackWithoutGenerating() async {
+        let mlx = FakeMLXRuntime()
+        let french = makeTester(mlx: mlx, locale: Locale(identifier: "fr_FR"))
+        french.input = "ship it"
+        french.run(model: .qwen3_1_7b)
+        await finished(french)
+        guard case let .finished(report) = french.phase else { return XCTFail("expected finished") }
+        XCTAssertEqual(report.verdict, "Would fall back: unsupported locale")
+        XCTAssertEqual(report.wouldInsert, "ship it")
+        let requests = await mlx.generateRequests
+        XCTAssertEqual(requests, [])
+
+        let apple = FakeAppleCleanup(supportsLocale: false)
+        let tester = makeTester(apple: apple)
+        tester.run(model: .appleSystem)
+        await finished(tester)
+        guard case let .finished(appleReport) = tester.phase else { return XCTFail("expected finished") }
+        XCTAssertEqual(appleReport.verdict, "Would fall back: unsupported locale")
+        XCTAssertEqual(apple.requests, [])
     }
 
     /// Closing the sheet cancels a running test and forgets the entered text and its report.

@@ -57,6 +57,7 @@ final class DictationCleanupTester {
     @ObservationIgnored private let validator: CleanupSafetyValidator
     @ObservationIgnored private let sleep: @Sendable (Duration) async throws -> Void
     @ObservationIgnored private let now: @Sendable () -> ContinuousClock.Instant
+    @ObservationIgnored private let locale: @Sendable () -> Locale
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var cancelPhase: Phase?
 
@@ -65,13 +66,15 @@ final class DictationCleanupTester {
         mlx: any MLXCleanupRuntimeServing,
         validator: CleanupSafetyValidator = .init(),
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-        now: @escaping @Sendable () -> ContinuousClock.Instant = { .now }
+        now: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
+        locale: @escaping @Sendable () -> Locale = { .current }
     ) {
         self.apple = apple
         self.mlx = mlx
         self.validator = validator
         self.sleep = sleep
         self.now = now
+        self.locale = locale
     }
 
     func run(model: CleanupModelID) {
@@ -106,6 +109,10 @@ final class DictationCleanupTester {
     private func perform(model: CleanupModelID, text: String) async {
         let start = now()
         var loadTime: Duration?
+        // Production's locale gate (spec §12.3), in production's order.
+        let unsupportedLocale = Phase.finished(
+            Report(rawOutput: "", verdict: "Would fall back: unsupported locale", wouldInsert: text, loadTime: nil, generationTime: .zero))
+        guard TranscriptCleanupService.isEnglish(locale()) else { return finish(unsupportedLocale) }
         if model.isMLX {
             guard mlx.isPresent(model) else { return finish(.modelUnavailable) }
             if await mlx.readiness(for: model) != .ready {
@@ -120,6 +127,7 @@ final class DictationCleanupTester {
             }
         } else {
             guard apple.availability() == .available else { return finish(.modelUnavailable) }
+            guard apple.supportsLocale(locale()) else { return finish(unsupportedLocale) }
         }
 
         phase = .running
