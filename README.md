@@ -212,7 +212,15 @@ Requirements: an Apple silicon Mac on macOS 26+, Xcode 26+ (the macOS 26 SDK), a
 
    `Relay.xcodeproj` is committed. After editing `project.yml`, regenerate it and commit both files.
 
-4. **Build and install.**
+4. **Install the Metal toolchain** (once per Xcode install). Dictation cleanup uses MLX, which compiles Metal shaders at build time, and Xcode 26+ ships the Metal toolchain as a separate component.
+
+   ```sh
+   xcodebuild -downloadComponent MetalToolchain
+   ```
+
+   A build that fails with a missing `metal` tool means this step was skipped.
+
+5. **Build and install.**
 
    ```sh
    scripts/install.sh
@@ -220,7 +228,7 @@ Requirements: an Apple silicon Mac on macOS 26+, Xcode 26+ (the macOS 26 SDK), a
 
    This builds Release (arm64) into `/tmp/relay-build`, quits the installed Relay (a running Relay Debug is left alone), atomically replaces `/Applications/Relay.app`, and relaunches it. Relaunching also refreshes the stable hook helper at `~/Library/Application Support/Relay/bin/RelayHook`. Set `RELAY_NO_LAUNCH=1` to skip the relaunch. For day-to-day development use the Debug build from Xcode, and run this script when you want to promote your changes to the everyday app (see [Debug and Release builds](#debug-and-release-builds)).
 
-5. **Grant permissions** to `/Applications/Relay.app` in **System Settings → Privacy & Security**. The **Permissions** tab in Relay's settings shows the current state and links to each pane.
+6. **Grant permissions** to `/Applications/Relay.app` in **System Settings → Privacy & Security**. The **Permissions** tab in Relay's settings shows the current state and links to each pane.
 
    | Permission | Used for |
    |---|---|
@@ -249,7 +257,7 @@ Requirements: an Apple silicon Mac on macOS 26+, Xcode 26+ (the macOS 26 SDK), a
 
    Then relaunch that build (`open /Applications/Relay.app`, or Run in Xcode for Debug) and grant again when macOS asks.
 
-6. **Install the agent hooks.** Open **Settings → Integrations** and click **Install** for Claude Code and/or Codex. Relay adds a `Stop` hook that runs `~/Library/Application Support/Relay/bin/RelayHook` to `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR`) and to `~/.codex/hooks.json` (or `$CODEX_HOME`). Relay never removes other hooks. Relay Debug installs its own entry, pointing at `~/Library/Application Support/Relay Debug/bin/RelayHook`, next to Release's. Installing or uninstalling in one build never touches the other build's entry. Both entries fire on every agent response, and each helper delivers only to its own build's socket. A build that isn't running just misses the response. **If both builds are running with auto-read on, both will speak the same response** — turn auto-read off in whichever build you aren't actively using.
+7. **Install the agent hooks.** Open **Settings → Integrations** and click **Install** for Claude Code and/or Codex. Relay adds a `Stop` hook that runs `~/Library/Application Support/Relay/bin/RelayHook` to `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR`) and to `~/.codex/hooks.json` (or `$CODEX_HOME`). Relay never removes other hooks. Relay Debug installs its own entry, pointing at `~/Library/Application Support/Relay Debug/bin/RelayHook`, next to Release's. Installing or uninstalling in one build never touches the other build's entry. Both entries fire on every agent response, and each helper delivers only to its own build's socket. A build that isn't running just misses the response. **If both builds are running with auto-read on, both will speak the same response** — turn auto-read off in whichever build you aren't actively using.
    - **Codex:** Codex runs a non-managed hook only after you trust it. Open `/hooks` inside Codex and trust the Relay hook. Relay never edits Codex's trust state. If `config.toml` sets `[features] hooks = false`, the install refuses.
    - Turn on **auto-read** in the same tab to have focused agent responses read aloud.
 
@@ -271,11 +279,11 @@ Both are signed with `Relay Local Development`, so each keeps its grants across 
 ### Tests and lint
 
 ```sh
-xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
+xcodebuild test -scheme Relay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation
 scripts/lint.sh            # swift-format findings (config: .swift-format); --fix rewrites in place
 ```
 
-`CODE_SIGNING_ALLOWED=NO` lets the tests run without the signing identity, as CI does. CI (`.github/workflows/ci.yml`) runs on pull requests and on pushes to `main`. It checks that `Relay.xcodeproj` matches `project.yml`, runs the lint (blocking — a finding fails the build), then builds and runs the tests.
+`CODE_SIGNING_ALLOWED=NO` lets the tests run without the signing identity, as CI does. `-skipPackagePluginValidation` skips Xcode's plugin-approval prompt for mlx-swift's `CudaBuild` plugin, which otherwise fails the build with "must be enabled before it can be used" on a machine that has never approved it. CI (`.github/workflows/ci.yml`) runs on pull requests and on pushes to `main`. It checks that `Relay.xcodeproj` matches `project.yml`, runs the lint (blocking — a finding fails the build), then downloads the Metal toolchain, then builds and runs the tests.
 
 ## Settings
 

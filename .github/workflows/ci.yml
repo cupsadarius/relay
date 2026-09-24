@@ -72,15 +72,23 @@ jobs:
       - name: Lint (swift-format)
         run: scripts/lint.sh --strict
 
+      - name: Download Metal toolchain
+        # mlx-swift compiles Metal shaders at build time; on Xcode 26+ the Metal toolchain is a
+        # separate component that runner images may not include.
+        run: xcodebuild -downloadComponent MetalToolchain
+
       - name: Build & Test
         # CODE_SIGNING_ALLOWED=NO: the targets use Manual signing with a local-only identity
         # ("Relay Local Development") that CI runners do not have. Unit tests run unsigned.
+        # -skipPackagePluginValidation: mlx-swift's CudaBuild plugin otherwise fails validation
+        # with "must be enabled before it can be used" on a fresh runner.
         run: |
           set -o pipefail
           xcodebuild test -scheme Relay -destination 'platform=macOS' \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -resultBundlePath "$RUNNER_TEMP/Relay.xcresult" \
             CODE_SIGNING_ALLOWED=NO \
+            -skipPackagePluginValidation \
             | xcbeautify --renderer github-actions
 
       - name: Upload test results
