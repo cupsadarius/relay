@@ -11,6 +11,11 @@ enum ValidationVerdict: Equatable, Sendable {
 struct CleanupSafetyValidator: Sendable {
     static let reasoningMarkers = ["<think>", "</think>", "<|im_start|>", "<|im_end|>", "<|endoftext|>"]
     static let wrapperPrefixes = ["here is", "here's", "here’s", "sure", "cleaned text:", "output:", "result:"]
+    /// Openings of a refusal or an assistant reply (spec §11.1), matched with `’` folded to `'`.
+    static let refusalPrefixes = [
+        "i cannot", "i can't", "i can not", "i'm unable", "i am unable", "i won't", "as an ai", "i'm sorry, but",
+        "i am sorry, but", "sorry, but", "i apologize",
+    ]
 
     /// `input` is the pre-passed text the model received; `replaced` holds the comparison keys
     /// (`canonicalDigits ?? value`) of the old values the pre-pass removed (spec §10.1). An output
@@ -34,6 +39,7 @@ struct CleanupSafetyValidator: Sendable {
         guard !cleaned.isEmpty else { return .reject(.empty) }
         if Self.reasoningMarkers.contains(where: { cleaned.contains($0) }) { return .reject(.reasoningMarkup) }
         if Self.isWrapped(cleaned, input: input) { return .reject(.wrapper) }
+        if Self.isRefusal(cleaned, input: input) { return .reject(.refusal) }
         if Double(cleaned.count) > Double(input.count) * 1.75 + 16 { return .reject(.tooLong) }
 
         let inputLiterals = ProtectedLiteralExtractor.extractAll(from: input)
@@ -113,6 +119,15 @@ struct CleanupSafetyValidator: Sendable {
             if prefix.hasSuffix(":") || rest.first.map({ !$0.isLetter }) ?? true { return true }
         }
         return output.contains("```") && !input.contains("```")
+    }
+
+    /// A refusal opening is exempt only when the input itself (fillers trimmed) starts with it:
+    /// "I can't make the meeting" is dictation, not a refusal.
+    private static func isRefusal(_ output: String, input: String) -> Bool {
+        func folded(_ text: String) -> String { text.lowercased().replacingOccurrences(of: "’", with: "'") }
+        let loweredOutput = folded(output)
+        let loweredInput = trimmedLeadingFillers(of: folded(input))
+        return refusalPrefixes.contains { loweredOutput.hasPrefix($0) && !loweredInput.hasPrefix($0) }
     }
 
     /// Whether `literal` is the first token of `text` — nothing but whitespace precedes it.
