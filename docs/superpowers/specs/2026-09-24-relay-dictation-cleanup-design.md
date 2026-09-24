@@ -41,7 +41,7 @@ Models:
 | `apple.system-language-model` | Apple System Language Model | FoundationModels, when Apple Intelligence is available | built in |
 | `mlx.qwen3-1.7b-4bit` | Qwen3 1.7B 4-bit | `mlx-community/Qwen3-1.7B-4bit` | ~984 MB |
 
-The Apple model is the recommended choice when it is available: it is the only model that passes the §19 bar (spike results, "Eval"). `mlx.qwen3-0.6b-4bit` (Qwen3 0.6B 4-bit, ~351 MB) is no longer offered: it stays in `CleanupModelID` and its snapshot stays pinned in `MLXCleanupCatalog` so it can come back, but `MLXCleanupCatalog.offered` lists only 1.7B, and a stored 0.6B selection reads as no selection.
+The Apple model is the recommended choice when it is available: it scores best on the §19 eval (spike results, "Eval"), though after the stricter pre-pass (§10.1) and the harder cue-negative cases no model passes the bar. `mlx.qwen3-0.6b-4bit` (Qwen3 0.6B 4-bit, ~351 MB) is no longer offered: it stays in `CleanupModelID` and its snapshot stays pinned in `MLXCleanupCatalog` so it can come back, but `MLXCleanupCatalog.offered` lists only 1.7B, and a stored 0.6B selection reads as no selection.
 
 The Qwen model goes through `SpeechModelManaging` like the Whisper models. The Apple model is a single-model manager with Select only, like `AppleSpeechModelManager`.
 
@@ -903,7 +903,7 @@ enum DictationCleanupDiagnostic: Equatable, Sendable {
   - p50 and p95 warm latency.
 - **Pass bar for any model:** p95 warm latency ≤ 1.5 s on an M1 base model; fail-open ≤ 15% overall and ≤ 5% on `alreadyClean`; correction application ≥ 80% on `correction.*`; zero `cueNegative` over-corrections among accepted outputs.
 - The live eval runs the same path as production: pre-pass (§10.1), generate, validate against the pre-passed text; a rejection counts as fail-open to the original text.
-- Apple passes the bar and is the recommended model (§1). Qwen 1.7B stays offered without passing it. There is no auto-select in v1.
+- No model passes the bar at present; Apple scores best and is the recommended model (§1). Qwen 1.7B stays offered without passing it. There is no auto-select in v1.
 
 ## 20. Testing
 
