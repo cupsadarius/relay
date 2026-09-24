@@ -36,4 +36,18 @@ final class BackendIDTests: XCTestCase {
         XCTAssertEqual(AppSettings.knownSTTBackendIDs, ["apple-speech", "parakeet", "whisper"])
         XCTAssertEqual(AppSettings.knownTTSBackendIDs, ["pocket-tts", "apple-tts", "kokoro"])
     }
+
+    func testCleanupMembersArePersistedStringsWithCanonicalNames() {
+        XCTAssertEqual(BackendID.appleFoundationCleanup.rawValue, "apple-foundation-cleanup")
+        XCTAssertEqual(BackendID.mlxCleanup.rawValue, "mlx-cleanup")
+        XCTAssertEqual(BackendID.appleFoundationCleanup.displayName, "Apple Intelligence")
+        XCTAssertEqual(BackendID.mlxCleanup.displayName, "Qwen (MLX)")
+    }
+
+    func testCleanupMembersStayOutOfTheSpeechLists() {
+        for id in [BackendID.appleFoundationCleanup, .mlxCleanup] {
+            XCTAssertFalse(BackendID.allSpeechToText.contains(id))
+            XCTAssertFalse(BackendID.allTextToSpeech.contains(id))
+        }
+    }
 }

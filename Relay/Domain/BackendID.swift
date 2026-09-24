@@ -18,6 +18,9 @@ struct BackendID: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiter
     static let pocketTTS: BackendID = "pocket-tts"
     static let appleTTS: BackendID = "apple-tts"
     static let kokoro: BackendID = "kokoro"
+    // Dictation cleanup: model-manager keys only, never in `allSpeechToText` / `allTextToSpeech`.
+    static let appleFoundationCleanup: BackendID = "apple-foundation-cleanup"
+    static let mlxCleanup: BackendID = "mlx-cleanup"
 
     static let allSpeechToText: [BackendID] = [.appleSpeech, .parakeet, .whisper]
     static let allTextToSpeech: [BackendID] = [.pocketTTS, .appleTTS, .kokoro]
@@ -30,6 +33,8 @@ struct BackendID: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiter
         case .pocketTTS: "PocketTTS"
         case .appleTTS: "Apple System Voice"
         case .kokoro: "Kokoro"
+        case .appleFoundationCleanup: "Apple Intelligence"
+        case .mlxCleanup: "Qwen (MLX)"
         default: rawValue
         }
     }

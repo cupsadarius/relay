@@ -175,6 +175,29 @@ final class SpeechModelRowPresentationTests: XCTestCase {
         XCTAssertNotNil(presentation.downloadHelp)
         XCTAssertNotNil(presentation.removeHelp)
     }
+
+    func testStatusDefaultsToUsable() {
+        let status = SpeechModelStatus(
+            descriptor: .init(id: "a", displayName: "A", detail: nil), capabilities: [.select], installState: .downloaded, isSelected: false
+        )
+        XCTAssertEqual(status.usability, .usable)
+    }
+
+    func testUnusableStatusBlocksSelectAndShowsItsReason() {
+        var status = SpeechModelStatus(
+            descriptor: .init(id: "a", displayName: "A", detail: nil), capabilities: [.select], installState: .downloaded,
+            isSelected: false, usability: .unusable(reason: "Apple Intelligence is off")
+        )
+        var presentation = SpeechModelRowPresentation.make(status: status)
+        XCTAssertFalse(presentation.canSelect)
+        XCTAssertEqual(presentation.stateLabel, "Apple Intelligence is off")
+        XCTAssertEqual(presentation.selectHelp, "Apple Intelligence is off")
+
+        status.isSelected = true
+        presentation = SpeechModelRowPresentation.make(status: status)
+        XCTAssertFalse(presentation.isActive)
+        XCTAssertEqual(presentation.stateLabel, "Apple Intelligence is off")
+    }
 }
 
 final class SpeechVoiceRowPresentationTests: XCTestCase {

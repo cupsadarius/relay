@@ -15,19 +15,24 @@ struct SpeechModelRowPresentation: Equatable {
 
     static func make(status: SpeechModelStatus, backendReady: Bool = true) -> Self {
         let downloaded = status.installState == .downloaded
-        let active = backendReady && status.isSelected && downloaded
+        let unusableReason = status.usability.unusableReason
+        let active = backendReady && unusableReason == nil && status.isSelected && downloaded
         let supportsDownload = status.capabilities.contains(.download)
         let supportsSelect = status.capabilities.contains(.select)
         let supportsRemove = status.capabilities.contains(.remove)
         let canDownload = supportsDownload && (status.installState == .notDownloaded || status.installState == .downloadFailed)
-        let canSelect = supportsSelect && downloaded && !status.isSelected
+        let canSelect = supportsSelect && downloaded && unusableReason == nil && !status.isSelected
         let canRemove = supportsRemove && downloaded
         let stateLabel: String
-        switch status.installState {
-        case .notDownloaded: stateLabel = "Not downloaded"
-        case let .downloading(progress): stateLabel = "Downloading \(Int((progress * 100).rounded()))%"
-        case .downloaded: stateLabel = active ? "● Active" : "Downloaded"
-        case .downloadFailed: stateLabel = "Download failed"
+        if let unusableReason {
+            stateLabel = unusableReason
+        } else {
+            switch status.installState {
+            case .notDownloaded: stateLabel = "Not downloaded"
+            case let .downloading(progress): stateLabel = "Downloading \(Int((progress * 100).rounded()))%"
+            case .downloaded: stateLabel = active ? "● Active" : "Downloaded"
+            case .downloadFailed: stateLabel = "Download failed"
+            }
         }
         return Self(
             title: status.descriptor.displayName,
@@ -41,7 +46,8 @@ struct SpeechModelRowPresentation: Equatable {
             downloadHelp: supportsDownload
                 ? (canDownload ? nil : "This model is already downloaded or busy.") : "This provider does not support model downloads.",
             selectHelp: supportsSelect
-                ? (canSelect ? nil : "Download the model first, or it is already selected.") : "This provider does not support model selection.",
+                ? (canSelect ? nil : (unusableReason ?? "Download the model first, or it is already selected."))
+                : "This provider does not support model selection.",
             removeHelp: supportsRemove ? (canRemove ? nil : "Download the model before removing it.") : "This provider does not support model removal."
         )
     }

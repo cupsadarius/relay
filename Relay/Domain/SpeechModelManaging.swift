@@ -21,11 +21,24 @@ struct SpeechModelCapabilities: OptionSet, Equatable, Sendable {
     static let remove = Self(rawValue: 1 << 2)
 }
 
+/// Whether a model can be selected or tested right now, independent of its install state.
+enum SpeechModelUsability: Equatable, Sendable {
+    case usable
+    /// `reason` is a fixed, user-facing string (never error text).
+    case unusable(reason: String)
+
+    var unusableReason: String? {
+        if case let .unusable(reason) = self { return reason }
+        return nil
+    }
+}
+
 struct SpeechModelStatus: Identifiable, Equatable, Sendable {
     let descriptor: SpeechModelDescriptor
     let capabilities: SpeechModelCapabilities
     var installState: SpeechModelInstallState
     var isSelected: Bool
+    var usability: SpeechModelUsability = .usable
     var id: String { descriptor.id }
 }
 
