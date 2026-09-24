@@ -63,8 +63,22 @@ final class DictationCleanupTesterTests: XCTestCase {
         await finished(tester)
 
         guard case let .finished(report) = tester.phase else { return XCTFail("expected finished") }
-        XCTAssertEqual(report.verdict, "Would fall back: literal missing")
+        XCTAssertEqual(report.verdict, "Would fall back: literal invented")
         XCTAssertEqual(report.wouldInsert, "set the port to 3, no, 4")
+    }
+
+    func testTheModelReceivesThePrePassedText() async {
+        let mlx = FakeMLXRuntime(handler: { _, _ in "Set the port to 4." })
+        let tester = makeTester(mlx: mlx)
+        tester.input = "set the port to 3, no, 4"
+
+        tester.run(model: .qwen3_1_7b)
+        await finished(tester)
+
+        let inputs = await mlx.generateRequests.map(\.input)
+        XCTAssertEqual(inputs, ["set the port to 4"])
+        guard case let .finished(report) = tester.phase else { return XCTFail("expected finished") }
+        XCTAssertEqual(report.wouldInsert, "Set the port to 4.")
     }
 
     func testTimesOutAfterTenSeconds() async {

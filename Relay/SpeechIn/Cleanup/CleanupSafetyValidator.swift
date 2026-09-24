@@ -12,6 +12,23 @@ struct CleanupSafetyValidator: Sendable {
     static let reasoningMarkers = ["<think>", "</think>", "<|im_start|>", "<|im_end|>", "<|endoftext|>"]
     static let wrapperPrefixes = ["here is", "here's", "here’s", "sure", "cleaned text:", "output:", "result:"]
 
+    /// `input` is the pre-passed text the model received; `replaced` holds the comparison keys
+    /// (`canonicalDigits ?? value`) of the old values the pre-pass removed (spec §10.1). An output
+    /// may not hold a replaced value more often than `input` still does.
+    func validate(input: String, output: String, replaced: [String]) -> ValidationVerdict {
+        let verdict = validate(input: input, output: output)
+        guard case let .accept(cleaned) = verdict, !replaced.isEmpty else { return verdict }
+        func counts(_ text: String) -> [String: Int] {
+            ProtectedLiteralExtractor.extractAll(from: text).reduce(into: [:]) { $0[$1.canonicalDigits ?? $1.value, default: 0] += 1 }
+        }
+        let inputCounts = counts(input)
+        let outputCounts = counts(cleaned)
+        for key in Set(replaced) where outputCounts[key, default: 0] > inputCounts[key, default: 0] {
+            return .reject(.literalInvented)
+        }
+        return verdict
+    }
+
     func validate(input: String, output: String) -> ValidationVerdict {
         let cleaned = output.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return .reject(.empty) }

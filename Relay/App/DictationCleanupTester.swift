@@ -113,9 +113,11 @@ final class DictationCleanupTester {
         phase = .running
         let spent = Self.budgetIncludesLoad ? now() - start : .zero
         let remaining = max(.zero, Self.budget - spent)
+        // Same pre-pass as production (spec §10.1); a fallback still shows the original text.
+        let prePassed = SelfCorrectionPrePass.apply(to: text)
         let request = CleanupRequest(
-            modelID: model, instructions: CleanupPrompt.instructions, input: text,
-            maxOutputTokens: CleanupPrompt.maxOutputTokens(for: text)
+            modelID: model, instructions: CleanupPrompt.instructions, input: prePassed.text,
+            maxOutputTokens: CleanupPrompt.maxOutputTokens(for: prePassed.text)
         )
         let apple = apple
         let mlx = mlx
@@ -144,7 +146,7 @@ final class DictationCleanupTester {
             finish(.failed)
         case let .value(raw):
             let report: Report
-            switch validator.validate(input: text, output: raw) {
+            switch validator.validate(input: prePassed.text, output: raw, replaced: prePassed.replaced) {
             case let .accept(cleaned):
                 report = Report(rawOutput: raw, verdict: "Would insert", wouldInsert: cleaned, loadTime: loadTime, generationTime: generationTime)
             case let .reject(rejection):

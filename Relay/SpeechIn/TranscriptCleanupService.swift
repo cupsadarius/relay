@@ -74,11 +74,14 @@ final class TranscriptCleanupService: TranscriptCleaning {
         // v1 prompts and validator cue words are English-only (spec §12.3), for both engines.
         guard Self.isEnglish(locale()) else { return fellBack(text, id, .unsupportedLocale) }
 
+        // The model gets the pre-passed text and is validated against it; every fallback below
+        // still returns the original `text` (spec §10.1).
+        let prePassed = SelfCorrectionPrePass.apply(to: text)
         let request = CleanupRequest(
             modelID: id,
             instructions: CleanupPrompt.instructions,
-            input: text,
-            maxOutputTokens: CleanupPrompt.maxOutputTokens(for: text)
+            input: prePassed.text,
+            maxOutputTokens: CleanupPrompt.maxOutputTokens(for: prePassed.text)
         )
         let operation: @Sendable () async throws -> String
         if id.isMLX {
@@ -129,7 +132,7 @@ final class TranscriptCleanupService: TranscriptCleaning {
         case let .failure(error):
             return fellBack(text, id, Self.reason(for: error, model: id), elapsed: elapsed)
         case let .value(raw):
-            switch validator.validate(input: text, output: raw) {
+            switch validator.validate(input: prePassed.text, output: raw, replaced: prePassed.replaced) {
             case let .accept(cleaned):
                 diagnostics?.record(.dictationCleanup(.finished(model: id, elapsed: CleanupLatencyBucket(elapsed))))
                 return TranscriptCleanupResult(text: cleaned, modelID: id, outcome: .cleaned, elapsed: elapsed)

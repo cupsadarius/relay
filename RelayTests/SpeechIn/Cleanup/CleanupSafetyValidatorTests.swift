@@ -157,6 +157,17 @@ final class CleanupSafetyValidatorTests: XCTestCase {
         )
     }
 
+    /// Pre-pass (spec §10.1): the output may not bring back a replaced old value more often than
+    /// the pre-passed input still holds it.
+    func testAReplacedOldValueMayNotComeBack() {
+        XCTAssertEqual(
+            validator.validate(input: "port 3 no 4", output: "Port 3, port 3 no 4.", replaced: ["3"]), .reject(.literalInvented))
+        XCTAssertEqual(validator.validate(input: "port 3 no 4", output: "Port 3, port 3 no 4.", replaced: []), .accept("Port 3, port 3 no 4."))
+        XCTAssertEqual(validator.validate(input: "set the port to 4", output: "Set the port to 4.", replaced: ["3"]), .accept("Set the port to 4."))
+        XCTAssertEqual(validator.validate(input: "set the port to 4", output: "Set the port to 3.", replaced: ["3"]), .reject(.literalInvented))
+        XCTAssertEqual(validator.validate(input: "port four", output: "Port 3.", replaced: ["3"]), .reject(.literalInvented))
+    }
+
     func testRejectionLabelsAreFixedStrings() {
         XCTAssertEqual(
             ValidationRejection.allCases.map(\.label),

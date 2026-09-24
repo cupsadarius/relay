@@ -202,11 +202,27 @@ final class TranscriptCleanupServiceTests: XCTestCase {
         XCTAssertEqual(loads, [], "cancelled before the switch; no background load should start")
     }
 
-    func testValidationRejectionFallsBack() async throws {
+    /// The fallback is always the ORIGINAL text, never the pre-passed one (spec §10.1).
+    func testValidationRejectionFallsBackToTheOriginalText() async throws {
         let mlx = FakeMLXRuntime(handler: { _, _ in "Set the port to 3." })
         let (result, _) = try await clean(makeService(mlx: mlx), "set the port to 3, no, 4")
-        XCTAssertEqual(result.outcome, .fellBack(.validationRejected(.literalMissing)))
+        XCTAssertEqual(result.outcome, .fellBack(.validationRejected(.literalInvented)))
         XCTAssertEqual(result.text, "set the port to 3, no, 4")
+    }
+
+    func testTheModelReceivesThePrePassedText() async throws {
+        let mlx = FakeMLXRuntime(handler: { _, _ in "Set the port to 4." })
+        let (result, _) = try await clean(makeService(mlx: mlx), "set the port to 3, no, 4")
+        let inputs = await mlx.generateRequests.map(\.input)
+        XCTAssertEqual(inputs, ["set the port to 4"])
+        XCTAssertEqual(result.text, "Set the port to 4.")
+        XCTAssertEqual(result.outcome, .cleaned)
+    }
+
+    func testDisabledCleanupDoesNotPrePass() async throws {
+        let service = makeService(enabled: false)
+        let (result, _) = try await clean(service, "set the port to 3, no, 4")
+        XCTAssertEqual(result, .notAttempted("set the port to 3, no, 4"))
     }
 
     func testCleanedOutputIsReturnedWithDiagnostics() async throws {
