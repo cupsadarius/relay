@@ -24,7 +24,8 @@ enum CleanupPrompt {
         """
 
     /// Corrections (bare "no", "no wait", "sorry"), fillers and false starts, literal
-    /// preservation, and one cue-negative sentence. None of them is an eval corpus case.
+    /// preservation, one cue-negative sentence and one phrase correction. None of them is an eval
+    /// corpus case.
     static let examples: [CleanupExample] = [
         CleanupExample(input: "um can you move the meeting to tuesday no thursday", output: "Can you move the meeting to Thursday?"),
         CleanupExample(input: "set max connections to 10 no 20", output: "Set max connections to 20."),
@@ -36,6 +37,8 @@ enum CleanupPrompt {
         CleanupExample(
             input: "wait until the review is done no rush it actually looks good",
             output: "Wait until the review is done, no rush. It actually looks good."),
+        // Phrase-level correction (spec §10.1): the new phrase replaces the old one.
+        CleanupExample(input: "open the red folder no wait the blue folder", output: "Open the blue folder."),
     ]
 
     /// `min(512, max(32, estimate * 3 / 2 + 16))` with `estimate = utf8.count / 3`.
