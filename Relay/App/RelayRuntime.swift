@@ -29,6 +29,12 @@ struct SpeechInputServices {
     let sttRegistry: [String: any SpeechToTextBackend]
     let speechModelManagers: [String: any SpeechModelManaging]
     let dictationCoordinator: (any DictationCoordinating)?
+    /// Dictation-cleanup model managers, keyed by backend id. Never part of `sttRegistry`.
+    let cleanupModelManagers: [String: any SpeechModelManaging]
+    let transcriptCleanup: any TranscriptCleaning
+    let cleanupTester: DictationCleanupTester?
+    /// So model removal can retire an in-flight generation (spec §14.3).
+    let cleanupRuntime: (any MLXCleanupRuntimeServing)?
 }
 
 /// Agent-integration services: the fixed-path Unix-socket receiver, the manager that decodes and
@@ -247,7 +253,11 @@ final class RelayRuntime {
             speechIn: SpeechInputServices(
                 sttRegistry: sttRegistry,
                 speechModelManagers: graph.speechModelManagers,
-                dictationCoordinator: dictation
+                dictationCoordinator: dictation,
+                cleanupModelManagers: [:],
+                transcriptCleanup: NoopTranscriptCleaner(),
+                cleanupTester: nil,
+                cleanupRuntime: nil
             ),
             integrations: IntegrationServices(
                 socketPath: IntegrationServices.productionSocketPath,

@@ -164,6 +164,23 @@ final class SpeechModelControllerTests: XCTestCase {
         )
     }
 
+    func testCleanupDomainRefreshIsIsolatedFromDictation() async {
+        let dictationKey = SpeechModelBackendKey(domain: .dictation, backendID: "whisper")
+        let cleanupKey = SpeechModelBackendKey(domain: .dictationCleanup, backendID: "mlx-cleanup")
+        let controller = SpeechModelController(
+            managers: [
+                dictationKey: ControllerModelManager(statuses: [status("tiny")]),
+                cleanupKey: ControllerModelManager(statuses: [status("qwen")]),
+            ],
+            diagnostics: DiagnosticsRecorder()
+        )
+
+        await controller.refresh(domain: .dictationCleanup)
+
+        XCTAssertEqual(controller.models[cleanupKey]?.map(\.id), ["qwen"])
+        XCTAssertNil(controller.models[dictationKey])
+    }
+
     private func waitUntil(
         timeout: Duration = .seconds(1),
         condition: @escaping @Sendable () async -> Bool

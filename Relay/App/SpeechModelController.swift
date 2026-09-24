@@ -4,6 +4,8 @@ import Observation
 enum SpeechModelDomain: Hashable, Sendable {
     case dictation
     case textToSpeech
+    /// Model lifecycle and UI only. Never in `sttBackendOrder` or any `BackendListModel`.
+    case dictationCleanup
 }
 
 struct SpeechModelBackendKey: Hashable, Sendable {

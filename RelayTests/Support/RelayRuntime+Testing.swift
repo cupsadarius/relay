@@ -36,6 +36,10 @@ extension RelayRuntime {
         speechModelManagers: [String: any SpeechModelManaging] = [:],
         ttsRegistry: [String: any TextToSpeechBackend] = [:],
         ttsModelManagers: [String: any SpeechModelManaging] = [:],
+        cleanupModelManagers: [String: any SpeechModelManaging] = [:],
+        transcriptCleanup: (any TranscriptCleaning)? = nil,
+        cleanupTester: DictationCleanupTester? = nil,
+        cleanupRuntime: (any MLXCleanupRuntimeServing)? = nil,
         hookEnvelopeReceiver: HookEnvelopeReceiver? = nil,
         integrationManager: IntegrationManager? = nil,
         claudeCodeInstaller: ClaudeCodeInstaller? = nil,
@@ -107,7 +111,11 @@ extension RelayRuntime {
             speechIn: SpeechInputServices(
                 sttRegistry: sttRegistry,
                 speechModelManagers: speechModelManagers,
-                dictationCoordinator: dictationCoordinator
+                dictationCoordinator: dictationCoordinator,
+                cleanupModelManagers: cleanupModelManagers,
+                transcriptCleanup: transcriptCleanup ?? NoopTranscriptCleaner(),
+                cleanupTester: cleanupTester,
+                cleanupRuntime: cleanupRuntime
             ),
             integrations: IntegrationServices(
                 socketPath: socketPath,

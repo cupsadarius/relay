@@ -235,3 +235,16 @@ actor FakeMLXRuntime: MLXCleanupRuntimeServing {
     }
     func retireGeneration() { retireCount += 1 }
 }
+
+@MainActor
+final class SpyTranscriptCleaner: TranscriptCleaning {
+    private(set) var prewarmCount = 0
+    nonisolated init() {}
+    func cleanForInsertion(
+        _ text: String,
+        onAttempt: @MainActor () -> Void
+    ) async throws(CancellationError) -> TranscriptCleanupResult {
+        .notAttempted(text)
+    }
+    func prewarm() { prewarmCount += 1 }
+}
