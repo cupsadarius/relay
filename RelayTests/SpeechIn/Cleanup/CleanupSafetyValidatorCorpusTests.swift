@@ -11,17 +11,24 @@ final class CleanupSafetyValidatorCorpusTests: XCTestCase {
         "correction.sorry", "correction.scratchThat", "correction.orRather",
         "correction.kind.number", "correction.kind.spokenNumber", "correction.kind.flag", "correction.kind.path",
         "correction.kind.identifier", "correction.kind.url", "correction.kind.version",
-        "correction.chained", "correction.retractionOnly", "cueNegative", "spokenNumber", "digitsStayDigits",
+        "correction.chained", "correction.retractionOnly", "correction.phrase", "cueNegative", "spokenNumber", "digitsStayDigits",
         "identifiers", "cliFlags", "paths", "urls", "versions", "quotedStrings", "numbers", "hex",
         "inventedLiteral", "alreadyClean", "promptInjection", "wrapperOutput", "nonEnglish",
     ]
 
     private let validator = CleanupSafetyValidator()
 
+    /// The production path (spec §10.1): pre-pass the input, then validate against the pre-passed
+    /// text with its replaced values and phrase rewrites.
+    private func verdict(_ testCase: CleanupEvalCase, _ output: String) -> ValidationVerdict {
+        let prePassed = SelfCorrectionPrePass.apply(to: testCase.input)
+        return validator.validate(input: prePassed.text, output: output, replaced: prePassed.replaced, phrases: prePassed.phrases)
+    }
+
     func testEveryAcceptableOutputPasses() throws {
         for testCase in try CleanupEvalCorpus.load() {
             for (index, output) in testCase.acceptable.enumerated() {
-                guard case .accept = validator.validate(input: testCase.input, output: output) else {
+                guard case .accept = verdict(testCase, output) else {
                     XCTFail("\(testCase.id) acceptable[\(index)] was rejected")
                     continue
                 }
@@ -33,7 +40,7 @@ final class CleanupSafetyValidatorCorpusTests: XCTestCase {
         for testCase in try CleanupEvalCorpus.load() {
             for (index, rejection) in testCase.mustReject.enumerated() {
                 XCTAssertEqual(
-                    validator.validate(input: testCase.input, output: rejection.output), .reject(rejection.reason),
+                    verdict(testCase, rejection.output), .reject(rejection.reason),
                     "\(testCase.id) mustReject[\(index)]"
                 )
             }
