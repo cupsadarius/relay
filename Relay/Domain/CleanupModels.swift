@@ -52,3 +52,134 @@ typealias CleanupModelSelection = @Sendable () -> CleanupModelID?
 
 /// Write half; persists through `SettingsController` (mirrors `WhisperModelSelectionWriter`).
 typealias CleanupModelSelectionWriter = @MainActor @Sendable (CleanupModelID?) -> Void
+
+/// Why the Apple model cannot run (spec §12.2).
+enum AppleUnavailability: Equatable, Sendable {
+    case deviceNotEligible, appleIntelligenceNotEnabled, modelNotReady, unknown
+
+    /// Row state text in Settings.
+    var rowText: String {
+        switch self {
+        case .appleIntelligenceNotEnabled: "Apple Intelligence is off"
+        case .deviceNotEligible: "Not supported on this Mac"
+        case .modelNotReady: "Apple model is not ready yet"
+        case .unknown: "Apple model is unavailable"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .appleIntelligenceNotEnabled: "Apple Intelligence is off"
+        case .deviceNotEligible: "not supported on this Mac"
+        case .modelNotReady: "Apple model not ready"
+        case .unknown: "Apple model unavailable"
+        }
+    }
+}
+
+/// A generation failure, reduced to a closed set (spec §12.4). Never carries error text.
+enum GenerationFailureKind: Equatable, Sendable, CaseIterable {
+    case exceededContextWindow, assetsUnavailable, guardrailViolation, unsupportedGuide, unsupportedLanguageOrLocale
+    case decodingFailure, rateLimited, concurrentRequests, refusal, mlxEngine, other
+
+    var label: String {
+        switch self {
+        case .exceededContextWindow: "context window exceeded"
+        case .assetsUnavailable: "assets unavailable"
+        case .guardrailViolation: "guardrail violation"
+        case .unsupportedGuide: "unsupported guide"
+        case .unsupportedLanguageOrLocale: "unsupported language or locale"
+        case .decodingFailure: "decoding failure"
+        case .rateLimited: "rate limited"
+        case .concurrentRequests: "concurrent requests"
+        case .refusal: "refusal"
+        case .mlxEngine: "MLX engine error"
+        case .other: "other"
+        }
+    }
+}
+
+/// Every reason cleanup returns the input unchanged (spec §8.1; decision 5 drops `selectionUnknown`).
+enum CleanupFallbackReason: Equatable, Sendable {
+    case appleUnavailable(AppleUnavailability)
+    case unsupportedLocale
+    case modelNotDownloaded
+    case modelCold
+    case runtimeBusy
+    case loadFailed
+    case generationFailed(GenerationFailureKind)
+    case timedOut
+    case inputTooLong
+    case validationRejected(ValidationRejection)
+
+    var label: String {
+        switch self {
+        case let .appleUnavailable(reason): reason.label
+        case .unsupportedLocale: "unsupported locale"
+        case .modelNotDownloaded: "model not downloaded"
+        case .modelCold: "model cold"
+        case .runtimeBusy: "runtime busy"
+        case .loadFailed: "model load failed"
+        case let .generationFailed(kind): "generation: \(kind.label)"
+        case .timedOut: "timed out"
+        case .inputTooLong: "input too long"
+        case let .validationRejected(rejection): "validation: \(rejection.label)"
+        }
+    }
+}
+
+enum CleanupOutcome: Equatable, Sendable {
+    /// Disabled, or no (valid) selection. Records nothing; the user sees nothing different.
+    case notAttempted
+    case cleaned
+    case fellBack(CleanupFallbackReason)
+}
+
+struct TranscriptCleanupResult: Equatable, Sendable {
+    /// Cleaned text, or the input unchanged.
+    let text: String
+    let modelID: CleanupModelID?
+    let outcome: CleanupOutcome
+    let elapsed: Duration?
+
+    static func notAttempted(_ text: String) -> Self {
+        TranscriptCleanupResult(text: text, modelID: nil, outcome: .notAttempted, elapsed: nil)
+    }
+}
+
+enum CleanupLatencyBucket: Equatable, Sendable {
+    case under250Milliseconds, under500Milliseconds, underOneSecond, upTo2Point5Seconds, over2Point5Seconds
+
+    init(_ elapsed: Duration) {
+        switch elapsed {
+        case ..<Duration.milliseconds(250): self = .under250Milliseconds
+        case ..<Duration.milliseconds(500): self = .under500Milliseconds
+        case ..<Duration.seconds(1): self = .underOneSecond
+        case ...Duration.milliseconds(2500): self = .upTo2Point5Seconds
+        default: self = .over2Point5Seconds
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .under250Milliseconds: "<250 ms"
+        case .under500Milliseconds: "250–500 ms"
+        case .underOneSecond: "0.5–1 s"
+        case .upTo2Point5Seconds: "1–2.5 s"
+        case .over2Point5Seconds: ">2.5 s"
+        }
+    }
+}
+
+enum CleanupUnloadCause: Equatable, Sendable {
+    case idle, memoryPressure, removal, switchModel
+
+    var label: String {
+        switch self {
+        case .idle: "idle"
+        case .memoryPressure: "memory pressure"
+        case .removal: "removal"
+        case .switchModel: "model switch"
+        }
+    }
+}

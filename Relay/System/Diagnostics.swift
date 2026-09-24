@@ -10,6 +10,7 @@ enum DiagnosticsEvent: Equatable, Sendable {
     case selectionAccessibility, selectionClipboard, selectionUnavailable
     case ttsSubmitted, ttsStopped, ttsReplayed, ttsFailed
     case dictation(DictationDiagnostic)
+    case dictationCleanup(DictationCleanupDiagnostic)
     case overlayFailed
     case speechModelDownloadStarted(backendName: String)
     case speechModelDownloadFinished(backendName: String)
@@ -43,6 +44,7 @@ enum DiagnosticsEvent: Equatable, Sendable {
         case .ttsReplayed: "Speech replayed"
         case .ttsFailed: "Speech failed"
         case let .dictation(diagnostic): diagnostic.message
+        case let .dictationCleanup(diagnostic): diagnostic.message
         case .overlayFailed: "Activity overlay failed"
         case let .speechModelDownloadStarted(backendName):
             "\(backendName) model download started"
@@ -91,6 +93,28 @@ enum DictationDiagnostic: Equatable, Sendable {
             case .paste: "Dictation inserted via paste"
             }
         case let .failed(stage): "Dictation failed during \(stage.message)"
+        }
+    }
+}
+
+/// Structural cleanup diagnostics only (spec §18). Every associated value is a closed enum or a
+/// catalog constant, because `DiagnosticsRecorder.record` logs `message` with `privacy: .public`.
+enum DictationCleanupDiagnostic: Equatable, Sendable {
+    case started(model: CleanupModelID)
+    case finished(model: CleanupModelID, elapsed: CleanupLatencyBucket)
+    case fellBack(model: CleanupModelID?, reason: CleanupFallbackReason)
+    case cancelled(model: CleanupModelID)
+    case modelLoaded(model: CleanupModelID, elapsed: CleanupLatencyBucket)
+    case modelUnloaded(model: CleanupModelID, cause: CleanupUnloadCause)
+
+    var message: String {
+        switch self {
+        case let .started(model): "Dictation cleanup started (\(model.diagnosticName))"
+        case let .finished(model, elapsed): "Dictation cleanup finished (\(model.diagnosticName), \(elapsed.label))"
+        case let .fellBack(model, reason): "Dictation cleanup skipped (\(model?.diagnosticName ?? "none")): \(reason.label)"
+        case let .cancelled(model): "Dictation cleanup cancelled (\(model.diagnosticName))"
+        case let .modelLoaded(model, elapsed): "Cleanup model loaded (\(model.diagnosticName), \(elapsed.label))"
+        case let .modelUnloaded(model, cause): "Cleanup model unloaded (\(model.diagnosticName), \(cause.label))"
         }
     }
 }

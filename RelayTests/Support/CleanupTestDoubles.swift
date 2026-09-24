@@ -141,3 +141,97 @@ extension XCTestCase {
         }
     }
 }
+
+/// A scriptable `AppleCleanupBackending`.
+final class FakeAppleCleanup: AppleCleanupBackending {
+    private struct State {
+        var availability: AppleCleanupAvailability
+        var supportsLocale: Bool
+        var prewarmCount = 0
+        var requests: [CleanupRequest] = []
+        var priorities: [CleanupPriority] = []
+    }
+
+    private let state: Mutex<State>
+    private let handler: @Sendable (CleanupRequest, CleanupPriority) async throws -> String
+
+    init(
+        availability: AppleCleanupAvailability = .available,
+        supportsLocale: Bool = true,
+        handler: @escaping @Sendable (CleanupRequest, CleanupPriority) async throws -> String = { request, _ in request.input }
+    ) {
+        state = Mutex(State(availability: availability, supportsLocale: supportsLocale))
+        self.handler = handler
+    }
+
+    var prewarmCount: Int { state.withLock { $0.prewarmCount } }
+    var requests: [CleanupRequest] { state.withLock { $0.requests } }
+    var priorities: [CleanupPriority] { state.withLock { $0.priorities } }
+    func setAvailability(_ availability: AppleCleanupAvailability) { state.withLock { $0.availability = availability } }
+
+    func availability() -> AppleCleanupAvailability { state.withLock { $0.availability } }
+    func supportsLocale(_ locale: Locale) -> Bool { state.withLock { $0.supportsLocale } }
+    func prewarm(instructions: String) { state.withLock { $0.prewarmCount += 1 } }
+
+    func generate(_ request: CleanupRequest, priority: CleanupPriority) async throws -> String {
+        state.withLock {
+            $0.requests.append(request)
+            $0.priorities.append(priority)
+        }
+        return try await handler(request, priority)
+    }
+}
+
+/// A scriptable `MLXCleanupRuntimeServing`.
+actor FakeMLXRuntime: MLXCleanupRuntimeServing {
+    nonisolated let events: AsyncStream<MLXCleanupRuntimeEvent>
+    nonisolated let eventSink: AsyncStream<MLXCleanupRuntimeEvent>.Continuation
+    private nonisolated let present: Mutex<Set<CleanupModelID>>
+    private let log: OrderLog?
+    private let handler: @Sendable (CleanupRequest, CleanupPriority) async throws -> String
+    private var readinessValue: MLXCleanupReadiness
+    private(set) var ensureLoadedCalls: [CleanupModelID] = []
+    private(set) var generateRequests: [CleanupRequest] = []
+    private(set) var generatePriorities: [CleanupPriority] = []
+    private(set) var touchCount = 0
+    private(set) var unloadCauses: [CleanupUnloadCause] = []
+    private(set) var unloadInvolving: [CleanupModelID] = []
+    private(set) var retireCount = 0
+
+    init(
+        present: Set<CleanupModelID> = [.qwen3_0_6b, .qwen3_1_7b],
+        readiness: MLXCleanupReadiness = .ready,
+        log: OrderLog? = nil,
+        handler: @escaping @Sendable (CleanupRequest, CleanupPriority) async throws -> String = { request, _ in request.input }
+    ) {
+        let (stream, continuation) = AsyncStream.makeStream(of: MLXCleanupRuntimeEvent.self)
+        events = stream
+        eventSink = continuation
+        self.present = Mutex(present)
+        readinessValue = readiness
+        self.log = log
+        self.handler = handler
+    }
+
+    nonisolated func isPresent(_ id: CleanupModelID) -> Bool { present.withLock { $0.contains(id) } }
+    nonisolated func setPresent(_ ids: Set<CleanupModelID>) { present.withLock { $0 = ids } }
+    func setReadiness(_ readiness: MLXCleanupReadiness) { readinessValue = readiness }
+
+    func readiness(for id: CleanupModelID) -> MLXCleanupReadiness { readinessValue }
+    func ensureLoaded(_ id: CleanupModelID) async throws {
+        ensureLoadedCalls.append(id)
+        readinessValue = .ready
+    }
+    func generate(_ request: CleanupRequest, priority: CleanupPriority) async throws -> String {
+        generateRequests.append(request)
+        generatePriorities.append(priority)
+        return try await handler(request, priority)
+    }
+    func touch() { touchCount += 1 }
+    func unload(cause: CleanupUnloadCause) { unloadCauses.append(cause) }
+    func unload(ifInvolving id: CleanupModelID) {
+        unloadInvolving.append(id)
+        log?.append("unloadIfInvolving \(id.rawValue)")
+    }
+    func retireGeneration() { retireCount += 1 }
+}
