@@ -104,6 +104,8 @@ final class SettingsController {
 
     func setDictationCleanupEnabled(_ enabled: Bool) { update { $0.dictationCleanupEnabled = enabled } }
     func setSelectedCleanupModel(_ id: CleanupModelID?) { update { $0.selectedCleanupModelID = id?.rawValue } }
+    /// `nil` resets to the default prompt (spec §10 addendum).
+    func setCleanupPromptOverride(_ override: CleanupPromptOverride?) { update { $0.cleanupPromptOverride = override } }
 
     /// No-op when unchanged, so re-toggling the same control doesn't spam the status line.
     func setAutoReadEnabled(_ enabled: Bool) {
@@ -172,6 +174,14 @@ final class SettingsController {
     var cleanupEnabled: @Sendable () -> Bool {
         let snapshot = snapshot
         return { snapshot.value.dictationCleanupEnabled }
+    }
+
+    /// Synchronous, actor-agnostic read of the saved prompt override (`nil` means the default).
+    /// User-authored text: callers must never log it (spec §18). Production and the Test tool pass
+    /// this to `CleanupPrompt.effective(_:)` for each request.
+    var cleanupPromptOverride: @Sendable () -> CleanupPromptOverride? {
+        let snapshot = snapshot
+        return { snapshot.value.cleanupPromptOverride }
     }
 
     // MARK: Private

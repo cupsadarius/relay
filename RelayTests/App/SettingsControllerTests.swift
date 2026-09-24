@@ -267,6 +267,34 @@ final class SettingsControllerTests: XCTestCase {
 
         XCTAssertTrue(value)
     }
+
+    func testCleanupPromptOverrideDefaultsToNilAndPersistsOnWrite() {
+        let store = SpySettingsStore()
+        let controller = makeController(store: store)
+
+        XCTAssertNil(controller.cleanupPromptOverride())
+
+        let override = CleanupPromptOverride(instructions: "Custom.", examples: [CleanupExample(input: "hi", output: "Hi.")])
+        controller.setCleanupPromptOverride(override)
+
+        XCTAssertEqual(controller.cleanupPromptOverride(), override)
+        XCTAssertEqual(store.saved.last?.cleanupPromptOverride, override)
+
+        controller.setCleanupPromptOverride(nil)
+        XCTAssertNil(controller.cleanupPromptOverride())
+        XCTAssertNil(store.saved.last?.cleanupPromptOverride)
+    }
+
+    func testCleanupPromptOverrideIsReadableOffTheMainActor() async {
+        let controller = makeController()
+        let override = CleanupPromptOverride(instructions: "Custom.", examples: [])
+        controller.setCleanupPromptOverride(override)
+        let read = controller.cleanupPromptOverride
+
+        let value = await Task.detached { read() }.value
+
+        XCTAssertEqual(value, override)
+    }
 }
 
 /// Collects `onHotkeysChanged` calls. A class, so the escaping `@MainActor` closure mutates a

@@ -35,6 +35,9 @@ struct AppSettings: Codable, Equatable, Sendable {
     /// The one global cleanup model (`CleanupModelID.rawValue`), or `nil`. Kept as a string, so a
     /// stale id survives a round trip; it resolves to "no selection" at read time.
     var selectedCleanupModelID: String?
+    /// A user-edited cleanup prompt, or `nil` for the default (`CleanupPrompt.instructions` /
+    /// `CleanupPrompt.examples`). User-authored text: never logged (spec §18).
+    var cleanupPromptOverride: CleanupPromptOverride?
 
     /// The current on-disk schema version. Bump this (and add an explicit transform to
     /// `init(from:)`) only when a future change needs more than per-field fallback defaults,
@@ -62,7 +65,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         case ttsRate, autoReadEnabled, activityOverlayStyle, voiceByBackend
         case liveTranscriptionEnabled
         case selectedSpeechModelByBackend
-        case dictationCleanupEnabled, selectedCleanupModelID
+        case dictationCleanupEnabled, selectedCleanupModelID, cleanupPromptOverride
     }
 
     /// Keys only schema < 2 wrote; read during migration, never encoded.
@@ -110,6 +113,10 @@ struct AppSettings: Codable, Equatable, Sendable {
         )
         dictationCleanupEnabled = field(.dictationCleanupEnabled, default: fallback.dictationCleanupEnabled)
         selectedCleanupModelID = field(.selectedCleanupModelID, default: fallback.selectedCleanupModelID)
+        // Whole-value per-field lossy decode, same as every other optional above: `field(_:default:)`
+        // already collapses a missing key or a malformed value (e.g. one bad example) to `nil`
+        // rather than throwing and resetting unrelated settings.
+        cleanupPromptOverride = field(.cleanupPromptOverride, default: fallback.cleanupPromptOverride)
 
         // Normalize AFTER every field has its per-field fallback value: drop unknown/duplicate
         // backend ids (keeping the first occurrence of each known id, in order) and clamp the
@@ -244,6 +251,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         selectedSpeechModelByBackend: [String: String] = [:],
         dictationCleanupEnabled: Bool = false,
         selectedCleanupModelID: String? = nil,
+        cleanupPromptOverride: CleanupPromptOverride? = nil,
         schemaVersion: Int = AppSettings.currentSchemaVersion
     ) {
         self.schemaVersion = schemaVersion
@@ -259,6 +267,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         self.selectedSpeechModelByBackend = selectedSpeechModelByBackend
         self.dictationCleanupEnabled = dictationCleanupEnabled
         self.selectedCleanupModelID = selectedCleanupModelID
+        self.cleanupPromptOverride = cleanupPromptOverride
     }
 
     static let defaults = AppSettings(
