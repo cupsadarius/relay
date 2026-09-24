@@ -289,3 +289,67 @@ final class FakeSnapshotDownloader: SnapshotDownloading {
         return result
     }
 }
+
+/// A scriptable `MLXCleanupEngine`. `loadGate`, when set, makes every load wait on it.
+final class FakeMLXEngine: MLXCleanupEngine {
+    final class Model: LoadedMLXCleanupModel {
+        let directory: URL
+        private let handler: @Sendable (CleanupRequest) async throws -> String
+        private let unloads = Mutex(0)
+        init(directory: URL, handler: @escaping @Sendable (CleanupRequest) async throws -> String) {
+            self.directory = directory
+            self.handler = handler
+        }
+        var unloadCount: Int { unloads.withLock { $0 } }
+        func generate(_ request: CleanupRequest) async throws -> String { try await handler(request) }
+        func unload() async { unloads.withLock { $0 += 1 } }
+    }
+
+    private struct State {
+        var loads: [URL] = []
+        var models: [Model] = []
+        var clearCacheCount = 0
+        var failNextLoad = false
+    }
+
+    private let state = Mutex(State())
+    private let loadGate: ManualOperation?
+    private let handler: @Sendable (CleanupRequest) async throws -> String
+
+    init(loadGate: ManualOperation? = nil, handler: @escaping @Sendable (CleanupRequest) async throws -> String = { $0.input }) {
+        self.loadGate = loadGate
+        self.handler = handler
+    }
+
+    var loads: [URL] { state.withLock { $0.loads } }
+    var models: [Model] { state.withLock { $0.models } }
+    var clearCacheCount: Int { state.withLock { $0.clearCacheCount } }
+    func failNextLoad() { state.withLock { $0.failNextLoad = true } }
+
+    func load(directory: URL) async throws -> any LoadedMLXCleanupModel {
+        state.withLock { $0.loads.append(directory) }
+        if let loadGate { _ = try await loadGate.run() }
+        let fail = state.withLock { state -> Bool in
+            defer { state.failNextLoad = false }
+            return state.failNextLoad
+        }
+        if fail { throw CleanupTestError() }
+        let model = Model(directory: directory, handler: handler)
+        state.withLock { $0.models.append(model) }
+        return model
+    }
+
+    func clearCache() async { state.withLock { $0.clearCacheCount += 1 } }
+}
+
+/// A `Sendable` box for mutable test state shared with `@Sendable` closures. A bare `Mutex` is
+/// noncopyable, so it cannot be copied into a local or captured by an escaping closure.
+final class LockedValue<Value: Sendable>: Sendable {
+    private let mutex: Mutex<Value>
+
+    init(_ value: Value) { mutex = Mutex(value) }
+
+    func withLock<Result: Sendable>(_ body: (inout Value) -> Result) -> Result {
+        mutex.withLock { body(&$0) }
+    }
+}
