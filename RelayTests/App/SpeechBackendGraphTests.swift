@@ -7,7 +7,9 @@ import XCTest
 @MainActor
 final class SpeechBackendGraphTests: XCTestCase {
     private func makeGraph() -> SpeechBackendGraph {
-        SpeechBackendGraph.make(whisperSelection: { nil }, setWhisperSelection: { _ in })
+        SpeechBackendGraph.make(
+            whisperSelection: { nil }, setWhisperSelection: { _ in }, cleanupSelection: { nil }, setCleanupSelection: { _ in }
+        )
     }
 
     func testRegistersConcreteSpeechToTextBackendsAndManagers() {
@@ -37,5 +39,20 @@ final class SpeechBackendGraphTests: XCTestCase {
 
         XCTAssertEqual(Set(graph.sttRegistry.keys), AppSettings.knownSTTBackendIDs)
         XCTAssertEqual(Set(graph.ttsRegistry.keys), AppSettings.knownTTSBackendIDs)
+    }
+
+    func testRegistersCleanupManagersOutsideSpeechRegistries() {
+        let graph = makeGraph()
+
+        XCTAssertTrue(graph.cleanupModelManagers["apple-foundation-cleanup"] is AppleFoundationCleanupModelManager)
+        XCTAssertTrue(graph.cleanupModelManagers["mlx-cleanup"] is MLXCleanupModelManager)
+        XCTAssertEqual(Set(graph.cleanupModelManagers.keys), ["apple-foundation-cleanup", "mlx-cleanup"])
+        for key in graph.cleanupModelManagers.keys {
+            XCTAssertNil(graph.sttRegistry[key])
+            XCTAssertNil(graph.speechModelManagers[key])
+            XCTAssertNil(graph.ttsRegistry[key])
+            XCTAssertNil(graph.ttsModelManagers[key])
+        }
+        XCTAssertTrue(graph.appleCleanup is AppleCleanupRuntime)
     }
 }

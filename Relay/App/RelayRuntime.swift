@@ -126,8 +126,18 @@ final class RelayRuntime {
         let overlayModel = ActivityOverlayModel()
         let graph = SpeechBackendGraph.make(
             whisperSelection: settingsController.whisperSelection,
-            setWhisperSelection: settingsController.whisperSelectionWriter
+            setWhisperSelection: settingsController.whisperSelectionWriter,
+            cleanupSelection: settingsController.cleanupSelection,
+            setCleanupSelection: settingsController.cleanupSelectionWriter
         )
+        let transcriptCleanup = TranscriptCleanupService(
+            isEnabled: settingsController.cleanupEnabled,
+            selection: settingsController.cleanupSelection,
+            apple: graph.appleCleanup,
+            mlx: graph.mlxCleanupRuntime,
+            diagnostics: diagnostics
+        )
+        let cleanupTester = DictationCleanupTester(apple: graph.appleCleanup, mlx: graph.mlxCleanupRuntime)
         let ttsRegistry = graph.ttsRegistry
         let sttRegistry = graph.sttRegistry
 
@@ -207,7 +217,8 @@ final class RelayRuntime {
             status: { status.post($0) },
             activity: overlayModel,
             diagnostics: diagnostics,
-            liveTranscriptionEnabled: { settings.value.liveTranscriptionEnabled }
+            liveTranscriptionEnabled: { settings.value.liveTranscriptionEnabled },
+            cleanup: transcriptCleanup
         )
         let hookEnvelopeReceiver = HookEnvelopeReceiver(diagnostics: integrationDiagnosticsLog)
 
@@ -254,10 +265,10 @@ final class RelayRuntime {
                 sttRegistry: sttRegistry,
                 speechModelManagers: graph.speechModelManagers,
                 dictationCoordinator: dictation,
-                cleanupModelManagers: [:],
-                transcriptCleanup: NoopTranscriptCleaner(),
-                cleanupTester: nil,
-                cleanupRuntime: nil
+                cleanupModelManagers: graph.cleanupModelManagers,
+                transcriptCleanup: transcriptCleanup,
+                cleanupTester: cleanupTester,
+                cleanupRuntime: graph.mlxCleanupRuntime
             ),
             integrations: IntegrationServices(
                 socketPath: IntegrationServices.productionSocketPath,

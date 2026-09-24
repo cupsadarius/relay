@@ -9,10 +9,16 @@ struct SpeechBackendGraph {
     let ttsModelManagers: [String: any SpeechModelManaging]
     let sttRegistry: [String: any SpeechToTextBackend]
     let speechModelManagers: [String: any SpeechModelManaging]
+    /// Dictation-cleanup model managers. Never part of any speech registry.
+    let cleanupModelManagers: [String: any SpeechModelManaging]
+    let appleCleanup: any AppleCleanupBackending
+    let mlxCleanupRuntime: MLXCleanupRuntime
 
     static func make(
         whisperSelection: @escaping WhisperModelSelection,
-        setWhisperSelection: @escaping WhisperModelSelectionWriter
+        setWhisperSelection: @escaping WhisperModelSelectionWriter,
+        cleanupSelection: @escaping CleanupModelSelection,
+        setCleanupSelection: @escaping CleanupModelSelectionWriter
     ) -> SpeechBackendGraph {
         let appleTTS = AppleTTSBackend()
         let kokoroEngine: any KokoroEngine = FluidAudioKokoroEngine()
@@ -53,6 +59,26 @@ struct SpeechBackendGraph {
             setSelectedModel: setWhisperSelection
         )
 
+        // Dictation cleanup: registered as model managers only (spec §14.2). Nothing here loads a
+        // model or touches the network; MLX loads on prewarm, Apple is queried lazily.
+        let cleanupSlot = CleanupGenerationSlot()
+        let mlxCleanupStore = MLXCleanupModelStore(
+            root: RelayPaths.sharedModelsDirectory().appendingPathComponent("MLX", isDirectory: true)
+        )
+        let mlxCleanupRuntime = MLXCleanupRuntime(
+            engine: MLXLiveEngine(),
+            directory: { mlxCleanupStore.directory(for: $0) },
+            isPresent: { mlxCleanupStore.presence(of: $0) },
+            slot: cleanupSlot
+        )
+        let appleCleanup = AppleCleanupRuntime(engine: AppleFoundationCleanupEngine(), slot: cleanupSlot)
+        let appleCleanupManager = AppleFoundationCleanupModelManager(
+            backend: appleCleanup, selectedModel: cleanupSelection, setSelectedModel: setCleanupSelection
+        )
+        let mlxCleanupManager = MLXCleanupModelManager(
+            store: mlxCleanupStore, runtime: mlxCleanupRuntime, selectedModel: cleanupSelection, setSelectedModel: setCleanupSelection
+        )
+
         return SpeechBackendGraph(
             ttsRegistry: [
                 appleTTS.id: appleTTS,
@@ -72,7 +98,13 @@ struct SpeechBackendGraph {
                 appleSpeechModelManager.backendID: appleSpeechModelManager,
                 parakeetModelManager.backendID: parakeetModelManager,
                 whisperModelManager.backendID: whisperModelManager,
-            ]
+            ],
+            cleanupModelManagers: [
+                appleCleanupManager.backendID: appleCleanupManager,
+                mlxCleanupManager.backendID: mlxCleanupManager,
+            ],
+            appleCleanup: appleCleanup,
+            mlxCleanupRuntime: mlxCleanupRuntime
         )
     }
 }
