@@ -298,6 +298,7 @@
 		E4B7522F3415C9AFF5FD260C /* CodexInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4825CDE46AE776AE50DCD55 /* CodexInstaller.swift */; };
 		E5DC9345C67E67C35D80277E /* ReplayLastResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0847A1AD85D305DD7ECBC67C /* ReplayLastResolver.swift */; };
 		E6B54216CADEF6964C54E936 /* UnixSocketServerOwnershipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63B61F60EF2F1B91A7692398 /* UnixSocketServerOwnershipTests.swift */; };
+		E7AA719E7923C30D9B81D3E1 /* ContentCoverage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9958FD7300737896755F6660 /* ContentCoverage.swift */; };
 		E7F54EEBF020C64B0E87FF05 /* MLXCleanupRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4C65DADFB73DA4B2BEC1AAB /* MLXCleanupRuntime.swift */; };
 		E86268DF40469303EED20886 /* TranscriptCleanupServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA7F80AB76B9F59730869C45 /* TranscriptCleanupServiceTests.swift */; };
 		E9793749361A43D80B90C59C /* InterimTextDiff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 742664766D6CE6286EB5E819 /* InterimTextDiff.swift */; };
@@ -549,6 +550,7 @@
 		95D8DD717D4381FA46D602D5 /* TranscriptCleanupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptCleanupService.swift; sourceTree = "<group>"; };
 		96528EC46801E0B6B4BCE6BB /* CleanupDeadlineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupDeadlineTests.swift; sourceTree = "<group>"; };
 		9814F7A2052DB8ACE61CDE6A /* StopHookIntegration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StopHookIntegration.swift; sourceTree = "<group>"; };
+		9958FD7300737896755F6660 /* ContentCoverage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentCoverage.swift; sourceTree = "<group>"; };
 		9A2D71436EB216912EA0F366 /* RelayWindowTagger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayWindowTagger.swift; sourceTree = "<group>"; };
 		9C81ED5851D60E63A6A62C0B /* PocketTTSAudioSourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PocketTTSAudioSourceTests.swift; sourceTree = "<group>"; };
 		9F9345EEDE9FA0BA054B69BC /* RulesTranscriptProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RulesTranscriptProcessor.swift; sourceTree = "<group>"; };
@@ -813,6 +815,7 @@
 				BA3F2F7F7C35B2E056105CDC /* CleanupGenerationSlot.swift */,
 				34B0841234C74589E0515583 /* CleanupPrompt.swift */,
 				5401C7B3CE678899398DFA7C /* CleanupSafetyValidator.swift */,
+				9958FD7300737896755F6660 /* ContentCoverage.swift */,
 				B06E8C32C160D82528C4DE32 /* MemoryPressureMonitor.swift */,
 				2E92C12199F71ECAFF38BCEE /* ProtectedLiterals.swift */,
 				76C11FB5B649262839E17851 /* SelfCorrectionDetector.swift */,
@@ -1743,6 +1746,7 @@
 				AA4912B6BFD30FD3BA43F199 /* CleanupTestAvailability.swift in Sources */,
 				3025C432DE8ACDA88701092F /* ClipboardService.swift in Sources */,
 				E4B7522F3415C9AFF5FD260C /* CodexInstaller.swift in Sources */,
+				E7AA719E7923C30D9B81D3E1 /* ContentCoverage.swift in Sources */,
 				BDB3AFBC914BC5F55A9E04B9 /* Diagnostics.swift in Sources */,
 				26689C3A31F905B40F2AF9BF /* DiagnosticsView.swift in Sources */,
 				0727DE869674F70E93D35532 /* DictationCleanupSettingsSection.swift in Sources */,

@@ -58,8 +58,9 @@ final class CleanupSafetyValidatorTests: XCTestCase {
 
     func testLengthLimitIsInputTimes1Point75Plus16() {
         let input = "check the build" // 15 characters → limit 42.25
-        XCTAssertEqual(verdict(input, String(repeating: "a", count: 42)), .accept(String(repeating: "a", count: 42)))
-        XCTAssertEqual(verdict(input, String(repeating: "a", count: 43)), .reject(.tooLong))
+        let padded = { (count: Int) in "Check the build " + String(repeating: "a", count: count - 16) }
+        XCTAssertEqual(verdict(input, padded(42)), .accept(padded(42)))
+        XCTAssertEqual(verdict(input, padded(43)), .reject(.tooLong))
     }
 
     func testIdenticalOutputIsValidAndOutputIsTrimmed() {
@@ -281,8 +282,47 @@ final class CleanupSafetyValidatorTests: XCTestCase {
             check("Change the Auth Service to use refresh tokens. Don't change the API."),
             .accept("Change the Auth Service to use refresh tokens. Don't change the API."))
         XCTAssertEqual(
-            check("Change the auth service to use refresh tokens; don't change the superuser services."),
-            .accept("Change the auth service to use refresh tokens; don't change the superuser services."))
+            check("Change the auth service to use refresh tokens; don't change the API or the superuser services."),
+            .accept("Change the auth service to use refresh tokens; don't change the API or the superuser services."))
+    }
+
+    /// Spec §11.8: every content word of the input must survive (set semantics, contractions and
+    /// a trailing s/es folded).
+    func testDroppedContentWordsAreRejected() {
+        let cases: [(String, String)] = [
+            ("bump to 2.0 no changes needed", "Bump to 2.0."),
+            ("I mean it this time", "I mean it."),
+            (
+                "uh change the auth service to use refresh tokens and don't change the API",
+                "Change the auth service to use refresh tokens."
+            ),
+            ("wait for build 42 to finish", "Wait for build 42."),
+        ]
+        for (input, output) in cases {
+            XCTAssertEqual(verdict(input, output), .reject(.contentDropped), input)
+        }
+    }
+
+    func testContentCoverageAllowsNormalCleanup() {
+        let cases: [(String, String)] = [
+            ("uh so I think we should um ship it on friday", "So I think we should ship it on Friday."),
+            ("like you know the cache is uh basically stale", "The cache is basically stale."),
+            ("we need to we need to rebuild the index", "We need to rebuild the index."), // repeated false start
+            ("the the deploy script is broken", "The deploy script is broken."),
+            ("don't change the API", "Do not change the API."), // contraction = expansion
+            ("do not change the API", "Don't change the API."),
+            ("I can't make it", "I cannot make it."),
+            ("it's broken", "It is broken."),
+            ("fix the test", "Fix the tests."), // trailing s
+            ("fix the tests", "Fix the test."),
+            ("fix the box", "Fix the boxes."), // trailing es
+            ("retry three times", "Retry 3 times."), // spoken numbers are literals, checked elsewhere
+            ("press the red button no the blue button", "Press the blue button."), // cue-flagged old words
+            ("uh change the user service no wait the auth service", "Change the auth service."),
+        ]
+        for (input, output) in cases {
+            XCTAssertEqual(verdict(input, output), .accept(output), input)
+        }
     }
 
     func testRejectionLabelsAreFixedStrings() {
@@ -290,6 +330,7 @@ final class CleanupSafetyValidatorTests: XCTestCase {
             ValidationRejection.allCases.map(\.label),
             [
                 "empty output", "reasoning markup", "wrapper text", "assistant reply", "output too long", "literal invented", "literal missing",
+                "content dropped",
             ])
     }
 }

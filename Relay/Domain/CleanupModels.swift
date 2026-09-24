@@ -32,7 +32,7 @@ struct CleanupRequest: Equatable, Sendable {
 /// Why the validator refused a model output (spec §11.1). Cases are declared in check order.
 /// Raw values are used by the eval corpus fixture.
 enum ValidationRejection: String, CaseIterable, Codable, Equatable, Sendable {
-    case empty, reasoningMarkup, wrapper, refusal, tooLong, literalInvented, literalMissing
+    case empty, reasoningMarkup, wrapper, refusal, tooLong, literalInvented, literalMissing, contentDropped
 
     var label: String {
         switch self {
@@ -43,6 +43,7 @@ enum ValidationRejection: String, CaseIterable, Codable, Equatable, Sendable {
         case .tooLong: "output too long"
         case .literalInvented: "literal invented"
         case .literalMissing: "literal missing"
+        case .contentDropped: "content dropped"
         }
     }
 }

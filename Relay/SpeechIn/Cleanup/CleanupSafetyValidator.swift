@@ -14,7 +14,7 @@ struct CleanupSafetyValidator: Sendable {
     /// Openings of a refusal or an assistant reply (spec §11.1), in `prefixForm` (no commas,
     /// `’` read as `'`, "can not" read as "cannot").
     static let refusalPrefixes = [
-        "i cannot", "i can't", "i'm unable", "i am unable", "i won't", "as an ai", "i'm sorry but", "i am sorry but", "sorry but",
+        "i cannot", "i'm unable", "i am unable", "i won't", "as an ai", "i'm sorry but", "i am sorry but", "sorry but",
         "i apologize", "unfortunately", "i'm afraid", "i am afraid", "i'm not able", "i am not able", "i don't have", "i do not have",
     ]
 
@@ -24,8 +24,28 @@ struct CleanupSafetyValidator: Sendable {
     /// the output may not contain the old phrase and must contain the new one (case-insensitive,
     /// whole words), so a model cannot revert the pre-pass.
     func validate(input: String, output: String, replaced: [String], phrases: [PhraseRewrite] = []) -> ValidationVerdict {
-        let verdict = validate(input: input, output: output)
+        let verdict = validateLiterals(input: input, output: output)
         guard case let .accept(cleaned) = verdict else { return verdict }
+        let finalVerdict = checkRewrites(input: input, cleaned: cleaned, replaced: replaced, phrases: phrases)
+        guard case .accept = finalVerdict else { return finalVerdict }
+        // Spec §11.8: every content word of the input must survive. Last, so a reverted rewrite
+        // or a missing literal keeps its more specific reason.
+        if ContentCoverage.droppedWord(
+            input: input, inputLiterals: ProtectedLiteralExtractor.extractAll(from: input), output: cleaned,
+            outputLiterals: ProtectedLiteralExtractor.extractAll(from: cleaned)) != nil
+        {
+            return .reject(.contentDropped)
+        }
+        return finalVerdict
+    }
+
+    /// Validation with no pre-pass rewrites.
+    func validate(input: String, output: String) -> ValidationVerdict {
+        validate(input: input, output: output, replaced: [])
+    }
+
+    private func checkRewrites(input: String, cleaned: String, replaced: [String], phrases: [PhraseRewrite]) -> ValidationVerdict {
+        let verdict = ValidationVerdict.accept(cleaned)
         if !phrases.isEmpty {
             let words = Self.lowercasedWords(of: cleaned)
             for phrase in phrases {
@@ -47,7 +67,8 @@ struct CleanupSafetyValidator: Sendable {
         return verdict
     }
 
-    func validate(input: String, output: String) -> ValidationVerdict {
+    /// Structural and protected-literal checks (spec §11.1–§11.7).
+    private func validateLiterals(input: String, output: String) -> ValidationVerdict {
         let cleaned = output.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return .reject(.empty) }
         if Self.reasoningMarkers.contains(where: { cleaned.contains($0) }) { return .reject(.reasoningMarkup) }
@@ -110,6 +131,7 @@ struct CleanupSafetyValidator: Sendable {
         if corrections.pairs.isEmpty, inputLiterals.map(sequenceKey) != outputLiterals.map(sequenceKey) {
             return .reject(.literalMissing)
         }
+
         // Spec §11.4: for an ambiguous pair (detected, but not exempting) whose two values are both
         // kept, the cue word between them must be kept too. Dropping it changes the meaning:
         // "out of 10, no 2 people agree" → "Out of 10, 2 people agree."
@@ -161,7 +183,7 @@ struct CleanupSafetyValidator: Sendable {
     private static func prefixForm(_ text: String) -> String {
         let words = text.lowercased().replacingOccurrences(of: "’", with: "'").replacingOccurrences(of: ",", with: " ")
             .split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        return words.replacingOccurrences(of: "can not", with: "cannot")
+        return words.replacingOccurrences(of: "can not", with: "cannot").replacingOccurrences(of: "can't", with: "cannot")
     }
 
     /// `prefixForm` of the input with leading fillers ("uh", "um", "so", "okay", "ok", "like",
