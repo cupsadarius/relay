@@ -41,3 +41,16 @@ Run 1 (shader warmup run, for reference): 0.6B load_ms=1513 cold_generation_ms=2
 
 - **Decision: ship.** Zero `rateLimited` in both the paced run (50/50 ok) and the burst run (20/20 ok), meeting the `ship` bar (zero paced, ≤5% burst). `AppleFoundationCleanupModelManager.isOfferedInV1 = true`; no "may be skipped in the background" row note is added (Task 23 applies this).
 - Caveat: only macOS 27 was exercised. macOS 26.x background rate limiting for FoundationModels remains unverified; if a macOS 26.x-specific regression surfaces post-ship, re-run this spike on that OS.
+
+## Eval: opt-in live model quality (Task 27)
+
+- Date / machine: 2026-09-24, MacBook Pro (Mac16,5, Apple M4 Max, 48 GB), macOS 27.0, Xcode 27.0 (27A266a). `RELAY_CLEANUP_EVAL=1` against the Task 1 Qwen3 snapshots still present at `/tmp/relay-qwen/{0.6b,1.7b}`. The Apple system model was not run (`RELAY_CLEANUP_EVAL_APPLE=1` not set in this pass).
+
+| model | cases | acceptance | reference match | correction application | wrapper/markup | fail-open | already-clean fail-open | cue-negative over-corrections | p50 | p95 | passes bar |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| mlx.qwen3-0.6b-4bit | 48 | 87.5% | 10.4% | 0% | 4.2% | 12.5% | 0% | 5 | 112 ms | 204 ms | **false** |
+| mlx.qwen3-1.7b-4bit | 48 | 81.25% | 4.2% | 0% | 2.1% | 18.75% | 0% | 5 | 136 ms | 210 ms | **false** |
+
+- Both models fail the §19 bar: the bar requires `correctionApplicationRate >= 0.8` and `cueNegativeOverCorrections == 0`; both models scored `correctionApplicationRate: 0` (no self-correction case produced the reference/acceptable output) and 5 cue-negative over-corrections each (editing text the corpus expects left untouched). Latency is not the problem (p95 well under the 1.5 s bar on this machine).
+- Per spec §19/Task 27: a model with `passesBar: false` stays offered in v1 — there is no auto-select or auto-hide on eval results. Both Qwen models remain selectable in Settings; this result is a quality note for a future prompt/model iteration, not a shipping blocker.
+- The Apple system model was not evaluated in this pass; re-run with `RELAY_CLEANUP_EVAL_APPLE=1` on a signed build with Apple Intelligence enabled to get comparable numbers for it.
