@@ -175,6 +175,7 @@
 		9EE80DD649C18631FE666D76 /* MLXLiveEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1C86F884EC317B8685BEFCA /* MLXLiveEngine.swift */; };
 		9F4340F141218B792C4792F0 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54E4B351A16CE237218FE5C0 /* SettingsView.swift */; };
 		9FE03DC36147EFCCF7FD4D45 /* FocusModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3332E401CE6B77C9E9402E3 /* FocusModels.swift */; };
+		9FF49924648E50B7103EC3B4 /* SelfCorrectionDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76C11FB5B649262839E17851 /* SelfCorrectionDetector.swift */; };
 		A15BB32BD4ADCD03C2E06DDB /* AudioEngineConfigurationObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB762454C8D84D6E76309FF /* AudioEngineConfigurationObserver.swift */; };
 		A480A271CFAE0CD835FC1EBF /* MLXCleanupEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6052794A405142E122CEA3A3 /* MLXCleanupEngine.swift */; };
 		A6E1A60876F04F0F1C465F34 /* SpeechModelManaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1051DD5EB76A94B3E60AA1D /* SpeechModelManaging.swift */; };
@@ -226,6 +227,7 @@
 		CF6FF8CED61660A0B5B60BD1 /* RelayPathsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40BA83A642A9A90A490AE18 /* RelayPathsTests.swift */; };
 		CFB9435D4597BCA15FA20FEE /* MLX in Frameworks */ = {isa = PBXBuildFile; productRef = 1A634495CE1F5E0E8F52BED4 /* MLX */; };
 		D00AE61DF27F4C0087D01650 /* NotificationObservation.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA3DF49232F098A9C1F3217A /* NotificationObservation.swift */; };
+		D0AC9153E0704608A4967D0F /* SelfCorrectionDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A47FC79526FE65BBC40A3623 /* SelfCorrectionDetectorTests.swift */; };
 		D0CCD89167ACBB59A2D873B6 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3772B7BC9E1856FB2551A9D4 /* AppModel.swift */; };
 		D13BFFB3458D91D933FF5F51 /* LoginItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64C44B2770EA66B11413E76A /* LoginItemController.swift */; };
 		D1AA335650988DCFC7A40EA8 /* BoundedStdinReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51D70AE0856B4E8045598BF7 /* BoundedStdinReader.swift */; };
@@ -442,6 +444,7 @@
 		75C54FA6D0E67AA81510F66A /* RelayApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayApp.swift; sourceTree = "<group>"; };
 		760FC90540240025672A5E8A /* KokoroPhonemeChunker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KokoroPhonemeChunker.swift; sourceTree = "<group>"; };
 		763A6DE20D54E1A785D7D61F /* SelectionReaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionReaderTests.swift; sourceTree = "<group>"; };
+		76C11FB5B649262839E17851 /* SelfCorrectionDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelfCorrectionDetector.swift; sourceTree = "<group>"; };
 		7717124B883B3B896F051839 /* AgentSpeech.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSpeech.swift; sourceTree = "<group>"; };
 		77908399E4D478E6A9287D22 /* HelperInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperInstaller.swift; sourceTree = "<group>"; };
 		78703EFE3AB81B041003FB70 /* AudioEngineRouteChangeDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioEngineRouteChangeDecision.swift; sourceTree = "<group>"; };
@@ -480,6 +483,7 @@
 		A31863012B9508704CEEE90C /* TmuxFocusResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxFocusResolver.swift; sourceTree = "<group>"; };
 		A32773776BC3D567722793A5 /* IntegrationSetupModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrationSetupModelTests.swift; sourceTree = "<group>"; };
 		A3A1971CFBDF8C170DD9B32F /* ActivityOverlayPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverlayPresentation.swift; sourceTree = "<group>"; };
+		A47FC79526FE65BBC40A3623 /* SelfCorrectionDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelfCorrectionDetectorTests.swift; sourceTree = "<group>"; };
 		A4D03283F020BF1BCD520856 /* PocketTTSModelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PocketTTSModelManager.swift; sourceTree = "<group>"; };
 		A5BACFD43E570A4F8E383E3E /* SpeechCoordinatorWatchdogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechCoordinatorWatchdogTests.swift; sourceTree = "<group>"; };
 		A7357E0F76AF76DF9C69ACD1 /* TextToSpeechBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextToSpeechBackend.swift; sourceTree = "<group>"; };
@@ -618,6 +622,7 @@
 			children = (
 				2D2663B3578BED8D5551BEC3 /* CleanupPromptTests.swift */,
 				DD64A59F3AD20E5BB51D44A4 /* ProtectedLiteralExtractorTests.swift */,
+				A47FC79526FE65BBC40A3623 /* SelfCorrectionDetectorTests.swift */,
 				66EBED966A4824F547AA70F8 /* SpokenNumberParserTests.swift */,
 			);
 			path = Cleanup;
@@ -700,6 +705,7 @@
 			children = (
 				34B0841234C74589E0515583 /* CleanupPrompt.swift */,
 				2E92C12199F71ECAFF38BCEE /* ProtectedLiterals.swift */,
+				76C11FB5B649262839E17851 /* SelfCorrectionDetector.swift */,
 				0C479532B805144D926E499D /* SpokenNumberParser.swift */,
 			);
 			path = Cleanup;
@@ -1446,6 +1452,7 @@
 				C49E0E417AF998014B597166 /* RulesTranscriptProcessorTests.swift in Sources */,
 				308DF8C3E698E57C77853A62 /* STTRouterTests.swift in Sources */,
 				BB3C78E83707FBC0309FF4D5 /* SelectionReaderTests.swift in Sources */,
+				D0AC9153E0704608A4967D0F /* SelfCorrectionDetectorTests.swift in Sources */,
 				6E30E8738D045CE54CA2872E /* SettingsControllerTests.swift in Sources */,
 				4296D32985ECDC7B8CFFE767 /* SettingsStoreTests.swift in Sources */,
 				AF4EAB5EC47262D70DE776AC /* SettingsViewsSmokeTests.swift in Sources */,
@@ -1606,6 +1613,7 @@
 				5431C9D6D7FA67B99BD9F5BB /* RulesTranscriptProcessor.swift in Sources */,
 				975663B0D629B8FDB447502D /* STTRouter.swift in Sources */,
 				5804D315DC8C4E5826740B25 /* SelectionReader.swift in Sources */,
+				9FF49924648E50B7103EC3B4 /* SelfCorrectionDetector.swift in Sources */,
 				0280928E64EA1362995D73EF /* SettingsController.swift in Sources */,
 				23E6C9B2DB1F71CE066D828B /* SettingsStore.swift in Sources */,
 				9F4340F141218B792C4792F0 /* SettingsView.swift in Sources */,
