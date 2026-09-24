@@ -1,15 +1,8 @@
-import CryptoKit
 import Foundation
 import os
 
-/// The Hugging Face-reported identity for one file inside a Whisper model's `.mlmodelc` bundle:
-/// either the LFS-recorded sha256 (large weight files) or the git blob sha1
-/// (`sha1("blob " + size + "\0" + content)`, small non-LFS sidecar files like `config.json`).
-/// See docs/superpowers/spikes/2026-09-18-openai-whisper-models-feasibility-results.md section 2.
-enum WhisperFileOID: Equatable, Sendable {
-    case sha256(String)
-    case gitBlobSHA1(String)
-}
+/// The Whisper name for `ModelFileOID` (see docs/superpowers/spikes/2026-09-18-openai-whisper-models-feasibility-results.md section 2).
+typealias WhisperFileOID = ModelFileOID
 
 /// One file belonging to a Whisper model's runtime artifact, as reported by a `WhisperDownloader`
 /// after it has been written to disk. `WhisperModelStore` verifies the file at `relativePath`
@@ -182,60 +175,12 @@ struct WhisperModelStore: Sendable {
         cacheDirectory.appendingPathComponent("\(id.rawValue).incomplete", isDirectory: true)
     }
 
-    /// Read size for `verifyFile`. Weight files are about 1 GB, so they are hashed in 1 MiB
-    /// slices rather than loaded whole.
-    static let verificationChunkSize = 1 << 20
+    /// Read size for `verifyFile`; see `ModelFileVerifier.defaultChunkSize`.
+    static let verificationChunkSize = ModelFileVerifier.defaultChunkSize
 
-    /// Streams the file at `url` through an incremental hasher and compares the digest with
-    /// `oid`. Memory stays at about `chunkSize` whatever the file size. `.gitBlobSHA1` hashes the
-    /// git blob header `"blob <size>\0"` before the content, exactly like `git hash-object`.
-    /// Internal (not private) so tests can compare it against whole-file digests.
-    static func verifyFile(
-        at url: URL,
-        against oid: WhisperFileOID,
-        chunkSize: Int = verificationChunkSize
-    ) throws -> Bool {
-        precondition(chunkSize > 0)
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-
-        switch oid {
-        case .sha256(let expected):
-            var hasher = SHA256()
-            try forEachChunk(of: handle, chunkSize: chunkSize) { hasher.update(data: $0) }
-            return hexDigest(hasher.finalize()) == expected.lowercased()
-        case .gitBlobSHA1(let expected):
-            let size = try handle.seekToEnd()
-            try handle.seek(toOffset: 0)
-            var hasher = Insecure.SHA1()
-            hasher.update(data: Data("blob \(size)\0".utf8))
-            try forEachChunk(of: handle, chunkSize: chunkSize) { hasher.update(data: $0) }
-            return hexDigest(hasher.finalize()) == expected.lowercased()
-        }
-    }
-
-    /// Calls `body` with successive reads of up to `chunkSize` bytes until EOF. Each read is
-    /// wrapped in its own autorelease pool so bridged buffers are freed per chunk instead of
-    /// piling up until the calling thread's pool drains.
-    private static func forEachChunk(
-        of handle: FileHandle,
-        chunkSize: Int,
-        _ body: (Data) -> Void
-    ) throws {
-        while true {
-            let hasMore: Bool = try autoreleasepool {
-                guard let chunk = try handle.read(upToCount: chunkSize), !chunk.isEmpty else {
-                    return false
-                }
-                body(chunk)
-                return true
-            }
-            if !hasMore { return }
-        }
-    }
-
-    private static func hexDigest(_ digest: some Sequence<UInt8>) -> String {
-        digest.map { String(format: "%02x", $0) }.joined()
+    /// Forwards to `ModelFileVerifier.verify`. Kept so `WhisperModelStoreTests` compile unchanged.
+    static func verifyFile(at url: URL, against oid: WhisperFileOID, chunkSize: Int = verificationChunkSize) throws -> Bool {
+        try ModelFileVerifier.verify(at: url, against: oid, chunkSize: chunkSize)
     }
 }
 
@@ -354,7 +299,7 @@ struct HuggingFaceWhisperDownloader: WhisperDownloader {
     }
 
     private static func oid(for entry: HFTreeEntry) -> WhisperFileOID {
-        entry.lfs.map { .sha256($0.oid) } ?? .gitBlobSHA1(entry.oid)
+        HuggingFaceTree.oid(for: entry)
     }
 
     /// Downloads `repoID`'s `remotePath` to `destination`, creating any needed intermediate
@@ -393,7 +338,7 @@ struct HuggingFaceWhisperDownloader: WhisperDownloader {
                 throw WhisperDownloaderError.malformedResponse
             }
             entries.append(contentsOf: page)
-            nextURL = Self.nextPageURL(from: http)
+            nextURL = HuggingFaceTree.nextPageURL(from: http)
         }
 
         return
@@ -413,24 +358,6 @@ struct HuggingFaceWhisperDownloader: WhisperDownloader {
         return url.appending(queryItems: [URLQueryItem(name: "recursive", value: "true")])
     }
 
-    /// Hugging Face paginates list endpoints via an RFC 5988-shaped `Link` response header, e.g.
-    /// `<https://huggingface.co/...&cursor=...>; rel="next"`. Returns `nil` once there is no
-    /// `rel="next"` entry.
-    private static func nextPageURL(from response: HTTPURLResponse) -> URL? {
-        guard let linkHeader = response.value(forHTTPHeaderField: "Link") else {
-            return nil
-        }
-        for part in linkHeader.split(separator: ",") {
-            let segments = part.split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }
-            guard segments.count >= 2, segments[1] == "rel=\"next\"" else {
-                continue
-            }
-            let urlSegment = segments[0].trimmingCharacters(in: CharacterSet(charactersIn: "<>"))
-            return URL(string: urlSegment)
-        }
-        return nil
-    }
-
     /// `entry.path` is the full repo path (e.g. "openai_whisper-tiny.en/config.json"); this
     /// strips the `subfolder/` prefix so the result is relative to the model's own directory.
     private static func relativePath(of path: String, under subfolder: String) -> String? {
@@ -440,21 +367,4 @@ struct HuggingFaceWhisperDownloader: WhisperDownloader {
         }
         return String(path.dropFirst(prefix.count))
     }
-}
-
-/// One entry from Hugging Face's `tree` API response.
-private struct HFTreeEntry: Decodable {
-    let type: String
-    let path: String
-    let size: Int64
-    /// Git blob sha1 for a non-LFS file; Hugging Face still reports this for LFS pointer files
-    /// themselves, so `lfs` (when present) always takes precedence for the *content* oid.
-    let oid: String
-    let lfs: HFLFSInfo?
-}
-
-/// The `lfs` sub-object Hugging Face's tree API nests on LFS-tracked entries, carrying the
-/// sha256 of the actual (non-pointer) file content.
-private struct HFLFSInfo: Decodable {
-    let oid: String
 }
