@@ -68,7 +68,10 @@ struct MLXCleanupModelStore: Sendable {
     func remove(_ id: CleanupModelID) async throws { try await store.remove(name(for: id)) }
 
     func download(_ id: CleanupModelID, progress: @escaping @Sendable (Double) -> Void) async throws {
-        guard let snapshot = snapshot(id) else { throw MLXCleanupRuntimeError.notDownloaded }
+        // Review fix 13: an id with no snapshot (the built-in Apple model) is a model-manager-level
+        // "not supported", never a runtime state — `MLXCleanupRuntimeError.notDownloaded` describes
+        // a model that could be downloaded but currently is not, which does not apply here.
+        guard let snapshot = snapshot(id) else { throw CleanupModelManagerError.notSupported }
         try await store.download(snapshot, as: name(for: id), siblingPrefix: MLXCleanupCatalog.siblingPrefix(for: id), progress: progress)
     }
 

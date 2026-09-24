@@ -58,4 +58,20 @@ final class MLXCleanupCatalogTests: XCTestCase {
     func testBothModelsAreOfferedAfterSpikeS3() {
         XCTAssertEqual(MLXCleanupCatalog.offered, [.qwen3_0_6b, .qwen3_1_7b])
     }
+
+    /// Review fix 13: an id with no snapshot (the built-in Apple model) is a model-manager "not
+    /// supported", not a runtime "not downloaded" — the two mean different things and belong to
+    /// different layers.
+    func testDownloadingAnIDWithNoSnapshotThrowsNotSupported() async {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = MLXCleanupModelStore(root: root, downloader: FakeSnapshotDownloader(files: [:]), snapshot: { _ in nil })
+
+        do {
+            try await store.download(.appleSystem) { _ in }
+            XCTFail("expected notSupported")
+        } catch {
+            XCTAssertEqual(error as? CleanupModelManagerError, .notSupported)
+        }
+    }
 }

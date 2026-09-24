@@ -20,6 +20,19 @@ final class HuggingFaceTreeTests: XCTestCase {
         XCTAssertNil(HuggingFaceTree.nextPageURL(from: response(link: #"<https://x.test/p>; rel="prev""#)))
     }
 
+    /// Review fix 13: never follow a `rel="next"` link to a host other than huggingface.co, or
+    /// over anything but https, however well-formed the header otherwise looks.
+    func testNextPageURLRejectsAnyOtherHostOrScheme() {
+        let otherHost = #"<https://evil.test/api/models/a/b/tree/x?cursor=abc>; rel="next""#
+        XCTAssertNil(HuggingFaceTree.nextPageURL(from: response(link: otherHost)))
+
+        let notHTTPS = #"<http://huggingface.co/api/models/a/b/tree/x?cursor=abc>; rel="next""#
+        XCTAssertNil(HuggingFaceTree.nextPageURL(from: response(link: notHTTPS)))
+
+        let subdomainSpoof = #"<https://huggingface.co.evil.test/p>; rel="next""#
+        XCTAssertNil(HuggingFaceTree.nextPageURL(from: response(link: subdomainSpoof)))
+    }
+
     func testDecodesEntriesAndPrefersTheLFSOid() throws {
         let json = #"""
             [{"type":"file","path":"config.json","size":10,"oid":"aaa"},
