@@ -139,6 +139,11 @@ final class RelayRuntime {
             diagnostics: diagnostics
         )
         let cleanupTester = DictationCleanupTester(apple: graph.appleCleanup, mlx: graph.mlxCleanupRuntime)
+        // Launch sweep of retired cleanup models (Qwen3 0.6B), off the main actor. Production only:
+        // `RelayRuntime.testing` never touches the real models folder.
+        if let mlxCleanup = graph.cleanupModelManagers[BackendID.mlxCleanup.rawValue] as? MLXCleanupModelManager {
+            Task.detached(priority: .utility) { await mlxCleanup.sweepUnofferedModels() }
+        }
         let ttsRegistry = graph.ttsRegistry
         let sttRegistry = graph.sttRegistry
 

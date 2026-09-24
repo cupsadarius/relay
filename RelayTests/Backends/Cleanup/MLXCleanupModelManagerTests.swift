@@ -76,6 +76,42 @@ final class MLXCleanupModelManagerTests: XCTestCase {
         XCTAssertEqual(tight, ["~351 MB", "~984 MB · uses ~1.5 GB memory while loaded · May slow other apps on 8 GB Macs"])
     }
 
+    /// Launch sweep: files of a model no longer offered (0.6B) are removed through the store; an
+    /// offered model's files stay, and the selection is untouched.
+    func testSweepRemovesOnlyModelsNoLongerOffered() async throws {
+        let store = makeStore()
+        try await store.download(.qwen3_0_6b) { _ in }
+        try await store.download(.qwen3_1_7b) { _ in }
+        selection.withLock { $0 = .qwen3_1_7b }
+        let runtime = FakeMLXRuntime()
+        let selection = selection
+        let manager = MLXCleanupModelManager(
+            store: store, runtime: runtime, selectedModel: { selection.withLock { $0 } }, setSelectedModel: { _ in XCTFail("no selection write") },
+            offered: [.qwen3_1_7b], physicalMemory: 16 << 30
+        )
+
+        await manager.sweepUnofferedModels()
+
+        XCTAssertFalse(store.presence(of: .qwen3_0_6b))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.directory(for: .qwen3_0_6b).path))
+        XCTAssertTrue(store.presence(of: .qwen3_1_7b))
+        let unloads = await runtime.unloadInvolving
+        XCTAssertEqual(unloads, [.qwen3_0_6b])
+        XCTAssertEqual(selection.withLock { $0 }, .qwen3_1_7b)
+    }
+
+    func testSweepWithNothingRetiredIsANoOp() async throws {
+        let store = makeStore()
+        try await store.download(.qwen3_1_7b) { _ in }
+        let runtime = FakeMLXRuntime()
+        await MLXCleanupModelManager(
+            store: store, runtime: runtime, selectedModel: { nil }, setSelectedModel: { _ in }, offered: [.qwen3_1_7b], physicalMemory: 16 << 30
+        ).sweepUnofferedModels()
+        XCTAssertTrue(store.presence(of: .qwen3_1_7b))
+        let unloads = await runtime.unloadInvolving
+        XCTAssertEqual(unloads, [])
+    }
+
     func testOnlyOfferedModelsAreListed() async {
         let selection = selection
         let manager = MLXCleanupModelManager(

@@ -62,6 +62,17 @@ struct MLXCleanupModelManager: SpeechModelManaging {
         if selectedModel() == modelID { await setSelectedModel(nil) }
     }
 
+    /// Launch sweep: deletes the downloaded files of every MLX model that is no longer offered
+    /// (Qwen3 0.6B), through the store's `remove`. The selection is left alone: a retired id already
+    /// reads as no selection. A failed removal is retried at the next launch.
+    func sweepUnofferedModels() async {
+        for id in CleanupModelID.allCases where id.isMLX && !offered.contains(id) && store.presence(of: id) {
+            store.invalidatePresence(of: id)
+            await runtime.unload(ifInvolving: id)
+            try? await store.remove(id)
+        }
+    }
+
     static func detail(for id: CleanupModelID, physicalMemory: UInt64) -> String {
         switch id {
         case .qwen3_0_6b:
