@@ -67,6 +67,13 @@ final class MLXCleanupRuntimeTests: XCTestCase {
         let loading = await runtime.readiness(for: .qwen3_0_6b)
         XCTAssertEqual(loading, .loading)
 
+        // Review fix 14: `second` must join the first's in-flight transition, not start its own —
+        // a non-joining implementation would call `engine.load()` again right away, well before
+        // the gate is ever released, so this must hold before `gate.finish` to discriminate.
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(engine.loads.count, 1, "the second ensureLoaded must join the in-flight load, not start another")
+        XCTAssertEqual(gate.startCount, 1)
+
         gate.finish(.success(""))
         try await first.value
         try await second.value
@@ -161,18 +168,28 @@ final class MLXCleanupRuntimeTests: XCTestCase {
 
     func testUnloadIfInvolvingWaitsForAnInFlightLoadOfThatModel() async throws {
         let gate = ManualOperation(cooperative: false)
-        let engine = FakeMLXEngine(loadGate: gate)
+        let log = OrderLog()
+        let engine = FakeMLXEngine(loadGate: gate, log: log)
         let runtime = makeRuntime(engine: engine)
         let load = Task { try await runtime.ensureLoaded(.qwen3_0_6b) }
         await eventually { gate.startCount == 1 }
 
         let removal = Task { await runtime.unload(ifInvolving: .qwen3_0_6b) }
+        // Review fix 14: assert the waiting state before releasing the gate — a buggy
+        // unload(ifInvolving:) that returns without actually waiting for the in-flight load would
+        // either record nothing here (nothing loaded yet to unload) or, if it unloaded anyway,
+        // would show "unload" before "load" ever finished. Only "load" (the attempt, recorded the
+        // moment it is entered) may be present at this point.
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(log.values, ["load"], "unload(ifInvolving:) must wait for the in-flight load before unloading")
+
         gate.finish(.success(""))
         try await load.value
         await removal.value
 
         let readiness = await runtime.readiness(for: .qwen3_0_6b)
         XCTAssertEqual(readiness, .notLoaded)
+        XCTAssertEqual(log.values, ["load", "unload"])
         XCTAssertEqual(engine.models.first?.unloadCount, 1)
     }
 

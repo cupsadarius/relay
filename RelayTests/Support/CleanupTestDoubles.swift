@@ -310,17 +310,23 @@ final class FakeMLXEngine: MLXCleanupEngine {
         let directory: URL
         private let handler: @Sendable (CleanupRequest) async throws -> String
         private let unloadGate: ManualOperation?
+        private let log: OrderLog?
         private let unloads = Mutex(0)
-        init(directory: URL, handler: @escaping @Sendable (CleanupRequest) async throws -> String, unloadGate: ManualOperation? = nil) {
+        init(
+            directory: URL, handler: @escaping @Sendable (CleanupRequest) async throws -> String, unloadGate: ManualOperation? = nil,
+            log: OrderLog? = nil
+        ) {
             self.directory = directory
             self.handler = handler
             self.unloadGate = unloadGate
+            self.log = log
         }
         var unloadCount: Int { unloads.withLock { $0 } }
         func generate(_ request: CleanupRequest) async throws -> String { try await handler(request) }
         func unload() async {
             if let unloadGate { _ = try? await unloadGate.run() }
             unloads.withLock { $0 += 1 }
+            log?.append("unload")
         }
     }
 
@@ -334,15 +340,22 @@ final class FakeMLXEngine: MLXCleanupEngine {
     private let state = Mutex(State())
     private let loadGate: ManualOperation?
     private let unloadGate: ManualOperation?
+    /// Records "load" as each `load(directory:)` call is entered (review fix 14: a second,
+    /// non-joining caller would show up here as its own "load" entry, well before any gate
+    /// resolves it) and "unload" as each returned model's `unload()` runs, so a test can assert
+    /// the relative order instead of only the end state.
+    private let log: OrderLog?
     private let handler: @Sendable (CleanupRequest) async throws -> String
 
     init(
         loadGate: ManualOperation? = nil,
         unloadGate: ManualOperation? = nil,
+        log: OrderLog? = nil,
         handler: @escaping @Sendable (CleanupRequest) async throws -> String = { $0.input }
     ) {
         self.loadGate = loadGate
         self.unloadGate = unloadGate
+        self.log = log
         self.handler = handler
     }
 
@@ -353,13 +366,14 @@ final class FakeMLXEngine: MLXCleanupEngine {
 
     func load(directory: URL) async throws -> any LoadedMLXCleanupModel {
         state.withLock { $0.loads.append(directory) }
+        log?.append("load")
         if let loadGate { _ = try await loadGate.run() }
         let fail = state.withLock { state -> Bool in
             defer { state.failNextLoad = false }
             return state.failNextLoad
         }
         if fail { throw CleanupTestError() }
-        let model = Model(directory: directory, handler: handler, unloadGate: unloadGate)
+        let model = Model(directory: directory, handler: handler, unloadGate: unloadGate, log: log)
         state.withLock { $0.models.append(model) }
         return model
     }
