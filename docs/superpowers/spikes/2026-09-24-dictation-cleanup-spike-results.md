@@ -140,5 +140,27 @@ Held-out split (same hash of case ids; 33 / 33 now that the corpus grew):
 
 - Correction application dropped by one case on 1.7B (88.2% → 82.4%: `corr-wait-01`, bare "wait") and by two on Apple (100% → 88.2%: `corr-wait-01`, and `corr-kind-number-01` "allocate 16 no 32 gigabytes", which the unit-word rule now leaves to the model and which Apple answers with the old value, so it fails open). The pre-pass was not loosened to win them back.
 - **Neither model passes the §19 bar.** Qwen3 1.7B fails on `cueNeg-01` ("bump to 2.0 no changes needed" → "Bump to 2.0."). Apple fails on two of the new cue negatives, both the model's own edits (the pre-pass leaves these inputs unchanged): `cueNeg-10` "out of 10, no 2 people agree" → "Out of 10, 2 people agree." and `cueNeg-11` "we shipped 5, actually 3 were late" → "We shipped 3 were late.". `cueNeg-12` ("invited 5, no 1 came") was rejected and failed open.
-- Validator gap these expose: both Apple outputs were accepted because the detector pairs the values across the cue, and the correction exemption (spec §11.4) then allows the "old" value to be missing. The pre-pass cannot cause this any more, but the model can. Tightening the exemption with the same symmetric-separator and unit-word rules as the pre-pass is the next safety step.
+- Validator gap these expose: both Apple outputs were accepted because the detector pairs the values across the cue, and the correction exemption (spec §11.4) then allows the "old" value to be missing. The pre-pass cannot cause this any more, but the model can. Fixed in the next section.
+
+### After the validator exemption fix
+
+The correction exemption (spec §11.4) now uses only unambiguous pairs. A single-word cue exempts only with symmetric separators (or repeated words after the new value), no count or time word after the new value, and not "no" before a one. Multi-word cues are unchanged. For an ambiguous pair whose two values are both kept, the cue word must stay between them. `cueNeg-10` and `cueNeg-11` with Apple's outputs are now mustReject corpus cases.
+
+| model | acceptance | reference match | correction application | cue-negative over-corrections | fail-open | already-clean fail-open | wrapper/markup | p50 | p95 | passes bar |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlx.qwen3-1.7b-4bit | 97.0% | 69.7% | 82.4% (14/17) | 1 | 3.0% | 0% | 0% | 212 ms | 291 ms | **false** |
+| apple.system-language-model | 89.4% | 78.8% | 88.2% (15/17) | 0 | 10.6% | 0% | 1.5% | 532 ms | 682 ms | **true** |
+
+Held-out split (33 / 33):
+
+| model | half | correction application | cue-negative over-corrections | fail-open |
+|---|---|---|---|---|
+| Qwen3 1.7B | dev | 9/10 | 0 | 1/33 |
+| Qwen3 1.7B | held out | 5/7 | 1 | 1/33 |
+| Apple | dev | 9/10 | 0 | 6/33 |
+| Apple | held out | 6/7 | 0 | 1/33 |
+
+- **Apple passes the §19 bar.** Its two over-corrections (`cueNeg-10`, `cueNeg-11`) and `cueNeg-12` are now rejected and fail open to the original text. Its fail-open rose from 7.6% to 10.6%, still under the 15% limit.
+- **Qwen3 1.7B does not pass.** Its outputs did not change. Its one over-correction, `cueNeg-01` ("bump to 2.0 no changes needed" → "Bump to 2.0."), keeps every literal and has no cue pair, so no literal rule can catch it.
+- Correction application is unchanged for both models: no correctly applied correction was rejected by the stricter exemption.
 

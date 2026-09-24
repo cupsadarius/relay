@@ -41,7 +41,7 @@ Models:
 | `apple.system-language-model` | Apple System Language Model | FoundationModels, when Apple Intelligence is available | built in |
 | `mlx.qwen3-1.7b-4bit` | Qwen3 1.7B 4-bit | `mlx-community/Qwen3-1.7B-4bit` | ~984 MB |
 
-The Apple model is the recommended choice when it is available: it scores best on the §19 eval (spike results, "Eval"), though after the stricter pre-pass (§10.1) and the harder cue-negative cases no model passes the bar. `mlx.qwen3-0.6b-4bit` (Qwen3 0.6B 4-bit, ~351 MB) is no longer offered: it stays in `CleanupModelID` and its snapshot stays pinned in `MLXCleanupCatalog` so it can come back, but `MLXCleanupCatalog.offered` lists only 1.7B, and a stored 0.6B selection reads as no selection.
+The Apple model is the recommended choice when it is available: it is the only model that passes the §19 bar (spike results, "Eval"). `mlx.qwen3-0.6b-4bit` (Qwen3 0.6B 4-bit, ~351 MB) is no longer offered: it stays in `CleanupModelID` and its snapshot stays pinned in `MLXCleanupCatalog` so it can come back, but `MLXCleanupCatalog.offered` lists only 1.7B, and a stored 0.6B selection reads as no selection.
 
 The Qwen model goes through `SpeechModelManaging` like the Whisper models. The Apple model is a single-model manager with Select only, like `AppleSpeechModelManager`.
 
@@ -533,7 +533,12 @@ This runs on the input only.
 
    If any of these conditions fails, the cue is ignored. This is what keeps "no changes", "wait for the build", "it actually works" and "sorry about that" from counting as corrections.
 4. **Build a correction chain.** Pairs form edges `L_old → L_new`. A chain such as `3 → 4 → 5` ("3, no, 4, no wait, 5") comes from consecutive pairs whose `L_new` is the next pair's `L_old`, compared by token identity, not by string.
-5. **Exemption.** An input literal that is absent from the output is exempt **only if** it is the `L_old` of some pair, **and** following that pair's chain reaches a literal that **is present** in the output (in either form, for a spokenNumber). Every other missing literal is `.literalMissing`.
+5. **Unambiguous pairs.** Only an unambiguous pair can exempt (`SelfCorrectionDetector.exemptingPairs`). A pair formed by a multi-word cue (`no wait`, `scratch that`, `or rather`, `I mean`) is always unambiguous. A pair formed by a single-word cue (`no`, `wait`, `actually`, `sorry`) is unambiguous only when all of these hold:
+   - the text between `L_old` and `L_new` is exactly ` cue ` (single spaces, no punctuation) or `, cue, `, or ` words cue ` where the same words follow `L_new` ("4 threads actually 8 threads"). A comma on one side only ("10, no 2", "3 no, 2") is ambiguous;
+   - `L_new` is not followed, after spaces, by a count or time word (`SelfCorrectionDetector.countAndTimeWords`: seconds…years, times, people, items, users, things, ones, of, more, others and similar);
+   - the cue is not `no` before a one (`one`, `1`, or canonical digits `1`).
+6. **Exemption.** An input literal that is absent from the output is exempt **only if** it is the `L_old` of an unambiguous pair, **and** following that pair's chain reaches a literal that **is present** in the output (in either form, for a spokenNumber). Every other missing literal is `.literalMissing`, and the result falls back. The order check of §11.1 applies when there is no unambiguous pair.
+7. **Ambiguous pairs keep their cue.** For a detected pair that is not unambiguous, when both values are kept in the output, the cue word must still appear between them; otherwise `.literalMissing`. This rejects "Out of 10, 2 people agree." for "out of 10, no 2 people agree".
 
 Examples:
 
@@ -903,7 +908,7 @@ enum DictationCleanupDiagnostic: Equatable, Sendable {
   - p50 and p95 warm latency.
 - **Pass bar for any model:** p95 warm latency ≤ 1.5 s on an M1 base model; fail-open ≤ 15% overall and ≤ 5% on `alreadyClean`; correction application ≥ 80% on `correction.*`; zero `cueNegative` over-corrections among accepted outputs.
 - The live eval runs the same path as production: pre-pass (§10.1), generate, validate against the pre-passed text; a rejection counts as fail-open to the original text.
-- No model passes the bar at present; Apple scores best and is the recommended model (§1). Qwen 1.7B stays offered without passing it. There is no auto-select in v1.
+- Apple passes the bar and is the recommended model (§1). Qwen 1.7B stays offered without passing it. There is no auto-select in v1.
 
 ## 20. Testing
 
