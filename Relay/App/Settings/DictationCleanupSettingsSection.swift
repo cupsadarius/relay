@@ -7,6 +7,7 @@ extension CleanupModelID: Identifiable {
 struct DictationCleanupSettingsSection: View {
     @Bindable var model: AppModel
     @State private var testModel: CleanupModelID?
+    @State private var showsPromptEditor = false
 
     var body: some View {
         let tester = model.speechBackends.cleanupTester
@@ -38,12 +39,25 @@ struct DictationCleanupSettingsSection: View {
                         + "Falls back to the original text if cleanup fails."
                 )
                 .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Prompt")
+                        Text(model.settings.cleanupPromptOverride == nil ? "Default" : "Custom")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Edit…") { showsPromptEditor = true }
+                        .controlSize(.small)
+                }
             }
         ) { _ in EmptyView() }
         .sheet(item: $testModel) { initial in
             if let tester {
                 DictationCleanupTestSheet(tester: tester, model: initial)
             }
+        }
+        .sheet(isPresented: $showsPromptEditor) {
+            CleanupPromptEditorSheet(controller: model.settingsController)
         }
     }
 }

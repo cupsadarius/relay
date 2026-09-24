@@ -58,6 +58,19 @@ final class SettingsViewsSmokeTests: XCTestCase {
         let tester = DictationCleanupTester(apple: FakeAppleCleanup(), mlx: FakeMLXRuntime())
         _ = DictationCleanupTestSheet(tester: tester, model: .qwen3_1_7b)
     }
+
+    /// The prompt editor constructs both with no saved override (seeds the draft from
+    /// `CleanupPrompt`'s defaults) and with one already saved.
+    @MainActor
+    func testCleanupPromptEditorSheetConstructs() {
+        let model = AppModel(runtime: .testing())
+        _ = CleanupPromptEditorSheet(controller: model.settingsController)
+
+        model.settingsController.setCleanupPromptOverride(
+            CleanupPromptOverride(instructions: "Custom.", examples: [CleanupExample(input: "hi", output: "Hi.")])
+        )
+        _ = CleanupPromptEditorSheet(controller: model.settingsController)
+    }
 }
 
 final class SpeechModelRowPresentationTests: XCTestCase {
