@@ -82,7 +82,7 @@ final class SpeechBackendsModel {
         )
     }
 
-    /// Every cleanup model row, in `CleanupModelID.allCases` order (Apple, Qwen 0.6B, Qwen 1.7B).
+    /// Every offered cleanup model row, in `CleanupModelID.allCases` order: Apple first, then Qwen 1.7B.
     var cleanupRows: [CleanupModelRowItem] {
         let order = CleanupModelID.allCases.map(\.rawValue)
         return models.models

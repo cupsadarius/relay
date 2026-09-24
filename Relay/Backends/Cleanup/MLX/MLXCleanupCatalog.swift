@@ -2,8 +2,9 @@ import Foundation
 
 /// Pinned Qwen3 MLX snapshots (spec §13.2). Values taken from the Hugging Face API on 2026-09-24.
 enum MLXCleanupCatalog {
-    /// Models the Settings UI offers. Spike S3 decision A keeps both.
-    static let offered: [CleanupModelID] = [.qwen3_0_6b, .qwen3_1_7b]
+    /// Models the Settings UI offers. The dictation cleanup eval dropped Qwen3 0.6B (spike results,
+    /// "Eval"); its snapshot below stays pinned so it can come back.
+    static let offered: [CleanupModelID] = [.qwen3_1_7b]
 
     static let allowlist: Set<String> = [
         "config.json", "model.safetensors", "model.safetensors.index.json", "tokenizer.json", "tokenizer_config.json",

@@ -247,6 +247,17 @@ final class SettingsControllerTests: XCTestCase {
         XCTAssertEqual(controller.cleanupSelection(), .appleSystem)
     }
 
+    /// A stored model that is no longer offered (Qwen3 0.6B) reads as no selection, like any stale id.
+    func testCleanupSelectionResolvesAModelNoLongerOfferedToNil() {
+        var saved = AppSettings.defaults
+        saved.selectedCleanupModelID = CleanupModelID.qwen3_0_6b.rawValue
+        let controller = makeController(store: SpySettingsStore(settings: saved))
+
+        XCTAssertNil(controller.cleanupSelection())
+        controller.cleanupSelectionWriter(.qwen3_1_7b)
+        XCTAssertEqual(controller.cleanupSelection(), .qwen3_1_7b)
+    }
+
     func testCleanupEnabledIsReadableOffTheMainActor() async {
         let controller = makeController()
         controller.setDictationCleanupEnabled(true)

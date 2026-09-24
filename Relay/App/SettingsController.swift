@@ -155,10 +155,14 @@ final class SettingsController {
 
     // MARK: Dictation cleanup seam
 
-    /// Synchronous, actor-agnostic read of the cleanup selection. Stale ids read as `nil`.
+    /// Synchronous, actor-agnostic read of the cleanup selection. Stale ids, and models no longer
+    /// offered (`MLXCleanupCatalog.offered`), read as `nil`.
     var cleanupSelection: CleanupModelSelection {
         let snapshot = snapshot
-        return { snapshot.value.selectedCleanupModelID.flatMap(CleanupModelID.init(rawValue:)) }
+        return {
+            snapshot.value.selectedCleanupModelID.flatMap(CleanupModelID.init(rawValue:))
+                .flatMap { !$0.isMLX || MLXCleanupCatalog.offered.contains($0) ? $0 : nil }
+        }
     }
 
     var cleanupSelectionWriter: CleanupModelSelectionWriter {

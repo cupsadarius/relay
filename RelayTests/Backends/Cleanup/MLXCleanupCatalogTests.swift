@@ -55,8 +55,11 @@ final class MLXCleanupCatalogTests: XCTestCase {
         XCTAssertEqual(store.directory(for: .qwen3_0_6b).lastPathComponent, "mlx.qwen3-0.6b-4bit@r1")
     }
 
-    func testBothModelsAreOfferedAfterSpikeS3() {
-        XCTAssertEqual(MLXCleanupCatalog.offered, [.qwen3_0_6b, .qwen3_1_7b])
+    /// The dictation cleanup eval (spike results, "Eval") dropped 0.6B from the offer. Its pinned
+    /// snapshot stays so it can come back.
+    func testOnlyQwen17BIsOfferedAndTheDroppedSnapshotIsKept() {
+        XCTAssertEqual(MLXCleanupCatalog.offered, [.qwen3_1_7b])
+        XCTAssertNotNil(MLXCleanupCatalog.snapshot(for: .qwen3_0_6b))
     }
 
     /// Review fix 13: an id with no snapshot (the built-in Apple model) is a model-manager "not

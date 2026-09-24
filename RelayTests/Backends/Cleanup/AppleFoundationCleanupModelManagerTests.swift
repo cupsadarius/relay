@@ -23,7 +23,7 @@ final class AppleFoundationCleanupModelManagerTests: XCTestCase {
         XCTAssertEqual(statuses.count, 1)
         XCTAssertEqual(status.id, "apple.system-language-model")
         XCTAssertEqual(status.descriptor.displayName, "Apple Intelligence")
-        XCTAssertEqual(status.descriptor.detail, "Built in")
+        XCTAssertEqual(status.descriptor.detail, "Built in · Recommended")
         XCTAssertEqual(status.capabilities, [.select])
         XCTAssertEqual(status.installState, .downloaded)
         XCTAssertEqual(status.usability, .usable)
@@ -40,14 +40,15 @@ final class AppleFoundationCleanupModelManagerTests: XCTestCase {
         for (reason, text) in reasons {
             let statuses = await makeManager(FakeAppleCleanup(availability: .unavailable(reason))).models()
             XCTAssertEqual(statuses.first?.usability, .unusable(reason: text))
+            XCTAssertEqual(statuses.first?.descriptor.detail, "Built in", "Recommended only when available")
         }
     }
 
     func testNonEnglishLocaleShowsTheEnglishOnlyDetail() async {
         let french = await makeManager(FakeAppleCleanup(), locale: Locale(identifier: "fr_FR")).models()
-        XCTAssertEqual(french.first?.descriptor.detail, "Built in · English only in this version")
+        XCTAssertEqual(french.first?.descriptor.detail, "Built in · Recommended · English only in this version")
         let unsupported = await makeManager(FakeAppleCleanup(supportsLocale: false)).models()
-        XCTAssertEqual(unsupported.first?.descriptor.detail, "Built in · English only in this version")
+        XCTAssertEqual(unsupported.first?.descriptor.detail, "Built in · Recommended · English only in this version")
     }
 
     func testSelectWritesTheGlobalSelectionOnlyWhenAvailable() async throws {

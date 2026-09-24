@@ -10,6 +10,7 @@ struct AppleFoundationCleanupModelManager: SpeechModelManaging {
     /// Spike S2 `note` sets this to "May be skipped when Relay is in the background". Not set: S2 shipped clean.
     static let backgroundNote: String? = nil
     static let englishOnlyNote = "English only in this version"
+    static let recommendedNote = "Recommended"
 
     let backendID = BackendID.appleFoundationCleanup.rawValue
 
@@ -37,9 +38,11 @@ struct AppleFoundationCleanupModelManager: SpeechModelManaging {
         case .available: usability = .usable
         case .unavailable(let reason): usability = .unusable(reason: reason.rowText)
         }
+        // The eval's best model (spike results, "Eval"): recommended whenever it can run.
+        let recommended = usability == .usable ? Self.recommendedNote : nil
         let current = locale()
         let englishOnly = !TranscriptCleanupService.isEnglish(current) || !backend.supportsLocale(current)
-        let detail = (["Built in"] + [englishOnly ? Self.englishOnlyNote : nil, Self.backgroundNote].compactMap { $0 })
+        let detail = (["Built in"] + [recommended, englishOnly ? Self.englishOnlyNote : nil, Self.backgroundNote].compactMap { $0 })
             .joined(separator: " · ")
         return [
             SpeechModelStatus(
