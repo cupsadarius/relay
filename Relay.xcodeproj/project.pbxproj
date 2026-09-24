@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		006D15310A7D00CC8B9C3297 /* ProtectedLiterals.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E92C12199F71ECAFF38BCEE /* ProtectedLiterals.swift */; };
 		010EFDE2D6C4A73206572BBE /* SpeechToTextBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E124777F58D54CEDE5CA61 /* SpeechToTextBackend.swift */; };
 		0280928E64EA1362995D73EF /* SettingsController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 926C7D0FCAF5C17E6316F4A8 /* SettingsController.swift */; };
 		03266D9A7918D305BA8CCC74 /* SpeechActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B32E5007EC33AEC94EF06ED /* SpeechActions.swift */; };
@@ -164,6 +165,7 @@
 		97BBF047A631155332E9FB06 /* HookEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0007CFDD668AB6C9B6207607 /* HookEnvelope.swift */; };
 		9933F35CA7C64B513FAC5966 /* HerdrHostOwnership.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBABB87F78A5D75EB1569320 /* HerdrHostOwnership.swift */; };
 		9BBA5EDA12BC819F71FCA950 /* AppleSpeechModelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0666BAE3F72D0A76CDBAF8C0 /* AppleSpeechModelManager.swift */; };
+		9C8D45386E9A5DCE9F2B5564 /* ProtectedLiteralExtractorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD64A59F3AD20E5BB51D44A4 /* ProtectedLiteralExtractorTests.swift */; };
 		9DB8B34070EEA2E8046628E7 /* RelayPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44934E2CE63E18AC6B23E591 /* RelayPaths.swift */; };
 		9DEDED0E43E753BCE3E9414B /* ParakeetBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0426F6B17538598D1ECA3EB8 /* ParakeetBackendTests.swift */; };
 		9E0C7944EDBB2859454D8F58 /* AppleTTSAudioSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CF4B385AF5C43F12EC514DB /* AppleTTSAudioSource.swift */; };
@@ -354,6 +356,7 @@
 		2BBDD2910F25F42047CF89D8 /* AppleTTSWriteCallbackSpikeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleTTSWriteCallbackSpikeTests.swift; sourceTree = "<group>"; };
 		2C8084505DDA7AD9AACEA069 /* AgentSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSession.swift; sourceTree = "<group>"; };
 		2D2663B3578BED8D5551BEC3 /* CleanupPromptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupPromptTests.swift; sourceTree = "<group>"; };
+		2E92C12199F71ECAFF38BCEE /* ProtectedLiterals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtectedLiterals.swift; sourceTree = "<group>"; };
 		2F2A1198E9E19F425709AF21 /* FluidAudioKokoroEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FluidAudioKokoroEngineTests.swift; sourceTree = "<group>"; };
 		311ABBF060EBB992AF95420A /* AppleTTSBackendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleTTSBackendTests.swift; sourceTree = "<group>"; };
 		31A0D1C0541FDD96C63C56E7 /* SpeechBackendsModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechBackendsModelTests.swift; sourceTree = "<group>"; };
@@ -525,6 +528,7 @@
 		DAA71CF6D19AFEA28AC72CE1 /* ActivityOverlayModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverlayModel.swift; sourceTree = "<group>"; };
 		DBE263E8F61285140D13E858 /* SpeechActionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechActionsTests.swift; sourceTree = "<group>"; };
 		DCE828C9DB3F9860FC01EF8E /* TTSAudioPipe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSAudioPipe.swift; sourceTree = "<group>"; };
+		DD64A59F3AD20E5BB51D44A4 /* ProtectedLiteralExtractorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtectedLiteralExtractorTests.swift; sourceTree = "<group>"; };
 		DDE382A48C3099EB2F2FC565 /* ProcessInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessInspector.swift; sourceTree = "<group>"; };
 		E07986CA871BE584821FE608 /* HerdrModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HerdrModels.swift; sourceTree = "<group>"; };
 		E0A3ADFA84D5EF795F23DF2F /* SpeechModelControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechModelControllerTests.swift; sourceTree = "<group>"; };
@@ -609,6 +613,7 @@
 			isa = PBXGroup;
 			children = (
 				2D2663B3578BED8D5551BEC3 /* CleanupPromptTests.swift */,
+				DD64A59F3AD20E5BB51D44A4 /* ProtectedLiteralExtractorTests.swift */,
 			);
 			path = Cleanup;
 			sourceTree = "<group>";
@@ -689,6 +694,7 @@
 			isa = PBXGroup;
 			children = (
 				34B0841234C74589E0515583 /* CleanupPrompt.swift */,
+				2E92C12199F71ECAFF38BCEE /* ProtectedLiterals.swift */,
 			);
 			path = Cleanup;
 			sourceTree = "<group>";
@@ -1424,6 +1430,7 @@
 				8602F959E709BCBCB4B52245 /* ProcessAncestryTests.swift in Sources */,
 				62C9E5019CD4CCFDE401F3AA /* ProcessInspectorTests.swift in Sources */,
 				91CA532F4429D5B65476BEBC /* ProjectSmokeTests.swift in Sources */,
+				9C8D45386E9A5DCE9F2B5564 /* ProtectedLiteralExtractorTests.swift in Sources */,
 				7B6EEE0038DB1849426F34E9 /* QwenChatTemplateTests.swift in Sources */,
 				FD2982B28924118EF2F689EF /* QwenTokenizerParityTests.swift in Sources */,
 				CF6FF8CED61660A0B5B60BD1 /* RelayPathsTests.swift in Sources */,
@@ -1580,6 +1587,7 @@
 				BA19D35C2B175991A4C97D96 /* PocketTTSModelManager.swift in Sources */,
 				D4BD31737E43AB53FD71AEF6 /* ProcessAncestry.swift in Sources */,
 				DC76A871110147F5D45200B5 /* ProcessInspector.swift in Sources */,
+				006D15310A7D00CC8B9C3297 /* ProtectedLiterals.swift in Sources */,
 				B99A6AF3C2D06F3AA8E2C23C /* QwenChatTemplate.swift in Sources */,
 				B5059A51D144C468B1843122 /* RelayApp.swift in Sources */,
 				84EEBCE5125549F18CE06C06 /* RelayIntegration.swift in Sources */,
