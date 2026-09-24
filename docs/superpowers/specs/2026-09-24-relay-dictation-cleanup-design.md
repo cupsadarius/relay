@@ -39,10 +39,11 @@ Models:
 | Model ID | Model | Source | Size |
 |---|---|---|---|
 | `apple.system-language-model` | Apple System Language Model | FoundationModels, when Apple Intelligence is available | built in |
-| `mlx.qwen3-0.6b-4bit` | Qwen3 0.6B 4-bit | `mlx-community/Qwen3-0.6B-4bit` | ~351 MB |
 | `mlx.qwen3-1.7b-4bit` | Qwen3 1.7B 4-bit | `mlx-community/Qwen3-1.7B-4bit` | ~984 MB |
 
-The two Qwen models go through `SpeechModelManaging` like the Whisper models. The Apple model is a single-model manager with Select only, like `AppleSpeechModelManager`.
+The Apple model is the recommended choice when it is available: it is the only model that passes the §19 bar (spike results, "Eval"). `mlx.qwen3-0.6b-4bit` (Qwen3 0.6B 4-bit, ~351 MB) is no longer offered: it stays in `CleanupModelID` and its snapshot stays pinned in `MLXCleanupCatalog` so it can come back, but `MLXCleanupCatalog.offered` lists only 1.7B, and a stored 0.6B selection reads as no selection.
+
+The Qwen model goes through `SpeechModelManaging` like the Whisper models. The Apple model is a single-model manager with Select only, like `AppleSpeechModelManager`.
 
 ## 2. Goals
 
@@ -457,9 +458,18 @@ The instructions are fixed and live in `CleanupPrompt.instructions`: numbered ru
 - **Output token limit:** `min(512, max(32, inputTokensEstimate * 3 / 2 + 16))`, with `inputTokensEstimate = utf8.count / 3`.
 - No tools and no history beyond the fixed example turns. Each request gets a fresh MLX KV cache and a fresh `LanguageModelSession`.
 
+### 10.1 Self-correction pre-pass (`SelfCorrectionPrePass`)
+
+Before the model runs, a deterministic pre-pass applies the literal corrections that §11.4 detects: it replaces `L_old` and the cue span with `L_new`, so "port three no four" becomes "port four". The model receives the pre-passed text.
+
+- **When:** only when cleanup runs (enabled, a model selected, the input and locale gates passed), in production (`TranscriptCleanupService`), the Test tool (`DictationCleanupTester`) and the live eval. Never when cleanup is off.
+- **Conservative:** a pair is rewritten only when the text between `L_old` and `L_new` is exactly a cue, optionally preceded by words the replacement repeats ("4 threads actually 8 threads" → "8 threads"), and `L_new` comes right after the cue. Otherwise the pair is left for the model. The whole text is left unchanged when any pair shares a literal with another (a chain such as "3, no, 4, no wait, 5"). "no one" is never a correction. Cue negatives produce no pair (§11.4), so they are unchanged.
+- **Validation:** the output is validated against the pre-passed text as the input (§11). The validator also rejects, as `.literalInvented`, an output that holds a replaced old value more often than the pre-passed text still does.
+- **Fallback:** every fallback returns the ORIGINAL rules-cleaned text, never the pre-passed text, so fail-open never changes meaning (§8.1).
+
 ## 11. Safety validation (`CleanupSafetyValidator`)
 
-The validator is pure and deterministic, and it runs on both engines. The same validator judges production and Test runs.
+The validator is pure and deterministic, and it runs on both engines. The same validator judges production and Test runs. Its input is the pre-passed text (§10.1). Checks run in this order: `empty`, `reasoningMarkup`, `wrapper`, `refusal`, `tooLong`, `literalInvented`, `literalMissing`, then the replaced-value check of §10.1.
 
 ### 11.1 Structural rejections
 
@@ -469,6 +479,7 @@ The validator is pure and deterministic, and it runs on both engines. The same v
 | `.tooLong` | `output.count > input.count * 1.75 + 16` |
 | `.reasoningMarkup` | contains `<think>`, `</think>`, `<\|im_start\|>`, `<\|im_end\|>` or `<\|endoftext\|>` |
 | `.wrapper` | starts with (case-insensitive) `Here is`, `Here's`, `Sure`, `Cleaned text:`, `Output:`, `Result:`, or contains a ``` fence the input lacked |
+| `.refusal` | starts with (case-insensitive, `’` read as `'`) a refusal or assistant-reply opening: `I cannot`, `I can't`, `I can not`, `I'm unable`, `I am unable`, `I won't`, `As an AI`, `I'm sorry, but`, `I am sorry, but`, `Sorry, but`, `I apologize`, unless the input itself (leading fillers trimmed) starts with the same phrase |
 | `.literalMissing` | an input protected literal is absent and not correction-exempt (§11.4) |
 | `.literalInvented` | an output protected literal is absent from the input's allowed set (§11.6) |
 
@@ -787,13 +798,12 @@ A stale or unknown `selectedCleanupModelID` resolves to `nil`, meaning no select
 Section "Dictation Cleanup":
 
 - **Toggle "Clean up dictated text".** Help text: "Uses a local model to fix punctuation, remove filler words and apply spoken corrections before inserting. Falls back to the original text if cleanup fails." The toggle works whatever the download state. Turning it on never downloads and never selects.
-- **Rows**, one per cleanup model, in order Apple, Qwen 0.6B, Qwen 1.7B:
+- **Rows**, one per offered cleanup model, in order Apple, Qwen 1.7B:
 
   | Row | Detail | State examples | Buttons |
   |---|---|---|---|
-  | Apple Intelligence | "Built in" | "Built in · Available", "Apple Intelligence is off", "Not supported on this Mac", "Apple model is not ready yet" | Select, Test |
-  | Qwen3 0.6B | "~351 MB" | "Not downloaded", "Downloading 42%", "Downloaded", "● Active" | Download / Select / Remove / Test |
-  | Qwen3 1.7B | "~984 MB · uses ~1.5 GB memory while loaded" | same | same |
+  | Apple Intelligence | "Built in · Recommended" when available, otherwise "Built in" | "Built in · Recommended · Available", "Apple Intelligence is off", "Not supported on this Mac", "Apple model is not ready yet" | Select, Test |
+  | Qwen3 1.7B | "~984 MB · uses ~1.5 GB memory while loaded" | "Not downloaded", "Downloading 42%", "Downloaded", "● Active" | Download / Select / Remove / Test |
 
 - **Presentation:** reuse `SpeechModelRowPresentation` (`SpeechModelRow.swift:3-48`). `make` gains one rule: `canSelect` also requires `status.usability == .usable`, and an `.unusable(reason)` status uses `reason` as its `stateLabel`. Existing rows are unaffected because they default to `.usable`. A thin `CleanupModelRowPresentation` wraps it and adds `canTest = installState == .downloaded && usability == .usable && !testerBusy`, plus `testHelp`. The Apple row never shows Download.
 - Do not reuse `SpeechBackendSettingsSection`. It is built around a backend list with enable and priority controls, and cleanup has neither. There are no priority arrows.
@@ -883,7 +893,8 @@ enum DictationCleanupDiagnostic: Equatable, Sendable {
   - wrapper or markup rate;
   - p50 and p95 warm latency.
 - **Pass bar for any model:** p95 warm latency ≤ 1.5 s on an M1 base model; fail-open ≤ 15% overall and ≤ 5% on `alreadyClean`; correction application ≥ 80% on `correction.*`; zero `cueNegative` over-corrections among accepted outputs.
-- Qwen 0.6B is the preferred default candidate only if it passes. There is no auto-select in v1.
+- The live eval runs the same path as production: pre-pass (§10.1), generate, validate against the pre-passed text; a rejection counts as fail-open to the original text.
+- Apple passes the bar and is the recommended model (§1). Qwen 1.7B stays offered without passing it. There is no auto-select in v1.
 
 ## 20. Testing
 
