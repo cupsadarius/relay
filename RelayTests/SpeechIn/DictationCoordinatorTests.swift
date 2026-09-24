@@ -833,6 +833,139 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(inserter.inserted, ["final answer"])
     }
 
+    // MARK: - Transcript cleanup
+
+    func testCleanedTextIsInserted() async {
+        let events = EventLog()
+        let inserter = FakeTextInserter(events: events)
+        let cleaner = FakeTranscriptCleaner(.clean("Hello Relay."))
+        var statuses: [String] = []
+        let coordinator = makeCoordinator(
+            sttRouter: router(events: events, transcript: "  hello   relay  "), textInserter: inserter,
+            status: { statuses.append($0) }, overlay: RecordingActivityOverlay(), cleanup: cleaner
+        )
+
+        await coordinator.start()
+        await coordinator.finish()
+
+        XCTAssertEqual(cleaner.inputs, ["hello relay"], "rules run first, then cleanup")
+        XCTAssertEqual(inserter.inserted, ["Hello Relay."])
+        XCTAssertEqual(statuses.last, "Inserted dictation")
+    }
+
+    func testFallbackInsertsTheRulesTextAndSaysCleanupWasSkipped() async {
+        let events = EventLog()
+        let inserter = FakeTextInserter(events: events)
+        var statuses: [String] = []
+        let coordinator = makeCoordinator(
+            sttRouter: router(events: events, transcript: "hello relay"), textInserter: inserter,
+            status: { statuses.append($0) }, overlay: RecordingActivityOverlay(), cleanup: FakeTranscriptCleaner(.fallBack(.timedOut))
+        )
+
+        await coordinator.start()
+        await coordinator.finish()
+
+        XCTAssertEqual(inserter.inserted, ["hello relay"])
+        XCTAssertEqual(statuses.last, "Inserted dictation (cleanup skipped)")
+    }
+
+    func testNotAttemptedKeepsThePlainStatus() async {
+        var statuses: [String] = []
+        let coordinator = makeCoordinator(
+            status: { statuses.append($0) }, overlay: RecordingActivityOverlay(), cleanup: FakeTranscriptCleaner(.notAttempted)
+        )
+
+        await coordinator.start()
+        await coordinator.finish()
+
+        XCTAssertEqual(statuses.last, "Inserted dictation")
+    }
+
+    func testCleaningUpSubtitleIsShownOnlyWhenCleanupIsAttempted() async throws {
+        let attemptedOverlay = RecordingActivityOverlay()
+        let attempted = makeCoordinator(overlay: attemptedOverlay, cleanup: FakeTranscriptCleaner(.clean("Text.")))
+        await attempted.start()
+        let session = attemptedOverlay.sessionID!
+        await attempted.finish()
+        let events = attemptedOverlay.events
+        let processing = events.firstIndex(of: .processing(session))
+        let cleaning = events.firstIndex(of: .backendName(session, "Cleaning up"))
+        let completed = events.firstIndex(of: .completed(session))
+        XCTAssertNotNil(cleaning)
+        XCTAssertLessThan(try XCTUnwrap(processing), try XCTUnwrap(cleaning))
+        XCTAssertLessThan(try XCTUnwrap(cleaning), try XCTUnwrap(completed))
+
+        let skippedOverlay = RecordingActivityOverlay()
+        let skipped = makeCoordinator(overlay: skippedOverlay, cleanup: FakeTranscriptCleaner(.notAttempted))
+        await skipped.start()
+        await skipped.finish()
+        XCTAssertFalse(skippedOverlay.events.contains { if case .backendName(_, "Cleaning up") = $0 { true } else { false } })
+    }
+
+    func testCancelDuringCleanupInsertsNothingAndLeavesReady() async {
+        let events = EventLog()
+        let inserter = FakeTextInserter(events: events)
+        let cleaner = FakeTranscriptCleaner(.block)
+        let overlay = RecordingActivityOverlay()
+        var statuses: [String] = []
+        let coordinator = makeCoordinator(textInserter: inserter, status: { statuses.append($0) }, overlay: overlay, cleanup: cleaner)
+        await coordinator.start()
+        let session = overlay.sessionID!
+
+        let finishing = Task { await coordinator.finish() }
+        await waitUntil { cleaner.isBlocked }
+        await coordinator.cancel(sessionID: session)
+        cleaner.release()
+        await finishing.value
+
+        XCTAssertTrue(inserter.inserted.isEmpty)
+        XCTAssertEqual(statuses.last, "Ready")
+    }
+
+    func testSessionEndedDuringCleanupInsertsNothingEvenIfCleanupReturns() async {
+        let events = EventLog()
+        let inserter = FakeTextInserter(events: events)
+        let cleaner = FakeTranscriptCleaner(.blockIgnoringCancellation)
+        let overlay = RecordingActivityOverlay()
+        let coordinator = makeCoordinator(textInserter: inserter, overlay: overlay, cleanup: cleaner)
+        await coordinator.start()
+        let session = overlay.sessionID!
+
+        let finishing = Task { await coordinator.finish() }
+        await waitUntil { cleaner.isBlocked }
+        await coordinator.cancel(sessionID: session)
+        cleaner.release()
+        await finishing.value
+
+        XCTAssertTrue(inserter.inserted.isEmpty)
+    }
+
+    func testEmptyTranscriptNeverReachesCleanup() async {
+        let events = EventLog()
+        let cleaner = FakeTranscriptCleaner(.clean("invented"))
+        var statuses: [String] = []
+        let coordinator = makeCoordinator(
+            sttRouter: router(events: events, transcript: "   "), status: { statuses.append($0) },
+            overlay: RecordingActivityOverlay(), cleanup: cleaner
+        )
+
+        await coordinator.start()
+        await coordinator.finish()
+
+        XCTAssertEqual(cleaner.inputs, [])
+        XCTAssertEqual(statuses.last, "No speech was recognized. Try again.")
+    }
+
+    func testStartPrewarmsAndFinishDoesNot() async {
+        let cleaner = FakeTranscriptCleaner(.notAttempted)
+        let coordinator = makeCoordinator(overlay: RecordingActivityOverlay(), cleanup: cleaner)
+
+        await coordinator.start()
+        XCTAssertEqual(cleaner.prewarmCount, 1)
+        await coordinator.finish()
+        XCTAssertEqual(cleaner.prewarmCount, 1)
+    }
+
     private func makeCoordinator(
         microphone: (any MicrophoneCapturing)? = nil,
         sttRouter: STTRouter? = nil,
@@ -840,7 +973,8 @@ final class DictationCoordinatorTests: XCTestCase {
         stopSpeech: @escaping () -> Void = {},
         status: @escaping (String) -> Void = { _ in },
         overlay: RecordingActivityOverlay,
-        diagnostics: DiagnosticsRecorder? = nil
+        diagnostics: DiagnosticsRecorder? = nil,
+        cleanup: (any TranscriptCleaning)? = nil
     ) -> DictationCoordinator {
         let events = EventLog()
         return DictationCoordinator(
@@ -851,7 +985,8 @@ final class DictationCoordinatorTests: XCTestCase {
             stopSpeech: stopSpeech,
             status: status,
             activity: overlay,
-            diagnostics: diagnostics
+            diagnostics: diagnostics,
+            cleanup: cleanup ?? NoopTranscriptCleaner()
         )
     }
 
@@ -1333,4 +1468,55 @@ private final class RecordingActivityOverlay: DictationActivityPublishing {
     func fail(sessionID: UUID, category: ActivityOverlayErrorCategory, message: String) {
         events.append(.failed(sessionID, category))
     }
+}
+
+@MainActor
+private final class FakeTranscriptCleaner: TranscriptCleaning {
+    enum Behavior {
+        case clean(String)
+        case fallBack(CleanupFallbackReason)
+        case notAttempted
+        /// Suspends until `release()`, then throws `CancellationError` if its task was cancelled.
+        case block
+        /// Suspends until `release()`, then returns a result even if cancelled.
+        case blockIgnoringCancellation
+    }
+
+    private let behavior: Behavior
+    private(set) var inputs: [String] = []
+    private(set) var prewarmCount = 0
+    private(set) var isBlocked = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    init(_ behavior: Behavior) { self.behavior = behavior }
+
+    func cleanForInsertion(
+        _ text: String,
+        onAttempt: @MainActor () -> Void
+    ) async throws(CancellationError) -> TranscriptCleanupResult {
+        inputs.append(text)
+        switch behavior {
+        case .notAttempted:
+            return .notAttempted(text)
+        case let .clean(output):
+            onAttempt()
+            return TranscriptCleanupResult(text: output, modelID: .qwen3_0_6b, outcome: .cleaned, elapsed: .milliseconds(120))
+        case let .fallBack(reason):
+            onAttempt()
+            return TranscriptCleanupResult(text: text, modelID: .qwen3_0_6b, outcome: .fellBack(reason), elapsed: nil)
+        case .block, .blockIgnoringCancellation:
+            onAttempt()
+            isBlocked = true
+            await withCheckedContinuation { continuation = $0 }
+            if case .block = behavior, Task.isCancelled { throw CancellationError() }
+            return TranscriptCleanupResult(text: "late \(text)", modelID: .qwen3_0_6b, outcome: .cleaned, elapsed: nil)
+        }
+    }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
+    }
+
+    func prewarm() { prewarmCount += 1 }
 }

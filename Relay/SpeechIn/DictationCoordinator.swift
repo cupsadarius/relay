@@ -46,6 +46,7 @@ final class DictationCoordinator: DictationCoordinating {
     private let stopSpeech: () -> Void
     private let activity: any DictationActivityPublishing
     private let diagnostics: DiagnosticsRecorder?
+    private let cleanup: any TranscriptCleaning
     private let status: (String) -> Void
     private var state: State = .idle
     private var finishRequested = false
@@ -91,7 +92,8 @@ final class DictationCoordinator: DictationCoordinating {
         status: @escaping (String) -> Void,
         activity: any DictationActivityPublishing,
         diagnostics: DiagnosticsRecorder? = nil,
-        liveTranscriptionEnabled: @escaping () -> Bool = { true }
+        liveTranscriptionEnabled: @escaping () -> Bool = { true },
+        cleanup: any TranscriptCleaning = NoopTranscriptCleaner()
     ) {
         self.microphone = microphone
         self.sttRouter = sttRouter
@@ -102,6 +104,7 @@ final class DictationCoordinator: DictationCoordinating {
         self.activity = activity
         self.diagnostics = diagnostics
         self.liveTranscriptionEnabled = liveTranscriptionEnabled
+        self.cleanup = cleanup
     }
 
     func start() async {
@@ -138,6 +141,7 @@ final class DictationCoordinator: DictationCoordinating {
 
         guard isStarting(session) else { return }
         state = .recording(session)
+        cleanup.prewarm()
         activity.listen(sessionID: session, startedAt: .now)
         // Recorded here, before the `await` below, so nothing can interleave between them: a
         // concurrent `finish()` admitted during the backend-name lookup's suspension could
@@ -365,15 +369,30 @@ final class DictationCoordinator: DictationCoordinating {
             return
         }
 
-        // `textInserter.insert` is synchronous with no suspension point after the guard above,
-        // so once started it can't be interrupted by a concurrent cancel(); there's nothing to
-        // re-check before applying its result.
+        let result: TranscriptCleanupResult
         do {
-            let mechanism = try textInserter.insert(text)
+            result = try await cleanup.cleanForInsertion(text) { [weak self] in
+                self?.activity.setBackendName("Cleaning up", sessionID: session)
+            }
+        } catch {
+            // CancellationError only: the user cancelled. Insert nothing; cancel(sessionID:) owns
+            // the overlay/status teardown.
+            return
+        }
+        guard !Task.isCancelled, isFinishing(session) else { return }
+
+        // No suspension point between the guard above and the synchronous insert below, so once
+        // the guard passes a concurrent cancel() cannot interleave; there is nothing to re-check.
+        do {
+            let mechanism = try textInserter.insert(result.text)
             state = .idle
             diagnostics?.record(.dictation(.inserted(mechanism)))
             activity.complete(sessionID: session)
-            status("Inserted dictation")
+            if case .fellBack = result.outcome {
+                status("Inserted dictation (cleanup skipped)")
+            } else {
+                status("Inserted dictation")
+            }
         } catch {
             fail(error, at: .insertion, session: session)
         }
