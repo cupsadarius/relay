@@ -29,6 +29,29 @@ final class CleanupSafetyValidatorTests: XCTestCase {
         XCTAssertEqual(verdict("sure let's do it", "Sure, let's do it."), .accept("Sure, let's do it."))
     }
 
+    /// Review fix 2: the exemption requires the input to itself START with the phrase (after
+    /// trimming fillers), not merely contain it — an input that opens with "here's" still gets a
+    /// real "here's the cleaned text:" preamble rejected.
+    func testWrapperExemptionRequiresTheInputToStartWithThePhrase() {
+        XCTAssertEqual(
+            verdict("here's the plan ship it friday", "Here's the cleaned text: Here's the plan, ship it Friday."),
+            .reject(.wrapper)
+        )
+    }
+
+    func testWrapperExemptionSurvivesLeadingFillers() {
+        XCTAssertEqual(verdict("uh sure let's do it", "Sure, let's do it."), .accept("Sure, let's do it."))
+    }
+
+    /// A mid-sentence, unrelated colon (not part of a wrapper preamble) never triggers the
+    /// always-reject rule.
+    func testAWrapperPrefixWithNoNearbyColonIsStillExemptWhenTheInputStartsWithIt() {
+        XCTAssertEqual(
+            verdict("sure it starts at 3:00", "Sure, it starts at 3:00."),
+            .accept("Sure, it starts at 3:00.")
+        )
+    }
+
     func testANewCodeFenceIsAWrapper() {
         XCTAssertEqual(verdict("check the build", "```\nCheck the build.\n```"), .reject(.wrapper))
     }

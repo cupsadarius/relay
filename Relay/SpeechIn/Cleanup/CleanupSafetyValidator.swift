@@ -52,25 +52,36 @@ struct CleanupSafetyValidator: Sendable {
         return .accept(cleaned)
     }
 
-    /// A wrapper prefix counts only when the input itself does not contain that phrase, so a
-    /// dictated "sure, …" can still start with "Sure".
+    /// Fillers dropped from the input before checking whether it itself starts with a wrapper
+    /// phrase — "uh sure, do it" still exempts "sure" the way "sure, do it" does.
+    private static let leadingFillers: Set<String> = ["uh", "um", "so", "okay", "ok"]
+
+    /// A wrapper prefix is exempt only when the input itself — after trimming whitespace and
+    /// leading fillers — STARTS with that phrase (review fix 2); merely containing the phrase
+    /// anywhere is not enough, or a dictated "here's the plan…" would exempt a real "Here's the
+    /// cleaned text: …" preamble. Separately, `<prefix> … :` is always a wrapper when the input
+    /// has no colon at all, regardless of the exemption: echoing the input's opening word is not
+    /// the same as wrapping the answer in a preamble that ends with a colon.
     private static func isWrapped(_ output: String, input: String) -> Bool {
         let lowered = output.lowercased()
-        let loweredInput = input.lowercased()
-        for prefix in wrapperPrefixes where lowered.hasPrefix(prefix) && !containsPhrase(prefix, in: loweredInput) {
+        let loweredInput = trimmedLeadingFillers(of: input.lowercased())
+        for prefix in wrapperPrefixes where lowered.hasPrefix(prefix) {
+            let previewEnd = lowered.index(lowered.startIndex, offsetBy: min(60, lowered.count))
+            if lowered[..<previewEnd].contains(":"), !input.contains(":") { return true }
+            if loweredInput.hasPrefix(prefix) { continue }
             let rest = lowered.dropFirst(prefix.count)
             if prefix.hasSuffix(":") || rest.first.map({ !$0.isLetter }) ?? true { return true }
         }
         return output.contains("```") && !input.contains("```")
     }
 
-    /// `phrase` occurs in `text` at a word start ("measure" does not contain the phrase "sure").
-    private static func containsPhrase(_ phrase: String, in text: String) -> Bool {
-        var searchStart = text.startIndex
-        while let range = text.range(of: phrase, range: searchStart..<text.endIndex) {
-            if range.lowerBound == text.startIndex || !text[text.index(before: range.lowerBound)].isLetter { return true }
-            searchStart = range.upperBound
+    /// `text`, trimmed of whitespace and any leading filler words ("uh", "um", "so", "okay", "ok").
+    private static func trimmedLeadingFillers(of text: String) -> String {
+        var words = text.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: " ", omittingEmptySubsequences: true).map(
+            String.init)
+        while let first = words.first, leadingFillers.contains(first.trimmingCharacters(in: .punctuationCharacters)) {
+            words.removeFirst()
         }
-        return false
+        return words.joined(separator: " ")
     }
 }
