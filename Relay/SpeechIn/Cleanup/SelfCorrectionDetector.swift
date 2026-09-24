@@ -42,11 +42,17 @@ enum SelfCorrectionDetector {
         case boundary
     }
 
+    /// Single-word cues whose replacement must sit right after them, with no word tokens between
+    /// (soft separators are still allowed) — review fix 4. Multi-word cues, and the "old" side of
+    /// every cue, keep the ordinary `window`-word search.
+    static let cuesRequiringAnImmediateReplacement: Set<String> = ["no", "wait", "sorry"]
+
     static func analyze(_ text: String, literals: [ProtectedLiteral]) -> SelfCorrectionAnalysis {
         let tokens = tokenize(text, literals: literals)
         var used = Set<Int>()
         var pairs: [CorrectionPair] = []
         for cue in cues {
+            let requiresImmediateNew = cue.count == 1 && cuesRequiringAnImmediateReplacement.contains(cue[0])
             var index = 0
             while index < tokens.count {
                 guard let end = match(cue, at: index, in: tokens, used: used) else {
@@ -55,7 +61,7 @@ enum SelfCorrectionDetector {
                 }
                 used.formUnion(index...end)
                 if let old = nearestLiteral(in: tokens, from: index - 1, step: -1),
-                    let new = nearestLiteral(in: tokens, from: end + 1, step: 1),
+                    let new = nearestLiteral(in: tokens, from: end + 1, step: 1, immediate: requiresImmediateNew),
                     literals[old].kind.kindClass == literals[new].kind.kindClass
                 {
                     pairs.append(CorrectionPair(old: old, new: new))
@@ -123,9 +129,11 @@ enum SelfCorrectionDetector {
         return index
     }
 
-    /// Walks from `start` in `step` direction. Word and literal tokens count toward `window`; soft
-    /// separators do not; a clause boundary stops the search.
-    private static func nearestLiteral(in tokens: [Token], from start: Int, step: Int) -> Int? {
+    /// Walks from `start` in `step` direction. Word and literal tokens count toward `window` (up to
+    /// `window` words are allowed — review fix 4's off-by-one); soft separators do not; a clause
+    /// boundary stops the search. `immediate` (review fix 4) requires the literal right away, with
+    /// no word tokens at all in between — only soft separators may still be skipped.
+    private static func nearestLiteral(in tokens: [Token], from start: Int, step: Int, immediate: Bool = false) -> Int? {
         var index = start
         var counted = 0
         while index >= 0, index < tokens.count {
@@ -135,8 +143,9 @@ enum SelfCorrectionDetector {
             case .soft:
                 break
             case .word:
+                if immediate { return nil }
                 counted += 1
-                if counted >= window { return nil }
+                if counted > window { return nil }
             case let .literal(literalIndex):
                 return literalIndex
             }

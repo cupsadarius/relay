@@ -47,9 +47,26 @@ final class SelfCorrectionDetectorTests: XCTestCase {
         XCTAssertEqual(pairs("set it to 3. No, use the default 4"), [])
     }
 
-    func testWindowIsFourTokens() {
-        XCTAssertEqual(pairs("port 3 no we want 4"), ["3->4"])
-        XCTAssertEqual(pairs("set 3 then wait for the build and then 4"), [])
+    /// Review fix 4's off-by-one: up to 4 words are allowed, not 3. The old side (and a
+    /// multi-word cue's new side) still use the window; a single-word cue's new side does not
+    /// (see `testSingleWordCuesRequireTheReplacementImmediatelyAfter`).
+    func testWindowIsFourWords() {
+        XCTAssertEqual(pairs("port 3 aaa bbb ccc ddd wait 4"), ["3->4"])
+        XCTAssertEqual(pairs("port 3 aaa bbb ccc ddd eee wait 4"), [])
+        XCTAssertEqual(pairs("port 3 no wait aaa bbb ccc ddd 4"), ["3->4"])
+        XCTAssertEqual(pairs("port 3 no wait aaa bbb ccc ddd eee 4"), [])
+    }
+
+    /// Review fix 4: the single-word cues "no", "wait" and "sorry" need their replacement right
+    /// after them, with no word tokens between (a soft separator is still fine).
+    func testSingleWordCuesRequireTheReplacementImmediatelyAfter() {
+        XCTAssertEqual(pairs("port 3 no we want 4"), [])
+        XCTAssertEqual(pairs("set timeout to 30 no retries 5"), [])
+        XCTAssertEqual(pairs("the file is config.yaml sorry really config.yml"), [])
+        XCTAssertEqual(pairs("port 3 no, 4"), ["3->4"])
+        XCTAssertEqual(pairs("port 3 wait, 4"), ["3->4"])
+        // "actually" is not in the immediate-only set, so it keeps the ordinary window.
+        XCTAssertEqual(pairs("version 1.2 actually make it 1.3"), ["1.2->1.3"])
     }
 
     func testLongestCueIsUsedOnce() {
