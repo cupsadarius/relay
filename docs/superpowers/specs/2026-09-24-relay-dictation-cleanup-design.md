@@ -448,7 +448,7 @@ The instructions are fixed and live in `CleanupPrompt.instructions`:
 - **Qwen3:** use non-thinking mode. `QwenChatTemplate` renders ChatML with the empty think block, which is what `enable_thinking=False` produces:
 
   ```
-  <|im_start|>system\n{instructions}<|im_end|>\n<|im_start|>user\n{input} /no_think<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n
+  <|im_start|>system\n{instructions}<|im_end|>\n<|im_start|>user\n{input}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n
   ```
 
 - **Sampling:** temperature 0.2 on MLX (`GenerateParameters.temperature`, `topP` 0.9) and temperature 0.2 on Apple (`GenerationOptions(temperature:maximumResponseTokens:)`).

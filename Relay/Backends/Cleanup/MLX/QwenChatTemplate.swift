@@ -5,10 +5,12 @@ enum QwenChatTemplateError: Error, Equatable, Sendable {
 }
 
 /// Qwen3 ChatML in non-thinking mode: the empty think block `enable_thinking=False` produces
-/// (spec §10). Relay renders this itself instead of running the model's Jinja template.
+/// (spec §10). Relay renders this itself instead of running the model's Jinja template. There is
+/// no `/no_think` soft switch: the official template does not add one, and the models copied it
+/// into their output.
 enum QwenChatTemplate {
     static func render(system: String, user: String) -> String {
-        "<|im_start|>system\n\(system)<|im_end|>\n<|im_start|>user\n\(user) /no_think<|im_end|>\n"
+        "<|im_start|>system\n\(system)<|im_end|>\n<|im_start|>user\n\(user)<|im_end|>\n"
             + "<|im_start|>assistant\n<think>\n\n</think>\n\n"
     }
 
