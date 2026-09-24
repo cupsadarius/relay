@@ -164,3 +164,26 @@ Held-out split (33 / 33):
 - **Qwen3 1.7B does not pass.** Its outputs did not change. Its one over-correction, `cueNeg-01` ("bump to 2.0 no changes needed" → "Bump to 2.0."), keeps every literal and has no cue pair, so no literal rule can catch it.
 - Correction application is unchanged for both models: no correctly applied correction was rejected by the stricter exemption.
 
+### After phrase-level corrections
+
+The user's manual test of the spec's Test sample ("uh change the user service no wait the auth service to use refresh tokens and don't change the API") got "Change the user service to use refresh tokens. Don't change the API." from Qwen3 1.7B, and the validator accepted it: the swap is word-level and involves no protected literal. The pre-pass now also rewrites phrase corrections for multi-word cues (`[det] A… HEAD <cue> [det] B… HEAD`, spec §10.1), and the validator rejects an output that keeps the old phrase or drops the new one. The corpus gained four `correction.phrase` cases and four phrase cue negatives (`cueNeg-13`…`cueNeg-16`), so it has 74 cases, 21 counted corrections and 16 cue negatives; the spec sample's reverted output is a mustReject case. The corpus tests now judge acceptable and mustReject outputs on the production path (pre-pass first).
+
+| model | acceptance | reference match | correction application | cue-negative over-corrections | fail-open | already-clean fail-open | wrapper/markup | p50 | p95 | passes bar |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlx.qwen3-1.7b-4bit | 97.3% | 71.6% | 85.7% (18/21) | 2 | 2.7% | 0% | 0% | 273 ms | 380 ms | **false** |
+| apple.system-language-model | 90.5% | 79.7% | 90.5% (19/21) | 0 | 9.5% | 0% | 1.4% | 523 ms | 676 ms | **true** |
+
+Held-out split (same hash of case ids; 39 / 35):
+
+| model | half | correction application | cue-negative over-corrections | fail-open |
+|---|---|---|---|---|
+| Qwen3 1.7B | dev | 12/13 | 1 | 1/39 |
+| Qwen3 1.7B | held out | 6/8 | 1 | 1/35 |
+| Apple | dev | 12/13 | 0 | 6/39 |
+| Apple | held out | 7/8 | 0 | 1/35 |
+
+- **Apple passes the §19 bar**; all four phrase cases and all four phrase cue negatives are right.
+- **Qwen3 1.7B does not.** Its phrase corrections now come out right (the model gets "change the auth service …"), and it applies every `correction.phrase` case. Its two over-corrections are `cueNeg-01` (as before) and `cueNeg-14` ("I mean it this time" → "I mean it."), both word drops with no protected literal.
+- Both models still drop the second clause of `corr-noWait-02` ("Change the auth service to use refresh tokens."). The correction is applied, but "and don't change the API" is lost, and no literal rule can see it; the content key counts it as a miss.
+- **A phrase-correction example turn was tried and reverted.** Appending "open the red folder no wait the blue folder" → "Open the blue folder." to `CleanupPrompt.examples`, with everything else equal, made both models worse: Qwen3 1.7B 76.2% correction application and 5 over-corrections (it rewrote "the no wait list" to "No wait list." and "scratch that off the list" to "Remove that from the list."), Apple 95.2% but 1 over-correction (`cueNeg-01`), which failed the bar. The pre-pass already hands the models the corrected phrase, so the example only added pressure to edit cue-negative phrases.
+

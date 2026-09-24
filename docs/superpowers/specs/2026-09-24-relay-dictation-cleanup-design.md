@@ -471,12 +471,19 @@ Before the model runs, a deterministic pre-pass applies the literal corrections 
   - no literal belongs to two pairs; a chain such as "3, no, 4, no wait, 5" leaves the whole text unchanged.
 
   The result is rebuilt from the kept segments of the original text. Cue negatives produce no pair (§11.4), so they are unchanged.
-- **Validation:** the output is validated against the pre-passed text as the input (§11). The validator also rejects, as `.literalInvented`, an output that holds a replaced old value more often than the pre-passed text still does.
+- **Phrase level (`PhraseCorrection`), after the literal pass:** word-level corrections involve no protected literal, so the validator cannot hold the model to them ("change the user service no wait the auth service" came back as "Change the user service …"). The pre-pass rewrites `[det] A… HEAD <cue> [det] B… HEAD` to `[det] B… HEAD` when all of these hold; otherwise the text is left unchanged:
+  - the cue is a multi-word cue: `no wait`, `I mean`, `scratch that`, `or rather`. Bare `no` and the other single-word cues never form a phrase rewrite (the corpus shows no clean rule for them);
+  - the separators are symmetric: ` cue ` or `, cue, `, with single spaces inside both phrases;
+  - both phrases end in the same head word and have one or two modifiers, so each phrase is at most 3 words with its head (the new phrase may be preceded by a determiner: the, a, an, this, that, my, our, your, its, their);
+  - no phrase word is a determiner, "no", "one" or a protected literal, the head is not a unit or count word, and the two phrases differ.
+
+  The old phrase is replaced by the new one; the cue goes, and so does the new determiner when the old phrase already has the same one: "the user service no wait the auth service" → "the auth service". Cue negatives such as "the no wait list", "I mean it" and "scratch that off the list" have no old phrase with a shared head, so they are unchanged. `PrePassedText.phrases` records each rewrite as lowercased `(old, new)`.
+- **Validation:** the output is validated against the pre-passed text as the input (§11). The validator also rejects, as `.literalInvented`, an output that holds a replaced old value more often than the pre-passed text still does. For each phrase rewrite it rejects, as `.literalInvented`, an output that contains the old phrase (case-insensitive, whole words) unless the pre-passed text still contains it, and, as `.literalMissing`, an output that lacks the new phrase. This catches a model that reverts the pre-pass.
 - **Fallback:** every fallback returns the ORIGINAL rules-cleaned text, never the pre-passed text, so fail-open never changes meaning (§8.1).
 
 ## 11. Safety validation (`CleanupSafetyValidator`)
 
-The validator is pure and deterministic, and it runs on both engines. The same validator judges production and Test runs. Its input is the pre-passed text (§10.1). Checks run in this order: `empty`, `reasoningMarkup`, `wrapper`, `refusal`, `tooLong`, `literalInvented`, `literalMissing`, then the replaced-value check of §10.1.
+The validator is pure and deterministic, and it runs on both engines. The same validator judges production and Test runs. Its input is the pre-passed text (§10.1). Checks run in this order: `empty`, `reasoningMarkup`, `wrapper`, `refusal`, `tooLong`, `literalInvented`, `literalMissing`, then the phrase-rewrite and replaced-value checks of §10.1.
 
 ### 11.1 Structural rejections
 
