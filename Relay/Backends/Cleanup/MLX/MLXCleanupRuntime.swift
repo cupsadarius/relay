@@ -136,6 +136,14 @@ actor MLXCleanupRuntime: MLXCleanupRuntimeServing {
             logger.debug("Cleanup model unloaded")
         }
         guard let target else { return }
+        // Re-check presence right before the load: `ensureLoaded`'s own check can be stale by the
+        // time this transition actually runs (it may have waited behind another in-flight
+        // transition, e.g. an idle unload), and a removal in between must not load a model whose
+        // files are already gone (review fix 3).
+        guard presence(target) else {
+            lastLoadFailure = target
+            throw MLXCleanupRuntimeError.notDownloaded
+        }
         let started = now()
         do {
             let model = try await engine.load(directory: directory(target))

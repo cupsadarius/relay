@@ -211,6 +211,60 @@ final class MLXCleanupRuntimeTests: XCTestCase {
     /// returned to anything still waiting on it. The engine is non-cooperative (a true zombie:
     /// `caller.cancel()` alone never resolves it), so the operation is finished immediately after
     /// cancelling — before awaiting `caller.value` — or `caller.value` would hang forever.
+    /// Review fix 3: a model removed while a reload is queued behind an in-flight unload must not
+    /// load — its files are gone by the time the queued transition actually runs. Sequence: the
+    /// model is loaded; an idle unload starts and blocks mid-unload; a second caller (e.g.
+    /// dictation's prewarm) asks to load the same model again and queues behind that unload; the
+    /// model is removed from disk while the unload is still blocked; the unload completes and the
+    /// queued reload must see the removal and refuse to load.
+    ///
+    /// Presence is tracked by call count rather than by polling readiness: readiness only ever
+    /// reflects the *first* (unload) transition while the reload is queued, so it cannot prove the
+    /// reload has already passed its entry check. `isPresent` is called twice for the initial,
+    /// successful load (`ensureLoaded`'s own entry guard, then this fix's guard inside
+    /// `performTransition`) and not at all for the unload (its target is `nil`), so a third call can
+    /// only be the reload's entry guard — and that guard, `transition`'s own while loop, and its
+    /// final suspension on the in-flight task are all synchronous actor-isolated code with no
+    /// intervening `await`, so observing the third call proves the reload is already queued and
+    /// waiting.
+    func testARemovalDuringAnInFlightUnloadInvalidatesAQueuedReload() async throws {
+        let unloadGate = ManualOperation(cooperative: false)
+        let engine = FakeMLXEngine(unloadGate: unloadGate)
+        let presentIDs = LockedValue<Set<CleanupModelID>>([.qwen3_0_6b])
+        let presenceCallCount = LockedValue(0)
+        let root = root
+        let runtime = MLXCleanupRuntime(
+            engine: engine,
+            directory: { root.appendingPathComponent($0.rawValue) },
+            isPresent: { id in
+                presenceCallCount.withLock { $0 += 1 }
+                return presentIDs.withLock { $0.contains(id) }
+            },
+            slot: CleanupGenerationSlot(sleep: TestSleeper().sleepFunction)
+        )
+        try await runtime.ensureLoaded(.qwen3_0_6b)
+
+        let unloading = Task { await runtime.unload(cause: .idle) }
+        await eventually { unloadGate.startCount == 1 }
+
+        let reload = Task { try await runtime.ensureLoaded(.qwen3_0_6b) }
+        await eventually { presenceCallCount.withLock { $0 } >= 3 }
+
+        presentIDs.withLock { $0.removeAll() }
+        unloadGate.finish(.success(""))
+        await unloading.value
+
+        do {
+            try await reload.value
+            XCTFail("expected notDownloaded")
+        } catch {
+            XCTAssertEqual(error as? MLXCleanupRuntimeError, .notDownloaded)
+        }
+        XCTAssertEqual(engine.loads.count, 1)
+        let readiness = await runtime.readiness(for: .qwen3_0_6b)
+        XCTAssertEqual(readiness, .loadFailed)
+    }
+
     func testCancelledCallerDiscardsALateZombieResult() async throws {
         let operation = ManualOperation(cooperative: false)
         let engine = FakeMLXEngine(handler: { _ in try await operation.run() })

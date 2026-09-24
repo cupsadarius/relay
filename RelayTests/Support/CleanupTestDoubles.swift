@@ -300,14 +300,19 @@ final class FakeMLXEngine: MLXCleanupEngine {
     final class Model: LoadedMLXCleanupModel {
         let directory: URL
         private let handler: @Sendable (CleanupRequest) async throws -> String
+        private let unloadGate: ManualOperation?
         private let unloads = Mutex(0)
-        init(directory: URL, handler: @escaping @Sendable (CleanupRequest) async throws -> String) {
+        init(directory: URL, handler: @escaping @Sendable (CleanupRequest) async throws -> String, unloadGate: ManualOperation? = nil) {
             self.directory = directory
             self.handler = handler
+            self.unloadGate = unloadGate
         }
         var unloadCount: Int { unloads.withLock { $0 } }
         func generate(_ request: CleanupRequest) async throws -> String { try await handler(request) }
-        func unload() async { unloads.withLock { $0 += 1 } }
+        func unload() async {
+            if let unloadGate { _ = try? await unloadGate.run() }
+            unloads.withLock { $0 += 1 }
+        }
     }
 
     private struct State {
@@ -319,10 +324,16 @@ final class FakeMLXEngine: MLXCleanupEngine {
 
     private let state = Mutex(State())
     private let loadGate: ManualOperation?
+    private let unloadGate: ManualOperation?
     private let handler: @Sendable (CleanupRequest) async throws -> String
 
-    init(loadGate: ManualOperation? = nil, handler: @escaping @Sendable (CleanupRequest) async throws -> String = { $0.input }) {
+    init(
+        loadGate: ManualOperation? = nil,
+        unloadGate: ManualOperation? = nil,
+        handler: @escaping @Sendable (CleanupRequest) async throws -> String = { $0.input }
+    ) {
         self.loadGate = loadGate
+        self.unloadGate = unloadGate
         self.handler = handler
     }
 
@@ -339,7 +350,7 @@ final class FakeMLXEngine: MLXCleanupEngine {
             return state.failNextLoad
         }
         if fail { throw CleanupTestError() }
-        let model = Model(directory: directory, handler: handler)
+        let model = Model(directory: directory, handler: handler, unloadGate: unloadGate)
         state.withLock { $0.models.append(model) }
         return model
     }
