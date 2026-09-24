@@ -42,7 +42,7 @@ struct DictationCleanupSettingsSection: View {
         ) { _ in EmptyView() }
         .sheet(item: $testModel) { initial in
             if let tester {
-                DictationCleanupTestSheet(tester: tester, models: model.speechBackends.cleanupTestableModels, initialModel: initial)
+                DictationCleanupTestSheet(tester: tester, model: initial)
             }
         }
     }

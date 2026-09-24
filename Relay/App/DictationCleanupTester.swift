@@ -85,11 +85,11 @@ final class DictationCleanupTester {
         task = Task { [weak self] in await self?.perform(model: model, text: text) }
     }
 
-    /// Model removal (spec §14.3). A no-op unless a test is running.
     /// The Test sheet closed: cancel a running test, and forget the entered text and any report.
+    /// The input goes back to the default sample, so the next open can run straight away.
     /// A cancelled run finishes as `.idle`.
     func sheetClosed() {
-        input = ""
+        input = Self.defaultSample
         if phase.isRunning, let task {
             cancelPhase = .idle
             task.cancel()
@@ -98,6 +98,7 @@ final class DictationCleanupTester {
         }
     }
 
+    /// Model removal (spec §14.3). A no-op unless a test is running.
     func cancelRunningTest(reason: CancelReason) {
         guard phase.isRunning, let task else { return }
         switch reason {

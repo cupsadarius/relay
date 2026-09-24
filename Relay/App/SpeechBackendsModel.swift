@@ -90,18 +90,6 @@ final class SpeechBackendsModel {
         }
     }
 
-    /// Every cleanup model that can currently be tested — downloaded and usable — Apple first,
-    /// then Qwen 0.6B, then 1.7B. Feeds the Test sheet's model picker.
-    var cleanupTestableModels: [CleanupModelID] {
-        let order = CleanupModelID.allCases.map(\.rawValue)
-        return models.models
-            .filter { $0.key.domain == .dictationCleanup }
-            .flatMap(\.value)
-            .filter { $0.installState == .downloaded && $0.usability == .usable }
-            .sorted { (order.firstIndex(of: $0.id) ?? .max) < (order.firstIndex(of: $1.id) ?? .max) }
-            .compactMap { CleanupModelID(rawValue: $0.id) }
-    }
-
     static func cleanupProviderState(for rows: [SpeechModelStatus]) -> BackendStatus.State {
         if rows.contains(where: { $0.installState == .downloaded && $0.usability == .usable }) { return .ready }
         if let reason = rows.compactMap(\.usability.unusableReason).first {

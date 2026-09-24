@@ -265,17 +265,6 @@ final class SpeechBackendsModelTests: XCTestCase {
         XCTAssertEqual(model.cleanupBackends.map(\.state), [.ready, .ready])
     }
 
-    func testCleanupTestableModelsAreDownloadedUsableAppleFirstThenSmallThenLarge() async {
-        let model = makeModel(cleanupModelManagers: [
-            "mlx-cleanup": StubModelManager(backendID: "mlx-cleanup", modelIDs: ["mlx.qwen3-1.7b-4bit", "mlx.qwen3-0.6b-4bit"]),
-            "apple-foundation-cleanup": StubModelManager(backendID: "apple-foundation-cleanup", modelIDs: ["apple.system-language-model"]),
-        ])
-
-        await model.refresh(.dictationCleanup)
-
-        XCTAssertEqual(model.cleanupTestableModels, [.appleSystem, .qwen3_0_6b, .qwen3_1_7b])
-    }
-
     func testCleanupProviderStateIsReadyWhenAUsableDownloadedModelExists() {
         let rows = [
             speechModelStatus(id: "a", installState: .notDownloaded),

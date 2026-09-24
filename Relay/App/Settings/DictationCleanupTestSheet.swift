@@ -1,29 +1,20 @@
 import SwiftUI
 
+/// Tests one cleanup model. The row's Test button picks the model, so the sheet has no model picker.
 struct DictationCleanupTestSheet: View {
     @Bindable var tester: DictationCleanupTester
-    let models: [CleanupModelID]
-    @State private var selected: CleanupModelID
+    let model: CleanupModelID
     @Environment(\.dismiss) private var dismiss
-
-    init(tester: DictationCleanupTester, models: [CleanupModelID], initialModel: CleanupModelID) {
-        self.tester = tester
-        self.models = models
-        _selected = State(initialValue: initialModel)
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Test Dictation Cleanup").font(.headline)
-            Picker("Model", selection: $selected) {
-                ForEach(models) { Text($0.displayName).tag($0) }
-            }
+            Text("Test \(model.displayName)").font(.headline)
             TextEditor(text: $tester.input)
                 .font(.body)
                 .frame(minHeight: 80)
                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(.separator))
             HStack {
-                Button("Run Test") { tester.run(model: selected) }
+                Button("Run Test") { tester.run(model: model) }
                     .disabled(tester.phase.isRunning || tester.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .keyboardShortcut(.defaultAction)
                 if tester.phase.isRunning { ProgressView().controlSize(.small) }

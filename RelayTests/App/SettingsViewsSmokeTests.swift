@@ -56,7 +56,7 @@ final class SettingsViewsSmokeTests: XCTestCase {
         let model = AppModel(runtime: .testing())
         _ = DictationCleanupSettingsSection(model: model)
         let tester = DictationCleanupTester(apple: FakeAppleCleanup(), mlx: FakeMLXRuntime())
-        _ = DictationCleanupTestSheet(tester: tester, models: [.appleSystem, .qwen3_0_6b], initialModel: .qwen3_0_6b)
+        _ = DictationCleanupTestSheet(tester: tester, model: .qwen3_1_7b)
     }
 }
 

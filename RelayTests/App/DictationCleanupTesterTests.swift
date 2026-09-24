@@ -148,7 +148,7 @@ final class DictationCleanupTesterTests: XCTestCase {
         XCTAssertEqual(apple.requests, [])
     }
 
-    /// Closing the sheet cancels a running test and forgets the entered text and its report.
+    /// Closing the sheet cancels a running test, resets the input to the sample and forgets the report.
     func testClosingTheSheetCancelsTheRunAndClearsTheInput() async {
         let operation = ManualOperation(cooperative: false)
         let tester = makeTester(mlx: FakeMLXRuntime(handler: { _, _ in try await operation.run() }))
@@ -158,7 +158,7 @@ final class DictationCleanupTesterTests: XCTestCase {
 
         tester.sheetClosed()
 
-        XCTAssertEqual(tester.input, "")
+        XCTAssertEqual(tester.input, DictationCleanupTester.defaultSample)
         await eventually { tester.phase == .idle }
         operation.finish(.success("late"))
         try? await Task.sleep(for: .milliseconds(50))
@@ -173,7 +173,7 @@ final class DictationCleanupTesterTests: XCTestCase {
         tester.sheetClosed()
 
         XCTAssertEqual(tester.phase, .idle)
-        XCTAssertEqual(tester.input, "")
+        XCTAssertEqual(tester.input, DictationCleanupTester.defaultSample)
     }
 
     func testModelRemovalCancelsARunningTest() async {
