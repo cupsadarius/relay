@@ -265,15 +265,20 @@ func sha256Hex(_ data: Data) -> String {
 
 /// Writes the given files into the staging directory and reports each one's oid. `lie` reports
 /// a wrong oid for that path; `omit` writes nothing for that path and leaves it out of the list.
+/// `claimedPath` reports a different `relativePath` than the (always-safe) path the bytes are
+/// actually written to — simulating a downloader that misreports a path, without this fake itself
+/// ever writing outside the staging directory (review fix 12).
 final class FakeSnapshotDownloader: SnapshotDownloading {
     private let files: [String: Data]
     private let lie: Set<String>
+    private let claimedPath: [String: String]
     private let error: (any Error)?
     private let calls = Mutex(0)
 
-    init(files: [String: Data], lie: Set<String> = [], error: (any Error)? = nil) {
+    init(files: [String: Data], lie: Set<String> = [], claimedPath: [String: String] = [:], error: (any Error)? = nil) {
         self.files = files
         self.lie = lie
+        self.claimedPath = claimedPath
         self.error = error
     }
 
@@ -292,7 +297,7 @@ final class FakeSnapshotDownloader: SnapshotDownloading {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try data.write(to: url)
             let digest = lie.contains(path) ? String(repeating: "0", count: 64) : sha256Hex(data)
-            result.append(VerifiedModelFile(relativePath: path, oid: .sha256(digest)))
+            result.append(VerifiedModelFile(relativePath: claimedPath[path] ?? path, oid: .sha256(digest)))
         }
         progress(1)
         return result

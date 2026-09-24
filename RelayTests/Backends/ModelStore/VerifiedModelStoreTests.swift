@@ -14,9 +14,11 @@ final class VerifiedModelStoreTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
-    private func snapshot(required: Set<String> = ["config.json"], pinned: [String: String] = [:]) -> PinnedSnapshot {
+    private func snapshot(
+        required: Set<String> = ["config.json"], pinned: [String: String] = [:], allowlist: Set<String>? = nil
+    ) -> PinnedSnapshot {
         PinnedSnapshot(
-            repo: "org/model", revision: "abc123", allowlist: Set(files.keys), requiredFiles: required, pinnedSHA256: pinned
+            repo: "org/model", revision: "abc123", allowlist: allowlist ?? Set(files.keys), requiredFiles: required, pinnedSHA256: pinned
         )
     }
 
@@ -75,6 +77,69 @@ final class VerifiedModelStoreTests: XCTestCase {
         let pinned = ["weights/model.bin": sha256Hex(Data("weights".utf8))]
         try await store.download(snapshot(pinned: pinned), as: "m@abc123", siblingPrefix: nil) { _ in }
         XCTAssertTrue(store.presence(of: "m@abc123"))
+    }
+
+    /// Review fix 12: a reported path that is not one of the snapshot's allowed repo paths must
+    /// be rejected outright, never verified or written into the manifest.
+    func testFileNotInTheAllowlistIsRejected() async {
+        let store = store(FakeSnapshotDownloader(files: files, claimedPath: ["config.json": "unexpected.json"]))
+        do {
+            try await store.download(snapshot(), as: "m@abc123", siblingPrefix: nil) { _ in }
+            XCTFail("expected an invalid path")
+        } catch {
+            XCTAssertEqual(error as? VerifiedModelStoreError, .invalidPath)
+        }
+        XCTAssertFalse(store.presence(of: "m@abc123"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("m@abc123.incomplete").path))
+    }
+
+    /// Even a path the snapshot's own allowlist contains must not escape the staging directory
+    /// with a `..` component (review fix 12).
+    func testPathTraversalIsRejectedEvenWhenAllowlisted() async {
+        let evil = "../evil.json"
+        let store = store(FakeSnapshotDownloader(files: files, claimedPath: ["config.json": evil]))
+        do {
+            try await store.download(snapshot(allowlist: Set(files.keys).union([evil])), as: "m@abc123", siblingPrefix: nil) { _ in }
+            XCTFail("expected an invalid path")
+        } catch {
+            XCTAssertEqual(error as? VerifiedModelStoreError, .invalidPath)
+        }
+    }
+
+    /// Nor with a leading `/`, even if allowlisted (review fix 12).
+    func testAbsolutePathIsRejectedEvenWhenAllowlisted() async {
+        let evil = "/etc/evil.json"
+        let store = store(FakeSnapshotDownloader(files: files, claimedPath: ["config.json": evil]))
+        do {
+            try await store.download(snapshot(allowlist: Set(files.keys).union([evil])), as: "m@abc123", siblingPrefix: nil) { _ in }
+            XCTFail("expected an invalid path")
+        } catch {
+            XCTAssertEqual(error as? VerifiedModelStoreError, .invalidPath)
+        }
+    }
+
+    /// Review fix 12: promotion replaces an existing ready directory in one atomic step, leaving
+    /// no trace of the old content.
+    func testPromotingOverAnExistingReadyDirectoryReplacesItEntirely() async throws {
+        let first = store(FakeSnapshotDownloader(files: files))
+        try await first.download(snapshot(), as: "m@abc123", siblingPrefix: nil) { _ in }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: first.directory(named: "m@abc123").appendingPathComponent("weights/model.bin").path))
+
+        let newFiles: [String: Data] = ["config.json": Data("{\"v\":2}".utf8)]
+        let second = VerifiedModelStore(root: root, downloader: FakeSnapshotDownloader(files: newFiles))
+        let secondSnapshot = PinnedSnapshot(
+            repo: "org/model", revision: "def456", allowlist: Set(newFiles.keys), requiredFiles: ["config.json"], pinnedSHA256: [:]
+        )
+        try await second.download(secondSnapshot, as: "m@abc123", siblingPrefix: nil) { _ in }
+
+        XCTAssertTrue(second.presence(of: "m@abc123"))
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: second.directory(named: "m@abc123").appendingPathComponent("weights/model.bin").path),
+            "the old file must be gone after replacement"
+        )
+        XCTAssertEqual(
+            try Data(contentsOf: second.directory(named: "m@abc123").appendingPathComponent("config.json")), Data("{\"v\":2}".utf8)
+        )
     }
 
     func testPresenceFailsWhenAListedFileIsDeleted() async throws {

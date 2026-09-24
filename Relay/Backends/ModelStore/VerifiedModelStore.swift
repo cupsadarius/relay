@@ -33,6 +33,10 @@ protocol SnapshotDownloading: Sendable {
 enum VerifiedModelStoreError: Error, Equatable, Sendable {
     case checksumMismatch
     case missingRequiredFile
+    /// A downloaded file's relative path is not one of the snapshot's allowed repo paths, or
+    /// attempts to escape the staging directory (review fix 12). The downloader is trusted only
+    /// to fetch bytes and report oids (see `SnapshotDownloading`), never to report a safe path.
+    case invalidPath
 }
 
 /// On-disk lifecycle of pinned model snapshots (spec §13.1). A model lives at `<root>/<name>/`;
@@ -81,6 +85,9 @@ struct VerifiedModelStore: Sendable {
         do {
             let files = try await downloader.download(snapshot, into: staging, progress: progress)
             for file in files {
+                guard Self.isAllowedRelativePath(file.relativePath, allowlist: snapshot.allowlist) else {
+                    throw VerifiedModelStoreError.invalidPath
+                }
                 if let pinned = snapshot.pinnedSHA256[file.relativePath], file.oid != .sha256(pinned) {
                     throw VerifiedModelStoreError.checksumMismatch
                 }
@@ -94,9 +101,10 @@ struct VerifiedModelStore: Sendable {
             }
 
             try JSONEncoder().encode(files.map(\.relativePath)).write(to: staging.appendingPathComponent(Self.verifiedMarkerName))
-            let ready = directory(named: name)
-            try? FileManager.default.removeItem(at: ready)
-            try FileManager.default.moveItem(at: staging, to: ready)
+            // Atomic promotion (review fix 12): `replaceItemAt` renames `staging` into place in one
+            // step, so there is no window where `ready` is missing or where a crash could leave
+            // neither directory behind, unlike a separate remove-then-move.
+            _ = try FileManager.default.replaceItemAt(directory(named: name), withItemAt: staging)
         } catch {
             try? FileManager.default.removeItem(at: staging)
             logger.debug("Model download failed")
@@ -116,6 +124,14 @@ struct VerifiedModelStore: Sendable {
         let directory = directory(named: name)
         guard FileManager.default.fileExists(atPath: directory.path) else { return }
         try FileManager.default.removeItem(at: directory)
+    }
+
+    /// `path` must be exactly one of the snapshot's allowed repo paths, must not start with `/`,
+    /// and must not contain a `..` path component (review fix 12) — any of these would let a
+    /// downloaded file land, or be verified from, outside the staging directory.
+    private static func isAllowedRelativePath(_ path: String, allowlist: Set<String>) -> Bool {
+        guard allowlist.contains(path), !path.hasPrefix("/") else { return false }
+        return !path.split(separator: "/", omittingEmptySubsequences: false).contains("..")
     }
 
     private func sweepSiblings(prefix: String, keeping name: String) {
