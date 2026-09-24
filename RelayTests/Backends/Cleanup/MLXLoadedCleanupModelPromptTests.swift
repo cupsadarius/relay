@@ -17,21 +17,21 @@ final class MLXLoadedCleanupModelPromptTests: XCTestCase {
         let messages = MLXLoadedCleanupModel.chatMessages(for: request)
 
         XCTAssertEqual(
-            messages.map { ($0.role.rawValue, $0.content) },
+            messages.map { "\($0.role.rawValue): \($0.content)" },
             [
-                ("system", "CUSTOM-INSTRUCTIONS"),
-                ("user", "ex in 1"),
-                ("assistant", "ex out 1"),
-                ("user", "ex in 2"),
-                ("assistant", "ex out 2"),
-                ("user", "the input"),
+                "system: CUSTOM-INSTRUCTIONS",
+                "user: ex in 1",
+                "assistant: ex out 1",
+                "user: ex in 2",
+                "assistant: ex out 2",
+                "user: the input",
             ])
     }
 
     func testRendersWithNoExamples() {
         let request = CleanupRequest(modelID: .qwen3_1_7b, instructions: "I", input: "hi", maxOutputTokens: 32)
         let messages = MLXLoadedCleanupModel.chatMessages(for: request)
-        XCTAssertEqual(messages.map { ($0.role.rawValue, $0.content) }, [("system", "I"), ("user", "hi")])
+        XCTAssertEqual(messages.map { "\($0.role.rawValue): \($0.content)" }, ["system: I", "user: hi"])
     }
 
     /// The default request (no `examples:` argument) carries none — production always supplies
