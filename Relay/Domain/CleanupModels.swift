@@ -21,12 +21,16 @@ enum CleanupModelID: String, CaseIterable, Sendable {
     var diagnosticName: String { displayName }
 }
 
-/// One cleanup generation request. Engines never log any of it.
+/// One cleanup generation request. Engines never log any of it. `instructions` and `examples` are
+/// the EFFECTIVE prompt for this request (a saved `CleanupPromptOverride`, or the fixed defaults
+/// in `CleanupPrompt`) — engines render whatever is here, never a static constant of their own
+/// (spec §10 addendum).
 struct CleanupRequest: Equatable, Sendable {
     let modelID: CleanupModelID
     let instructions: String
     let input: String
     let maxOutputTokens: Int
+    var examples: [CleanupExample] = []
 }
 
 /// Why the validator refused a model output (spec §11.1). Cases are declared in check order.

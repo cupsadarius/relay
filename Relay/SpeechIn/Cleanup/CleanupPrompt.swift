@@ -1,9 +1,49 @@
 import Foundation
 
-/// One fixed demonstration turn: a dictated `input` and the cleaned `output` for it.
-struct CleanupExample: Equatable, Sendable {
-    let input: String
-    let output: String
+/// One demonstration turn: a dictated `input` and the cleaned `output` for it. `Codable` so it can
+/// round-trip inside a persisted `CleanupPromptOverride` (spec §10 addendum); the fields are `var`
+/// so a Settings editor can bind to them directly.
+struct CleanupExample: Codable, Equatable, Sendable {
+    var input: String
+    var output: String
+}
+
+/// A user-edited cleanup prompt (spec §10 addendum, §15), or `nil` on `AppSettings` for the
+/// default (`CleanupPrompt.instructions` / `CleanupPrompt.examples`). This is user-authored text:
+/// never log it or put it in diagnostics (spec §18).
+struct CleanupPromptOverride: Codable, Equatable, Sendable {
+    var instructions: String
+    var examples: [CleanupExample]
+}
+
+/// Why a draft `CleanupPromptOverride` cannot be saved (spec §10 addendum). Structural only; an
+/// example that would fail `CleanupSafetyValidator` is a warning, not one of these.
+enum CleanupPromptValidationIssue: Equatable, Sendable {
+    case emptyInstructions
+    case instructionsTooLong
+    case tooManyExamples
+    case exampleMissingInput(index: Int)
+    case exampleMissingOutput(index: Int)
+
+    var message: String {
+        switch self {
+        case .emptyInstructions: "Instructions cannot be empty."
+        case .instructionsTooLong: "Instructions must be \(CleanupPrompt.maxInstructionsLength) characters or fewer."
+        case .tooManyExamples: "There can be at most \(CleanupPrompt.maxExamples) examples."
+        case let .exampleMissingInput(index): "Example \(index + 1) needs an input."
+        case let .exampleMissingOutput(index): "Example \(index + 1) needs an output."
+        }
+    }
+}
+
+/// The result of validating a draft override before Save (spec §10 addendum). `warningExampleIndices`
+/// never blocks Save: it flags an example whose output would fail `CleanupSafetyValidator` against
+/// its own input, so the editor can warn without stopping the user from saving anyway.
+struct CleanupPromptValidationResult: Equatable, Sendable {
+    var errors: [CleanupPromptValidationIssue]
+    var warningExampleIndices: [Int]
+
+    var isValid: Bool { errors.isEmpty }
 }
 
 /// The fixed cleanup instructions, demonstration turns and output-token budget (spec §10). No
@@ -42,5 +82,51 @@ enum CleanupPrompt {
     static func maxOutputTokens(for input: String) -> Int {
         let estimate = input.utf8.count / 3
         return min(512, max(32, estimate * 3 / 2 + 16))
+    }
+
+    /// Save-time limits for a custom prompt (spec §10 addendum).
+    static let maxInstructionsLength = 4_000
+    static let maxExamples = 12
+
+    /// The instructions and examples every backend should actually send: `override`'s, or the
+    /// fixed defaults above when there is none (spec §10 addendum).
+    static func effective(_ override: CleanupPromptOverride?) -> (instructions: String, examples: [CleanupExample]) {
+        guard let override else { return (instructions, examples) }
+        return (override.instructions, override.examples)
+    }
+
+    /// Validates a draft before Save (spec §10 addendum): empty or over-long instructions, too
+    /// many examples, and an example missing its input or output all block Save. An example whose
+    /// output would fail `CleanupSafetyValidator` against its own input is reported separately and
+    /// never blocks Save — the validator still guards every real generation regardless of what is
+    /// saved here.
+    static func validate(_ override: CleanupPromptOverride) -> CleanupPromptValidationResult {
+        var errors: [CleanupPromptValidationIssue] = []
+        if override.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            errors.append(.emptyInstructions)
+        }
+        if override.instructions.count > maxInstructionsLength {
+            errors.append(.instructionsTooLong)
+        }
+        if override.examples.count > maxExamples {
+            errors.append(.tooManyExamples)
+        }
+        for (index, example) in override.examples.enumerated() {
+            if example.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                errors.append(.exampleMissingInput(index: index))
+            }
+            if example.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                errors.append(.exampleMissingOutput(index: index))
+            }
+        }
+
+        let validator = CleanupSafetyValidator()
+        let warningExampleIndices = override.examples.indices.filter { index in
+            let example = override.examples[index]
+            guard !example.input.isEmpty, !example.output.isEmpty else { return false }
+            if case .reject = validator.validate(input: example.input, output: example.output) { return true }
+            return false
+        }
+        return CleanupPromptValidationResult(errors: errors, warningExampleIndices: warningExampleIndices)
     }
 }
