@@ -252,4 +252,56 @@ final class TranscriptCleanupServiceTests: XCTestCase {
         let calls = await mlx.ensureLoadedCalls
         XCTAssertEqual(calls, [])
     }
+
+    // MARK: Diagnostics privacy
+
+    func testDiagnosticsNeverIncludeTextOrLiterals() async throws {
+        let diagnostics = DiagnosticsRecorder()
+        let input = "deploy --secret-flag from src/secret.swift SECRET-PHRASE-42"
+        let outputSentinel = "OUTPUT-SENTINEL-7 src/other-secret.swift"
+        let secrets = ["--secret-flag", "src/secret.swift", "SECRET-PHRASE-42", "OUTPUT-SENTINEL-7", "src/other-secret.swift"]
+        let echoOutput: @Sendable (CleanupRequest, CleanupPriority) async throws -> String = { _, _ in outputSentinel }
+        let failing: @Sendable (CleanupRequest, CleanupPriority) async throws -> String = { _, _ in throw CleanupTestError() }
+
+        let services: [TranscriptCleanupService] = [
+            makeService(diagnostics: diagnostics), // cleaned (echo of input is valid)
+            makeService(mlx: FakeMLXRuntime(handler: echoOutput), diagnostics: diagnostics), // validation rejected
+            makeService(mlx: FakeMLXRuntime(present: []), diagnostics: diagnostics),
+            makeService(mlx: FakeMLXRuntime(readiness: .notLoaded), diagnostics: diagnostics),
+            makeService(mlx: FakeMLXRuntime(readiness: .loadFailed), diagnostics: diagnostics),
+            makeService(mlx: FakeMLXRuntime(readiness: .unloading), diagnostics: diagnostics),
+            makeService(mlx: FakeMLXRuntime(handler: failing), diagnostics: diagnostics),
+            makeService(locale: Locale(identifier: "de_DE"), diagnostics: diagnostics),
+            makeService(selection: .appleSystem, apple: FakeAppleCleanup(availability: .unavailable(.modelNotReady)), diagnostics: diagnostics),
+            makeService(selection: .appleSystem, apple: FakeAppleCleanup(supportsLocale: false), diagnostics: diagnostics),
+            makeService(selection: .appleSystem, apple: FakeAppleCleanup(handler: failing), diagnostics: diagnostics),
+        ]
+        for service in services {
+            _ = try await service.cleanForInsertion(input) {}
+        }
+        _ = try await makeService(diagnostics: diagnostics).cleanForInsertion(input + String(repeating: " x", count: 1_000)) {}
+
+        let sleeper = TestSleeper()
+        let hanging = ManualOperation(cooperative: false)
+        let timeoutService = makeService(mlx: FakeMLXRuntime(handler: { _, _ in try await hanging.run() }), sleeper: sleeper, diagnostics: diagnostics)
+        let timeoutCall = Task { try await timeoutService.cleanForInsertion(input) {} }
+        await eventually { sleeper.pending(.milliseconds(2500)) == 1 }
+        sleeper.fire(.milliseconds(2500))
+        _ = try await timeoutCall.value
+        hanging.finish(.success(outputSentinel))
+
+        let cancelled = ManualOperation(cooperative: false)
+        let cancelService = makeService(mlx: FakeMLXRuntime(handler: { _, _ in try await cancelled.run() }), diagnostics: diagnostics)
+        let cancelCall = Task { try await cancelService.cleanForInsertion(input) {} }
+        await eventually { cancelled.startCount == 1 }
+        cancelCall.cancel()
+        _ = try? await cancelCall.value
+        cancelled.finish(.success(outputSentinel))
+
+        let text = diagnostics.copyText
+        XCTAssertFalse(text.isEmpty)
+        for secret in secrets {
+            XCTAssertFalse(text.contains(secret), "diagnostics leaked a literal")
+        }
+    }
 }

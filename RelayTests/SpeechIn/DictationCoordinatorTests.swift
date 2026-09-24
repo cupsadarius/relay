@@ -117,24 +117,34 @@ final class DictationCoordinatorTests: XCTestCase {
     }
 
     func testDiagnosticsNeverIncludeDictatedTextContent() async {
-        let events = EventLog()
-        let diagnostics = DiagnosticsRecorder()
         let sentinel = "SECRET-PHRASE-42"
-        let coordinator = DictationCoordinator(
-            microphone: FakeMicrophone(events: events),
-            sttRouter: router(events: events, transcript: sentinel),
-            processor: RulesTranscriptProcessor(),
-            textInserter: FakeTextInserter(events: events),
-            stopSpeech: {},
-            status: { _ in },
-            activity: RecordingActivityOverlay(),
-            diagnostics: diagnostics
-        )
+        let cleanedSentinel = "CLEANED-SENTINEL-7"
+        let cleaners = [
+            FakeTranscriptCleaner(.notAttempted),
+            FakeTranscriptCleaner(.clean("\(cleanedSentinel) done")),
+            FakeTranscriptCleaner(.fallBack(.validationRejected(.literalMissing))),
+        ]
+        for cleaner in cleaners {
+            let events = EventLog()
+            let diagnostics = DiagnosticsRecorder()
+            let coordinator = DictationCoordinator(
+                microphone: FakeMicrophone(events: events),
+                sttRouter: router(events: events, transcript: sentinel),
+                processor: RulesTranscriptProcessor(),
+                textInserter: FakeTextInserter(events: events),
+                stopSpeech: {},
+                status: { _ in },
+                activity: RecordingActivityOverlay(),
+                diagnostics: diagnostics,
+                cleanup: cleaner
+            )
 
-        await coordinator.start()
-        await coordinator.finish()
+            await coordinator.start()
+            await coordinator.finish()
 
-        XCTAssertFalse(diagnostics.copyText.contains(sentinel))
+            XCTAssertFalse(diagnostics.copyText.contains(sentinel))
+            XCTAssertFalse(diagnostics.copyText.contains(cleanedSentinel))
+        }
     }
 
     func testRecordsFailureAtInsertionStage() async {
