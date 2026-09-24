@@ -73,7 +73,7 @@ final class SelfCorrectionPrePassTests: XCTestCase {
         for input in [
             "3, no, 4, no wait, 5 workers", // chained
             "use --force scratch that", // retraction only
-            "uh change the user service no wait the auth service", // no literals
+            "uh change the user service no wait auth", // no literals and no shared head
             "we need 2 no one else", // "no one"
             "version 4 actually works on port 8080", // replacement not right after the cue
             "we have 3 servers but actually 5 are down", // words between the old value and the cue
@@ -87,5 +87,64 @@ final class SelfCorrectionPrePassTests: XCTestCase {
 
     func testTextWithoutCorrectionsIsUnchanged() {
         XCTAssertEqual(SelfCorrectionPrePass.apply(to: "Ship it on Friday."), PrePassedText(text: "Ship it on Friday.", replaced: []))
+    }
+}
+
+/// Phrase-level corrections (spec §10.1): `[det] A… HEAD <multi-word cue> [det] B… HEAD`.
+final class SelfCorrectionPrePassPhraseTests: XCTestCase {
+    private func applied(_ text: String) -> String { SelfCorrectionPrePass.apply(to: text).text }
+
+    func testTheSpecSampleSwapsTheServicePhrase() {
+        let result = SelfCorrectionPrePass.apply(
+            to: "uh change the user service no wait the auth service to use refresh tokens and don't change the API")
+        XCTAssertEqual(result.text, "uh change the auth service to use refresh tokens and don't change the API")
+        XCTAssertEqual(result.phrases, [PhraseRewrite(old: "user service", new: "auth service")])
+        XCTAssertEqual(result.replaced, [])
+    }
+
+    func testEveryMultiWordCueRewritesAPhrase() {
+        let cases: [(String, String)] = [
+            ("press the red button no wait the blue button", "press the blue button"),
+            ("press the red button I mean the blue button", "press the blue button"),
+            ("press the red button scratch that the blue button", "press the blue button"),
+            ("press the red button or rather the blue button", "press the blue button"),
+            ("press the red button, no wait, the blue button", "press the blue button"),
+            ("press the big red button no wait the big blue button now", "press the big blue button now"),
+            ("press red button no wait blue button", "press blue button"),
+            ("press the red button no wait blue button", "press the blue button"),
+            ("press red button no wait the blue button", "press the blue button"),
+            ("press the red button no wait the blue button.", "press the blue button."),
+        ]
+        for (input, expected) in cases {
+            XCTAssertEqual(applied(input), expected, input)
+        }
+    }
+
+    /// Unsure or not a correction: the text stays unchanged.
+    func testUnsurePhrasesStayUnchanged() {
+        for input in [
+            "put me on the no wait list", // "no wait" is part of a noun
+            "I mean it", // nothing before the cue
+            "I mean it, the red button", // no shared head
+            "we have no wait time today", // no shared head
+            "press the red button no the blue button", // bare "no": multi-word cues only
+            "press the red button sorry the blue button", // single-word cue
+            "press the red button no wait the button", // no modifier on the new phrase
+            "press the red button no wait the blue big button", // head not within the new phrase
+            "press the red button, no wait the blue button", // one-sided comma
+            "press the very old red button no wait the very new blue button", // longer than 3 words
+            "wait for the two minutes no wait the three minutes", // unit head
+            "the red one no wait the blue one", // "one"
+            "press the red button no wait the red button", // nothing changes
+        ] {
+            XCTAssertEqual(SelfCorrectionPrePass.apply(to: input), PrePassedText(text: input, replaced: []), input)
+        }
+    }
+
+    func testPhraseAndLiteralCorrectionsTogether() {
+        let result = SelfCorrectionPrePass.apply(to: "set port 3 no 4 on the red server no wait the blue server")
+        XCTAssertEqual(result.text, "set port 4 on the blue server")
+        XCTAssertEqual(result.replaced, ["3"])
+        XCTAssertEqual(result.phrases, [PhraseRewrite(old: "red server", new: "blue server")])
     }
 }
