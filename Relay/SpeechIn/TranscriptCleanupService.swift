@@ -83,7 +83,12 @@ final class TranscriptCleanupService: TranscriptCleaning {
         let operation: @Sendable () async throws -> String
         if id.isMLX {
             guard mlx.isPresent(id) else { return fellBack(text, id, .modelNotDownloaded) }
-            switch await mlx.readiness(for: id) {
+            let readiness = await mlx.readiness(for: id)
+            // Review fix 10: check right after the readiness await, before acting on it — a
+            // caller cancelled while that awaited is not worth a background load or a fallback
+            // result, just the cancellation.
+            if Task.isCancelled { throw CancellationError() }
+            switch readiness {
             case .ready:
                 break
             case .loading:
@@ -97,7 +102,6 @@ final class TranscriptCleanupService: TranscriptCleaning {
             case .unloading:
                 return fellBack(text, id, .runtimeBusy)
             }
-            if Task.isCancelled { throw CancellationError() }
             let mlx = mlx
             operation = { try await mlx.generate(request, priority: .production) }
         } else {
@@ -156,6 +160,11 @@ final class TranscriptCleanupService: TranscriptCleaning {
 
     nonisolated static func reason(for error: any Error, model: CleanupModelID) -> CleanupFallbackReason {
         switch error {
+        // Review fix 10: a `CancellationError` reaching here came from the generation itself (a
+        // retired zombie, spec §14.3), not from the caller's own task being cancelled — that case
+        // never reaches this function, since `withCleanupDeadline` throws it directly instead of
+        // returning a `.failure` outcome. Treat it the same as any other slot contention.
+        case is CancellationError: .runtimeBusy
         case CleanupSlotError.busy, CleanupSlotError.preempted, CleanupSlotError.closed: .runtimeBusy
         case MLXCleanupRuntimeError.notLoaded: .modelCold
         case MLXCleanupRuntimeError.notDownloaded: .modelNotDownloaded

@@ -132,6 +132,12 @@ final class TranscriptCleanupServiceTests: XCTestCase {
             (CleanupEngineError.generation(.rateLimited), .appleSystem, .generationFailed(.rateLimited)),
             (CleanupTestError(), .qwen3_0_6b, .generationFailed(.mlxEngine)),
             (CleanupTestError(), .appleSystem, .generationFailed(.other)),
+            // Review fix 10: a CancellationError surfacing from the generation itself (the slot
+            // retired it, spec §14.3) is not the caller's own cancellation — see
+            // `testCallerCancellationThrowsAndRecordsCancelled` for that case — so it fails open
+            // as busy rather than as a generic engine failure.
+            (CancellationError(), .qwen3_0_6b, .runtimeBusy),
+            (CancellationError(), .appleSystem, .runtimeBusy),
         ]
         for (error, model, reason) in cases {
             let failing: @Sendable (CleanupRequest, CleanupPriority) async throws -> String = { _, _ in throw error }
@@ -175,6 +181,25 @@ final class TranscriptCleanupServiceTests: XCTestCase {
         }
         XCTAssertEqual(diagnostics.entries.last?.event, .dictationCleanup(.cancelled(model: .qwen3_0_6b)))
         operation.finish(.success("late"))
+    }
+
+    /// Review fix 10: the cancellation check moved to right after the readiness await, before the
+    /// switch — a caller cancelled by the time readiness comes back gets the cancellation, not a
+    /// fallback result, and never triggers the switch's side effect (a background load).
+    func testCallerCancellationBeforeTheReadinessSwitchSkipsItEntirely() async throws {
+        let mlx = FakeMLXRuntime(readiness: .notLoaded)
+        let service = makeService(mlx: mlx)
+        let call = Task { try await service.cleanForInsertion("hello") {} }
+        call.cancel()
+
+        do {
+            _ = try await call.value
+            XCTFail("expected cancellation")
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+        }
+        let loads = await mlx.ensureLoadedCalls
+        XCTAssertEqual(loads, [], "cancelled before the switch; no background load should start")
     }
 
     func testValidationRejectionFallsBack() async throws {
