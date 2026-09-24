@@ -1334,8 +1334,7 @@ enum ProtectedLiteralExtractor {
         let accepts: @Sendable (String) -> Bool
     }
 
-    // NSRegularExpression is immutable after init and documented as thread-safe.
-    private nonisolated(unsafe) static let rules: [Rule] = [
+    private static let rules: [Rule] = [
         rule(.code, #"`[^`\n]+`"#, trims: false),
         rule(.quoted, #""[^"\n]+"|“[^”\n]+”|(?<!\S)'[^'\n]+'(?=$|[\s.,;:!?)])"#, trims: false),
         rule(.url, #"(?i)\b[a-z][a-z0-9+.\-]*://\S+|\bwww\.\S+"#),
@@ -1558,9 +1557,8 @@ enum SpokenNumberParser {
         "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
     ]
 
-    // NSRegularExpression is immutable after init and documented as thread-safe.
-    private nonisolated(unsafe) static let wordRegex = try! NSRegularExpression(pattern: #"[A-Za-z]+(?:-[A-Za-z]+)*"#)
-    private nonisolated(unsafe) static let letterRegex = try! NSRegularExpression(pattern: #"[A-Za-z]+"#)
+    private static let wordRegex = try! NSRegularExpression(pattern: #"[A-Za-z]+(?:-[A-Za-z]+)*"#)
+    private static let letterRegex = try! NSRegularExpression(pattern: #"[A-Za-z]+"#)
 
     static func parse(_ text: String, excluding claimed: [Range<String.Index>] = []) -> [SpokenNumber] {
         let tokens = words(in: text, excluding: claimed)
@@ -1642,7 +1640,7 @@ enum SpokenNumberParser {
         while index < tokens.count {
             if index > start, !adjacent(tokens[index - 1], tokens[index], in: text) { break }
             let word = tokens[index].text
-            guard let category = category(of: word) else { break }
+            guard let category = Self.category(of: word) else { break }
             let next = nextCategory(after: index, in: tokens, text: text)
             let accepted: Bool
             switch category {
@@ -1676,7 +1674,7 @@ enum SpokenNumberParser {
                 current = 0
             case .point:
                 while index < tokens.count, adjacent(tokens[index - 1], tokens[index], in: text),
-                    let digit = category(of: tokens[index].text), digit == .unit || digit == .zero
+                    let digit = Self.category(of: tokens[index].text), digit == .unit || digit == .zero
                 {
                     decimals += String(values[tokens[index].text] ?? 0)
                     consumed.append(tokens[index].text)
@@ -3249,7 +3247,7 @@ actor CleanupGenerationSlot {
             let sleep = sleep
             Task {
                 try? await sleep(limit)
-                await self.expireWaiter(id)
+                self.expireWaiter(id)
             }
         }
         return await withCheckedContinuation { idleWaiters[id] = $0 }
@@ -3879,7 +3877,6 @@ final class TranscriptCleanupServiceTests: XCTestCase {
         let mlx = FakeMLXRuntime(readiness: .loading)
         let (result, _) = try await clean(makeService(mlx: mlx), "hello")
         XCTAssertEqual(result.outcome, .fellBack(.modelCold))
-        for _ in 0..<20 { await Task.yield() }
         let calls = await mlx.ensureLoadedCalls
         XCTAssertEqual(calls, [])
     }
@@ -4024,7 +4021,6 @@ final class TranscriptCleanupServiceTests: XCTestCase {
         makeService(enabled: false, apple: apple).prewarm()
         makeService(selection: .appleSystem, apple: apple).prewarm()
         makeService(mlx: mlx).prewarm()
-        for _ in 0..<20 { await Task.yield() }
         XCTAssertEqual(apple.prewarmCount, 0)
         let calls = await mlx.ensureLoadedCalls
         XCTAssertEqual(calls, [])
@@ -4206,7 +4202,7 @@ final class TranscriptCleanupService: TranscriptCleaning {
 }
 ```
 
-- [ ] **Step 9: Run the tests** — same command as Step 7. Expected: 22 pass.
+- [ ] **Step 9: Run the tests** — same command as Step 7. Expected: 21 pass.
 
 - [ ] **Step 10: Lint, full suite, commit**
 
@@ -5312,7 +5308,7 @@ Spec §13.1. A mechanical move with no behavior change. `WhisperModelStoreTests`
 **Files:**
 - Create: `Relay/Backends/ModelStore/ModelFileVerifier.swift`
 - Create: `Relay/Backends/ModelStore/HuggingFaceTree.swift`
-- Modify: `Relay/Backends/Whisper/WhisperModelStore.swift:4-12` (OID enum), `:185-239` (verifier), `:356-358` (`oid(for:)`), `:396` (`nextPageURL` call), `:416-432` (`nextPageURL`), `:445-460` (`HFTreeEntry`/`HFLFSInfo`)
+- Modify: `Relay/Backends/Whisper/WhisperModelStore.swift:4-12` (OID enum), `:185-240` (verifier), `:356-358` (`oid(for:)`), `:396` (`nextPageURL` call), `:416-432` (`nextPageURL`), `:445-460` (`HFTreeEntry`/`HFLFSInfo`)
 - Test: `RelayTests/Backends/ModelStore/ModelFileVerifierTests.swift`, `RelayTests/Backends/ModelStore/HuggingFaceTreeTests.swift`
 
 - [ ] **Step 1: Write the failing tests**
@@ -5520,7 +5516,7 @@ enum HuggingFaceTree {
 /// The Whisper name for `ModelFileOID` (see docs/superpowers/spikes/2026-09-18-openai-whisper-models-feasibility-results.md section 2).
 typealias WhisperFileOID = ModelFileOID
 ```
-2. Replace lines 185-239 (`verificationChunkSize`'s doc comment through `hexDigest` and the type's closing brace) with:
+2. Replace lines 185-240 (`verificationChunkSize`'s doc comment through `hexDigest` and the type's closing brace) with:
 ```swift
     /// Read size for `verifyFile`; see `ModelFileVerifier.defaultChunkSize`.
     static let verificationChunkSize = ModelFileVerifier.defaultChunkSize
@@ -5531,7 +5527,7 @@ typealias WhisperFileOID = ModelFileOID
     }
 }
 ```
-(the closing brace ends `WhisperModelStore`, as line 239's did).
+(the closing brace ends `WhisperModelStore`, as line 240's did).
 3. In `HuggingFaceWhisperDownloader`, replace the body of `private static func oid(for entry: HFTreeEntry) -> WhisperFileOID` with `HuggingFaceTree.oid(for: entry)`; replace `nextURL = Self.nextPageURL(from: http)` with `nextURL = HuggingFaceTree.nextPageURL(from: http)`; delete the private `nextPageURL(from:)` and its doc comment.
 4. Delete the private `HFTreeEntry` and `HFLFSInfo` declarations at the end of the file.
 5. `import CryptoKit` is no longer used in `WhisperModelStore.swift`; remove it.
@@ -6108,7 +6104,10 @@ final class MLXCleanupCatalogTests: XCTestCase {
     func testStoreUsesTheSharedMLXFolder() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        let files = ["config.json": Data("{}".utf8), "model.safetensors": Data("w".utf8), "tokenizer.json": Data("t".utf8), "tokenizer_config.json": Data("c".utf8)]
+        let files = [
+            "config.json": Data("{}".utf8), "model.safetensors": Data("w".utf8), "tokenizer.json": Data("t".utf8),
+            "tokenizer_config.json": Data("c".utf8),
+        ]
         let snapshot = PinnedSnapshot(
             repo: "org/m", revision: "r1", allowlist: Set(files.keys), requiredFiles: Set(files.keys), pinnedSHA256: [:]
         )
@@ -6316,7 +6315,7 @@ If the Execution Notes say **B**, change `offered` to `[.qwen3_0_6b]` and add to
 ```
 For **A**, add the same test asserting `[.qwen3_0_6b, .qwen3_1_7b]`.
 
-- [ ] **Step 6: Run the tests** — same command as Step 2. Expected: 10 pass (plus the S3 test).
+- [ ] **Step 6: Run the tests** — same command as Step 2. Expected: 9 pass (10 with the S3 test).
 
 - [ ] **Step 7: Lint, full suite, commit**
 
@@ -6396,6 +6395,18 @@ final class FakeMLXEngine: MLXCleanupEngine {
 
     func clearCache() async { state.withLock { $0.clearCacheCount += 1 } }
 }
+
+/// A `Sendable` box for mutable test state shared with `@Sendable` closures. A bare `Mutex` is
+/// noncopyable, so it cannot be copied into a local or captured by an escaping closure.
+final class LockedValue<Value: Sendable>: Sendable {
+    private let mutex: Mutex<Value>
+
+    init(_ value: Value) { mutex = Mutex(value) }
+
+    func withLock<Result: Sendable>(_ body: (inout Value) -> Result) -> Result {
+        mutex.withLock { body(&$0) }
+    }
+}
 ```
 
 - [ ] **Step 2: Write the failing tests**
@@ -6411,7 +6422,7 @@ import XCTest
 @MainActor
 final class MLXCleanupRuntimeTests: XCTestCase {
     private let root = URL(fileURLWithPath: "/tmp/relay-mlx-runtime-tests", isDirectory: true)
-    private let present = Mutex<Set<CleanupModelID>>([.qwen3_0_6b, .qwen3_1_7b])
+    private let present = LockedValue<Set<CleanupModelID>>([.qwen3_0_6b, .qwen3_1_7b])
 
     private func makeRuntime(engine: FakeMLXEngine, sleeper: TestSleeper = TestSleeper()) -> MLXCleanupRuntime {
         let root = root
@@ -6842,7 +6853,7 @@ import XCTest
 @MainActor
 final class MLXCleanupModelManagerTests: XCTestCase {
     private var root: URL!
-    private let selection = Mutex<CleanupModelID?>(nil)
+    private let selection = LockedValue<CleanupModelID?>(nil)
     private let files = ["config.json": Data("{}".utf8), "model.safetensors": Data("w".utf8)]
 
     override func setUpWithError() throws {
@@ -7239,7 +7250,7 @@ import XCTest
 
 @MainActor
 final class AppleFoundationCleanupModelManagerTests: XCTestCase {
-    private let selection = Mutex<CleanupModelID?>(nil)
+    private let selection = LockedValue<CleanupModelID?>(nil)
 
     private func makeManager(_ apple: FakeAppleCleanup, locale: Locale = Locale(identifier: "en_US")) -> AppleFoundationCleanupModelManager {
         let selection = selection
@@ -7574,7 +7585,7 @@ Spec §14.2. Decision 4: **one** `CleanupGenerationSlot` is shared by the Apple 
 
 **Files:**
 - Modify: `Relay/App/SpeechBackendGraph.swift:7-16` (fields, `make` signature), `:57-76` (return)
-- Modify: `Relay/App/RelayRuntime.swift:121-124` (graph), `:190-205` (coordinator), `:247-255` (services)
+- Modify: `Relay/App/RelayRuntime.swift:127-130` (graph), `:196-211` (coordinator), `:253-261` (services) — post-Task 17 (its `SpeechInputServices` fields add 6 lines; 121-124 / 190-205 / 247-251 on `46643f3`)
 - Modify: `RelayTests/App/SpeechBackendGraphTests.swift:9-11` (`makeGraph`) + new test
 
 - [ ] **Step 1: Write the failing graph test**
@@ -7667,7 +7678,7 @@ and append to the `SpeechBackendGraph(…)` initializer arguments:
 
 - [ ] **Step 4: Wire `makeProduction()`**
 
-Lines 121-124:
+Lines 127-130 (121-124 before Task 17):
 ```swift
         let graph = SpeechBackendGraph.make(
             whisperSelection: settingsController.whisperSelection,
@@ -7684,7 +7695,7 @@ Lines 121-124:
         )
         let cleanupTester = DictationCleanupTester(apple: graph.appleCleanup, mlx: graph.mlxCleanupRuntime)
 ```
-In the `DictationCoordinator(…)` call (190-205), after `liveTranscriptionEnabled: { settings.value.liveTranscriptionEnabled }` add `,` and `cleanup: transcriptCleanup`.
+In the `DictationCoordinator(…)` call (196-211 after Task 17), after `liveTranscriptionEnabled: { settings.value.liveTranscriptionEnabled }` add `,` and `cleanup: transcriptCleanup`.
 
 Replace the Task 17 placeholders in `SpeechInputServices(…)`:
 ```swift
