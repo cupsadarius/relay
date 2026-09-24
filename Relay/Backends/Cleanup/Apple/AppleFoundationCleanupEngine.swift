@@ -6,7 +6,6 @@ import Synchronization
 /// Uses only macOS 26 SDK API so it builds on CI (Xcode 26) and locally (Xcode 27). Never logs
 /// text, `debugDescription` or `localizedDescription`.
 final class AppleFoundationCleanupEngine: AppleCleanupEngine {
-    static let temperature = 0.2
 
     /// Keeps the most recent prewarmed session alive so the prewarm is not dropped at once.
     private let prewarmed = Mutex<LanguageModelSession?>(nil)
@@ -28,7 +27,7 @@ final class AppleFoundationCleanupEngine: AppleCleanupEngine {
 
     func respond(_ request: CleanupRequest) async throws -> String {
         let session = Self.session(instructions: request.instructions)
-        let options = GenerationOptions(temperature: Self.temperature, maximumResponseTokens: request.maxOutputTokens)
+        let options = GenerationOptions(sampling: .greedy, maximumResponseTokens: request.maxOutputTokens)
         do {
             return try await session.respond(to: request.input, options: options).content
         } catch is CancellationError {

@@ -451,7 +451,7 @@ The instructions are fixed and live in `CleanupPrompt.instructions`:
   <|im_start|>system\n{instructions}<|im_end|>\n<|im_start|>user\n{input}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n
   ```
 
-- **Sampling:** temperature 0.2 on MLX (`GenerateParameters.temperature`, `topP` 0.9) and temperature 0.2 on Apple (`GenerationOptions(temperature:maximumResponseTokens:)`).
+- **Sampling:** greedy on both backends: temperature 0 on MLX (`GenerateParameters.temperature`, argmax) and `.greedy` on Apple (`GenerationOptions(sampling:maximumResponseTokens:)`).
 - **Output token limit:** `min(512, max(32, inputTokensEstimate * 3 / 2 + 16))`, with `inputTokensEstimate = utf8.count / 3`.
 - No tools, no history. Each request gets a fresh MLX KV cache and a fresh `LanguageModelSession`.
 

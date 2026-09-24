@@ -8,8 +8,8 @@ import MLXLMCommon
 struct MLXLiveEngine: MLXCleanupEngine {
     /// GPU buffer cache cap, set before every load (spec §9.3).
     static let gpuCacheLimitBytes = 64 * 1024 * 1024
-    static let temperature: Float = 0.2
-    static let topP: Float = 0.9
+    /// Greedy decoding: cleanup has one right answer, and sampling only adds run-to-run drift.
+    static let temperature: Float = 0
 
     func load(directory: URL) async throws -> any LoadedMLXCleanupModel {
         Memory.cacheLimit = Self.gpuCacheLimitBytes
@@ -39,8 +39,7 @@ struct MLXLoadedCleanupModel: LoadedMLXCleanupModel {
         )
         let parameters = GenerateParameters(
             maxTokens: request.maxOutputTokens,
-            temperature: MLXLiveEngine.temperature,
-            topP: MLXLiveEngine.topP
+            temperature: MLXLiveEngine.temperature
         )
         var output = ""
         var sawChunk = false
