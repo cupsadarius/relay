@@ -10,11 +10,12 @@ enum ValidationVerdict: Equatable, Sendable {
 /// the Test tool use the same instance. Checks run in `ValidationRejection` declaration order.
 struct CleanupSafetyValidator: Sendable {
     static let reasoningMarkers = ["<think>", "</think>", "<|im_start|>", "<|im_end|>", "<|endoftext|>"]
-    static let wrapperPrefixes = ["here is", "here's", "here’s", "sure", "cleaned text:", "output:", "result:"]
-    /// Openings of a refusal or an assistant reply (spec §11.1), matched with `’` folded to `'`.
+    static let wrapperPrefixes = ["here is", "here's", "here’s", "sure", "certainly", "of course", "cleaned text:", "output:", "result:"]
+    /// Openings of a refusal or an assistant reply (spec §11.1), in `prefixForm` (no commas,
+    /// `’` read as `'`, "can not" read as "cannot").
     static let refusalPrefixes = [
-        "i cannot", "i can't", "i can not", "i'm unable", "i am unable", "i won't", "as an ai", "i'm sorry, but",
-        "i am sorry, but", "sorry, but", "i apologize",
+        "i cannot", "i can't", "i'm unable", "i am unable", "i won't", "as an ai", "i'm sorry but", "i am sorry but", "sorry but",
+        "i apologize", "unfortunately", "i'm afraid", "i am afraid", "i'm not able", "i am not able", "i don't have", "i do not have",
     ]
 
     /// `input` is the pre-passed text the model received; `replaced` holds the comparison keys
@@ -100,7 +101,7 @@ struct CleanupSafetyValidator: Sendable {
 
     /// Fillers dropped from the input before checking whether it itself starts with a wrapper
     /// phrase — "uh sure, do it" still exempts "sure" the way "sure, do it" does.
-    private static let leadingFillers: Set<String> = ["uh", "um", "so", "okay", "ok"]
+    private static let leadingFillers: Set<String> = ["uh", "um", "so", "okay", "ok", "like"]
 
     /// A wrapper prefix is exempt only when the input itself — after trimming whitespace and
     /// leading fillers — STARTS with that phrase (review fix 2); merely containing the phrase
@@ -110,11 +111,11 @@ struct CleanupSafetyValidator: Sendable {
     /// the same as wrapping the answer in a preamble that ends with a colon.
     private static func isWrapped(_ output: String, input: String) -> Bool {
         let lowered = output.lowercased()
-        let loweredInput = trimmedLeadingFillers(of: input.lowercased())
+        let inputOpening = dictatedOpening(of: input)
         for prefix in wrapperPrefixes where lowered.hasPrefix(prefix) {
             let previewEnd = lowered.index(lowered.startIndex, offsetBy: min(60, lowered.count))
             if lowered[..<previewEnd].contains(":"), !input.contains(":") { return true }
-            if loweredInput.hasPrefix(prefix) { continue }
+            if inputOpening.hasPrefix(prefixForm(prefix)) { continue }
             let rest = lowered.dropFirst(prefix.count)
             if prefix.hasSuffix(":") || rest.first.map({ !$0.isLetter }) ?? true { return true }
         }
@@ -124,10 +125,25 @@ struct CleanupSafetyValidator: Sendable {
     /// A refusal opening is exempt only when the input itself (fillers trimmed) starts with it:
     /// "I can't make the meeting" is dictation, not a refusal.
     private static func isRefusal(_ output: String, input: String) -> Bool {
-        func folded(_ text: String) -> String { text.lowercased().replacingOccurrences(of: "’", with: "'") }
-        let loweredOutput = folded(output)
-        let loweredInput = trimmedLeadingFillers(of: folded(input))
-        return refusalPrefixes.contains { loweredOutput.hasPrefix($0) && !loweredInput.hasPrefix($0) }
+        let outputOpening = prefixForm(output)
+        let inputOpening = dictatedOpening(of: input)
+        return refusalPrefixes.contains { outputOpening.hasPrefix($0) && !inputOpening.hasPrefix($0) }
+    }
+
+    /// Lowercased, `’` read as `'`, commas removed, whitespace collapsed, "can not" read as
+    /// "cannot": the form both sides of a prefix test use, so "Sorry, but" matches "sorry but".
+    private static func prefixForm(_ text: String) -> String {
+        let words = text.lowercased().replacingOccurrences(of: "’", with: "'").replacingOccurrences(of: ",", with: " ")
+            .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return words.replacingOccurrences(of: "can not", with: "cannot")
+    }
+
+    /// `prefixForm` of the input with leading fillers ("uh", "um", "so", "okay", "ok", "like",
+    /// "you know") and an immediately repeated first word ("I I can't") dropped.
+    private static func dictatedOpening(of input: String) -> String {
+        var words = trimmedLeadingFillers(of: prefixForm(input)).split(separator: " ").map(String.init)
+        if words.count >= 2, words[0] == words[1] { words.removeFirst() }
+        return words.joined(separator: " ")
     }
 
     /// Whether `literal` is the first token of `text` — nothing but whitespace precedes it.
@@ -142,12 +158,19 @@ struct CleanupSafetyValidator: Sendable {
         return first.lowercased() == originalFirst.lowercased() && candidate.dropFirst() == original.dropFirst()
     }
 
-    /// `text`, trimmed of whitespace and any leading filler words ("uh", "um", "so", "okay", "ok").
+    /// `text`, trimmed of whitespace and any leading filler words ("uh", "um", "so", "okay", "ok",
+    /// "like", "you know").
     private static func trimmedLeadingFillers(of text: String) -> String {
         var words = text.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: " ", omittingEmptySubsequences: true).map(
             String.init)
-        while let first = words.first, leadingFillers.contains(first.trimmingCharacters(in: .punctuationCharacters)) {
-            words.removeFirst()
+        while let first = words.first {
+            if leadingFillers.contains(first.trimmingCharacters(in: .punctuationCharacters)) {
+                words.removeFirst()
+            } else if first == "you", words.count > 1, words[1].trimmingCharacters(in: .punctuationCharacters) == "know" {
+                words.removeFirst(2)
+            } else {
+                break
+            }
         }
         return words.joined(separator: " ")
     }

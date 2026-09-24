@@ -485,8 +485,10 @@ The validator is pure and deterministic, and it runs on both engines. The same v
 | `.empty` | output is empty after trimming whitespace |
 | `.tooLong` | `output.count > input.count * 1.75 + 16` |
 | `.reasoningMarkup` | contains `<think>`, `</think>`, `<\|im_start\|>`, `<\|im_end\|>` or `<\|endoftext\|>` |
-| `.wrapper` | starts with (case-insensitive) `Here is`, `Here's`, `Sure`, `Cleaned text:`, `Output:`, `Result:`, or contains a ``` fence the input lacked |
-| `.refusal` | starts with (case-insensitive, `’` read as `'`) a refusal or assistant-reply opening: `I cannot`, `I can't`, `I can not`, `I'm unable`, `I am unable`, `I won't`, `As an AI`, `I'm sorry, but`, `I am sorry, but`, `Sorry, but`, `I apologize`, unless the input itself (leading fillers trimmed) starts with the same phrase |
+| `.wrapper` | starts with (case-insensitive) `Here is`, `Here's`, `Sure`, `Certainly`, `Of course`, `Cleaned text:`, `Output:`, `Result:`, or contains a ``` fence the input lacked |
+| `.refusal` | starts with a refusal or assistant-reply opening: `I cannot` (or `I can not`), `I can't`, `I'm unable`, `I am unable`, `I won't`, `As an AI`, `I'm sorry but`, `I am sorry but`, `Sorry but`, `I apologize`, `Unfortunately`, `I'm afraid`, `I am afraid`, `I'm not able`, `I am not able`, `I don't have`, `I do not have` |
+
+A wrapper or refusal prefix is exempt when the input itself starts with the same phrase. Both sides are compared lowercased, with `’` read as `'`, commas removed, whitespace collapsed and "can not" read as "cannot". The input also drops leading fillers (`uh`, `um`, `so`, `okay`, `ok`, `like`, `you know`) and an immediately repeated first word ("I I can't").
 | `.literalMissing` | an input protected literal is absent and not correction-exempt (§11.4) |
 | `.literalInvented` | an output protected literal is absent from the input's allowed set (§11.6) |
 
