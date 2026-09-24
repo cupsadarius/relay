@@ -124,6 +124,34 @@ final class DictationCleanupTesterTests: XCTestCase {
         XCTAssertEqual(mlx.phase.title, "Model unavailable")
     }
 
+    /// Closing the sheet cancels a running test and forgets the entered text and its report.
+    func testClosingTheSheetCancelsTheRunAndClearsTheInput() async {
+        let operation = ManualOperation(cooperative: false)
+        let tester = makeTester(mlx: FakeMLXRuntime(handler: { _, _ in try await operation.run() }))
+        tester.input = "set the port to 3, no, 4"
+        tester.run(model: .qwen3_1_7b)
+        await eventually { operation.startCount == 1 }
+
+        tester.sheetClosed()
+
+        XCTAssertEqual(tester.input, "")
+        await eventually { tester.phase == .idle }
+        operation.finish(.success("late"))
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(tester.phase, .idle, "a late result must not bring the report back")
+    }
+
+    func testClosingTheSheetClearsAFinishedReport() async {
+        let tester = makeTester()
+        tester.run(model: .qwen3_1_7b)
+        await finished(tester)
+
+        tester.sheetClosed()
+
+        XCTAssertEqual(tester.phase, .idle)
+        XCTAssertEqual(tester.input, "")
+    }
+
     func testModelRemovalCancelsARunningTest() async {
         let operation = ManualOperation(cooperative: false)
         let tester = makeTester(mlx: FakeMLXRuntime(handler: { _, _ in try await operation.run() }))

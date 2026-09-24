@@ -83,6 +83,18 @@ final class DictationCleanupTester {
     }
 
     /// Model removal (spec §14.3). A no-op unless a test is running.
+    /// The Test sheet closed: cancel a running test, and forget the entered text and any report.
+    /// A cancelled run finishes as `.idle`.
+    func sheetClosed() {
+        input = ""
+        if phase.isRunning, let task {
+            cancelPhase = .idle
+            task.cancel()
+        } else {
+            phase = .idle
+        }
+    }
+
     func cancelRunningTest(reason: CancelReason) {
         guard phase.isRunning, let task else { return }
         switch reason {

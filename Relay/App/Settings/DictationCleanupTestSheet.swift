@@ -46,6 +46,7 @@ struct DictationCleanupTestSheet: View {
         }
         .padding(20)
         .frame(minWidth: 520, minHeight: 360)
+        .onDisappear { tester.sheetClosed() }
     }
 
     private static func format(_ duration: Duration) -> String {
