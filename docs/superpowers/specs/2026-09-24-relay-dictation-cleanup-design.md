@@ -483,7 +483,7 @@ Before the model runs, a deterministic pre-pass applies the literal corrections 
 
 ## 11. Safety validation (`CleanupSafetyValidator`)
 
-The validator is pure and deterministic, and it runs on both engines. The same validator judges production and Test runs. Its input is the pre-passed text (§10.1). Checks run in this order: `empty`, `reasoningMarkup`, `wrapper`, `refusal`, `tooLong`, `literalInvented`, `literalMissing`, then the phrase-rewrite and replaced-value checks of §10.1.
+The validator is pure and deterministic, and it runs on both engines. The same validator judges production and Test runs. Its input is the pre-passed text (§10.1). Checks run in this order: `empty`, `reasoningMarkup`, `wrapper`, `refusal`, `tooLong`, `literalInvented`, `literalMissing`, then the phrase-rewrite and replaced-value checks of §10.1, then `contentDropped` (§11.8).
 
 ### 11.1 Structural rejections
 
@@ -498,6 +498,7 @@ The validator is pure and deterministic, and it runs on both engines. The same v
 A wrapper or refusal prefix is exempt when the input itself starts with the same phrase. Both sides are compared lowercased, with `’` read as `'`, commas removed, whitespace collapsed and "can not" read as "cannot". The input also drops leading fillers (`uh`, `um`, `so`, `okay`, `ok`, `like`, `you know`) and an immediately repeated first word ("I I can't").
 | `.literalMissing` | an input protected literal is absent and not correction-exempt (§11.4) |
 | `.literalInvented` | an output protected literal is absent from the input's allowed set (§11.6) |
+| `.contentDropped` | a content word of the input is absent from the output (§11.8) |
 
 Output identical to the input is valid.
 
@@ -574,6 +575,16 @@ Every protected literal extracted from the **output** must be in `allowed`. If o
 ### 11.7 Uncertainty
 
 When extraction is ambiguous (an unbalanced quote, or a token that matches two kinds at the same range), the earlier kind in §11.2 wins, and all of its characters are protected. The validator never guesses in the model's favor.
+
+### 11.8 Content-word coverage (`ContentCoverage`)
+
+The literal checks cannot see a dropped clause ("bump to 2.0 no changes needed" → "Bump to 2.0.", "I mean it this time" → "I mean it.", or the Test sample losing "and don't change the API"). As the last check, every content word of the (pre-passed) input must appear in the output, or the output is rejected as `.contentDropped` and the result falls back.
+
+- **Words:** protected literal ranges are blanked first (the literal checks own them). The rest is lowercased, `’` read as `'`, split into sentences at `.`, `!`, `?` and into words on anything but letters, digits and `'`. Contractions equal their expansions: `n't` → `not` ("don't" = "do not"), "can't" and "cannot" = "can not", "won't" = "will not", `'s` → `is`, `'re` → `are`, `'m` → `am`, `'ve` → `have`, `'ll` → `will`, `'d` → `would`.
+- **Not content:** fillers (`uh`, `um`, `er`, `like`, `please`, `you know`, and `so` at the start of a sentence), every correction cue word (§11.4), and the stoplist `a an the to of and or is it this that i you we in on for with be`. The old values and phrases the pre-pass replaced are already gone from its output.
+- **Old side of a cue:** up to 3 words before any correction cue in the same sentence may be missing, because a model that applies the correction drops them ("press the red button no the blue button" → "Press the blue button.").
+- **Matching:** set semantics, so a repeated false start ("the the", "we need to we need to") has to survive only once. A word also counts as present when the output has it with a trailing `s` or `es` added or removed.
+- **Exact, not a threshold:** exact coverage passes every acceptable output in the eval corpus, so no missing-word allowance is used. `please` was added to the fillers because a corpus acceptable output drops it; `spoken-05`'s "Two-time setup." moved from acceptable to mustReject.
 
 ## 12. Apple backend
 

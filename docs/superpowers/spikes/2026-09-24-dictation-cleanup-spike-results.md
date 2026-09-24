@@ -187,3 +187,25 @@ Held-out split (same hash of case ids; 39 / 35):
 - Both models still drop the second clause of `corr-noWait-02` ("Change the auth service to use refresh tokens."). The correction is applied, but "and don't change the API" is lost, and no literal rule can see it; the content key counts it as a miss.
 - **A phrase-correction example turn was tried and reverted.** Appending "open the red folder no wait the blue folder" → "Open the blue folder." to `CleanupPrompt.examples`, with everything else equal, made both models worse: Qwen3 1.7B 76.2% correction application and 5 over-corrections (it rewrote "the no wait list" to "No wait list." and "scratch that off the list" to "Remove that from the list."), Apple 95.2% but 1 over-correction (`cueNeg-01`), which failed the bar. The pre-pass already hands the models the corrected phrase, so the example only added pressure to edit cue-negative phrases.
 
+### After the content-word coverage check
+
+Dropped clauses changed meaning without touching a protected literal, so the validator accepted them ("Bump to 2.0.", "I mean it.", the Test sample without "and don't change the API"). The new last check, `.contentDropped` (spec §11.8), requires every content word of the pre-passed input to appear in the output. Exact coverage was kept rather than a threshold: it passes every acceptable corpus output once `please` is a filler, and the only other corpus conflict was `spoken-05`'s "Two-time setup.", which was acceptable only because nothing could catch it and is now a mustReject.
+
+| model | acceptance | reference match | correction application | cue-negative over-corrections | fail-open | already-clean fail-open | wrapper/markup | p50 | p95 | passes bar |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlx.qwen3-1.7b-4bit | 85.1% | 71.6% | 85.7% (18/21) | 0 | 14.9% | 0% | 0% | 211 ms | 296 ms | **true** |
+| apple.system-language-model | 90.5% | 79.7% | 90.5% (19/21) | 0 | 9.5% | 0% | 1.4% | 554 ms | 713 ms | **true** |
+
+Held-out split (39 / 35):
+
+| model | half | correction application | cue-negative over-corrections | fail-open |
+|---|---|---|---|---|
+| Qwen3 1.7B | dev | 12/13 | 0 | 4/39 |
+| Qwen3 1.7B | held out | 6/8 | 0 | 7/35 |
+| Apple | dev | 12/13 | 0 | 6/39 |
+| Apple | held out | 7/8 | 0 | 1/35 |
+
+- **Apple is unchanged**: the check rejected none of its outputs, so it found no false drops there.
+- **Qwen3 1.7B now passes the bar on the whole corpus, with one case to spare** (11/74 fail-open; 12 would fail). It fails on the held-out half alone (7/35 = 20%). Its two over-corrections (`cueNeg-01`, `cueNeg-14`) and seven other outputs are now rejected as `.contentDropped` and fail open. All nine are real drops: "Ship it on Friday." for "uh so I think we should um ship it on friday", "Check the logs." for "… and tell me what failed", "Twenty-five open tickets." for "we have twenty-five open tickets", "3, 4, 5." (drops "workers"), the Test sample without its second clause, "System prompt:" for the injection case, and "The tag is in the template." (drops `</think>`). None of them was a false rejection.
+- Qwen's rate of dropping words means it passes the bar only narrowly; Apple remains the recommended model.
+
