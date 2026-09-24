@@ -50,7 +50,7 @@ Build only: replace `test` with `build`.
 Record every spike result here, in this file, in the same commit as the spike's results document.
 
 - **S1 (tokenizer parity, Task 1):** **PASS → ArgmaxCore bridge.** 0/30 encode mismatches, 0/30 decode mismatches, `<|im_end|>` = 151645, offline load confirmed (Wi-Fi off). See `docs/superpowers/spikes/2026-09-24-dictation-cleanup-spike-results.md`.
-- **S3 (MLX timing, Task 3):** _pending_. Record load time and warm p50/p95 for each model, and the decision letter (A/B/C).
+- **S3 (MLX timing, Task 3):** **Decision A** (keep both models, 2.5 s budget, 10-minute idle unload). M4 Max, macOS 27.0: 0.6B load 1525 ms, warm total p50/p95 190/330 ms; 1.7B load 1575 ms, warm total p50/p95 182/382 ms. 0.6B cold load ≪ 8 s, so `DictationCleanupTester.budgetIncludesLoad = true`. See `docs/superpowers/spikes/2026-09-24-dictation-cleanup-spike-results.md`.
 - **S2 (FoundationModels background rate limiting, Task 4, manual):** _pending_. Record the paced and burst `rateLimited` rates per macOS version and the decision (`ship` / `note` / `hide`). Task 23 applies it.
 
 Decisions this plan makes where the spec leaves a detail open (each is also stated at its task):

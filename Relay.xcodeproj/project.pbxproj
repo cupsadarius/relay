@@ -197,6 +197,7 @@
 		BB3C78E83707FBC0309FF4D5 /* SelectionReaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763A6DE20D54E1A785D7D61F /* SelectionReaderTests.swift */; };
 		BBDCAD3AC18C3C6FADA69D93 /* GenericTerminalFocusResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FA28566E15B9DBEAB818E6B /* GenericTerminalFocusResolver.swift */; };
 		BC63702DF7C2E67D5C8909E3 /* TmuxClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0354860CB30156236B9B877 /* TmuxClient.swift */; };
+		BC8F372488E15D5B4B68C6CD /* MLXCleanupTimingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5505FCD9C271C28E9F6BD0C6 /* MLXCleanupTimingTests.swift */; };
 		BD809807A2FCB7B2ECD2A9DA /* ClaudeCodeInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC232F60ABB4C877E9AFBAC8 /* ClaudeCodeInstaller.swift */; };
 		BDB3AFBC914BC5F55A9E04B9 /* Diagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2388EB91FEE36FAF3715B0FE /* Diagnostics.swift */; };
 		BDDD8776219373310E5295EC /* UnixSocketAddressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B7567057941DE7FE4654C61 /* UnixSocketAddressTests.swift */; };
@@ -391,6 +392,7 @@
 		5304D584B51F37FD35A3DE82 /* SpeechModelManagingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechModelManagingTests.swift; sourceTree = "<group>"; };
 		548BBA4EF43DAABAE6DEA7E0 /* HookTransportClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookTransportClientTests.swift; sourceTree = "<group>"; };
 		54E4B351A16CE237218FE5C0 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		5505FCD9C271C28E9F6BD0C6 /* MLXCleanupTimingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MLXCleanupTimingTests.swift; sourceTree = "<group>"; };
 		55DEBEB0EA845951814F86D8 /* WhisperModelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperModelManager.swift; sourceTree = "<group>"; };
 		58D5614D78B7D50ED2D78984 /* SpeechVoiceRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechVoiceRow.swift; sourceTree = "<group>"; };
 		5B0A9C8344C96ABA62442D91 /* HookEnvelopeReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookEnvelopeReceiver.swift; sourceTree = "<group>"; };
@@ -885,6 +887,7 @@
 		A2CD4E5FEE88256B9EBB6596 /* Cleanup */ = {
 			isa = PBXGroup;
 			children = (
+				5505FCD9C271C28E9F6BD0C6 /* MLXCleanupTimingTests.swift */,
 				A9F4CD17FAE06BBE7084ACD4 /* QwenChatTemplateTests.swift */,
 				D9EAE55317D5EECC192544FD /* QwenTokenizerParityTests.swift */,
 			);
@@ -1405,6 +1408,7 @@
 				DD64AB304E55204996D4C6F8 /* KokoroPhonemeChunkerTests.swift in Sources */,
 				122B40DA5BC1B32E59DBF00C /* KokoroTTSAudioSourceTests.swift in Sources */,
 				0C3C74A43B72D383164C555C /* KokoroTTSBackendTests.swift in Sources */,
+				BC8F372488E15D5B4B68C6CD /* MLXCleanupTimingTests.swift in Sources */,
 				30F97D8C0898E2D97E683F3F /* MicrophoneCaptureStateTests.swift in Sources */,
 				5BA5D477DC0DE4D8E14DE5CA /* ModelSessionLoaderTests.swift in Sources */,
 				8965F7A0E86DD769BA8CF651 /* NewlineFramerTests.swift in Sources */,
