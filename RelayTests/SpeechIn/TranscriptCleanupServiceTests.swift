@@ -12,6 +12,7 @@ final class TranscriptCleanupServiceTests: XCTestCase {
         selection: CleanupModelID? = .qwen3_0_6b,
         apple: FakeAppleCleanup = FakeAppleCleanup(),
         mlx: FakeMLXRuntime = FakeMLXRuntime(),
+        promptOverride: CleanupPromptOverride? = nil,
         sleeper: TestSleeper = TestSleeper(),
         locale: Locale? = nil,
         memoryPressure: (any MemoryPressureMonitoring)? = nil,
@@ -24,6 +25,7 @@ final class TranscriptCleanupServiceTests: XCTestCase {
             selection: { selection },
             apple: apple,
             mlx: mlx,
+            promptOverride: { promptOverride },
             sleep: sleeper.sleepFunction,
             now: { instant },
             locale: { locale },
@@ -261,7 +263,7 @@ final class TranscriptCleanupServiceTests: XCTestCase {
             [
                 CleanupRequest(
                     modelID: .qwen3_0_6b, instructions: CleanupPrompt.instructions, input: "ship it",
-                    maxOutputTokens: CleanupPrompt.maxOutputTokens(for: "ship it")
+                    maxOutputTokens: CleanupPrompt.maxOutputTokens(for: "ship it"), examples: CleanupPrompt.examples
                 )
             ]
         )
@@ -316,6 +318,45 @@ final class TranscriptCleanupServiceTests: XCTestCase {
         XCTAssertEqual(calls, [])
     }
 
+    // MARK: Effective prompt (spec §10 addendum)
+
+    /// With no saved override, every MLX request carries `CleanupPrompt`'s own defaults.
+    func testMLXRequestUsesTheDefaultPromptWhenThereIsNoOverride() async throws {
+        let mlx = FakeMLXRuntime()
+        _ = try await clean(makeService(mlx: mlx), "hello")
+        let requests = await mlx.generateRequests
+        XCTAssertEqual(requests.map(\.instructions), [CleanupPrompt.instructions])
+        XCTAssertEqual(requests.map(\.examples), [CleanupPrompt.examples])
+    }
+
+    /// A saved override reaches the MLX request instead of `CleanupPrompt`'s defaults.
+    func testMLXRequestUsesTheSavedOverride() async throws {
+        let override = CleanupPromptOverride(instructions: "CUSTOM-INSTRUCTIONS", examples: [CleanupExample(input: "hi", output: "Hi.")])
+        let mlx = FakeMLXRuntime()
+        _ = try await clean(makeService(mlx: mlx, promptOverride: override), "hello")
+        let requests = await mlx.generateRequests
+        XCTAssertEqual(requests.map(\.instructions), ["CUSTOM-INSTRUCTIONS"])
+        XCTAssertEqual(requests.map(\.examples), [override.examples])
+    }
+
+    /// A saved override also reaches the Apple request.
+    func testAppleRequestUsesTheSavedOverride() async throws {
+        let override = CleanupPromptOverride(instructions: "CUSTOM-INSTRUCTIONS", examples: [CleanupExample(input: "hi", output: "Hi.")])
+        let apple = FakeAppleCleanup()
+        _ = try await clean(makeService(selection: .appleSystem, apple: apple, promptOverride: override), "hello")
+        XCTAssertEqual(apple.requests.map(\.instructions), ["CUSTOM-INSTRUCTIONS"])
+        XCTAssertEqual(apple.requests.map(\.examples), [override.examples])
+    }
+
+    /// Prewarm warms the Apple session with the saved override too, not the fixed default.
+    func testPrewarmUsesTheSavedOverride() {
+        let override = CleanupPromptOverride(instructions: "CUSTOM-INSTRUCTIONS", examples: [CleanupExample(input: "hi", output: "Hi.")])
+        let apple = FakeAppleCleanup()
+        makeService(selection: .appleSystem, apple: apple, promptOverride: override).prewarm()
+        XCTAssertEqual(apple.prewarmInstructions, ["CUSTOM-INSTRUCTIONS"])
+        XCTAssertEqual(apple.prewarmExamples, [override.examples])
+    }
+
     // MARK: Diagnostics privacy
 
     func testDiagnosticsNeverIncludeTextOrLiterals() async throws {
@@ -365,6 +406,30 @@ final class TranscriptCleanupServiceTests: XCTestCase {
         XCTAssertFalse(text.isEmpty)
         for secret in secrets {
             XCTAssertFalse(text.contains(secret), "diagnostics leaked a literal")
+        }
+    }
+
+    /// A saved custom prompt is user-authored text (spec §18): it must never reach diagnostics,
+    /// whether cleanup succeeds, falls back, or prewarms.
+    func testDiagnosticsNeverIncludeTheSavedPromptText() async throws {
+        let diagnostics = DiagnosticsRecorder()
+        let override = CleanupPromptOverride(
+            instructions: "PROMPT-SENTINEL-INSTRUCTIONS",
+            examples: [CleanupExample(input: "PROMPT-SENTINEL-EXAMPLE-INPUT", output: "PROMPT-SENTINEL-EXAMPLE-OUTPUT")]
+        )
+        let apple = FakeAppleCleanup()
+        let service = makeService(selection: .appleSystem, apple: apple, promptOverride: override, diagnostics: diagnostics)
+        service.prewarm()
+        _ = try await service.cleanForInsertion("hello") {}
+        _ = try await makeService(
+            selection: .appleSystem, apple: FakeAppleCleanup(availability: .unavailable(.modelNotReady)),
+            promptOverride: override, diagnostics: diagnostics
+        ).cleanForInsertion("hello") {}
+
+        let text = diagnostics.copyText
+        XCTAssertFalse(text.isEmpty)
+        for secret in ["PROMPT-SENTINEL-INSTRUCTIONS", "PROMPT-SENTINEL-EXAMPLE-INPUT", "PROMPT-SENTINEL-EXAMPLE-OUTPUT"] {
+            XCTAssertFalse(text.contains(secret), "diagnostics leaked the saved prompt")
         }
     }
 

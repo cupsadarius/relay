@@ -18,9 +18,9 @@ final class AppleFoundationCleanupEngine: AppleCleanupEngine {
         SystemLanguageModel.default.supportsLocale(locale)
     }
 
-    func prewarm(instructions: String) {
+    func prewarm(instructions: String, examples: [CleanupExample]) {
         guard case .available = SystemLanguageModel.default.availability else { return }
-        let session = Self.session(instructions: instructions)
+        let session = Self.session(instructions: instructions, examples: examples)
         session.prewarm(promptPrefix: nil)
         prewarmed.withLock { $0 = session }
     }
@@ -30,7 +30,7 @@ final class AppleFoundationCleanupEngine: AppleCleanupEngine {
     }
 
     func respond(_ request: CleanupRequest) async throws -> String {
-        let session = Self.session(instructions: request.instructions)
+        let session = Self.session(instructions: request.instructions, examples: request.examples)
         let options = GenerationOptions(sampling: .greedy, maximumResponseTokens: request.maxOutputTokens)
         do {
             return try await session.respond(to: request.input, options: options).content
@@ -41,13 +41,15 @@ final class AppleFoundationCleanupEngine: AppleCleanupEngine {
         }
     }
 
-    /// A fresh session whose transcript holds the instructions and `CleanupPrompt.examples` as
-    /// prior prompt/response turns — the same turns the MLX backend renders (spec §10).
-    static func session(instructions: String) -> LanguageModelSession {
+    /// A fresh session whose transcript holds `instructions` and `examples` as prior
+    /// prompt/response turns — the same turns the MLX backend renders (spec §10). Both are the
+    /// caller's EFFECTIVE prompt (a saved override, or `CleanupPrompt`'s defaults); this function
+    /// never reads `CleanupPrompt` itself.
+    static func session(instructions: String, examples: [CleanupExample]) -> LanguageModelSession {
         typealias Turns = FoundationModels.Transcript
         func text(_ content: String) -> [Turns.Segment] { [.text(Turns.TextSegment(content: content))] }
         var entries: [Turns.Entry] = [.instructions(Turns.Instructions(segments: text(instructions), toolDefinitions: []))]
-        for example in CleanupPrompt.examples {
+        for example in examples {
             entries.append(.prompt(Turns.Prompt(segments: text(example.input))))
             entries.append(.response(Turns.Response(assetIDs: [], segments: text(example.output))))
         }

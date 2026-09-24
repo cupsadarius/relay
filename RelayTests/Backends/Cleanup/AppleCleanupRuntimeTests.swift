@@ -16,7 +16,7 @@ final class FakeAppleEngine: AppleCleanupEngine {
 
     func availability() -> AppleCleanupAvailability { state.withLock { $0.availability } }
     func supportsLocale(_ locale: Locale) -> Bool { locale.language.languageCode == .english }
-    func prewarm(instructions: String) { state.withLock { $0.prewarms.append(instructions) } }
+    func prewarm(instructions: String, examples: [CleanupExample]) { state.withLock { $0.prewarms.append(instructions) } }
     func releasePrewarm() { state.withLock { $0.releases += 1 } }
     func respond(_ request: CleanupRequest) async throws -> String { try await handler(request) }
 }
@@ -30,7 +30,7 @@ final class AppleCleanupRuntimeTests: XCTestCase {
         let runtime = AppleCleanupRuntime(engine: engine, slot: CleanupGenerationSlot())
         XCTAssertEqual(runtime.availability(), .available)
         XCTAssertTrue(runtime.supportsLocale(Locale(identifier: "en_GB")))
-        runtime.prewarm(instructions: "I")
+        runtime.prewarm(instructions: "I", examples: [])
         XCTAssertEqual(engine.prewarms, ["I"])
         runtime.releasePrewarm()
         XCTAssertEqual(engine.releases, 1)

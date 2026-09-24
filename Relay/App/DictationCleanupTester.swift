@@ -54,6 +54,9 @@ final class DictationCleanupTester {
 
     @ObservationIgnored private let apple: any AppleCleanupBackending
     @ObservationIgnored private let mlx: any MLXCleanupRuntimeServing
+    /// Reads the saved prompt (`nil` means the default), same seam as production (spec §10
+    /// addendum). User-authored text: never logged.
+    @ObservationIgnored private let promptOverride: @Sendable () -> CleanupPromptOverride?
     @ObservationIgnored private let validator: CleanupSafetyValidator
     @ObservationIgnored private let sleep: @Sendable (Duration) async throws -> Void
     @ObservationIgnored private let now: @Sendable () -> ContinuousClock.Instant
@@ -64,6 +67,7 @@ final class DictationCleanupTester {
     init(
         apple: any AppleCleanupBackending,
         mlx: any MLXCleanupRuntimeServing,
+        promptOverride: @escaping @Sendable () -> CleanupPromptOverride? = { nil },
         validator: CleanupSafetyValidator = .init(),
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
         now: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
@@ -71,6 +75,7 @@ final class DictationCleanupTester {
     ) {
         self.apple = apple
         self.mlx = mlx
+        self.promptOverride = promptOverride
         self.validator = validator
         self.sleep = sleep
         self.now = now
@@ -136,9 +141,11 @@ final class DictationCleanupTester {
         let remaining = max(.zero, Self.budget - spent)
         // Same pre-pass as production (spec §10.1); a fallback still shows the original text.
         let prePassed = SelfCorrectionPrePass.apply(to: text)
+        // Same saved prompt as production (spec §10 addendum), never the eval's fixed default.
+        let effective = CleanupPrompt.effective(promptOverride())
         let request = CleanupRequest(
-            modelID: model, instructions: CleanupPrompt.instructions, input: prePassed.text,
-            maxOutputTokens: CleanupPrompt.maxOutputTokens(for: prePassed.text)
+            modelID: model, instructions: effective.instructions, input: prePassed.text,
+            maxOutputTokens: CleanupPrompt.maxOutputTokens(for: prePassed.text), examples: effective.examples
         )
         let apple = apple
         let mlx = mlx

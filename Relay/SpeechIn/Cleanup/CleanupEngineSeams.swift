@@ -35,7 +35,9 @@ enum MLXCleanupRuntimeEvent: Equatable, Sendable {
 protocol AppleCleanupBackending: Sendable {
     func availability() -> AppleCleanupAvailability
     func supportsLocale(_ locale: Locale) -> Bool
-    func prewarm(instructions: String)
+    /// `instructions` and `examples` are the effective prompt for the warmed session (spec §10
+    /// addendum): a saved override, or `CleanupPrompt`'s defaults.
+    func prewarm(instructions: String, examples: [CleanupExample])
     /// Drops the prewarmed session, if any (memory pressure).
     func releasePrewarm()
     /// Throws `CleanupSlotError`, `CleanupEngineError.generation`, or `CancellationError`.

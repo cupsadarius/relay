@@ -4,7 +4,7 @@ import Foundation
 protocol AppleCleanupEngine: Sendable {
     func availability() -> AppleCleanupAvailability
     func supportsLocale(_ locale: Locale) -> Bool
-    func prewarm(instructions: String)
+    func prewarm(instructions: String, examples: [CleanupExample])
     /// Drops the prewarmed session, if any.
     func releasePrewarm()
     /// Throws `CleanupEngineError.generation` or `CancellationError`, never raw FM errors.
@@ -23,7 +23,7 @@ struct AppleCleanupRuntime: AppleCleanupBackending {
 
     func availability() -> AppleCleanupAvailability { engine.availability() }
     func supportsLocale(_ locale: Locale) -> Bool { engine.supportsLocale(locale) }
-    func prewarm(instructions: String) { engine.prewarm(instructions: instructions) }
+    func prewarm(instructions: String, examples: [CleanupExample]) { engine.prewarm(instructions: instructions, examples: examples) }
     func releasePrewarm() { engine.releasePrewarm() }
 
     func generate(_ request: CleanupRequest, priority: CleanupPriority) async throws -> String {

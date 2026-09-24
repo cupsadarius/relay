@@ -11,6 +11,7 @@ final class TranscriptCleanupService: TranscriptCleaning {
     private let selection: CleanupModelSelection
     private let apple: any AppleCleanupBackending
     private let mlx: any MLXCleanupRuntimeServing
+    private let promptOverride: @Sendable () -> CleanupPromptOverride?
     private let validator: CleanupSafetyValidator
     private let productionTimeout: Duration
     private let sleep: @Sendable (Duration) async throws -> Void
@@ -23,6 +24,7 @@ final class TranscriptCleanupService: TranscriptCleaning {
         selection: @escaping CleanupModelSelection,
         apple: any AppleCleanupBackending,
         mlx: any MLXCleanupRuntimeServing,
+        promptOverride: @escaping @Sendable () -> CleanupPromptOverride? = { nil },
         validator: CleanupSafetyValidator = .init(),
         productionTimeout: Duration = .milliseconds(2500),
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
@@ -35,6 +37,7 @@ final class TranscriptCleanupService: TranscriptCleaning {
         self.selection = selection
         self.apple = apple
         self.mlx = mlx
+        self.promptOverride = promptOverride
         self.validator = validator
         self.productionTimeout = productionTimeout
         self.sleep = sleep
@@ -78,11 +81,13 @@ final class TranscriptCleanupService: TranscriptCleaning {
         // The model gets the pre-passed text and is validated against it; every fallback below
         // still returns the original `text` (spec §10.1).
         let prePassed = SelfCorrectionPrePass.apply(to: text)
+        let effective = CleanupPrompt.effective(promptOverride())
         let request = CleanupRequest(
             modelID: id,
-            instructions: CleanupPrompt.instructions,
+            instructions: effective.instructions,
             input: prePassed.text,
-            maxOutputTokens: CleanupPrompt.maxOutputTokens(for: prePassed.text)
+            maxOutputTokens: CleanupPrompt.maxOutputTokens(for: prePassed.text),
+            examples: effective.examples
         )
         let operation: @Sendable () async throws -> String
         if id.isMLX {
@@ -154,7 +159,8 @@ final class TranscriptCleanupService: TranscriptCleaning {
             }
         } else {
             guard case .available = apple.availability(), Self.isEnglish(locale()), apple.supportsLocale(locale()) else { return }
-            apple.prewarm(instructions: CleanupPrompt.instructions)
+            let effective = CleanupPrompt.effective(promptOverride())
+            apple.prewarm(instructions: effective.instructions, examples: effective.examples)
         }
     }
 

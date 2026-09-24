@@ -31,12 +31,18 @@ struct MLXLoadedCleanupModel: LoadedMLXCleanupModel {
         try await generate(request, onFirstChunk: nil)
     }
 
+    /// The chat turns for one request: `request.instructions` and `request.examples` (the
+    /// caller's EFFECTIVE prompt — a saved override, or `CleanupPrompt`'s defaults) rendered as
+    /// prior user/assistant turns, then the real input (spec §10 addendum). Pure and separated out
+    /// so it is testable without a loaded `ModelContainer`.
+    static func chatMessages(for request: CleanupRequest) -> [Chat.Message] {
+        let examples = request.examples.flatMap { [Chat.Message.user($0.input), .assistant($0.output)] }
+        return [.system(request.instructions)] + examples + [.user(request.input)]
+    }
+
     /// `onFirstChunk` exists for spike S3's first-token timing only.
     func generate(_ request: CleanupRequest, onFirstChunk: (@Sendable () -> Void)?) async throws -> String {
-        let examples = CleanupPrompt.examples.flatMap { [Chat.Message.user($0.input), .assistant($0.output)] }
-        let input = try await container.prepare(
-            input: UserInput(chat: [.system(request.instructions)] + examples + [.user(request.input)])
-        )
+        let input = try await container.prepare(input: UserInput(chat: Self.chatMessages(for: request)))
         let parameters = GenerateParameters(
             maxTokens: request.maxOutputTokens,
             temperature: MLXLiveEngine.temperature

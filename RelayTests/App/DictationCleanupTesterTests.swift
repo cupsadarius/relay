@@ -9,11 +9,14 @@ final class DictationCleanupTesterTests: XCTestCase {
     private func makeTester(
         apple: FakeAppleCleanup = FakeAppleCleanup(),
         mlx: FakeMLXRuntime = FakeMLXRuntime(),
+        promptOverride: CleanupPromptOverride? = nil,
         sleeper: TestSleeper = TestSleeper(),
         locale: Locale = Locale(identifier: "en_US")
     ) -> DictationCleanupTester {
         let instant = instant
-        return DictationCleanupTester(apple: apple, mlx: mlx, sleep: sleeper.sleepFunction, now: { instant }, locale: { locale })
+        return DictationCleanupTester(
+            apple: apple, mlx: mlx, promptOverride: { promptOverride }, sleep: sleeper.sleepFunction, now: { instant }, locale: { locale }
+        )
     }
 
     private func finished(_ tester: DictationCleanupTester) async {
@@ -197,6 +200,34 @@ final class DictationCleanupTesterTests: XCTestCase {
         XCTAssertEqual(tester.phase, .cancelledModelRemoved)
         XCTAssertEqual(tester.phase.title, "Cancelled: model removed")
         operation.finish(.success("late"))
+    }
+
+    /// The Test tool reads the same saved prompt production uses (spec §10 addendum), not
+    /// `CleanupPrompt`'s fixed defaults.
+    func testUsesTheSavedPromptOverride() async {
+        let override = CleanupPromptOverride(instructions: "CUSTOM-INSTRUCTIONS", examples: [CleanupExample(input: "hi", output: "Hi.")])
+        let mlx = FakeMLXRuntime()
+        let tester = makeTester(mlx: mlx, promptOverride: override)
+
+        tester.run(model: .qwen3_0_6b)
+        await finished(tester)
+
+        let requests = await mlx.generateRequests
+        XCTAssertEqual(requests.map(\.instructions), ["CUSTOM-INSTRUCTIONS"])
+        XCTAssertEqual(requests.map(\.examples), [override.examples])
+    }
+
+    /// With no saved override, the Test tool uses `CleanupPrompt`'s own defaults.
+    func testUsesTheDefaultPromptWhenThereIsNoOverride() async {
+        let mlx = FakeMLXRuntime()
+        let tester = makeTester(mlx: mlx)
+
+        tester.run(model: .qwen3_0_6b)
+        await finished(tester)
+
+        let requests = await mlx.generateRequests
+        XCTAssertEqual(requests.map(\.instructions), [CleanupPrompt.instructions])
+        XCTAssertEqual(requests.map(\.examples), [CleanupPrompt.examples])
     }
 
     func testASecondRunWhileRunningIsIgnored() async {

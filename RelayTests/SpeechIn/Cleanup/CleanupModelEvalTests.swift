@@ -62,8 +62,13 @@ final class CleanupModelEvalTests: XCTestCase {
     private func evaluate(_ id: CleanupModelID, generate: (CleanupRequest) async throws -> String) async throws {
         let corpus = try CleanupEvalCorpus.load().filter { $0.category != "nonEnglish" }
         let validator = CleanupSafetyValidator()
+        // The live eval always uses the DEFAULT prompt (spec §10 addendum): it is a regression
+        // check against the fixed prompt, never against whatever a user has saved.
         func request(_ input: String) -> CleanupRequest {
-            CleanupRequest(modelID: id, instructions: CleanupPrompt.instructions, input: input, maxOutputTokens: CleanupPrompt.maxOutputTokens(for: input))
+            CleanupRequest(
+                modelID: id, instructions: CleanupPrompt.instructions, input: input,
+                maxOutputTokens: CleanupPrompt.maxOutputTokens(for: input), examples: CleanupPrompt.examples
+            )
         }
 
         _ = try await generate(request("warm up the model")) // exclude the first-call cost from warm latency

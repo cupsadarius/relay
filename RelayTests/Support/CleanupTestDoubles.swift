@@ -149,6 +149,8 @@ final class FakeAppleCleanup: AppleCleanupBackending {
         var availability: AppleCleanupAvailability
         var supportsLocale: Bool
         var prewarmCount = 0
+        var prewarmInstructions: [String] = []
+        var prewarmExamples: [[CleanupExample]] = []
         var releaseCount = 0
         var requests: [CleanupRequest] = []
         var priorities: [CleanupPriority] = []
@@ -167,6 +169,8 @@ final class FakeAppleCleanup: AppleCleanupBackending {
     }
 
     var prewarmCount: Int { state.withLock { $0.prewarmCount } }
+    var prewarmInstructions: [String] { state.withLock { $0.prewarmInstructions } }
+    var prewarmExamples: [[CleanupExample]] { state.withLock { $0.prewarmExamples } }
     var releaseCount: Int { state.withLock { $0.releaseCount } }
     var requests: [CleanupRequest] { state.withLock { $0.requests } }
     var priorities: [CleanupPriority] { state.withLock { $0.priorities } }
@@ -174,7 +178,13 @@ final class FakeAppleCleanup: AppleCleanupBackending {
 
     func availability() -> AppleCleanupAvailability { state.withLock { $0.availability } }
     func supportsLocale(_ locale: Locale) -> Bool { state.withLock { $0.supportsLocale } }
-    func prewarm(instructions: String) { state.withLock { $0.prewarmCount += 1 } }
+    func prewarm(instructions: String, examples: [CleanupExample]) {
+        state.withLock {
+            $0.prewarmCount += 1
+            $0.prewarmInstructions.append(instructions)
+            $0.prewarmExamples.append(examples)
+        }
+    }
     func releasePrewarm() { state.withLock { $0.releaseCount += 1 } }
 
     func generate(_ request: CleanupRequest, priority: CleanupPriority) async throws -> String {
