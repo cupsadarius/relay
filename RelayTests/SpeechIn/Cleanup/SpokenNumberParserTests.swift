@@ -65,6 +65,30 @@ final class SpokenNumberParserTests: XCTestCase {
         XCTAssertEqual(all.first?.canonicalDigits, "3")
     }
 
+    /// Review fix 1: million, billion and dozen, with correct accumulation; "a hundred"/"a
+    /// thousand" mean 100/1000; and a bare magnitude word is still a spoken-number literal.
+    func testMillionBillionAndDozen() {
+        XCTAssertEqual(digits("five million"), ["5000000"])
+        XCTAssertEqual(digits("five billion"), ["5000000000"])
+        XCTAssertEqual(digits("two dozen"), ["24"])
+    }
+
+    func testAOrAnBeforeAMagnitudeWordMeansOne() {
+        XCTAssertEqual(digits("a hundred"), ["100"])
+        XCTAssertEqual(digits("a thousand"), ["1000"])
+        XCTAssertEqual(digits("a dozen"), ["12"])
+        // "a" on its own, not before a magnitude word, is never a number.
+        XCTAssertEqual(digits("wait a second"), [])
+    }
+
+    func testBareMagnitudeWordIsStillAProtectedLiteral() {
+        XCTAssertEqual(digits("hundred"), ["100"])
+        XCTAssertEqual(digits("thousand"), ["1000"])
+        XCTAssertEqual(digits("million"), ["1000000"])
+        XCTAssertEqual(digits("billion"), ["1000000000"])
+        XCTAssertEqual(digits("dozen"), ["12"])
+    }
+
     func testWordSequenceAndContiguousMatch() {
         let words = SpokenNumberParser.wordSequence(of: "Port Twenty-five, ok")
         XCTAssertEqual(words, ["port", "twenty", "five", "ok"])

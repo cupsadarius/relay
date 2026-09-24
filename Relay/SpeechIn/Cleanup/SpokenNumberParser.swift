@@ -13,8 +13,13 @@ struct SpokenNumber: Equatable, Sendable {
 /// punctuation between words; a unit right after a unit starts a new run ("one two" → 1, 2).
 enum SpokenNumberParser {
     private enum Category: Equatable {
-        case zero, unit, teen, tens, hundred, thousand, and, point
+        case zero, unit, teen, tens, hundred, thousand, million, billion, dozen, and, point
     }
+
+    /// Magnitude words: an explicit "a"/"an" before one, or none at all (a bare magnitude word),
+    /// both mean "one" (review fix 1: "a hundred" = 100, "a thousand" = 1000, and a standalone
+    /// "hundred"/"thousand"/"million"/"billion"/"dozen" is still a protected literal).
+    private static let magnitudeCategories: Set<Category> = [.hundred, .thousand, .million, .billion, .dozen]
 
     private struct Word {
         let text: String
@@ -63,6 +68,9 @@ enum SpokenNumberParser {
         case "zero": return .zero
         case "hundred": return .hundred
         case "thousand": return .thousand
+        case "million": return .million
+        case "billion": return .billion
+        case "dozen": return .dozen
         case "and": return .and
         case "point": return .point
         default:
@@ -111,20 +119,37 @@ enum SpokenNumberParser {
         while index < tokens.count {
             if index > start, !adjacent(tokens[index - 1], tokens[index], in: text) { break }
             let word = tokens[index].text
-            guard let category = Self.category(of: word) else { break }
+            let category: Category
+            var unitOverride: Int?
+            // "a"/"an" right before a magnitude word means "one" ("a hundred" = 100); it is not a
+            // number word on its own (review fix 1).
+            if word == "a" || word == "an", let following = nextCategory(after: index, in: tokens, text: text),
+                magnitudeCategories.contains(following)
+            {
+                category = .unit
+                unitOverride = 1
+            } else if let resolved = Self.category(of: word) {
+                category = resolved
+            } else {
+                break
+            }
             let next = nextCategory(after: index, in: tokens, text: text)
             let accepted: Bool
             switch category {
             case .zero:
                 accepted = last == nil
             case .unit:
-                accepted = last == nil || last == .tens || last == .hundred || last == .thousand || last == .and
+                accepted =
+                    last == nil || last == .tens || last == .hundred || last == .thousand || last == .million || last == .billion
+                    || last == .and
             case .teen, .tens:
-                accepted = last == nil || last == .hundred || last == .thousand || last == .and
+                accepted = last == nil || last == .hundred || last == .thousand || last == .million || last == .billion || last == .and
             case .hundred:
-                accepted = last == .unit && (1...9).contains(current)
-            case .thousand:
-                accepted = total == 0 && current > 0 && (last.map { [.unit, .teen, .tens, .hundred].contains($0) } ?? false)
+                accepted = last == nil || (last == .unit && (1...9).contains(current))
+            case .dozen:
+                accepted = last == nil || (last == .unit && (1...99).contains(current))
+            case .thousand, .million, .billion:
+                accepted = total == 0 && (last == nil || (current > 0 && [.unit, .teen, .tens, .hundred].contains(last!)))
             case .and:
                 accepted = (last == .hundred || last == .thousand) && (next.map { [.unit, .teen, .tens].contains($0) } ?? false)
             case .point:
@@ -137,11 +162,19 @@ enum SpokenNumberParser {
             case .zero, .and:
                 break
             case .unit, .teen, .tens:
-                current += values[word] ?? 0
+                current += unitOverride ?? values[word] ?? 0
             case .hundred:
-                current *= 100
+                current = (last == nil ? 1 : current) * 100
+            case .dozen:
+                current = (last == nil ? 1 : current) * 12
             case .thousand:
-                total = current * 1_000
+                total = (last == nil ? 1 : current) * 1_000
+                current = 0
+            case .million:
+                total = (last == nil ? 1 : current) * 1_000_000
+                current = 0
+            case .billion:
+                total = (last == nil ? 1 : current) * 1_000_000_000
                 current = 0
             case .point:
                 while index < tokens.count, adjacent(tokens[index - 1], tokens[index], in: text),

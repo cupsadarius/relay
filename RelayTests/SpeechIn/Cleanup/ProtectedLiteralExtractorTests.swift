@@ -50,6 +50,15 @@ final class ProtectedLiteralExtractorTests: XCTestCase {
         XCTAssertEqual(literals("set 3 workers at 50% and 1,000 rows"), ["number:3", "number:50%", "number:1,000"])
     }
 
+    /// Review fix 1: sign, currency and magnitude are part of the literal, so "-5" and "5" (and
+    /// "5 million" and "5 billion") are different literals.
+    func testSignCurrencyAndMagnitudeAreProtected() {
+        XCTAssertEqual(literals("set it to -5 now"), ["number:-5"])
+        XCTAssertEqual(literals("set it to 5 now"), ["number:5"])
+        XCTAssertEqual(literals("raise it to 5 million"), ["number:5 million"])
+        XCTAssertEqual(literals("pay $5 or £10"), ["number:$5", "number:£10"])
+    }
+
     func testIdentifiers() {
         XCTAssertEqual(
             literals("userService calls AuthService.refresh via user_id and h264"),

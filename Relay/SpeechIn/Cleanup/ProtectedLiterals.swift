@@ -50,7 +50,9 @@ enum ProtectedLiteralExtractor {
         rule(.flag, #"(?<![\w-])--[A-Za-z0-9][\w-]*(?:=\S+)?|(?<!\S)-[A-Za-z]{1,3}(?![\w-])"#),
         rule(.version, #"(?<![\w.])v?\d+(?:\.\d+){1,3}(?:[-+][0-9A-Za-z.]+)?(?!\w)"#),
         rule(.hex, #"\b0x[0-9A-Fa-f]+\b|\b[0-9a-f]{7,40}\b"#, accepts: { isHex($0) }),
-        rule(.number, #"(?<![\w.])\d+(?:[.,]\d+)*%?(?!\w)"#),
+        // Sign, currency and magnitude are part of the literal: "-5" and "5" are different
+        // numbers, and "5 million" is a different literal from "5 billion" (review fix 1).
+        rule(.number, #"(?<![\w.])[-−+$€£]?\d+(?:[.,]\d+)*%?(?:\s+(?:hundred|thousand|million|billion|trillion|k|m|bn)\b)?(?!\w)"#),
         rule(.identifier, #"\b\w+(?:\.\w+)+\b|\b\w*_\w+\b|\b[A-Za-z0-9]*[a-z][A-Z]\w*\b|\b(?=\w*[A-Za-z])(?=\w*\d)\w+\b"#),
     ]
 
