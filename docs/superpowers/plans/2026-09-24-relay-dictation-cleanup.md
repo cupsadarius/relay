@@ -51,7 +51,7 @@ Record every spike result here, in this file, in the same commit as the spike's 
 
 - **S1 (tokenizer parity, Task 1):** **PASS → ArgmaxCore bridge.** 0/30 encode mismatches, 0/30 decode mismatches, `<|im_end|>` = 151645, offline load confirmed (Wi-Fi off). See `docs/superpowers/spikes/2026-09-24-dictation-cleanup-spike-results.md`.
 - **S3 (MLX timing, Task 3):** **Decision A** (keep both models, 2.5 s budget, 10-minute idle unload). M4 Max, macOS 27.0: 0.6B load 1525 ms, warm total p50/p95 190/330 ms; 1.7B load 1575 ms, warm total p50/p95 182/382 ms. 0.6B cold load ≪ 8 s, so `DictationCleanupTester.budgetIncludesLoad = true`. See `docs/superpowers/spikes/2026-09-24-dictation-cleanup-spike-results.md`.
-- **S2 (FoundationModels background rate limiting, Task 4, manual):** _pending_. Record the paced and burst `rateLimited` rates per macOS version and the decision (`ship` / `note` / `hide`). Task 23 applies it.
+- **S2 (FoundationModels background rate limiting, Task 4, manual):** **Decision: ship.** macOS 27.0 (26A428), human run 2026-09-24, Relay Debug in the background with Terminal in front: paced 50/50 ok (0 rateLimited), burst 20/20 ok (0 rateLimited). Only macOS 27 was tested; no macOS 26.x machine was available. `AppleFoundationCleanupModelManager.isOfferedInV1 = true`, no background note. See `docs/superpowers/spikes/2026-09-24-dictation-cleanup-spike-results.md`.
 
 Decisions this plan makes where the spec leaves a detail open (each is also stated at its task):
 

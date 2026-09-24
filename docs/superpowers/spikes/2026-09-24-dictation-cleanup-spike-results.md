@@ -32,4 +32,12 @@ Run 1 (shader warmup run, for reference): 0.6B load_ms=1513 cold_generation_ms=2
 
 ## S2: FoundationModels background rate limiting
 
-(Task 4)
+- Date / machine: 2026-09-24, human run. macOS 27.0, build 26A428. Relay Debug (spike harness) running in the background with Terminal in front (TextEdit was the frontmost app during the run, per the harness's Step 3 instructions).
+- Only macOS 27 was tested; no macOS 26.x machine was available for this run.
+
+| OS | paced rateLimited/50 | burst rateLimited/20 | other errors |
+|---|---|---|---|
+| macOS 27.0 (26A428) | 0/50 | 0/20 | none reported |
+
+- **Decision: ship.** Zero `rateLimited` in both the paced run (50/50 ok) and the burst run (20/20 ok), meeting the `ship` bar (zero paced, ≤5% burst). `AppleFoundationCleanupModelManager.isOfferedInV1 = true`; no "may be skipped in the background" row note is added (Task 23 applies this).
+- Caveat: only macOS 27 was exercised. macOS 26.x background rate limiting for FoundationModels remains unverified; if a macOS 26.x-specific regression surfaces post-ship, re-run this spike on that OS.
