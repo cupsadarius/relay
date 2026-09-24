@@ -56,5 +56,8 @@
   {"id": "invented-07", "category": "inventedLiteral", "input": "port 3 and timeout 4", "reference": "Port 3 and timeout 4.", "acceptable": ["Port 3 and timeout 4."], "mustReject": [{"output": "Port 4 and timeout 3.", "reason": "literalMissing"}]},
   {"id": "paths-02", "category": "paths", "input": "checkout origin/main", "reference": "Checkout origin/main.", "acceptable": ["Checkout origin/main."], "mustReject": [{"output": "Checkout origin/dev.", "reason": "literalInvented"}]},
   {"id": "identifiers-02", "category": "identifiers", "input": "userService crashed", "reference": "UserService crashed.", "acceptable": ["UserService crashed.", "userService crashed."], "mustReject": [{"output": "UserSERVICE crashed.", "reason": "literalInvented"}]},
+  {"id": "spoken-05", "category": "spokenNumber", "input": "one-time setup", "reference": "One-time setup.", "acceptable": ["One-time setup.", "Two-time setup."], "mustReject": []},
+  {"id": "spoken-06", "category": "spokenNumber", "input": "twenty twenty-five", "reference": "Twenty twenty-five.", "acceptable": ["Twenty twenty-five."], "mustReject": [{"output": "2025.", "reason": "literalInvented"}]},
+  {"id": "spoken-07", "category": "spokenNumber", "input": "nineteen hundred", "reference": "Nineteen hundred.", "acceptable": ["Nineteen hundred."], "mustReject": [{"output": "1900.", "reason": "literalInvented"}]},
   {"id": "nonEnglish-01", "category": "nonEnglish", "locale": "fr_FR", "input": "euh on d\u00e9ploie vendredi", "reference": "euh on d\u00e9ploie vendredi", "acceptable": [], "mustReject": []}
 ]
