@@ -30,6 +30,12 @@ struct AppSettings: Codable, Equatable, Sendable {
     /// AppSettings'.
     var selectedSpeechModelByBackend: [String: String]
 
+    /// Whether the final dictation transcript goes through local cleanup. Off by default.
+    var dictationCleanupEnabled: Bool
+    /// The one global cleanup model (`CleanupModelID.rawValue`), or `nil`. Kept as a string, so a
+    /// stale id survives a round trip; it resolves to "no selection" at read time.
+    var selectedCleanupModelID: String?
+
     /// The current on-disk schema version. Bump this (and add an explicit transform to
     /// `init(from:)`) only when a future change needs more than per-field fallback defaults,
     /// e.g. renaming or reshaping a field.
@@ -56,6 +62,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         case ttsRate, autoReadEnabled, activityOverlayStyle, voiceByBackend
         case liveTranscriptionEnabled
         case selectedSpeechModelByBackend
+        case dictationCleanupEnabled, selectedCleanupModelID
     }
 
     /// Keys only schema < 2 wrote; read during migration, never encoded.
@@ -101,6 +108,8 @@ struct AppSettings: Codable, Equatable, Sendable {
             .selectedSpeechModelByBackend,
             default: fallback.selectedSpeechModelByBackend
         )
+        dictationCleanupEnabled = field(.dictationCleanupEnabled, default: fallback.dictationCleanupEnabled)
+        selectedCleanupModelID = field(.selectedCleanupModelID, default: fallback.selectedCleanupModelID)
 
         // Normalize AFTER every field has its per-field fallback value: drop unknown/duplicate
         // backend ids (keeping the first occurrence of each known id, in order) and clamp the
@@ -233,6 +242,8 @@ struct AppSettings: Codable, Equatable, Sendable {
         voiceByBackend: [String: String] = [:],
         liveTranscriptionEnabled: Bool = false,
         selectedSpeechModelByBackend: [String: String] = [:],
+        dictationCleanupEnabled: Bool = false,
+        selectedCleanupModelID: String? = nil,
         schemaVersion: Int = AppSettings.currentSchemaVersion
     ) {
         self.schemaVersion = schemaVersion
@@ -246,6 +257,8 @@ struct AppSettings: Codable, Equatable, Sendable {
         self.voiceByBackend = voiceByBackend
         self.liveTranscriptionEnabled = liveTranscriptionEnabled
         self.selectedSpeechModelByBackend = selectedSpeechModelByBackend
+        self.dictationCleanupEnabled = dictationCleanupEnabled
+        self.selectedCleanupModelID = selectedCleanupModelID
     }
 
     static let defaults = AppSettings(

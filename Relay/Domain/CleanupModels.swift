@@ -45,3 +45,10 @@ enum ValidationRejection: String, CaseIterable, Codable, Equatable, Sendable {
         }
     }
 }
+
+/// Synchronous, actor-agnostic read of the one global cleanup selection. A stale or unknown
+/// stored id reads as `nil`.
+typealias CleanupModelSelection = @Sendable () -> CleanupModelID?
+
+/// Write half; persists through `SettingsController` (mirrors `WhisperModelSelectionWriter`).
+typealias CleanupModelSelectionWriter = @MainActor @Sendable (CleanupModelID?) -> Void

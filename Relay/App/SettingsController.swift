@@ -102,6 +102,9 @@ final class SettingsController {
         update { $0.selectedSpeechModelByBackend[backendID] = modelID }
     }
 
+    func setDictationCleanupEnabled(_ enabled: Bool) { update { $0.dictationCleanupEnabled = enabled } }
+    func setSelectedCleanupModel(_ id: CleanupModelID?) { update { $0.selectedCleanupModelID = id?.rawValue } }
+
     /// No-op when unchanged, so re-toggling the same control doesn't spam the status line.
     func setAutoReadEnabled(_ enabled: Bool) {
         guard enabled != current.autoReadEnabled else { return }
@@ -148,6 +151,23 @@ final class SettingsController {
         { [weak self] modelID in
             self?.setSelectedSpeechModel(backendID: BackendID.whisper.rawValue, modelID: modelID?.rawValue)
         }
+    }
+
+    // MARK: Dictation cleanup seam
+
+    /// Synchronous, actor-agnostic read of the cleanup selection. Stale ids read as `nil`.
+    var cleanupSelection: CleanupModelSelection {
+        let snapshot = snapshot
+        return { snapshot.value.selectedCleanupModelID.flatMap(CleanupModelID.init(rawValue:)) }
+    }
+
+    var cleanupSelectionWriter: CleanupModelSelectionWriter {
+        { [weak self] in self?.setSelectedCleanupModel($0) }
+    }
+
+    var cleanupEnabled: @Sendable () -> Bool {
+        let snapshot = snapshot
+        return { snapshot.value.dictationCleanupEnabled }
     }
 
     // MARK: Private

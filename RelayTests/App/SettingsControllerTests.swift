@@ -220,6 +220,42 @@ final class SettingsControllerTests: XCTestCase {
 
         XCTAssertEqual(options, TTSOptions(voiceIdentifier: "com.apple.voice.x", rate: 0.7, kokoroVoice: "am_adam", pocketVoice: "alba"))
     }
+
+    func testCleanupSettersPersist() {
+        let store = SpySettingsStore()
+        let controller = makeController(store: store)
+
+        controller.setDictationCleanupEnabled(true)
+        controller.setSelectedCleanupModel(.qwen3_0_6b)
+
+        XCTAssertEqual(store.saved.last?.dictationCleanupEnabled, true)
+        XCTAssertEqual(store.saved.last?.selectedCleanupModelID, "mlx.qwen3-0.6b-4bit")
+
+        controller.setSelectedCleanupModel(nil)
+        XCTAssertNil(store.saved.last?.selectedCleanupModelID)
+    }
+
+    func testCleanupSelectionResolvesStaleIDsToNil() {
+        var saved = AppSettings.defaults
+        saved.selectedCleanupModelID = "mlx.retired-model"
+        let controller = makeController(store: SpySettingsStore(settings: saved))
+
+        XCTAssertNil(controller.cleanupSelection())
+        XCTAssertEqual(controller.current.selectedCleanupModelID, "mlx.retired-model", "the stored string is left alone")
+
+        controller.cleanupSelectionWriter(.appleSystem)
+        XCTAssertEqual(controller.cleanupSelection(), .appleSystem)
+    }
+
+    func testCleanupEnabledIsReadableOffTheMainActor() async {
+        let controller = makeController()
+        controller.setDictationCleanupEnabled(true)
+        let read = controller.cleanupEnabled
+
+        let value = await Task.detached { read() }.value
+
+        XCTAssertTrue(value)
+    }
 }
 
 /// Collects `onHotkeysChanged` calls. A class, so the escaping `@MainActor` closure mutates a

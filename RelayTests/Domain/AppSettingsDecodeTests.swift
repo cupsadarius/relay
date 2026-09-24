@@ -319,4 +319,51 @@ final class AppSettingsDecodeTests: XCTestCase {
 
         XCTAssertEqual(decoded.hotkeys, [:])
     }
+
+    func testMissingCleanupKeysDecodeToDefaults() throws {
+        let encoded = try JSONEncoder().encode(AppSettings.defaults)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "dictationCleanupEnabled")
+        object.removeValue(forKey: "selectedCleanupModelID")
+
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
+
+        XCTAssertFalse(decoded.dictationCleanupEnabled)
+        XCTAssertNil(decoded.selectedCleanupModelID)
+        XCTAssertEqual(decoded.schemaVersion, 2)
+    }
+
+    func testWrongTypedCleanupKeyFallsBackWithoutResettingOthers() throws {
+        var saved = AppSettings.defaults
+        saved.ttsRate = 0.8
+        saved.selectedCleanupModelID = CleanupModelID.qwen3_0_6b.rawValue
+        let encoded = try JSONEncoder().encode(saved)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object["dictationCleanupEnabled"] = "yes"
+
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
+
+        XCTAssertFalse(decoded.dictationCleanupEnabled)
+        XCTAssertEqual(decoded.ttsRate, 0.8, accuracy: 0.0001)
+        XCTAssertEqual(decoded.selectedCleanupModelID, "mlx.qwen3-0.6b-4bit")
+    }
+
+    func testCleanupFieldsRoundTrip() throws {
+        var saved = AppSettings.defaults
+        saved.dictationCleanupEnabled = true
+        saved.selectedCleanupModelID = CleanupModelID.qwen3_1_7b.rawValue
+
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(saved))
+
+        XCTAssertEqual(decoded, saved)
+    }
+
+    func testStaleCleanupModelIDIsKeptAsAString() throws {
+        var saved = AppSettings.defaults
+        saved.selectedCleanupModelID = "mlx.retired-model"
+
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(saved))
+
+        XCTAssertEqual(decoded.selectedCleanupModelID, "mlx.retired-model")
+    }
 }
