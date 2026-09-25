@@ -147,10 +147,11 @@ struct CleanupSafetyValidator: Sendable {
         if corrections.pairs.isEmpty, inputLiterals.map(sequenceKey) != outputLiterals.map(sequenceKey) {
             return .reject(.literalMissing)
         }
-        // Spec §11.4: for an ambiguous pair (detected, but not exempting) whose two values are both
-        // kept, the cue word between them must be kept too. Dropping it changes the meaning:
-        // "out of 10, no 2 people agree" → "Out of 10, 2 people agree."
-        for pair in detected.pairs where !corrections.pairs.contains(pair) {
+        // Spec §11.4: for any detected pair, accepted or ambiguous, whose two values are both kept,
+        // the cue word between them must be kept too. Dropping it changes the meaning:
+        // "out of 10, no 2 people agree" → "Out of 10, 2 people agree.", and an accepted chain
+        // "3, no, 4, no wait, 5 workers" → "3, 4, 5 workers." keeps old values the cue retracted.
+        for pair in detected.pairs {
             guard let cue = SelfCorrectionDetector.cueWord(of: pair, literals: inputLiterals, in: input),
                 let oldIndex = outputLiterals.firstIndex(where: { sequenceKey($0) == sequenceKey(inputLiterals[pair.old]) }),
                 let newIndex = outputLiterals[(oldIndex + 1)...].firstIndex(where: { sequenceKey($0) == sequenceKey(inputLiterals[pair.new]) })

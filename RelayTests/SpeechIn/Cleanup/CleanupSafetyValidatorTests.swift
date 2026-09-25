@@ -358,6 +358,15 @@ final class CleanupSafetyValidatorTests: XCTestCase {
         }
     }
 
+    /// Spec §11.4: an accepted chain may not keep an old value without its cue.
+    func testAnAcceptedChainMustDropItsOldValues() {
+        XCTAssertEqual(verdict("3, no, 4, no wait, 5 workers", "3, 4, 5 workers."), .reject(.literalMissing))
+        XCTAssertEqual(verdict("3, no, 4, no wait, 5 workers", "4, 5 workers."), .reject(.literalMissing))
+        XCTAssertEqual(verdict("3, no, 4, no wait, 5 workers", "3, no, 4, no wait, 5 workers."), .accept("3, no, 4, no wait, 5 workers."))
+        XCTAssertEqual(verdict("3, no, 4, no wait, 5 workers", "5 workers."), .accept("5 workers."))
+        XCTAssertEqual(verdict("set 3 no 4 workers and 3 queues", "Set 4 workers and 3 queues."), .accept("Set 4 workers and 3 queues."))
+    }
+
     /// The cue of an accepted correction may go with it.
     func testTheCueOfAnAcceptedCorrectionMayBeDropped() {
         let cases: [(String, String)] = [
