@@ -116,22 +116,9 @@ enum PhraseCorrection {
     }
 
     static func apply(to text: String) -> (text: String, phrases: [PhraseRewrite]) {
-        let tokens = tokenize(text)
-        let literalRanges = ProtectedLiteralExtractor.extractAll(from: text).map(\.range)
-        var removals: [Range<String.Index>] = []
-        var phrases: [PhraseRewrite] = []
-        var index = 1
-        while index < tokens.count {
-            if let match = match(at: index, in: tokens, text: text, literalRanges: literalRanges),
-                removals.last.map({ $0.upperBound <= match.removal.lowerBound }) ?? true
-            {
-                removals.append(match.removal)
-                phrases.append(match.phrase)
-                index = match.resumeIndex
-            } else {
-                index += 1
-            }
-        }
+        let found = matches(in: text)
+        let removals = found.map(\.removal)
+        let phrases = found.map(\.phrase)
         guard !removals.isEmpty else { return (text, []) }
         var result = ""
         var kept = text.startIndex
@@ -143,10 +130,35 @@ enum PhraseCorrection {
         return (result, phrases)
     }
 
+    /// The cue span of every phrase correction `apply(to:)` would make in `text`.
+    static func cueRanges(in text: String) -> [Range<String.Index>] {
+        matches(in: text).map(\.cue)
+    }
+
+    private typealias Match = (removal: Range<String.Index>, cue: Range<String.Index>, phrase: PhraseRewrite, resumeIndex: Int)
+
+    private static func matches(in text: String) -> [Match] {
+        let tokens = tokenize(text)
+        let literalRanges = ProtectedLiteralExtractor.extractAll(from: text).map(\.range)
+        var found: [Match] = []
+        var index = 1
+        while index < tokens.count {
+            if let match = match(at: index, in: tokens, text: text, literalRanges: literalRanges),
+                found.last.map({ $0.removal.upperBound <= match.removal.lowerBound }) ?? true
+            {
+                found.append(match)
+                index = match.resumeIndex
+            } else {
+                index += 1
+            }
+        }
+        return found
+    }
+
     /// A phrase correction whose cue starts at `cueStart`.
     private static func match(
         at cueStart: Int, in tokens: [Token], text: String, literalRanges: [Range<String.Index>]
-    ) -> (removal: Range<String.Index>, phrase: PhraseRewrite, resumeIndex: Int)? {
+    ) -> Match? {
         guard
             let cue = cues.first(where: { cue in
                 cueStart + cue.count <= tokens.count && zip(cue, tokens[cueStart...]).allSatisfy { $0 == $1.core }
@@ -200,7 +212,10 @@ enum PhraseCorrection {
         let oldDeterminer = oldStart > 0 ? tokens[oldStart - 1] : nil
         let keepNewDeterminer = newDeterminer != nil && oldDeterminer?.core != newDeterminer?.core
         let end = keepNewDeterminer ? tokens[newStart - 1].range.lowerBound : tokens[newStart].range.lowerBound
-        return (tokens[oldStart].range.lowerBound..<end, PhraseRewrite(old: oldPhrase, new: newPhrase), newStart + modifierCount + 1)
+        return (
+            tokens[oldStart].range.lowerBound..<end, tokens[cueStart].range.lowerBound..<tokens[cueEnd].range.upperBound,
+            PhraseRewrite(old: oldPhrase, new: newPhrase), newStart + modifierCount + 1
+        )
     }
 
     private static func isHead(_ token: Token) -> Bool {

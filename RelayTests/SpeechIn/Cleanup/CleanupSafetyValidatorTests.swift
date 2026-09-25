@@ -303,6 +303,38 @@ final class CleanupSafetyValidatorTests: XCTestCase {
         }
     }
 
+    /// A cue word that forms no accepted correction is content (spec §11.8): dropping it changes
+    /// the meaning ("the no wait list", "no changes needed").
+    func testACueWordThatFormsNoCorrectionIsContent() {
+        let cases: [(String, String)] = [
+            ("put me on the no wait list", "Put me on the list."),
+            ("bump to 2.0 no changes needed", "Bump to 2.0 changes needed."),
+            ("wait for build 42 to finish", "For build 42 to finish."),
+            ("it actually works on port 8080", "It works on port 8080."),
+            ("sorry about the 2 failing tests", "About the 2 failing tests."),
+            // A word-level correction with a bare cue is not one the pre-pass or the exemption
+            // accepts, so it falls back rather than trusting the model.
+            ("press the red button no the blue button", "Press the blue button."),
+        ]
+        for (input, output) in cases {
+            XCTAssertEqual(verdict(input, output), .reject(.contentDropped), input)
+        }
+    }
+
+    /// The cue of an accepted correction may go with it.
+    func testTheCueOfAnAcceptedCorrectionMayBeDropped() {
+        let cases: [(String, String)] = [
+            ("use node 18 wait 20 for the build", "Use Node 20 for the build."),
+            ("run it with 4 threads actually 8 threads", "Run it with 8 threads."),
+            ("3, no, 4, no wait, 5 workers", "5 workers."),
+            ("allocate 16 no 32 gigabytes", "Allocate 32 gigabytes."),
+            ("put me on the no wait list", "Put me on the no wait list."),
+        ]
+        for (input, output) in cases {
+            XCTAssertEqual(verdict(input, output), .accept(output), input)
+        }
+    }
+
     func testContentCoverageAllowsNormalCleanup() {
         let cases: [(String, String)] = [
             ("uh so I think we should um ship it on friday", "So I think we should ship it on Friday."),
@@ -317,7 +349,6 @@ final class CleanupSafetyValidatorTests: XCTestCase {
             ("fix the tests", "Fix the test."),
             ("fix the box", "Fix the boxes."), // trailing es
             ("retry three times", "Retry 3 times."), // spoken numbers are literals, checked elsewhere
-            ("press the red button no the blue button", "Press the blue button."), // cue-flagged old words
             ("uh change the user service no wait the auth service", "Change the auth service."),
         ]
         for (input, output) in cases {

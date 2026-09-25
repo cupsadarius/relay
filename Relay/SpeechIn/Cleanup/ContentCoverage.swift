@@ -10,16 +10,22 @@ enum ContentCoverage {
     ]
     /// "please" is a courtesy word a cleanup may drop ("set the title to \"Weekly Sync\" please").
     static let fillers: Set<String> = ["uh", "um", "er", "like", "please"]
-    static let cueWords: Set<String> = Set(SelfCorrectionDetector.cues.joined())
-    /// How many words before a cue count as the old side of a correction the model may drop.
+    /// How many words before an accepted correction's cue count as its old side, which a model
+    /// that applies the correction drops.
     static let cueOldSideWords = 3
+    /// Stands in for an accepted correction's cue span (private-use character, never dictated).
+    private static let cueMarker = "\u{E000}"
 
     /// The first content word of `input` missing from `output`, or `nil` when all survive.
+    /// `correctionCues` are the input spans between the two values of each correction the validator
+    /// exemption accepts (spec §11.4); only those cue words may be dropped. Every other cue word
+    /// ("the no wait list", "no changes needed") is content.
     static func droppedWord(
-        input: String, inputLiterals: [ProtectedLiteral], output: String, outputLiterals: [ProtectedLiteral]
+        input: String, inputLiterals: [ProtectedLiteral], correctionCues: [Range<String.Index>] = [], output: String,
+        outputLiterals: [ProtectedLiteral]
     ) -> String? {
-        let outputWords = Set(sentences(of: output, removing: outputLiterals).joined())
-        for sentence in sentences(of: input, removing: inputLiterals) {
+        let outputWords = Set(sentences(of: output, blanking: outputLiterals.map(\.range), marking: []).joined())
+        for sentence in sentences(of: input, blanking: inputLiterals.map(\.range), marking: correctionCues) {
             var exempt = Set<Int>()
             let words = sentence
             // Leading "so" is a filler; so is "you know".
@@ -27,11 +33,9 @@ enum ContentCoverage {
             for index in words.indices where index + 1 < words.count && words[index] == "you" && words[index + 1] == "know" {
                 exempt.formUnion([index, index + 1])
             }
-            // The old side of any correction cue may be dropped by a model that applied it.
-            for cue in SelfCorrectionDetector.cues {
-                for start in words.indices where start + cue.count <= words.count && Array(words[start..<start + cue.count]) == cue {
-                    exempt.formUnion(max(0, start - cueOldSideWords)..<start)
-                }
+            // An accepted correction's cue, and the words just before it, may be dropped.
+            for index in words.indices where words[index] == cueMarker {
+                exempt.formUnion(max(0, index - cueOldSideWords)...index)
             }
             for (index, word) in words.enumerated() where !exempt.contains(index) && isContent(word) {
                 if !covers(outputWords, word) { return word }
@@ -41,7 +45,7 @@ enum ContentCoverage {
     }
 
     private static func isContent(_ word: String) -> Bool {
-        !functionWords.contains(word) && !fillers.contains(word) && !cueWords.contains(word)
+        !functionWords.contains(word) && !fillers.contains(word)
     }
 
     private static func covers(_ words: Set<String>, _ word: String) -> Bool {
@@ -52,19 +56,22 @@ enum ContentCoverage {
     }
 
     /// Lowercased, contraction-expanded words per sentence (split at `.`, `!`, `?`), with the
-    /// literal ranges blanked out.
-    private static func sentences(of text: String, removing literals: [ProtectedLiteral]) -> [[String]] {
+    /// `blanking` ranges removed and each `marking` range replaced by one `cueMarker` word.
+    private static func sentences(
+        of text: String, blanking: [Range<String.Index>], marking: [Range<String.Index>]
+    ) -> [[String]] {
+        let spans = (blanking.map { ($0, " ") } + marking.map { ($0, " \(cueMarker) ") }).sorted { $0.0.lowerBound < $1.0.lowerBound }
         var blanked = ""
         var position = text.startIndex
-        for literal in literals.sorted(by: { $0.range.lowerBound < $1.range.lowerBound }) where literal.range.lowerBound >= position {
-            blanked += text[position..<literal.range.lowerBound]
-            blanked += " "
-            position = literal.range.upperBound
+        for (range, replacement) in spans where range.lowerBound >= position {
+            blanked += text[position..<range.lowerBound]
+            blanked += replacement
+            position = range.upperBound
         }
         blanked += text[position...]
         let lowered = blanked.lowercased().replacingOccurrences(of: "’", with: "'")
         return lowered.split(whereSeparator: { ".!?".contains($0) }).map { sentence in
-            sentence.split(whereSeparator: { !($0.isLetter || $0.isNumber || $0 == "'") })
+            sentence.split(whereSeparator: { !($0.isLetter || $0.isNumber || $0 == "'" || String($0) == cueMarker) })
                 .flatMap { expand(String($0).trimmingCharacters(in: CharacterSet(charactersIn: "'"))) }
         }
     }

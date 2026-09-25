@@ -30,8 +30,17 @@ struct CleanupSafetyValidator: Sendable {
         guard case .accept = finalVerdict else { return finalVerdict }
         // Spec §11.8: every content word of the input must survive. Last, so a reverted rewrite
         // or a missing literal keeps its more specific reason.
+        let inputLiterals = ProtectedLiteralExtractor.extractAll(from: input)
+        let accepted = SelfCorrectionDetector.exemptingPairs(
+            of: SelfCorrectionDetector.analyze(input, literals: inputLiterals), literals: inputLiterals, in: input)
+        let correctionCues =
+            accepted.pairs.compactMap { pair -> Range<String.Index>? in
+                let lower = inputLiterals[pair.old].range.upperBound
+                let upper = inputLiterals[pair.new].range.lowerBound
+                return lower <= upper ? lower..<upper : nil
+            } + PhraseCorrection.cueRanges(in: input)
         if ContentCoverage.droppedWord(
-            input: input, inputLiterals: ProtectedLiteralExtractor.extractAll(from: input), output: cleaned,
+            input: input, inputLiterals: inputLiterals, correctionCues: correctionCues, output: cleaned,
             outputLiterals: ProtectedLiteralExtractor.extractAll(from: cleaned)) != nil
         {
             return .reject(.contentDropped)
