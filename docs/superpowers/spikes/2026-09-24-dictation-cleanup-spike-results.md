@@ -284,3 +284,23 @@ Split (md5 of the case id, even = held-out). Tuning half 39 cases and 13 counted
 - **§19 status:** neither model passes, on fail-open alone (≤ 15%: Qwen 20.3%, Apple 16.2%). p95 (≤ 1.5 s), alreadyClean fail-open (0%), correction application (≥ 80%: both 90.5%) and cue-negative over-corrections (0) all pass.
 - Swapping rules 2 and 5 as well cost Apple two cases that the earlier de-leaked variant (rules 3, 4 and 6 only) got right. `corr-kind-number-01` kept the old value ("Allocate 16 gigabytes.", so correction application fell from 95.2% to 90.5%). In `spoken-02`, "two point five" became "Set the scale to 4.2.", which copies the new rule 5 example "four point two" -> 4.2. Both outputs were rejected.
 - Validator gap seen, not changed: Apple's `corr-chained-01` "3, no, 4, no wait, 5 workers" → "3, 4, 5 workers." is **accepted**. The chain is an accepted correction, so the validator lets its cues go; it does not require the old values to go too. The §11.4 rule "ambiguous pairs keep their cue" has no counterpart for accepted pairs whose old values are both kept. The same kind of output was accepted before this round: "3, 5 workers." with the word-for-word prompt.
+
+### Plain-word corrections and the chain gap (2026-09-25, final round)
+
+- **Plain-word correction exemption** (spec §11.9, `b4f857b`). The two user examples ("tuesday no thursday", "staging actually on production") pass the production validator again, and `knownValidatorConflicts` is gone. "press the red button no the blue button" → "Press the blue button." is accepted too. `cueNeg-13` "Put me on the list." stays rejected.
+- **Chain gap** (spec §11.4 item 7, `23b350e`). The cue-kept rule now covers accepted pairs too, so "3, no, 4, no wait, 5 workers" → "3, 4, 5 workers." is `.literalMissing`. A literal "every old value must be gone" rule was tried first. It rejected corpus acceptable outputs that keep both values and the cue, so the correction is not applied but the meaning is unchanged: `corr-kind-version-01` "Version 1.2, actually 1.3." and `corr-actually-01` "Run it with 4 threads, actually 8 threads.". The rule is therefore "an old value may stay only with its cue".
+- No corpus, reference or prompt edits.
+
+Same code otherwise, 74 cases, greedy. Model outputs were identical to the previous run. The only verdict change is `corr-chained-01`: Apple's "3, 4, 5 workers." is now rejected, and Qwen's "3, 4, 5." fails for a different reason.
+
+| model | correction application | over-corrections | fail-open | alreadyClean fail-open | wrapper/markup | reference match | p50 | p95 | passes §19 |
+|---|---|---|---|---|---|---|---|---|---|
+| Qwen3 1.7B | 90.5% | 0 | 20.3% (15) | 0% | 0% | 75.7% | 372 ms | 472 ms | false |
+| Apple | 90.5% | 0 | 17.6% (13) | 0% | 2.7% | 81.1% | 817 ms | 963 ms | false |
+
+| model | tuning corrections | tuning fail-open | held-out corrections | held-out over-corrections | held-out fail-open |
+|---|---|---|---|---|---|
+| Qwen3 1.7B | 12/13 | 5/39 | 7/8 | 0 | 10/35 |
+| Apple | 12/13 | 8/39 | 7/8 | 0 | 5/35 |
+
+**§19:** neither model passes; fail-open alone fails (≤ 15%). Apple rose from 16.2% to 17.6% because a meaning change that was accepted before is now rejected. p95, alreadyClean fail-open, correction application and over-corrections pass.
