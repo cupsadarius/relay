@@ -3,7 +3,8 @@ import XCTest
 @testable import Relay
 
 final class CleanupPromptTests: XCTestCase {
-    /// The user-authored default (2026-09-25), word for word.
+    /// The user-authored default (2026-09-25), word for word except the de-leaked inline example
+    /// phrases in rules 2-6.
     func testInstructionsAreTheUserAuthoredDefault() {
         XCTAssertTrue(
             CleanupPrompt.instructions.hasPrefix(
@@ -33,6 +34,31 @@ final class CleanupPromptTests: XCTestCase {
         for example in CleanupPrompt.examples {
             XCTAssertFalse(corpusInputs.contains(CleanupEvalScoring.contentKey(example.input)), example.input)
         }
+    }
+
+    /// The inline example phrases in rules 2-6 must not match any corpus input or the Test
+    /// sample (whole words, case-insensitive), or the eval measures memorization. The rule 3 cue
+    /// list is vocabulary, not an example, and is skipped.
+    func testInstructionExamplePhrasesMatchNoCorpusInputOrTheTestSample() throws {
+        func words(_ text: String) -> String {
+            " " + text.lowercased().split(whereSeparator: { !($0.isLetter || $0.isNumber || "'.-".contains($0)) }).joined(separator: " ") + " "
+        }
+        let inputs = try CleanupEvalCorpus.load().map { words($0.input) } + [words(DictationCleanupTester.defaultSample)]
+        let rules = CleanupPrompt.instructions.split(separator: "\n").filter { line in
+            ["2.", "3.", "4.", "5.", "6."].contains { line.hasPrefix($0) }
+        }
+        XCTAssertEqual(rules.count, 5)
+        var checked = 0
+        for rule in rules {
+            var text = String(rule)
+            if let cueList = text.range(of: #"Cue words: [^.]*\."#, options: .regularExpression) { text.removeSubrange(cueList) }
+            for quoted in text.split(separator: "\"", omittingEmptySubsequences: false).enumerated() where quoted.offset % 2 == 1 {
+                checked += 1
+                let phrase = words(String(quoted.element))
+                XCTAssertFalse(inputs.contains { $0.contains(phrase) }, String(quoted.element))
+            }
+        }
+        XCTAssertGreaterThan(checked, 20)
     }
 
     /// Every example output is one production would insert for its input: pre-pass first, then
