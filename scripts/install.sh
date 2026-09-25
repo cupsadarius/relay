@@ -56,7 +56,7 @@ grep -qF "\"${SIGNING_IDENTITY}\"" <<<"$identities" \
 # --- Build (the running app is untouched until this succeeds) ---------------------------------
 xcodegen generate
 xcodebuild -scheme Relay -configuration Release -destination 'platform=macOS,arch=arm64' \
-  -derivedDataPath "$DERIVED" ONLY_ACTIVE_ARCH=YES build
+  -derivedDataPath "$DERIVED" -skipPackagePluginValidation ONLY_ACTIVE_ARCH=YES build
 APP="$DERIVED/Build/Products/Release/Relay.app"
 [[ -d "$APP" ]] || die "build succeeded but $APP is missing"
 
