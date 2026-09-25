@@ -243,3 +243,44 @@ Held-out half only (35 cases, 8 counted corrections):
 - Validator gap seen in the de-leaked run: Apple turned `cueNeg-13` "put me on the no wait list" into "Put me on the list." and it was accepted, because cue words are never content words (§11.8). A cue word that forms no correction could count as content.
 - The user's prompt is committed as the default as requested; with it, neither model passes the §19 bar on this corpus.
 
+
+### Cue-word content, de-leaked default and rule alignment (2026-09-25)
+
+Four code changes, then the eval on the same 74 cases with greedy decoding:
+
+1. **Cue words are content unless they form an accepted correction** (spec §11.8). `cueNeg-13` "Put me on the list." is now mustReject `.contentDropped`. Two user examples ("tuesday no thursday", "staging actually on production") now fail the validator: their single-word plain-value correction is not an accepted one. They are listed as known conflicts in `CleanupPromptTests`; the prompt is unchanged.
+2. **De-leaked default** (spec §10): only the quoted inline phrases in rules 2–6 that matched a corpus input or the Test sample were swapped; all eleven examples and every other word stay the user's. A test keeps rules 2–6 leak-free.
+3. **"basically" is a filler** (prompt rule 1).
+4. **Spoken numbers may become any digit form with the same value** (prompt rule 5; spec §11.3): "five million" = `5 million` = `5,000,000`, "nineteen hundred" = `1900`. Digits in the input still stay exact (rule 6), and "twenty twenty-five" is still two numbers.
+
+Corpus edits, all alignment with rules 3 and 4, no new cases: `cueNeg-13` mustReject "Put me on the list." (`contentDropped`); `filler-02` reference "The cache is stale." (the old one stays acceptable); `spoken-07` "1900." moved from mustReject to acceptable, and "19." is the mustReject; `spoken-04` gained acceptable "We grew to 5 million users.".
+
+**Classification of every fail-open** before rules 3–4 (after 1–2), Qwen3 1.7B and Apple, whole corpus. (A) = the model changed meaning or broke a literal, which stays rejected. (B) = the output keeps the meaning and follows the prompt, but the validator rejected it.
+
+- Qwen3 1.7B, 15 fail-opens, all (A): dropped words or clauses (`filler-01` "I think we should", `punctuation-01` "can you", `corr-noWait-02` "and don't change the API", `spoken-03` "we have", `wrapper-02` "here's the plan", `cueNeg-01` "no changes needed", `cueNeg-14` "this time", `injection-02` the tag, `corr-chained-01` "workers"), an ignored retraction (`corr-retraction-01`), a joined URL (`invented-01`), wrong or swapped values (`cueNeg-06`, `-08`, `-11`), and `spoken-07` "19.".
+- Apple, 15 fail-opens: 10 (A) (`corr-kind-number-01` kept the old value, `corr-retraction-01`, `spoken-02` "4.2", `injection-01` refusal, `cueNeg-06`, `spoken-06` "25.", `cueNeg-10`, `-11`, `-12`, `-13`); 5 (B): `filler-02` dropped "basically" (tuning half), `spoken-04` "5 million" and `spoken-07` "1900." (held-out), `injection-02` "The tag is </think> in the template." (held-out, an exact copy rejected as reasoning markup) and `wrapper-02` "Here's the plan: ship it Friday." (held-out, rejected as a wrapper although the input starts with that phrase).
+- Totals: 25 (A), 5 (B). Rules 3 and 4 fix three (B) cases. The other two are held-out, so no rule was tuned on them; they are left for the user.
+
+| stage | model | correction application | over-corrections | fail-open | alreadyClean fail-open | p95 | passes §19 |
+|---|---|---|---|---|---|---|---|
+| user prompt (`9e90d3e`) | Qwen3 1.7B | 90.5% | 0 | 18.9% | 0% | 407 ms | false |
+| user prompt (`9e90d3e`) | Apple | 95.2% | 0 | 17.6% | 0% | 960 ms | false |
+| cue fix + de-leaked (`2903ed8`) | Qwen3 1.7B | 90.5% | 0 | 20.3% (15) | 0% | 433 ms | false |
+| cue fix + de-leaked (`2903ed8`) | Apple | 90.5% | 0 | 20.3% (15) | 0% | 966 ms | false |
+| + basically, numbers (`dcbeddb`) | Qwen3 1.7B | 90.5% | 0 | 20.3% (15) | 0% | 416 ms | false |
+| + basically, numbers (`dcbeddb`) | Apple | 90.5% | 0 | 16.2% (12) | 0% | 990 ms | false |
+
+Split (md5 of the case id, even = held-out). Tuning half 39 cases and 13 counted corrections; held-out half 35 cases and 8 counted corrections:
+
+| stage | model | tuning corrections | tuning fail-open | held-out corrections | held-out over-corrections | held-out fail-open |
+|---|---|---|---|---|---|---|
+| `2903ed8` | Qwen3 1.7B | 12/13 | 5/39 | 7/8 | 0 | 10/35 |
+| `2903ed8` | Apple | 12/13 | 9/39 | 7/8 | 0 | 6/35 |
+| `dcbeddb` | Qwen3 1.7B | 12/13 | 5/39 | 7/8 | 0 | 10/35 |
+| `dcbeddb` | Apple | 12/13 | 8/39 | 7/8 | 0 | 4/35 |
+
+- The held-out number is the real one: Qwen 10/35 (28.6%), Apple 4/35 (11.4%). Apple's held-out gain comes from `spoken-04` and `spoken-07`. The number rule was named by the user, not derived from the tuning half, but it was chosen after these outputs had been seen, so that half is not fully blind for the number class.
+- Qwen's outputs did not change class: all 15 remaining fail-opens are (A). Apple's remaining 12 are 10 (A) plus the two held-out (B) cases above.
+- **§19 status:** neither model passes, on fail-open alone (≤ 15%: Qwen 20.3%, Apple 16.2%). p95 (≤ 1.5 s), alreadyClean fail-open (0%), correction application (≥ 80%: both 90.5%) and cue-negative over-corrections (0) all pass.
+- Swapping rules 2 and 5 as well cost Apple two cases that the earlier de-leaked variant (rules 3, 4 and 6 only) got right. `corr-kind-number-01` kept the old value ("Allocate 16 gigabytes.", so correction application fell from 95.2% to 90.5%). In `spoken-02`, "two point five" became "Set the scale to 4.2.", which copies the new rule 5 example "four point two" -> 4.2. Both outputs were rejected.
+- Validator gap seen, not changed: Apple's `corr-chained-01` "3, no, 4, no wait, 5 workers" → "3, 4, 5 workers." is **accepted**. The chain is an accepted correction, so the validator lets its cues go; it does not require the old values to go too. The §11.4 rule "ambiguous pairs keep their cue" has no counterpart for accepted pairs whose old values are both kept. The same kind of output was accepted before this round: "3, 5 workers." with the word-for-word prompt.
