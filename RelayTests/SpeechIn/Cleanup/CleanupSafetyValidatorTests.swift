@@ -335,6 +335,18 @@ final class CleanupSafetyValidatorTests: XCTestCase {
         }
     }
 
+    /// Prompt rule 1 lists "basically" as a filler, so dropping it is not dropped content.
+    func testBasicallyIsAFiller() {
+        for (input, output) in [
+            ("like you know the cache is uh basically stale", "Like you know the cache is stale."),
+            ("the cache is basically stale", "The cache is stale."),
+            ("basically we ship on friday", "We ship on Friday."),
+        ] {
+            XCTAssertEqual(verdict(input, output), .accept(output), input)
+        }
+        XCTAssertEqual(verdict("the cache is basically stale", "The cache is."), .reject(.contentDropped))
+    }
+
     func testContentCoverageAllowsNormalCleanup() {
         let cases: [(String, String)] = [
             ("uh so I think we should um ship it on friday", "So I think we should ship it on Friday."),

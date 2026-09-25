@@ -8,8 +8,9 @@ enum ContentCoverage {
     static let functionWords: Set<String> = [
         "a", "an", "the", "to", "of", "and", "or", "is", "it", "this", "that", "i", "you", "we", "in", "on", "for", "with", "be",
     ]
-    /// "please" is a courtesy word a cleanup may drop ("set the title to \"Weekly Sync\" please").
-    static let fillers: Set<String> = ["uh", "um", "er", "like", "please"]
+    /// Prompt rule 1 fillers, plus "please", a courtesy word a cleanup may drop ("set the title to
+    /// \"Weekly Sync\" please").
+    static let fillers: Set<String> = ["uh", "um", "er", "like", "basically", "please"]
     /// How many words before an accepted correction's cue count as its old side, which a model
     /// that applies the correction drops.
     static let cueOldSideWords = 3
