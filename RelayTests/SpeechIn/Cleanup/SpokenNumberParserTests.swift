@@ -95,4 +95,14 @@ final class SpokenNumberParserTests: XCTestCase {
         XCTAssertTrue(SpokenNumberParser.contains(["twenty", "five"], in: words))
         XCTAssertFalse(SpokenNumberParser.contains(["five", "ok", "port"], in: words))
     }
+
+    /// "nineteen hundred" is 1900 as a year or as a count: a teen or tens before "hundred" is a
+    /// multiplier when no thousand came first.
+    func testATeenOrTensBeforeHundredMultiplies() {
+        XCTAssertEqual(digits("nineteen hundred"), ["1900"])
+        XCTAssertEqual(digits("twelve hundred and five"), ["1205"])
+        XCTAssertEqual(digits("twenty five hundred"), ["2500"])
+        XCTAssertEqual(digits("one thousand nineteen hundred"), ["1019", "100"])
+        XCTAssertEqual(digits("three hundred twenty hundred"), ["320", "100"])
+    }
 }

@@ -145,7 +145,10 @@ enum SpokenNumberParser {
             case .teen, .tens:
                 accepted = last == nil || last == .hundred || last == .thousand || last == .million || last == .billion || last == .and
             case .hundred:
-                accepted = last == nil || (last == .unit && (1...9).contains(current))
+                // "nineteen hundred" / "twenty five hundred": a 10-99 multiplier, only before any thousand.
+                accepted =
+                    last == nil || (last == .unit && (1...9).contains(current))
+                    || (total == 0 && [.unit, .teen, .tens].contains(last!) && (10...99).contains(current))
             case .dozen:
                 accepted = last == nil || (last == .unit && (1...99).contains(current))
             case .thousand, .million, .billion:

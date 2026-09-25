@@ -110,7 +110,12 @@ struct CleanupSafetyValidator: Sendable {
         let allowed = Set(inputLiterals.filter { $0.kind != .spokenNumber }.map(\.value))
             .union(inputLiterals.compactMap(\.canonicalDigits))
         let allowedSpokenPhrases = Set(inputLiterals.filter { $0.kind == .spokenNumber }.map(\.value))
+        // Prompt rule 5: a spoken number may become digits in any form with an identical value
+        // ("five million" -> "5 million", "5,000,000"). Rule 6: digits in the input stay exact.
+        let inputSpokenValues = Set(inputLiterals.filter { $0.kind == .spokenNumber }.compactMap(\.canonicalDigits))
+        let outputNumbers = Set(outputLiterals.compactMap(Self.numericValue))
         for literal in outputLiterals {
+            if let value = Self.numericValue(literal), inputSpokenValues.contains(value) { continue }
             if literal.kind == .spokenNumber {
                 let matchesDigits = literal.canonicalDigits.map { allowed.contains($0) } ?? false
                 if !matchesDigits && !allowedSpokenPhrases.contains(literal.value) { return .reject(.literalInvented) }
@@ -122,6 +127,7 @@ struct CleanupSafetyValidator: Sendable {
         let outputValues = Set(outputLiterals.filter { $0.kind != .spokenNumber }.map(\.value))
         let outputWords = SpokenNumberParser.wordSequence(of: cleaned)
         func isPresent(_ literal: ProtectedLiteral) -> Bool {
+            if literal.kind == .spokenNumber, let value = literal.canonicalDigits, outputNumbers.contains(value) { return true }
             guard literal.kind == .spokenNumber else { return outputValues.contains(literal.value) }
             if let digits = literal.canonicalDigits, outputValues.contains(digits) { return true }
             return SpokenNumberParser.contains(literal.value.split(separator: " ").map(String.init), in: outputWords)
@@ -136,7 +142,7 @@ struct CleanupSafetyValidator: Sendable {
         // Review fix 5: with no correction in play, the output cannot reassign which value went
         // with which literal — every input literal is already known to be present (the loop above
         // would have rejected otherwise), so its order in the output must match the input's order.
-        func sequenceKey(_ literal: ProtectedLiteral) -> String { literal.kind == .spokenNumber ? (literal.canonicalDigits ?? literal.value) : literal.value }
+        func sequenceKey(_ literal: ProtectedLiteral) -> String { Self.numericValue(literal) ?? literal.value }
         if corrections.pairs.isEmpty, inputLiterals.map(sequenceKey) != outputLiterals.map(sequenceKey) {
             return .reject(.literalMissing)
         }
@@ -154,6 +160,29 @@ struct CleanupSafetyValidator: Sendable {
             if !words.contains(cue) { return .reject(.literalMissing) }
         }
         return .accept(cleaned)
+    }
+
+    private static let magnitudes: [String: Decimal] = [
+        "hundred": 100, "thousand": 1_000, "million": 1_000_000, "billion": 1_000_000_000, "trillion": 1_000_000_000_000,
+    ]
+    private static let numberForm = try! NSRegularExpression(
+        pattern: #"^((?:0|[1-9]\d*)(?:\.\d+)?|[1-9]\d{0,2}(?:,\d{3})+(?:\.\d+)?)(?:\s+(hundred|thousand|million|billion|trillion))?$"#)
+
+    /// The numeric value of a number literal in any written form ("5 million", "5,000,000",
+    /// "5000000" and "five million" are all "5000000"; spec §11.3), or `nil` for a literal that is
+    /// not a plain number (signs, currency, percent, units and leading zeros keep their exact form).
+    static func numericValue(_ literal: ProtectedLiteral) -> String? {
+        if literal.kind == .spokenNumber { return literal.canonicalDigits }
+        guard literal.kind == .number else { return nil }
+        let text = literal.value
+        guard let match = numberForm.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+            let digitsRange = Range(match.range(at: 1), in: text),
+            var value = Decimal(string: text[digitsRange].replacingOccurrences(of: ",", with: ""), locale: Locale(identifier: "en_US_POSIX"))
+        else { return nil }
+        if let magnitudeRange = Range(match.range(at: 2), in: text), let magnitude = magnitudes[String(text[magnitudeRange])] {
+            value *= magnitude
+        }
+        return value.description
     }
 
     /// Fillers dropped from the input before checking whether it itself starts with a wrapper

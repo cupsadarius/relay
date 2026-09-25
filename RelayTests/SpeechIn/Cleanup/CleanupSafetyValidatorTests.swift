@@ -117,8 +117,12 @@ final class CleanupSafetyValidatorTests: XCTestCase {
         XCTAssertEqual(verdict("we have twenty-five tickets", "We have 25 tickets."), .accept("We have 25 tickets."))
     }
 
+    /// Prompt rule 6: digits are copied exactly, so no other form of the same value satisfies them.
     func testDigitsAreNeverSatisfiedByWords() {
         XCTAssertEqual(verdict("set 3 workers", "Set three workers."), .reject(.literalMissing))
+        XCTAssertEqual(verdict("we grew to 5 million users", "We grew to five million users."), .reject(.literalInvented))
+        XCTAssertEqual(verdict("we grew to 5,000,000 users", "We grew to 5 million users."), .reject(.literalInvented))
+        XCTAssertEqual(verdict("1900", "Nineteen hundred."), .reject(.literalMissing))
     }
 
     func testInventedLiteralsAreRejected() {
@@ -333,6 +337,38 @@ final class CleanupSafetyValidatorTests: XCTestCase {
         for (input, output) in cases {
             XCTAssertEqual(verdict(input, output), .accept(output), input)
         }
+    }
+
+    /// Prompt rule 5: a spoken number may be written as digits, in any digit form (a digit and a
+    /// magnitude word, digit grouping, plain digits) with an identical value (spec §11.3). Rule 6
+    /// still copies an input written in digits exactly: see `testDigitsAreNeverSatisfiedByWords`.
+    func testNumbersWithTheSameValueAreEquivalentInAnyForm() {
+        for (input, output) in [
+            ("we grew to five million users", "We grew to 5 million users."),
+            ("we grew to five million users", "We grew to 5,000,000 users."),
+            ("we grew to five million users", "We grew to 5000000 users."),
+            ("we grew to five million users", "We grew to five million users."),
+            ("nineteen hundred", "1900."),
+            ("twelve hundred users", "1200 users."),
+            ("twenty five hundred users", "2,500 users."),
+            ("a hundred users", "100 users."),
+        ] {
+            XCTAssertEqual(verdict(input, output), .accept(output), "\(input) -> \(output)")
+        }
+    }
+
+    func testNumbersWithADifferentValueStayRejected() {
+        XCTAssertEqual(verdict("we grew to five million users", "We grew to 5 billion users."), .reject(.literalInvented))
+        XCTAssertEqual(verdict("we grew to five million users", "We grew to 500,000 users."), .reject(.literalInvented))
+        XCTAssertEqual(verdict("we grew to 5 million users", "We grew to 5 users."), .reject(.literalInvented))
+        XCTAssertEqual(verdict("nineteen hundred", "19."), .reject(.literalInvented))
+        // "twenty twenty-five" is two spoken numbers (20, 25) or a year: never one value.
+        XCTAssertEqual(verdict("twenty twenty-five", "25."), .reject(.literalMissing))
+        XCTAssertEqual(verdict("twenty twenty-five", "2025."), .reject(.literalInvented))
+        // "5m" may be metres: a unit abbreviation is never read as a magnitude.
+        XCTAssertEqual(verdict("five million", "5m."), .reject(.literalInvented))
+        // Order still matters: the same values, swapped.
+        XCTAssertEqual(verdict("move five million to two million", "Move 2 million to 5 million."), .reject(.literalMissing))
     }
 
     /// Prompt rule 1 lists "basically" as a filler, so dropping it is not dropped content.
