@@ -209,3 +209,37 @@ Held-out split (39 / 35):
 - **Qwen3 1.7B now passes the bar on the whole corpus, with one case to spare** (11/74 fail-open; 12 would fail). It fails on the held-out half alone (7/35 = 20%). Its two over-corrections (`cueNeg-01`, `cueNeg-14`) and seven other outputs are now rejected as `.contentDropped` and fail open. All nine are real drops: "Ship it on Friday." for "uh so I think we should um ship it on friday", "Check the logs." for "… and tell me what failed", "Twenty-five open tickets." for "we have twenty-five open tickets", "3, 4, 5." (drops "workers"), the Test sample without its second clause, "System prompt:" for the injection case, and "The tag is in the template." (drops `</think>`). None of them was a false rejection.
 - Qwen's rate of dropping words means it passes the bar only narrowly; Apple remains the recommended model.
 
+### User-authored default prompt (2026-09-25)
+
+The user wrote a new nine-rule prompt and eleven example turns; they are the default now, word for word (`CleanupPrompt.instructions`, `CleanupPrompt.examples`). Three versions were compared on the same code and corpus (74 cases): the old default, the user's prompt word for word, and a "de-leaked" variant that swaps only the inline example phrases in rules 3, 4 and 6 that match corpus cases for phrases of the same shape (rule 3: "the billing page no wait the settings page", "java 17 wait 21", "2 replicas actually 4 replicas"; rule 4: "wait till", "wait 5 minutes", "said no to", "no reply needed", "sorry for", "it actually helps", "I mean what I say"; rule 6: "status dot io"). The comparison ran through a temporary, uncommitted eval-harness override. `cueNeg-08` first gained "Press 4, wait 1 second, press 5." as an acceptable output, since rule 5 asks for digits and spec §11.3 allows them.
+
+| prompt | model | correction application | cue-negative over-corrections | fail-open | p95 | passes bar |
+|---|---|---|---|---|---|---|
+| old default | Qwen3 1.7B | 85.7% | 0 | 14.9% | 289 ms | **true** |
+| old default | Apple | 90.5% | 0 | 9.5% | 708 ms | **true** |
+| user, word for word | Qwen3 1.7B | 90.5% | 0 | 18.9% | 407 ms | **false** |
+| user, word for word | Apple | 95.2% | 0 | 17.6% | 960 ms | **false** |
+| de-leaked | Qwen3 1.7B | 90.5% | 0 | 21.6% | 405 ms | **false** |
+| de-leaked | Apple | 95.2% | 1 | 14.9% | 952 ms | **false** |
+
+Held-out half only (35 cases, 8 counted corrections):
+
+| prompt | model | correction application | over-corrections | fail-open |
+|---|---|---|---|---|
+| old default | Qwen3 1.7B | 6/8 | 0 | 7/35 |
+| old default | Apple | 7/8 | 0 | 1/35 |
+| user | Qwen3 1.7B | 7/8 | 0 | 8/35 |
+| user | Apple | 7/8 | 0 | 7/35 |
+| de-leaked | Qwen3 1.7B | 7/8 | 0 | 9/35 |
+| de-leaked | Apple | 7/8 | 0 | 5/35 |
+
+- The user's prompt applies more corrections on both models (Qwen 85.7% → 90.5%, Apple 90.5% → 95.2%) but fails the bar on fail-open. Every extra fail-open was a correct rejection, so safety holds; the models broke more rules.
+- p95 rose by about 120 ms on Qwen and 250 ms on Apple (a longer prompt and eleven example turns to prefill); both stay under the 1.5 s bar.
+- **Leakage.** Rule 3's inline examples are three corpus inputs' corrections (`corr-noWait-02`, the Test sample; `corr-wait-01`; `corr-actually-01`); rule 4's seven phrases each match a cue-negative case (`cueNeg-01`, `-02`, `-03`, `-04`, `-05`, `-07`, `-14`); rule 6's "example dot com" is `invented-01`. Rules 2 and 5 also quote corpus phrases ("we need to we need to" = `falseStart-01`; "three", "twenty-five", "two point five", "one-time", "a hundred", "five million" = `spoken-01`…`-05`, `invented-05`); they were not swapped, as instructed. The old default's rule 3 already quoted four of rule 4's phrases. De-leaking changed correction application by nothing and over-corrections by +1 (Apple), so the leak does not visibly inflate these numbers; it does steer the model wrongly outside its case: with the leaked prompt Apple turned `identifiers-02` "userService crashed" into "The auth service crashed." and `urls-01`'s URL into "https://example dot com/docs/setup" (both rejected).
+- **Rule conflicts with the validator and corpus.**
+  - Rule 1 lists "basically" as a filler, but the validator treats it as a content word and `filler-02`'s reference keeps it ("The cache is basically stale."), so an output that follows rule 1 is rejected as `.contentDropped` (Apple, both prompt versions). Not changed: the user decides whether "basically" is a filler.
+  - Rule 5 (digits) matches spec §11.3 and the corpus references (`spoken-01`…`-03` want digits; `spoken-04`, `invented-05`, `spoken-05`…`-07` keep words); only `cueNeg-08` needed the digits form added. The models break rule 5 themselves ("5 million", "1900", "25." for "twenty twenty-five"), and the validator rejects those.
+  - All eleven example outputs pass the validator on the production path. Example 7 ("six wait eight gigabytes") passes because the exemption's count and time words do not include "gigabytes"; example 8 passes because "staging" sits within three words before "actually".
+- Validator gap seen in the de-leaked run: Apple turned `cueNeg-13` "put me on the no wait list" into "Put me on the list." and it was accepted, because cue words are never content words (§11.8). A cue word that forms no correction could count as content.
+- The user's prompt is committed as the default as requested; with it, neither model passes the §19 bar on this corpus.
+
