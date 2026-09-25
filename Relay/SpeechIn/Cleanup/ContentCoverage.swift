@@ -21,12 +21,14 @@ enum ContentCoverage {
     /// `correctionCues` are the input spans between the two values of each correction the validator
     /// exemption accepts (spec §11.4); only those cue words may be dropped. Every other cue word
     /// ("the no wait list", "no changes needed") is content.
+    /// `droppable` are input spans the output may drop whole (a plain-word correction's old value
+    /// and cue, spec §11.9).
     static func droppedWord(
-        input: String, inputLiterals: [ProtectedLiteral], correctionCues: [Range<String.Index>] = [], output: String,
-        outputLiterals: [ProtectedLiteral]
+        input: String, inputLiterals: [ProtectedLiteral], correctionCues: [Range<String.Index>] = [],
+        droppable: [Range<String.Index>] = [], output: String, outputLiterals: [ProtectedLiteral]
     ) -> String? {
         let outputWords = Set(sentences(of: output, blanking: outputLiterals.map(\.range), marking: []).joined())
-        for sentence in sentences(of: input, blanking: inputLiterals.map(\.range), marking: correctionCues) {
+        for sentence in sentences(of: input, blanking: inputLiterals.map(\.range) + droppable, marking: correctionCues) {
             var exempt = Set<Int>()
             let words = sentence
             // Leading "so" is a filler; so is "you know".
@@ -91,5 +93,105 @@ enum ContentCoverage {
             return [String(word.dropLast(suffix.count)), expansion]
         }
         return [word]
+    }
+}
+
+/// A self-correction of plain words ("move the meeting to tuesday no thursday", "on staging
+/// actually on production"), spec §11.9. The output may drop "OLD cue" when all of these hold:
+/// OLD is 1-3 words with a content word and no protected literal; the cue is a listed cue with
+/// symmetric separators (` cue ` or `, cue, `); the cue is not "no one"/"no 1" and neither the
+/// word after the cue nor the word after NEW is a unit or count word; and NEW (1-3 words after the
+/// cue) takes the old value's place in the output, right after the word before OLD.
+enum PlainWordCorrection {
+    static let maxWords = 3
+    private static let nonContent = ContentCoverage.functionWords.union(PhraseCorrection.determiners)
+        .union(SelfCorrectionDetector.cues.joined())
+    private static let countWords = SelfCorrectionPrePass.unitWords.union(SelfCorrectionDetector.countAndTimeWords)
+
+    private struct Token {
+        let range: Range<String.Index>
+        /// Lowercased, edge punctuation stripped.
+        let core: String
+        /// Trailing punctuation that was stripped.
+        let trailing: String
+    }
+
+    /// The "OLD cue" spans of `input` that `output` drops as a plain-word correction.
+    static func droppedSpans(input: String, inputLiterals: [ProtectedLiteral], output: String) -> [Range<String.Index>] {
+        let tokens = tokenize(input)
+        let outputWords = tokenize(output).map(\.core)
+        var spans: [Range<String.Index>] = []
+        var cueTokens = Set<Int>()
+        for cueStart in tokens.indices where !cueTokens.contains(cueStart) {
+            guard
+                let cue = SelfCorrectionDetector.cues.first(where: { cue in
+                    cueStart + cue.count <= tokens.count && zip(cue, tokens[cueStart...]).allSatisfy { $0 == $1.core }
+                })
+            else { continue }
+            let cueEnd = cueStart + cue.count - 1
+            cueTokens.formUnion(cueStart...cueEnd)
+            guard cueEnd + 1 < tokens.count, cueStart > 0 else { continue }
+            let next = tokens[cueEnd + 1].core
+            if cue == ["no"], next == "one" || next == "1" { continue }
+            if countWords.contains(next) { continue }
+            // Symmetric separators; the cue's own words are joined by single spaces.
+            guard tokens[cueStart..<cueEnd].allSatisfy({ $0.trailing.isEmpty }) else { continue }
+            let before = tokens[cueStart - 1].trailing
+            let after = tokens[cueEnd].trailing
+            guard (before.isEmpty && after.isEmpty) || (before == "," && after == ",") else { continue }
+            guard (cueStart - 1...cueEnd).allSatisfy({ isSpace(between: tokens[$0], and: tokens[$0 + 1], in: input) }) else { continue }
+
+            for oldCount in 1...maxWords where cueStart - oldCount >= 0 {
+                let oldStart = cueStart - oldCount
+                let old = tokens[oldStart..<cueStart]
+                guard old.dropLast().allSatisfy({ $0.trailing.isEmpty }), old.contains(where: { !nonContent.contains($0.core) }) else { continue }
+                let oldRange = old.first!.range.lowerBound..<old.last!.range.upperBound
+                guard !inputLiterals.contains(where: { $0.range.overlaps(oldRange) }) else { continue }
+                let previous = oldStart > 0 ? tokens[oldStart - 1].core : nil
+                let placed = (1...maxWords).contains { newCount in
+                    let newEnd = cueEnd + newCount
+                    guard newEnd < tokens.count else { return false }
+                    if newEnd + 1 < tokens.count, countWords.contains(tokens[newEnd + 1].core) { return false }
+                    let new = tokens[(cueEnd + 1)...newEnd].map(\.core)
+                    guard let previous else { return Array(outputWords.prefix(new.count)) == new }
+                    return contains([previous] + new, in: outputWords) || (new.first == previous && contains(new, in: outputWords))
+                }
+                if placed {
+                    spans.append(oldRange.lowerBound..<tokens[cueEnd].range.upperBound)
+                    break
+                }
+            }
+        }
+        return spans
+    }
+
+    private static func contains(_ needle: [String], in words: [String]) -> Bool {
+        guard needle.count <= words.count else { return false }
+        return (0...(words.count - needle.count)).contains { Array(words[$0..<($0 + needle.count)]) == needle }
+    }
+
+    private static func isSpace(between first: Token, and second: Token, in text: String) -> Bool {
+        text[first.range.upperBound..<second.range.lowerBound] == " "
+    }
+
+    private static func tokenize(_ text: String) -> [Token] {
+        let edge: (Character) -> Bool = { ".,!?;:\"'()".contains($0) }
+        var tokens: [Token] = []
+        var position = text.startIndex
+        while position < text.endIndex {
+            guard !text[position].isWhitespace else {
+                position = text.index(after: position)
+                continue
+            }
+            var end = position
+            while end < text.endIndex, !text[end].isWhitespace { end = text.index(after: end) }
+            let raw = text[position..<end]
+            let trimmed = raw.reversed().drop(while: edge).reversed()
+            let trailing = String(raw.dropFirst(trimmed.count))
+            let core = String(trimmed.drop(while: edge)).lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+            if !core.isEmpty { tokens.append(Token(range: position..<end, core: core, trailing: trailing)) }
+            position = end
+        }
+        return tokens
     }
 }

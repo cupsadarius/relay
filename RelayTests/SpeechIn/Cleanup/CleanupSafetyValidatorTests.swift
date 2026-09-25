@@ -316,12 +316,45 @@ final class CleanupSafetyValidatorTests: XCTestCase {
             ("wait for build 42 to finish", "For build 42 to finish."),
             ("it actually works on port 8080", "It works on port 8080."),
             ("sorry about the 2 failing tests", "About the 2 failing tests."),
-            // A word-level correction with a bare cue is not one the pre-pass or the exemption
-            // accepts, so it falls back rather than trusting the model.
-            ("press the red button no the blue button", "Press the blue button."),
         ]
         for (input, output) in cases {
             XCTAssertEqual(verdict(input, output), .reject(.contentDropped), input)
+        }
+    }
+
+    /// Spec §11.9: a plain-word correction "OLD cue NEW" may drop "OLD cue" when NEW takes the
+    /// old value's place in the output.
+    func testAPlainWordCorrectionMayDropItsOldValueAndCue() {
+        let cases: [(String, String)] = [
+            ("um can you move the meeting to tuesday no thursday", "Can you move the meeting to Thursday?"),
+            ("run the migration on staging actually on production tonight", "Run the migration on production tonight."),
+            ("press the red button no the blue button", "Press the blue button."),
+            ("ping the backend team, sorry, the platform team", "Ping the platform team."),
+            ("ask alice I mean bob about it", "Ask Bob about it."),
+            ("it is broken on safari wait firefox", "It is broken on Firefox."),
+        ]
+        for (input, output) in cases {
+            XCTAssertEqual(verdict(input, output), .accept(output), input)
+        }
+    }
+
+    func testAPlainWordCorrectionThatBreaksARuleStaysRejected() {
+        let cases: [(String, String, ValidationRejection)] = [
+            // OLD is only a determiner.
+            ("put me on the no wait list", "Put me on the list.", .contentDropped),
+            // NEW is not in the old value's place.
+            ("move it to tuesday no thursday", "Thursday, move it.", .contentDropped),
+            // Asymmetric separators.
+            ("move it to tuesday, no thursday", "Move it to Thursday.", .contentDropped),
+            // "no one" is not a correction.
+            ("tell the team no one is blocked", "Tell one is blocked.", .contentDropped),
+            // A count or time word after the cue.
+            ("the build takes forever wait minutes", "The build minutes.", .contentDropped),
+            // More than 3 old words would have to go.
+            ("send it to the whole design review group no bob", "Send it to Bob.", .contentDropped),
+        ]
+        for (input, output, reason) in cases {
+            XCTAssertEqual(verdict(input, output), .reject(reason), "\(input) -> \(output)")
         }
     }
 

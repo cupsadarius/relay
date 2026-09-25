@@ -40,7 +40,8 @@ struct CleanupSafetyValidator: Sendable {
                 return lower <= upper ? lower..<upper : nil
             } + PhraseCorrection.cueRanges(in: input)
         if ContentCoverage.droppedWord(
-            input: input, inputLiterals: inputLiterals, correctionCues: correctionCues, output: cleaned,
+            input: input, inputLiterals: inputLiterals, correctionCues: correctionCues,
+            droppable: PlainWordCorrection.droppedSpans(input: input, inputLiterals: inputLiterals, output: cleaned), output: cleaned,
             outputLiterals: ProtectedLiteralExtractor.extractAll(from: cleaned)) != nil
         {
             return .reject(.contentDropped)
@@ -146,7 +147,6 @@ struct CleanupSafetyValidator: Sendable {
         if corrections.pairs.isEmpty, inputLiterals.map(sequenceKey) != outputLiterals.map(sequenceKey) {
             return .reject(.literalMissing)
         }
-
         // Spec §11.4: for an ambiguous pair (detected, but not exempting) whose two values are both
         // kept, the cue word between them must be kept too. Dropping it changes the meaning:
         // "out of 10, no 2 people agree" → "Out of 10, 2 people agree."
