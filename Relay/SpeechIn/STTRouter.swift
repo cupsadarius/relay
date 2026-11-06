@@ -35,10 +35,6 @@ final class STTRouter {
         self.backendOrder = backendOrder
     }
 
-    func displayName(forBackendID id: BackendID) -> String? {
-        backends[id]?.id.displayName
-    }
-
     /// The first available backend in the current order, or `nil` if none is available or a
     /// backend reports a terminal state (permission denied).
     func selectBackend() async -> STTSelection? {

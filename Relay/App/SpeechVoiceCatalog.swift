@@ -87,9 +87,7 @@ struct SpeechVoiceCatalog {
     }
 
     func options(for voiceID: String, backendID: BackendID, settings: AppSettings) -> TTSOptions? {
-        guard BackendID.allTextToSpeech.contains(backendID),
-            let mapped = storedValue(for: voiceID, backendID: backendID)
-        else { return nil }
+        guard let mapped = storedValue(for: voiceID, backendID: backendID) else { return nil }
         var previewSettings = settings
         previewSettings.voiceByBackend[backendID] = mapped
         return TTSOptions(settings: previewSettings)

@@ -226,9 +226,8 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(decoded.dictationMode, .toggle)
     }
 
-    /// `whisper` must be registered in `AppSettings.knownSTTBackendIDs` so it survives
-    /// `normalizedBackendOrder`'s known-id filter during decode, even though it is not part of
-    /// the default order.
+    /// `whisper` must be in `BackendID.allSpeechToText` so it survives decode, even though it is
+    /// not part of the default order.
     func testWhisperIdSurvivesBackendOrderDecode() throws {
         var saved = AppSettings.defaults
         saved.sttBackendOrder = [.appleSpeech, .whisper]

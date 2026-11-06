@@ -3,7 +3,7 @@
 /// the single user-facing name for the backend everywhere (Settings rows, error messages,
 /// diagnostics). `CodingKeyRepresentable` keeps a `[BackendID: _]` map on disk as a JSON object keyed
 /// by `rawValue`; without it Swift writes a flat `[key, value, ...]` array.
-enum BackendID: String, CaseIterable, Codable, CodingKeyRepresentable, Sendable, CustomStringConvertible {
+enum BackendID: String, CaseIterable, Codable, CodingKeyRepresentable, Sendable {
     // Speech-to-text
     case appleSpeech = "apple-speech"
     case parakeet
@@ -15,8 +15,6 @@ enum BackendID: String, CaseIterable, Codable, CodingKeyRepresentable, Sendable,
 
     static let allSpeechToText: [BackendID] = [.appleSpeech, .parakeet, .whisper]
     static let allTextToSpeech: [BackendID] = [.pocketTTS, .appleTTS, .kokoro]
-
-    var description: String { rawValue }
 
     var displayName: String {
         switch self {

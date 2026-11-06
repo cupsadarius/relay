@@ -33,10 +33,6 @@ struct AppSettings: Codable, Equatable, Sendable {
     /// 2: per-backend voice keys folded into voiceByBackend.
     static let currentSchemaVersion = 2
 
-    static let knownSTTBackendIDs: Set<String> = Set(BackendID.allSpeechToText.map(\.rawValue))
-
-    static let knownTTSBackendIDs: Set<String> = Set(BackendID.allTextToSpeech.map(\.rawValue))
-
     /// `ttsRate`'s valid range; `TTSSettingsView`'s slider uses the same bounds.
     static let validTTSRateRange: ClosedRange<Float> = 0.1...1.0
 

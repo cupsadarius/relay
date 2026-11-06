@@ -306,7 +306,8 @@ final class DictationCoordinator: DictationCoordinating {
         }
 
         guard !Task.isCancelled, isFinishing(session) else { return }
-        if let usedName = sttRouter.displayName(forBackendID: transcript.backendID), usedName != announcedBackendName {
+        let usedName = transcript.backendID.displayName
+        if usedName != announcedBackendName {
             announcedBackendName = usedName
             activity.setBackendName(usedName, sessionID: session)
         }

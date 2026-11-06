@@ -23,8 +23,8 @@ final class BackendIDTests: XCTestCase {
         XCTAssertEqual(BackendID.kokoro.displayName, "Kokoro")
     }
 
-    func testKnownIDSetsDeriveFromBackendID() {
-        XCTAssertEqual(AppSettings.knownSTTBackendIDs, ["apple-speech", "parakeet", "whisper"])
-        XCTAssertEqual(AppSettings.knownTTSBackendIDs, ["pocket-tts", "apple-tts", "kokoro"])
+    func testEveryBackendBelongsToExactlyOneDirection() {
+        XCTAssertEqual(Set(BackendID.allSpeechToText).union(BackendID.allTextToSpeech), Set(BackendID.allCases))
+        XCTAssertTrue(Set(BackendID.allSpeechToText).isDisjoint(with: BackendID.allTextToSpeech))
     }
 }

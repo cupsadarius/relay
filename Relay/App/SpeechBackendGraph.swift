@@ -40,7 +40,7 @@ struct SpeechBackendGraph {
         )
 
         // Whisper is registered but never enabled by default: `sttBackendOrder` defaults to
-        // `["apple-speech"]`; the user opts in and picks a model in Settings.
+        // `[.appleSpeech]`; the user opts in and picks a model in Settings.
         // Models are shared by Debug and Release (see `RelayPaths.sharedModelsDirectory`).
         let whisperCacheDirectory = RelayPaths.sharedModelsDirectory()
             .appendingPathComponent("Whisper", isDirectory: true)

@@ -159,16 +159,6 @@ final class STTRouterTests: XCTestCase {
         XCTAssertEqual(second.availabilityCallCount, 0)
     }
 
-    func testDisplayNameForBackendIDReturnsTheConfiguredBackendsName() {
-        let first = FakeSTTBackend(id: .appleSpeech)
-        let second = FakeSTTBackend(id: .parakeet)
-        let router = makeRouter([first, second])
-
-        XCTAssertEqual(router.displayName(forBackendID: .appleSpeech), BackendID.appleSpeech.displayName)
-        XCTAssertEqual(router.displayName(forBackendID: .parakeet), BackendID.parakeet.displayName)
-        XCTAssertNil(router.displayName(forBackendID: .whisper))
-    }
-
     func testSelectBackendReturnsTheRemainingCandidateOrder() async {
         let first = FakeSTTBackend(id: .appleSpeech)
         first.availabilityValue = .unavailable("offline")
