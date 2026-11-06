@@ -4,7 +4,7 @@ struct GenericTerminalFocusResolver: FocusResolver {
     let id = "generic-terminal"
 
     func supports(_ session: AgentSession) -> Bool {
-        session.terminalContext.tmuxPaneID == nil && session.terminalContext.herdrPaneID == nil
+        Self.isDirect(session)
     }
 
     func resolve(session: AgentSession, context: FocusContext) async -> FocusDecision {
@@ -16,11 +16,17 @@ struct GenericTerminalFocusResolver: FocusResolver {
         }
 
         let directCandidates = context.sessions.filter {
-            $0.terminalContext.tmuxPaneID == nil && $0.terminalContext.herdrPaneID == nil && $0.processAncestry.contains(frontmostPID)
+            Self.isDirect($0) && $0.processAncestry.contains(frontmostPID)
         }
         guard directCandidates.count == 1, directCandidates[0].id == session.id else {
             return .unknown(resolverID: id, reason: "multiple direct agent sessions share the frontmost terminal process")
         }
         return .focused(resolverID: id, reason: "single direct session belongs to frontmost process ancestry")
+    }
+
+    /// Not inside a multiplexer pane, whose own resolver owns focus.
+    private static func isDirect(_ session: AgentSession) -> Bool {
+        let terminal = session.terminalContext
+        return terminal.tmuxPaneID == nil && terminal.herdrPaneID == nil && terminal.rexBlockID == nil
     }
 }

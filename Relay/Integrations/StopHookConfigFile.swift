@@ -7,7 +7,7 @@ import Foundation
 enum IntegrationInstallerError: Error, Equatable, Sendable {
     /// The config file's top-level JSON value was not an object.
     case configFileNotObject
-    /// `hooks` (or `hooks.Stop`) is present but not shaped the way Relay expects, so it cannot be
+    /// `hooks` (or one of its Relay events) is present but not shaped the way Relay expects, so it cannot be
     /// modified without risking data loss.
     case configFileMalformed
     /// Codex's `config.toml` explicitly disables hooks. Callers surface
@@ -15,8 +15,9 @@ enum IntegrationInstallerError: Error, Equatable, Sendable {
     case hooksDisabledInConfig
 }
 
-/// Owns the read -> merge -> write cycle for the single Relay-owned `Stop` command hook inside
-/// ONE agent's JSON hook config (Claude Code's `settings.json`, Codex's `hooks.json`).
+/// Owns the read -> merge -> write cycle for the Relay-owned command hook, one per event in
+/// `hookEvents`, inside ONE agent's JSON hook config (Claude Code's `settings.json`, Codex's
+/// `hooks.json`).
 ///
 /// Ownership is per build (see `EntryOwnership`): this file only ever adds, rewrites, or removes
 /// entries pointing at `helperPath` — plus, when `migratesLegacyEntries` (Release), legacy entries
@@ -36,6 +37,8 @@ struct StopHookConfigFile: Sendable {
     /// Mode for a config file Relay creates from scratch (what `Data.write` produced before under
     /// the default umask).
     static let newFilePermissions = 0o644
+    /// `Stop` delivers replies; `UserPromptSubmit` tells Relay which session the user prompted.
+    static let hookEvents = ["Stop", "UserPromptSubmit"]
 
     let fileURL: URL
     let provider: AgentProvider
@@ -110,10 +113,10 @@ struct StopHookConfigFile: Sendable {
 
     // MARK: - Operations
 
-    /// Ensures exactly one Relay `Stop` entry exists, pointed at `helperPath`.
+    /// Ensures exactly one Relay entry exists for each of `hookEvents`, pointed at `helperPath`.
     ///
-    /// - No file: creates one containing only the Relay hook.
-    /// - Unrelated `Stop` groups: appends a new Relay group; existing groups are untouched.
+    /// - No file: creates one containing only the Relay hooks.
+    /// - Unrelated groups: appends a new Relay group; existing groups are untouched.
     /// - A Relay-owned entry with a stale command (e.g. a previous app-bundle path): its
     ///   `command` is rewritten in place, other keys such as `timeout` preserved.
     /// - A Relay-owned entry already matching: nothing changes.
@@ -121,8 +124,16 @@ struct StopHookConfigFile: Sendable {
         let original = try readIfExists()
         var root = original ?? [:]
         var hooks = try Self.validatedHooks(from: root)
-        var stopGroups = try Self.validatedStopGroups(from: hooks)
+        let groupsByEvent = try Self.hookEvents.map { ($0, try Self.validatedGroups(for: $0, from: hooks)) }
+        for (event, groups) in groupsByEvent {
+            hooks[event] = installingEntry(in: groups)
+        }
+        root["hooks"] = hooks
+        try write(root, replacing: original)
+    }
 
+    private func installingEntry(in eventGroups: [[String: Any]]) -> [[String: Any]] {
+        var stopGroups = eventGroups
         let command = Self.relayCommand(helperPath: helperPath, provider: provider)
         let hasOwnEntry = stopGroups.contains { group in
             Self.entries(in: group).contains { ownership(ofEntry: $0) == .own }
@@ -167,44 +178,38 @@ struct StopHookConfigFile: Sendable {
         if !rewroteAny {
             stopGroups.append(["hooks": [newEntry(command: command)]])
         }
-
-        hooks["Stop"] = stopGroups
-        root["hooks"] = hooks
-        try write(root, replacing: original)
+        return stopGroups
     }
 
-    /// Removes only Relay-owned `Stop` entries. A group Relay created (whose only key is
+    /// Removes only Relay-owned entries of `hookEvents`. A group Relay created (whose only key is
     /// `hooks`) is dropped once empty; groups with other keys keep their remaining entries.
-    /// Empty `Stop`/`hooks` containers are removed. A no-op (no write) when nothing matches.
+    /// Empty event/`hooks` containers are removed. A no-op (no write) when nothing matches.
     func uninstall() throws {
         guard let original = try readIfExists() else { return }
         var root = original
         guard var hooks = root["hooks"] as? [String: Any] else { return }
-        guard var stopGroups = hooks["Stop"] as? [[String: Any]] else { return }
 
         var didRemoveAnyRelayEntry = false
-        stopGroups = stopGroups.compactMap { group -> [String: Any]? in
-            guard let hookEntries = group["hooks"] as? [[String: Any]] else { return group }
-            let filteredEntries = hookEntries.filter { !isRemovable($0) }
-            if filteredEntries.count == hookEntries.count { return group }
+        for event in Self.hookEvents {
+            guard let eventGroups = hooks[event] as? [[String: Any]] else { continue }
+            var removedHere = false
+            let remaining = eventGroups.compactMap { group -> [String: Any]? in
+                guard let hookEntries = group["hooks"] as? [[String: Any]] else { return group }
+                let filteredEntries = hookEntries.filter { !isRemovable($0) }
+                if filteredEntries.count == hookEntries.count { return group }
+                removedHere = true
+                if filteredEntries.isEmpty && group.keys.count == 1 { return nil }
+                var updatedGroup = group
+                updatedGroup["hooks"] = filteredEntries
+                return updatedGroup
+            }
+            guard removedHere else { continue }
             didRemoveAnyRelayEntry = true
-            if filteredEntries.isEmpty && group.keys.count == 1 { return nil }
-            var updatedGroup = group
-            updatedGroup["hooks"] = filteredEntries
-            return updatedGroup
+            hooks[event] = remaining.isEmpty ? nil : remaining
         }
         guard didRemoveAnyRelayEntry else { return }
 
-        if stopGroups.isEmpty {
-            hooks.removeValue(forKey: "Stop")
-        } else {
-            hooks["Stop"] = stopGroups
-        }
-        if hooks.isEmpty {
-            root.removeValue(forKey: "hooks")
-        } else {
-            root["hooks"] = hooks
-        }
+        root["hooks"] = hooks.isEmpty ? nil : hooks
         try write(root, replacing: original)
     }
 
@@ -259,15 +264,15 @@ struct StopHookConfigFile: Sendable {
         return hooks
     }
 
-    /// `hooks["Stop"]` as an array of objects, or `[]` when absent. Throws
+    /// `hooks[event]` as an array of objects, or `[]` when absent. Throws
     /// `.configFileMalformed` when present but not an array of objects (including an array
     /// containing a non-object element).
-    private static func validatedStopGroups(from hooks: [String: Any]) throws -> [[String: Any]] {
-        guard let rawStop = hooks["Stop"] else { return [] }
-        guard let stopGroups = rawStop as? [[String: Any]] else {
+    private static func validatedGroups(for event: String, from hooks: [String: Any]) throws -> [[String: Any]] {
+        guard let rawGroups = hooks[event] else { return [] }
+        guard let groups = rawGroups as? [[String: Any]] else {
             throw IntegrationInstallerError.configFileMalformed
         }
-        return stopGroups
+        return groups
     }
 
     // MARK: - File I/O

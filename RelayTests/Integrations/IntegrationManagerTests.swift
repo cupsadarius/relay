@@ -83,6 +83,28 @@ final class IntegrationManagerTests: XCTestCase {
         XCTAssertEqual(codex.decodeCount, 0)
     }
 
+    func testUserPromptSubmitReportsThePromptAndIsNeverDecodedAsAResponse() async {
+        let claude = SpyIntegration(provider: .claudeCode, result: .failure(TestError.shouldNotBeCalled))
+        var continuation: AsyncStream<HookEnvelope>.Continuation!
+        let events = AsyncStream<HookEnvelope> { continuation = $0 }
+        let prompts = PromptRecorder()
+        let manager = IntegrationManager(
+            events: events,
+            integrations: [claude],
+            speechCoordinator: FakeSpeechCoordinator(),
+            onPrompt: { prompts.record($0) }
+        )
+        manager.start()
+        defer { manager.stop() }
+
+        let payload = #"{"session_id":"s1","hook_event_name":"UserPromptSubmit","cwd":"/x","prompt":"hi"}"#
+        continuation.yield(envelope(provider: .claudeCode, rawPayload: payload))
+
+        await waitUntil { !prompts.ids.isEmpty }
+        XCTAssertEqual(prompts.ids, [AgentSessionID(provider: .claudeCode, providerSessionID: "s1")])
+        XCTAssertEqual(claude.decodeCount, 0)
+    }
+
     func testCodexEnvelopeIsDecodedOnlyByCodexAdapterAndBecomesLatest() async {
         let codexEvent = event(provider: .codex, providerSessionID: "codex-1")
         let claude = SpyIntegration(provider: .claudeCode, result: .failure(TestError.shouldNotBeCalled))
@@ -550,6 +572,14 @@ private final class SpyIntegration: RelayIntegration, @unchecked Sendable {
 /// Records `onResponse` invocations. Thread-safe because the manager calls `onResponse` after
 /// hopping back onto the MainActor from `recordActive`, but the closure type itself is
 /// `@Sendable`, so this stays consistent with `SpyIntegration`'s own lock-based approach above.
+private final class PromptRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [AgentSessionID] = []
+
+    func record(_ id: AgentSessionID) { lock.withLock { recorded.append(id) } }
+    var ids: [AgentSessionID] { lock.withLock { recorded } }
+}
+
 private final class ResponseRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var _events: [AgentResponseEvent] = []

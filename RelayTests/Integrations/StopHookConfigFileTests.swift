@@ -64,6 +64,18 @@ final class StopHookConfigFileTests: XCTestCase {
 
     // MARK: - Identification
 
+    func testInstallAndUninstallCoverStopAndUserPromptSubmit() throws {
+        try makeFile().install()
+        let hooks = try readJSON()["hooks"] as? [String: Any] ?? [:]
+        for event in ["Stop", "UserPromptSubmit"] {
+            let commands = hookEntries(hooks[event] as? [[String: Any]] ?? []).compactMap { $0["command"] as? String }
+            XCTAssertEqual(commands, [relayCommand()], event)
+        }
+
+        try makeFile().uninstall()
+        XCTAssertNil(try readJSON()["hooks"])
+    }
+
     func testRelayOwnedCommandIsProviderSpecificAndPathIndependent() {
         XCTAssertTrue(
             StopHookConfigFile.isRelayHookCommand(
@@ -604,6 +616,8 @@ final class StopHookConfigFileTests: XCTestCase {
             { "hooks": { "Stop": [
               { "hooks": [ { "type": "command", "command": "\"/Users/test/Library/Application Support/Relay/bin/RelayHook\" --provider codex" } ] },
               { "hooks": [ { "type": "command", "command": "\"/Applications/Old Relay.app/Contents/Helpers/RelayHook\" --provider codex" } ] }
+            ], "UserPromptSubmit": [
+              { "hooks": [ { "type": "command", "command": "\"/Users/test/Library/Application Support/Relay/bin/RelayHook\" --provider codex" } ] }
             ] } }
             """#)
         let before = try Data(contentsOf: fileURL)

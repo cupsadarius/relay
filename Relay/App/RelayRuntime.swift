@@ -3,8 +3,8 @@ import Foundation
 /// Session-intelligence services: the ephemeral in-memory agent-session registry, the
 /// frontmost-app monitor, the process inspector (used both for focus resolution and for pruning
 /// dead-process sessions), and the resulting `FocusResolutionService`. Resolver order is fixed:
-/// Herdr (exact pane evidence) -> tmux (exact pane evidence, only when a tmux executable exists)
-/// -> generic terminal (conservative process-ancestry fallback).
+/// Herdr (exact pane evidence) -> Rex (focused block of the agent's Rex session) -> tmux (exact
+/// pane evidence, only when a tmux executable exists) -> generic terminal (process ancestry).
 struct SessionServices {
     let registry: AgentSessionRegistry
     let frontmostApps: any FrontmostAppMonitoring
@@ -146,9 +146,8 @@ final class RelayRuntime {
 
         // Phase 3 session-intelligence dependency graph. Every subsystem that needs frontmost-app
         // evidence shares these SAME instances rather than constructing its own, so they all
-        // observe one consistent view of focus state. Resolver order is fixed: Herdr (exact pane
-        // evidence) -> tmux (exact pane evidence) -> generic terminal (conservative
-        // process-ancestry fallback). tmux support is entirely optional: when no tmux executable
+        // observe one consistent view of focus state. Resolver order is fixed: Herdr -> Rex ->
+        // tmux -> generic terminal (see `SessionServices`). tmux support is entirely optional: when no tmux executable
         // is found, `TmuxFocusResolver` is simply never added to the list.
         let sessionRegistry = AgentSessionRegistry()
         // One shared, in-memory diagnostics log for the integration pipeline, independent of
@@ -166,6 +165,7 @@ final class RelayRuntime {
                 herdr: herdrClient,
                 hostOwnership: HerdrHostOwnershipChecker()
             ))
+        resolvers.append(RexFocusResolver(rex: RexClient()))
         if let tmuxRunner {
             resolvers.append(TmuxFocusResolver(runner: tmuxRunner))
         }
@@ -214,7 +214,8 @@ final class RelayRuntime {
             integrations: [StopHookIntegration.claudeCode, StopHookIntegration.codex],
             speechCoordinator: coordinator,
             diagnostics: integrationDiagnosticsLog,
-            onResponse: { event in await autoReadCoordinator.handle(event) }
+            onResponse: { event in await autoReadCoordinator.handle(event) },
+            onPrompt: { sessionID in await autoReadCoordinator.notePrompt(sessionID) }
         )
         let overlayPresenter = ActivityOverlayWindowController(
             model: overlayModel,

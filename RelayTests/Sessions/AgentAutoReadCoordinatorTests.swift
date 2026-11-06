@@ -280,6 +280,31 @@ final class AgentAutoReadCoordinatorTests: XCTestCase {
         XCTAssertEqual(session?.processAncestry, [222])
     }
 
+    // MARK: - Prompts
+
+    func testPromptedSessionSpeaksAsLastActiveWhenNobodyIsFocused() async {
+        let speech = RecordingSpeechSink()
+        let coordinator = makeCoordinator(focus: MutableStubFocusResolver(), speech: speech, autoRead: true)
+
+        await coordinator.notePrompt(.init(provider: .claudeCode, providerSessionID: "a"))
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "a", text: "done"))
+
+        XCTAssertEqual(speech.requests.map(\.sessionID), ["claude-code:a"])
+    }
+
+    /// Several Rex sessions can each look focused; the latest prompt decides which one wins.
+    func testLatestPromptedSessionIsResolvedFirst() async {
+        let focus = MutableStubFocusResolver()
+        let coordinator = makeCoordinator(focus: focus, speech: RecordingSpeechSink(), autoRead: true)
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "a", text: "one"))
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "b", text: "two"))
+
+        await coordinator.notePrompt(.init(provider: .claudeCode, providerSessionID: "a"))
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "b", text: "three"))
+
+        XCTAssertEqual(focus.lastAmongIDs.map(\.providerSessionID), ["a", "b"])
+    }
+
     /// The agent process itself may have no tty (e.g. its stdio is piped); the tty must come from
     /// the first ancestor UP the chain that has one, not just the agent's own snapshot record.
     func testEnvelopeAncestryTtyComesFromTheFirstAncestorThatHasOne() async {

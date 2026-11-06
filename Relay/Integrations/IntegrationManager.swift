@@ -39,6 +39,8 @@ final class IntegrationManager {
     /// (Phase 3's `AgentAutoReadCoordinator`) apply focus-gated auto-read semantics without this
     /// manager knowing anything about focus or sessions itself.
     @ObservationIgnored private let onResponse: @Sendable (AgentResponseEvent) async -> Void
+    /// Invoked for each `UserPromptSubmit` envelope with the session the user just prompted.
+    @ObservationIgnored nonisolated private let onPrompt: @Sendable (AgentSessionID) async -> Void
     @ObservationIgnored nonisolated private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "integrations")
     @ObservationIgnored nonisolated private let diagnostics: IntegrationDiagnosticsLog
     @ObservationIgnored private var consumeTask: Task<Void, Never>?
@@ -51,7 +53,8 @@ final class IntegrationManager {
         speechCoordinator: any SpeechCoordinating,
         initialStatus: [AgentProvider: IntegrationStatus] = [:],
         diagnostics: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog(),
-        onResponse: @escaping @Sendable (AgentResponseEvent) async -> Void = { _ in }
+        onResponse: @escaping @Sendable (AgentResponseEvent) async -> Void = { _ in },
+        onPrompt: @escaping @Sendable (AgentSessionID) async -> Void = { _ in }
     ) {
         self.events = events
         self.integrations = Dictionary(uniqueKeysWithValues: integrations.map { ($0.provider, $0) })
@@ -61,6 +64,7 @@ final class IntegrationManager {
         self.status = initialStatus
         self.diagnostics = diagnostics
         self.onResponse = onResponse
+        self.onPrompt = onPrompt
     }
 
     /// Starts consuming `events` on a background task. Calling this more than once while
@@ -98,6 +102,12 @@ final class IntegrationManager {
                     outcome: "dropped",
                     detail: "no-integration provider=\(envelope.provider.rawValue)"
                 )
+                continue
+            }
+
+            if let promptedSession = PromptSubmitPayload.sessionID(in: envelope) {
+                diagnostics.append(stage: "manager", outcome: "prompt", detail: "provider=\(envelope.provider.rawValue)")
+                await onPrompt(promptedSession)
                 continue
             }
 

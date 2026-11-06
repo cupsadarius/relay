@@ -157,6 +157,18 @@ final class IntegrationSetupModel {
             try installBundledHelperIfPresent()
         } catch {
             integrationDiagnosticsLog.append(stage: "helper", outcome: "refresh-failed", detail: "stable-helper-unavailable")
+            return
+        }
+        // An install from an older build gains the hook events added since; unchanged configs are not written.
+        for provider in AgentProvider.allCases where Self.hooksInstalled(installerStatuses[provider]) {
+            do {
+                switch provider {
+                case .claudeCode: try services.claudeCodeInstaller.install()
+                case .codex: try services.codexInstaller.install()
+                }
+            } catch {
+                integrationDiagnosticsLog.append(stage: "installer", outcome: "upgrade-failed", detail: "provider=\(provider.rawValue)")
+            }
         }
     }
 

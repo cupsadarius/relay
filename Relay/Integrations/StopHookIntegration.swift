@@ -32,6 +32,25 @@ struct StopHookPayload: Decodable {
     }
 }
 
+/// The fields Relay reads from a `UserPromptSubmit` hook payload. The prompt text is never read.
+struct PromptSubmitPayload: Decodable {
+    let sessionID: String
+    let hookEventName: String
+
+    enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+        case hookEventName = "hook_event_name"
+    }
+
+    /// The agent session a `UserPromptSubmit` envelope names, or `nil` for any other envelope.
+    static func sessionID(in envelope: HookEnvelope) -> AgentSessionID? {
+        guard let payload = try? JSONDecoder().decode(Self.self, from: Data(envelope.rawPayload.utf8)),
+            payload.hookEventName == "UserPromptSubmit"
+        else { return nil }
+        return AgentSessionID(provider: envelope.provider, providerSessionID: payload.sessionID)
+    }
+}
+
 /// Why a hook envelope was rejected. Never carries payload content — only the structural reason.
 enum StopHookIntegrationError: Error, Equatable, Sendable {
     /// Not UTF-8/JSON, not the expected shape, or missing a required `turn_id`.

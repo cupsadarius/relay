@@ -21,6 +21,7 @@ private let maxInputBytes = 1_500 * 1_024 // 1.5 MiB
 private let environmentAllowlist = [
     "TMUX", "TMUX_PANE",
     "HERDR_SOCKET_PATH", "HERDR_PANE_ID", "HERDR_ACTIVE_PANE_ID",
+    "REX_SERVER", "REX_SESSION", "REX_BLOCK",
 ]
 
 // MARK: - Debug logging

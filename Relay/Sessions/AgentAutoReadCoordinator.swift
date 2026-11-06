@@ -64,9 +64,10 @@ actor AgentAutoReadCoordinator {
     /// every focus resolver share.
     private let processInspector: ProcessInspector
     /// The most-recently-active agent session: the last one found confidently focused, or the
-    /// last one actually auto-spoken (whichever happened most recently). `nil` until the first
-    /// time either of those occurs.
+    /// last one actually auto-spoken, or the last one prompted (whichever happened most recently).
+    /// `nil` until the first time any of those occurs.
     private var lastActiveSessionID: AgentSessionID?
+    private var promptedAt: [AgentSessionID: Date] = [:]
 
     init(
         registry: AgentSessionRegistry,
@@ -84,6 +85,13 @@ actor AgentAutoReadCoordinator {
         self.autoReadEnabled = autoReadEnabled
         self.diagnostics = diagnostics
         self.processInspector = processInspector
+    }
+
+    /// The user just prompted `sessionID`: it becomes the last-active session, and it wins ties
+    /// when several sessions look focused (Rex cannot say which session is on screen).
+    func notePrompt(_ sessionID: AgentSessionID) {
+        promptedAt[sessionID] = Date()
+        lastActiveSessionID = sessionID
     }
 
     func handle(_ event: AgentResponseEvent) async {
@@ -110,7 +118,11 @@ actor AgentAutoReadCoordinator {
         // never keeps generic-terminal focus ambiguous.
         await pruneDeadSessions(in: registry, snapshot: snapshot)
 
-        let sessions = await registry.sessions()
+        let sessions = await registry.sessions().sorted { lhs, rhs in
+            let lhsPrompt = promptedAt[lhs.id] ?? .distantPast
+            let rhsPrompt = promptedAt[rhs.id] ?? .distantPast
+            return lhsPrompt != rhsPrompt ? lhsPrompt > rhsPrompt : lhs.lastActivityAt > rhs.lastActivityAt
+        }
         let resolution = await focus.resolveFocus(among: sessions, processSnapshot: snapshot)
         recordFocusDecisions(resolution.decisions)
         let focused = resolution.focused
