@@ -156,21 +156,22 @@ final class SettingsControllerTests: XCTestCase {
         XCTAssertEqual(store.saved.last?.dictationMode, .toggle)
     }
 
-    // MARK: Whisper selection seam
+    // MARK: Model selection seams
 
     func testWhisperSelectionIsSeededFromPersistedSettings() {
         var saved = AppSettings.defaults
         saved.selectedSpeechModelByBackend["whisper"] = "base.en"
         let controller = makeController(store: SpySettingsStore(settings: saved))
 
-        XCTAssertEqual(controller.whisperSelection(), .baseEn)
+        let read: WhisperModelSelection = controller.modelSelection(for: .whisper)
+        XCTAssertEqual(read(), .baseEn)
     }
 
     func testWhisperSelectionWriterPersistsAndIsVisibleFromAnyActor() async {
         let store = SpySettingsStore()
         let controller = makeController(store: store)
-        let read = controller.whisperSelection
-        let write = controller.whisperSelectionWriter
+        let read: WhisperModelSelection = controller.modelSelection(for: .whisper)
+        let write: WhisperModelSelectionWriter = controller.modelSelectionWriter(for: .whisper)
 
         write(.smallEn)
 
@@ -187,12 +188,14 @@ final class SettingsControllerTests: XCTestCase {
 
     func testParakeetSelectionPersistsAndReadsBack() {
         let controller = makeController(store: SpySettingsStore())
-        XCTAssertNil(controller.parakeetSelection())
+        let read: ParakeetModelSelection = controller.modelSelection(for: .parakeet)
+        let write: ParakeetModelSelectionWriter = controller.modelSelectionWriter(for: .parakeet)
+        XCTAssertNil(read())
 
-        controller.parakeetSelectionWriter(.v2)
+        write(.v2)
 
         XCTAssertEqual(controller.current.selectedSpeechModelByBackend["parakeet"], "parakeet-v2")
-        XCTAssertEqual(controller.parakeetSelection(), .v2)
+        XCTAssertEqual(read(), .v2)
     }
 
     func testUnknownPersistedWhisperIDReadsAsNoSelection() {
@@ -200,7 +203,8 @@ final class SettingsControllerTests: XCTestCase {
         saved.selectedSpeechModelByBackend["whisper"] = "not-a-model"
         let controller = makeController(store: SpySettingsStore(settings: saved))
 
-        XCTAssertNil(controller.whisperSelection())
+        let read: WhisperModelSelection = controller.modelSelection(for: .whisper)
+        XCTAssertNil(read())
     }
 
     func testSetVoiceWritesAndClearsOneBackendsEntry() {

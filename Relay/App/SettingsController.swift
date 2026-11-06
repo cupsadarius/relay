@@ -132,36 +132,20 @@ final class SettingsController {
         save()
     }
 
-    // MARK: Whisper selection seam
+    // MARK: Model selection seams
 
-    /// Synchronous, actor-agnostic read of Whisper's selected model (for `WhisperBackend` and
-    /// `WhisperModelManager`).
-    var whisperSelection: WhisperModelSelection {
+    /// Synchronous, actor-agnostic read of `backend`'s selected model. An unknown id reads as nil.
+    func modelSelection<ID: RawRepresentable & Sendable>(for backend: BackendID) -> @Sendable () -> ID?
+    where ID.RawValue == String {
         let snapshot = snapshot
-        return {
-            snapshot.value.selectedSpeechModelByBackend[BackendID.whisper.rawValue].flatMap(WhisperModelID.init(rawValue:))
-        }
+        return { snapshot.value.selectedSpeechModelByBackend[backend.rawValue].flatMap(ID.init(rawValue:)) }
     }
 
-    /// Write half of the seam: persists through this controller like every other setting.
-    var whisperSelectionWriter: WhisperModelSelectionWriter {
+    /// Persists `backend`'s selected model through this controller like every other setting.
+    func modelSelectionWriter<ID: RawRepresentable>(for backend: BackendID) -> @MainActor @Sendable (ID?) -> Void
+    where ID.RawValue == String {
         { [weak self] modelID in
-            self?.setSelectedSpeechModel(backendID: BackendID.whisper.rawValue, modelID: modelID?.rawValue)
-        }
-    }
-
-    // MARK: Parakeet selection seam
-
-    var parakeetSelection: ParakeetModelSelection {
-        let snapshot = snapshot
-        return {
-            snapshot.value.selectedSpeechModelByBackend[BackendID.parakeet.rawValue].flatMap(ParakeetModelID.init(rawValue:))
-        }
-    }
-
-    var parakeetSelectionWriter: ParakeetModelSelectionWriter {
-        { [weak self] modelID in
-            self?.setSelectedSpeechModel(backendID: BackendID.parakeet.rawValue, modelID: modelID?.rawValue)
+            self?.setSelectedSpeechModel(backendID: backend.rawValue, modelID: modelID?.rawValue)
         }
     }
 
