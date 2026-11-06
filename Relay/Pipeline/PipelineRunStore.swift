@@ -104,7 +104,8 @@ final class PipelineRunStore {
     }
 
     func apply(_ event: PipelineEvent) {
-        if case .level = event.phase {} else {
+        if case .level = event.phase {
+        } else {
             rawEvents.append(event)
             if rawEvents.count > rawCapacity { rawEvents.removeFirst(rawEvents.count - rawCapacity) }
         }

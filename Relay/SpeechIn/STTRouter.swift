@@ -55,8 +55,12 @@ final class STTRouter {
 
     /// Final transcription with fallback. It walks `selection.candidateOrder` when given, else the
     /// current backend order, and stops at the next backend once the task is cancelled.
-    func transcribe(audio: AudioInput, options: STTOptions, selection: STTSelection? = nil) async throws -> Transcript {
+    /// Announces the transcribe step, and the fallback step for every backend after the first.
+    func transcribe(
+        audio: AudioInput, options: STTOptions, selection: STTSelection? = nil, tracer: PipelineTracer? = nil
+    ) async throws -> Transcript {
         lastFailedBackendDisplayName = nil
+        var step: PipelineStep?
         var lastError: SpeechBackendError = .unavailable("No STT backend is available")
         var lastErrorBackendName: String?
 
@@ -68,6 +72,7 @@ final class STTRouter {
                 break
             case let .terminal(error):
                 lastFailedBackendDisplayName = backend.id.displayName
+                tracer?.fail(step ?? .transcribe, "\(backend.id.displayName): permission denied")
                 throw error
             case let .skip(error):
                 lastError = error
@@ -75,20 +80,30 @@ final class STTRouter {
                 continue
             }
 
+            let name = backend.id.displayName
+            let current: PipelineStep = step == nil ? .transcribe : .fallback
+            step = current
+            tracer?.start(current, current == .transcribe ? "Transcribing with \(name)" : "Falling back to \(name)")
             do {
-                return try await backend.transcribe(audio: audio, options: options)
+                let transcript = try await backend.transcribe(audio: audio, options: options)
+                tracer?.finish(current, name)
+                return transcript
             } catch let error as SpeechBackendError where error.isFallbackWorthy {
                 lastError = error
-                lastErrorBackendName = backend.id.displayName
+                lastErrorBackendName = name
+                tracer?.fail(current, "\(name) failed")
             } catch is CancellationError {
+                tracer?.stop(current, "Cancelled")
                 throw CancellationError()
             } catch {
-                lastFailedBackendDisplayName = backend.id.displayName
+                lastFailedBackendDisplayName = name
+                tracer?.fail(current, "\(name) failed")
                 throw error
             }
         }
 
         lastFailedBackendDisplayName = lastErrorBackendName
+        if step == nil { tracer?.fail(.transcribe, "No speech-to-text backend is available") }
         throw lastError
     }
 

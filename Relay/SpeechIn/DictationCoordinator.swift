@@ -49,6 +49,9 @@ final class DictationCoordinator: DictationCoordinating {
     private let stopSpeech: () -> Void
     private let activity: any DictationActivityPublishing
     private let diagnostics: DiagnosticsRecorder?
+    private let pipeline: PipelineEventBus?
+    /// Announces the current or last run; a new one per `start()`.
+    private var tracer: PipelineTracer?
     private let status: (String) -> Void
     private var state: State = .idle
     /// Read once per `start()` to decide whether to start a `LiveTranscription`.
@@ -63,8 +66,10 @@ final class DictationCoordinator: DictationCoordinating {
         status: @escaping (String) -> Void,
         activity: any DictationActivityPublishing,
         diagnostics: DiagnosticsRecorder? = nil,
+        pipeline: PipelineEventBus? = nil,
         liveTranscriptionEnabled: @escaping () -> Bool = { true }
     ) {
+        self.pipeline = pipeline
         self.microphone = microphone
         self.sttRouter = sttRouter
         self.processor = processor
@@ -81,6 +86,10 @@ final class DictationCoordinator: DictationCoordinating {
         let session = UUID()
         let live = liveTranscriptionEnabled() ? makeLiveTranscription(session: session) : nil
         state = .starting(session, live: live, finishRequested: false)
+        let tracer = pipeline.map { PipelineTracer(flow: .dictation, bus: $0, runID: session) }
+        self.tracer = tracer
+        tracer?.finish(.hotkey, "Pressed")
+        await microphone.setTracer(tracer)
         activity.begin(sessionID: session)
         stopSpeech()
         // Must run before microphone.start(onLevel:); see setSampleObserver.
@@ -220,7 +229,7 @@ final class DictationCoordinator: DictationCoordinating {
 
         let transcript: Transcript
         do {
-            transcript = try await sttRouter.transcribe(audio: audio, options: .init(), selection: selection)
+            transcript = try await sttRouter.transcribe(audio: audio, options: .init(), selection: selection, tracer: tracer)
         } catch {
             guard !Task.isCancelled, isFinishing(session) else { return }
             fail(error, at: .transcription, session: session)
@@ -234,6 +243,7 @@ final class DictationCoordinator: DictationCoordinating {
         }
         let text = processor.process(transcript.text)
         guard !text.isEmpty else {
+            tracer?.stop(.cleanUp, "No speech")
             state = .idle
             diagnostics?.record(.dictation(.failed(.transcription)))
             activity.fail(sessionID: session, category: .noUsableAudio, message: DictationFailure.noSpeechCapsuleMessage)
@@ -241,9 +251,13 @@ final class DictationCoordinator: DictationCoordinating {
             return
         }
 
+        let removed = Self.wordCount(transcript.text) - Self.wordCount(text)
+        tracer?.finish(.cleanUp, removed > 0 ? "Removed \(removed) word\(removed == 1 ? "" : "s")" : "Nothing to remove")
+
         // No suspension point since the guard above, so a concurrent cancel() cannot interleave.
         do {
             let mechanism = try textInserter.insert(text)
+            tracer?.finish(.insert, mechanism == .paste ? "Pasted" : "Inserted via Accessibility")
             state = .idle
             diagnostics?.record(.dictation(.inserted(mechanism)))
             activity.complete(sessionID: session)
@@ -253,8 +267,13 @@ final class DictationCoordinator: DictationCoordinating {
         }
     }
 
+    private static func wordCount(_ text: String) -> Int {
+        text.split(whereSeparator: \.isWhitespace).count
+    }
+
     private func fail(_ error: Error, at stage: DictationFailureStage, session: UUID) {
         state = .idle
+        if stage == .insertion { tracer?.fail(.insert, "Could not insert the text") }
         diagnostics?.record(.dictation(.failed(stage)))
         // Only a transcription-stage error came from a speech backend; name the one that failed.
         let backendName = stage == .transcription ? sttRouter.lastFailedBackendDisplayName : nil

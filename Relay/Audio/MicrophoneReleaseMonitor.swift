@@ -67,14 +67,27 @@ final class MicrophoneReleaseMonitor: @unchecked Sendable {
         lock.withLock { generation += 1 }
     }
 
-    func captureReleased(_ path: MicrophoneStopPath) {
+    /// `tracer` gets the mic released step of the run that just ended.
+    func captureReleased(_ path: MicrophoneStopPath, tracer: PipelineTracer? = nil) {
         let expected = lock.withLock {
             generation += 1
             return generation
         }
+        tracer?.start(.micReleased, "Checking…")
         schedule(delay) { [self] in
-            guard lock.withLock({ generation == expected }) else { return }
-            if probe.isRunningInput() == true { report(path) }
+            guard lock.withLock({ generation == expected }) else {
+                tracer?.finish(.micReleased, "Not checked: next dictation started")
+                return
+            }
+            switch probe.isRunningInput() {
+            case true?:
+                tracer?.fail(.micReleased, "Still open after \(path.rawValue)")
+                report(path)
+            case false?:
+                tracer?.finish(.micReleased, "Released")
+            case nil:
+                tracer?.finish(.micReleased, "Released (not verified)")
+            }
         }
     }
 }

@@ -12,6 +12,12 @@ protocol MicrophoneCapturing: Sendable {
     /// Taps the raw 16 kHz mono sample batches, for live interim transcription. Replaces the
     /// current observer; only an observer set before `start(onLevel:)` sees that session's samples.
     func setSampleObserver(_ observer: (@Sendable ([Float]) -> Void)?) async
+    /// The run the next capture announces its steps into; `nil` announces nothing.
+    func setTracer(_ tracer: PipelineTracer?) async
+}
+
+extension MicrophoneCapturing {
+    func setTracer(_ tracer: PipelineTracer?) async {}
 }
 
 protocol AudioCaptureSourcing: Sendable {
@@ -24,10 +30,13 @@ protocol AudioCaptureSourcing: Sendable {
     func stop(path: MicrophoneStopPath) async throws
     /// The input device's sample rate (Hz) before resampling to 16 kHz.
     func currentInputSampleRate() -> Double
+    /// The run the next `start` announces mic open and mic released into.
+    func setTracer(_ tracer: PipelineTracer?)
 }
 
 extension AudioCaptureSourcing {
     func stop() async throws { try await stop(path: .stop) }
+    func setTracer(_ tracer: PipelineTracer?) {}
 }
 
 /// Privacy-safe metadata about one microphone capture attempt: counts, rate, and a timestamp
@@ -76,6 +85,8 @@ actor MicrophoneCapture: MicrophoneCapturing {
     /// sample-batch closure, so a later `setSampleObserver` call mid-recording never changes who
     /// an already-running session's samples are forwarded to.
     private var sampleObserver: (@Sendable ([Float]) -> Void)?
+    /// Announces the recording step of the current or next capture.
+    private var tracer: PipelineTracer?
 
     /// Resumed once the actor reaches `idle`; lets `cancel()` wait out an in-flight
     /// `start()`/`stop()` instead of returning while the real source is still winding down.
@@ -103,10 +114,13 @@ actor MicrophoneCapture: MicrophoneCapturing {
         guard case .idle = state else { throw MicrophoneCaptureError.alreadyRecording }
         let session = UUID()
         state = .starting(session, cancelRequested: false)
+        let tracer = self.tracer
         guard await permission.requestPermission() else {
             transitionToIdle()
+            tracer?.fail(.micOpen, "Microphone permission denied")
             throw SpeechBackendError.permissionDenied
         }
+        source.setTracer(tracer)
 
         accumulator.reset()
         // Captured once, here, on the actor: see `sampleObserver`'s doc comment for why this must
@@ -117,7 +131,9 @@ actor MicrophoneCapture: MicrophoneCapturing {
             try await source.start(
                 onSamples: { [accumulator] samples in
                     accumulator.append(samples)
-                    onLevel(AudioBufferUtilities.level(of: samples))
+                    let level = AudioBufferUtilities.level(of: samples)
+                    onLevel(level)
+                    tracer?.level(.recording, level)
                     sampleTap?(samples)
                 },
                 onTerminalError: { [weak self] error in
@@ -128,6 +144,7 @@ actor MicrophoneCapture: MicrophoneCapturing {
             case .starting(session, cancelRequested: false):
                 state = .recording(session)
                 lastInputSampleRate = source.currentInputSampleRate()
+                tracer?.start(.recording, "Recording")
             case let .failedStarting(failedSession, error) where failedSession == session:
                 transitionToIdle()
                 throw error
@@ -161,6 +178,7 @@ actor MicrophoneCapture: MicrophoneCapturing {
         case let .failedRecording(_, error):
             accumulator.reset()
             transitionToIdle()
+            tracer?.fail(.recording, Self.reason(error))
             throw error
         default:
             throw MicrophoneCaptureError.notRecording
@@ -181,11 +199,19 @@ actor MicrophoneCapture: MicrophoneCapturing {
                     frameCount: samples.count,
                     capturedAt: now()
                 ))
-            guard !samples.isEmpty else { throw SpeechBackendError.noUsableAudio }
+            guard !samples.isEmpty else {
+                tracer?.fail(.recording, "No audio from the microphone")
+                throw SpeechBackendError.noUsableAudio
+            }
+            let seconds = Double(samples.count) / AudioInput.sttSampleRate
+            tracer?.finish(.recording, String(format: "%.1f s", seconds))
             return AudioInput(samples: samples, sampleRate: AudioInput.sttSampleRate)
+        } catch let error as SpeechBackendError where error == .noUsableAudio {
+            throw error
         } catch {
             accumulator.reset()
             transitionToIdle()
+            tracer?.fail(.recording, Self.reason(error))
             throw error
         }
     }
@@ -203,6 +229,7 @@ actor MicrophoneCapture: MicrophoneCapturing {
         case let .recording(session):
             state = .stopping(session)
             try? await source.stop(path: .cancel)
+            tracer?.stop(.recording, "Cancelled")
             accumulator.reset()
             transitionToIdle()
         case .stopping:
@@ -228,6 +255,14 @@ actor MicrophoneCapture: MicrophoneCapturing {
 
     func setSampleObserver(_ observer: (@Sendable ([Float]) -> Void)?) async {
         sampleObserver = observer
+    }
+
+    func setTracer(_ tracer: PipelineTracer?) async {
+        self.tracer = tracer
+    }
+
+    private static func reason(_ error: Error) -> String {
+        (error as? LocalizedError)?.errorDescription ?? "Recording failed"
     }
 
     private func sourceTerminated(_ error: Error, session: UUID) {

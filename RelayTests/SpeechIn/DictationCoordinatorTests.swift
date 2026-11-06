@@ -15,6 +15,48 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(events.values, ["speech.stop", "microphone.start", "overlay.listen"])
     }
 
+    func testDictationRunAnnouncesHotkeyCleanUpAndInsert() async {
+        let events = EventLog()
+        let recorder = PipelineEventRecorder()
+        let coordinator = DictationCoordinator(
+            microphone: FakeMicrophone(events: events),
+            sttRouter: router(events: events, transcript: "um hello relay"),
+            processor: RulesTranscriptProcessor(),
+            textInserter: FakeTextInserter(events: events, mechanism: .paste),
+            stopSpeech: {},
+            status: { _ in },
+            activity: RecordingActivityOverlay(),
+            pipeline: recorder.bus
+        )
+        await coordinator.start()
+        await coordinator.finish()
+
+        let steps = await recorder.steps()
+        XCTAssertEqual(steps.first, .init(step: .hotkey, phase: .finished("Pressed")))
+        XCTAssertTrue(steps.contains(.init(step: .cleanUp, phase: .finished("Removed 1 word"))))
+        XCTAssertEqual(steps.last, .init(step: .insert, phase: .finished("Pasted")))
+    }
+
+    func testDictationWithNoSpeechStopsAtCleanUp() async {
+        let events = EventLog()
+        let recorder = PipelineEventRecorder()
+        let coordinator = DictationCoordinator(
+            microphone: FakeMicrophone(events: events),
+            sttRouter: router(events: events, transcript: "um"),
+            processor: RulesTranscriptProcessor(),
+            textInserter: FakeTextInserter(events: events),
+            stopSpeech: {},
+            status: { _ in },
+            activity: RecordingActivityOverlay(),
+            pipeline: recorder.bus
+        )
+        await coordinator.start()
+        await coordinator.finish()
+
+        let steps = await recorder.steps()
+        XCTAssertEqual(steps.last, .init(step: .cleanUp, phase: .stopped("No speech")))
+    }
+
     func testFinishTranscribesProcessesAndInsertsText() async {
         let events = EventLog()
         let microphone = FakeMicrophone(events: events)

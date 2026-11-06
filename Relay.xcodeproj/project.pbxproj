@@ -254,6 +254,7 @@
 		E9793749361A43D80B90C59C /* InterimTextDiff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 742664766D6CE6286EB5E819 /* InterimTextDiff.swift */; };
 		E9B4F43B9424CFCAFED6BD87 /* PocketTTSBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BD1713F6B25B17ED9F3EEA7 /* PocketTTSBackendTests.swift */; };
 		E9CAC7CBD88301B29B7AC078 /* RexFocusResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78F8931712514D409515A5DE /* RexFocusResolverTests.swift */; };
+		E9ECF2ED57D1CB1C736DE784 /* PipelineEventRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EBB76A2EBF0F1AF064A5637 /* PipelineEventRecorder.swift */; };
 		EA12CAC0D02CDF4E3704FB6C /* UnixSocketAddress.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22613B341B304BC8F1CC4A7E /* UnixSocketAddress.swift */; };
 		EAB39791025AC7188F9DD9C9 /* AgentResponseEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F32A0AB1ECF4429A4A7F818 /* AgentResponseEvent.swift */; };
 		EB5A44B3DB43C66A7A1B5D8E /* FrontmostAppMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBBA71BFC002BDCF446FAF0D /* FrontmostAppMonitor.swift */; };
@@ -432,6 +433,7 @@
 		78F8931712514D409515A5DE /* RexFocusResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RexFocusResolverTests.swift; sourceTree = "<group>"; };
 		7A283E013EB4D5C368889260 /* STTRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = STTRouterTests.swift; sourceTree = "<group>"; };
 		7BE5FE27FB871686CECBA242 /* BackendID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendID.swift; sourceTree = "<group>"; };
+		7EBB76A2EBF0F1AF064A5637 /* PipelineEventRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipelineEventRecorder.swift; sourceTree = "<group>"; };
 		7F32A0AB1ECF4429A4A7F818 /* AgentResponseEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentResponseEvent.swift; sourceTree = "<group>"; };
 		7FCE353359D9AFF090867950 /* ActivityOverlayWindowControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverlayWindowControllerTests.swift; sourceTree = "<group>"; };
 		80F71A01E4392464DA0DC302 /* AgentAutoReadCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAutoReadCoordinator.swift; sourceTree = "<group>"; };
@@ -602,6 +604,7 @@
 		12F41302E6AF334EA817A828 /* Support */ = {
 			isa = PBXGroup;
 			children = (
+				7EBB76A2EBF0F1AF064A5637 /* PipelineEventRecorder.swift */,
 				1359BDA6C90700D765867193 /* RelayRuntime+Testing.swift */,
 			);
 			path = Support;
@@ -1375,6 +1378,7 @@
 				0D2AD4B3EE0F450A2669890E /* ParakeetModelTests.swift in Sources */,
 				3723CCC9C10F38DBE30CAFFD /* PermissionsModelTests.swift in Sources */,
 				16452D0A63D369EEB7321580 /* PipedTTSAudioSourceTests.swift in Sources */,
+				E9ECF2ED57D1CB1C736DE784 /* PipelineEventRecorder.swift in Sources */,
 				0A4837AD7C8C7D54146193E9 /* PipelineRunStoreTests.swift in Sources */,
 				8224B4C533B53526D3FEBF81 /* PocketTTSAudioSourceTests.swift in Sources */,
 				E9B4F43B9424CFCAFED6BD87 /* PocketTTSBackendTests.swift in Sources */,

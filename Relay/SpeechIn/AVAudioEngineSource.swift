@@ -32,6 +32,10 @@ final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendable {
 
     /// The current capture's engine; `nil` while idle. Only touched on `engineQueue`.
     private var engine: AVAudioEngine?
+    /// The run the current capture announces into. Only touched on `engineQueue`.
+    private var engineTracer: PipelineTracer?
+    /// Set before `start`; guarded by `stateLock`.
+    private var nextTracer: PipelineTracer?
 
     /// `onFallback` receives the name of a chosen microphone that Relay could not use.
     init(
@@ -50,6 +54,10 @@ final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendable {
         stateLock.withLock { inputSampleRate }
     }
 
+    func setTracer(_ tracer: PipelineTracer?) {
+        stateLock.withLock { nextTracer = tracer }
+    }
+
     func start(
         onSamples: @escaping @Sendable ([Float]) -> Void,
         onTerminalError: @escaping @Sendable (Error) async -> Void
@@ -57,10 +65,13 @@ final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendable {
         let engine: AVAudioEngine = try engineQueue.sync {
             guard self.engine == nil else { throw MicrophoneCaptureError.alreadyRecording }
             releaseMonitor?.captureStarted()
+            let tracer = stateLock.withLock { nextTracer }
             let engine = AVAudioEngine()
             self.engine = engine
+            engineTracer = tracer
             let input = engine.inputNode
-            selectInputDevice(on: input)
+            let deviceLabel = selectInputDevice(on: input)
+            tracer?.start(.micOpen, "Opening \(deviceLabel)")
             let inputFormat = input.inputFormat(forBus: 0)
             guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0,
                 let outputFormat = AVAudioFormat(
@@ -71,6 +82,7 @@ final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendable {
                 ),
                 let converter = AVAudioConverter(from: inputFormat, to: outputFormat)
             else {
+                tracer?.fail(.micOpen, "Unsupported input format")
                 tearDownEngine(path: .failure)
                 throw MicrophoneCaptureError.unavailable("The current input format is unsupported.")
             }
@@ -89,9 +101,11 @@ final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendable {
                 try engine.start()
             } catch {
                 _ = gate.close()
+                tracer?.fail(.micOpen, "Could not start the microphone")
                 tearDownEngine(path: .failure)
                 throw MicrophoneCaptureError.unavailable(error.localizedDescription)
             }
+            tracer?.finish(.micOpen, "\(deviceLabel) · \(Int(inputFormat.sampleRate / 1_000)) kHz")
             return engine
         }
 
@@ -157,17 +171,19 @@ final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendable {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         self.engine = nil
-        releaseMonitor?.captureReleased(path)
+        releaseMonitor?.captureReleased(path, tracer: engineTracer)
+        engineTracer = nil
     }
 
     /// `engineQueue` only. Must run before the input format is read. Falls back to the system
-    /// default input, never fails the capture.
-    private func selectInputDevice(on input: AVAudioInputNode) {
+    /// default input, never fails the capture. Returns a label for the device in use.
+    private func selectInputDevice(on input: AVAudioInputNode) -> String {
         let resolution = MicrophoneSelection.resolve(preferredMicrophone(), connected: AudioInputDevices.connected())
         if let missing = resolution.missing {
             onFallback(missing.name)
         }
-        guard let device = resolution.device else { return }
+        let systemDefault = "system default (\(AudioInputDevices.defaultInputName() ?? "unknown"))"
+        guard let device = resolution.device else { return systemDefault }
         var deviceID = device.id
         let status: OSStatus =
             if let unit = input.audioUnit {
@@ -181,7 +197,9 @@ final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendable {
         if status != noErr {
             logger.error("Could not select the chosen microphone (status \(status)); using the system default")
             onFallback(device.name)
+            return systemDefault
         }
+        return device.name
     }
 
     /// Tap thread.

@@ -20,6 +20,41 @@ final class STTRouterTests: XCTestCase {
         try await assertFallsBack(after: .resourceExhausted)
     }
 
+    func testTranscribeAnnouncesTheFallbackBackend() async throws {
+        let first = FakeSTTBackend(id: .parakeet, error: .modelNotDownloaded)
+        let second = FakeSTTBackend(id: .appleSpeech)
+        let recorder = PipelineEventRecorder()
+
+        _ = try await makeRouter([first, second]).transcribe(audio: audio, options: .init(), tracer: recorder.tracer(.dictation))
+
+        let parakeet = BackendID.parakeet.displayName
+        let apple = BackendID.appleSpeech.displayName
+        let steps = await recorder.steps()
+        XCTAssertEqual(
+            steps,
+            [
+                .init(step: .transcribe, phase: .started("Transcribing with \(parakeet)")),
+                .init(step: .transcribe, phase: .failed("\(parakeet) failed")),
+                .init(step: .fallback, phase: .started("Falling back to \(apple)")),
+                .init(step: .fallback, phase: .finished(apple)),
+            ])
+    }
+
+    func testTranscribeAnnouncesTheBackendThatSucceeded() async throws {
+        let recorder = PipelineEventRecorder()
+        _ = try await makeRouter([FakeSTTBackend(id: .parakeet)]).transcribe(
+            audio: audio, options: .init(), tracer: recorder.tracer(.dictation))
+
+        let name = BackendID.parakeet.displayName
+        let steps = await recorder.steps()
+        XCTAssertEqual(
+            steps,
+            [
+                .init(step: .transcribe, phase: .started("Transcribing with \(name)")),
+                .init(step: .transcribe, phase: .finished(name)),
+            ])
+    }
+
     func testStopsImmediatelyWhenPrimaryDeniesPermission() async {
         await assertStopsRouting(after: .permissionDenied)
     }

@@ -56,6 +56,31 @@ final class MicrophoneCaptureStateTests: XCTestCase {
         XCTAssertEqual(paths, [.cancel])
     }
 
+    func testRecordingLifecycleIsAnnounced() async throws {
+        let recorder = PipelineEventRecorder()
+        let source = FakeAudioSource()
+        let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
+        await capture.setTracer(recorder.tracer(.dictation))
+        try await capture.start(onLevel: { _ in })
+        await source.emit([Float](repeating: 0.2, count: 24_000))
+        _ = try await capture.stop()
+
+        let steps = await recorder.steps()
+        XCTAssertEqual(steps.first, .init(step: .recording, phase: .started("Recording")))
+        XCTAssertEqual(steps.last, .init(step: .recording, phase: .finished("1.5 s")))
+    }
+
+    func testCancelledRecordingIsAnnouncedAsStopped() async throws {
+        let recorder = PipelineEventRecorder()
+        let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: FakeAudioSource())
+        await capture.setTracer(recorder.tracer(.dictation))
+        try await capture.start(onLevel: { _ in })
+        await capture.cancel()
+
+        let steps = await recorder.steps()
+        XCTAssertEqual(steps.last, .init(step: .recording, phase: .stopped("Cancelled")))
+    }
+
     func testCancelWhileIdleIsANoOp() async {
         let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: FakeAudioSource())
 

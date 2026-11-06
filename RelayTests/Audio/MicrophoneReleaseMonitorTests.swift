@@ -66,6 +66,33 @@ final class MicrophoneReleaseMonitorTests: XCTestCase {
         XCTAssertEqual(harness.reports, [])
     }
 
+    func testReleaseCheckIsAnnouncedOnTheRunTracer() async {
+        let harness = Harness()
+        let recorder = PipelineEventRecorder()
+        let monitor = harness.monitor(probe: true)
+        monitor.captureReleased(.stop, tracer: recorder.tracer(.dictation))
+        harness.runScheduled()
+
+        let steps = await recorder.steps()
+        XCTAssertEqual(
+            steps,
+            [
+                .init(step: .micReleased, phase: .started("Checking…")),
+                .init(step: .micReleased, phase: .failed("Still open after stop")),
+            ])
+    }
+
+    func testCleanReleaseIsAnnouncedAsFinished() async {
+        let harness = Harness()
+        let recorder = PipelineEventRecorder()
+        let monitor = harness.monitor(probe: false)
+        monitor.captureReleased(.cancel, tracer: recorder.tracer(.dictation))
+        harness.runScheduled()
+
+        let steps = await recorder.steps()
+        XCTAssertEqual(steps.last, .init(step: .micReleased, phase: .finished("Released")))
+    }
+
     func testDiagnosticMessages() {
         XCTAssertEqual(
             DictationDiagnostic.microphoneStillOpen(.failure).message,
