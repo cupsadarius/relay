@@ -115,8 +115,8 @@ final class AppleTTSAudioSource: TTSAudioSource, @unchecked Sendable {
         voiceIdentifier: String?,
         synthesizer: any AppleSpeechSynthesizing,
         converter: any AppleSpeechBufferConverting,
-        highWatermark: TimeInterval = 30,
-        lowWatermark: TimeInterval = 15
+        highWatermark: TimeInterval = TTSAudioPipe.defaultHighWatermark,
+        lowWatermark: TimeInterval = TTSAudioPipe.defaultLowWatermark
     ) {
         self.text = text
         self.rate = rate

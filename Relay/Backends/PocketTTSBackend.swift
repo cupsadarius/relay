@@ -34,7 +34,7 @@ final class PocketTTSBackend: TextToSpeechBackend {
         let voice = options.pocketVoice ?? PocketTtsConstants.defaultVoice
         do {
             let stream = try await engine.synthesizeStream(text: text, voice: voice)
-            return PocketTTSAudioSource(
+            return PocketTTSAudioSource.make(
                 stream: stream,
                 sampleRate: Double(PocketTtsConstants.audioSampleRate)
             )

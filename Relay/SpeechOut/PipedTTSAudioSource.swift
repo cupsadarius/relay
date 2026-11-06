@@ -15,8 +15,8 @@ struct PipedTTSAudioSource: TTSAudioSource {
     private let box: ProducerBox
 
     init(
-        highWatermark: TimeInterval = 30,
-        lowWatermark: TimeInterval = 15,
+        highWatermark: TimeInterval = TTSAudioPipe.defaultHighWatermark,
+        lowWatermark: TimeInterval = TTSAudioPipe.defaultLowWatermark,
         produce: @escaping @Sendable (TTSAudioPipe.Sink) async throws -> Void
     ) {
         let pipe = TTSAudioPipe.make(highWatermark: highWatermark, lowWatermark: lowWatermark)

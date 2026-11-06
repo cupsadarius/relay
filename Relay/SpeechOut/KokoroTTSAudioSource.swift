@@ -2,21 +2,19 @@ import Foundation
 
 /// Long-form Kokoro source: sequential model inference feeds a bounded PCM pipe while playback
 /// independently consumes earlier frames. No parallel Kokoro inference is ever started.
-struct KokoroTTSAudioSource: TTSAudioSource {
+enum KokoroTTSAudioSource {
     private static let maxAdaptiveSplitDepth = 8
 
-    private let piped: PipedTTSAudioSource
-
-    init(
+    static func make(
         engine: any KokoroEngine,
         chunks: [String],
         voice: String,
         speed: Float,
         framer: PCMFramer = PCMFramer(),
-        highWatermark: TimeInterval = 30,
-        lowWatermark: TimeInterval = 15
-    ) {
-        piped = PipedTTSAudioSource(highWatermark: highWatermark, lowWatermark: lowWatermark) { sink in
+        highWatermark: TimeInterval = TTSAudioPipe.defaultHighWatermark,
+        lowWatermark: TimeInterval = TTSAudioPipe.defaultLowWatermark
+    ) -> PipedTTSAudioSource {
+        PipedTTSAudioSource(highWatermark: highWatermark, lowWatermark: lowWatermark) { sink in
             for chunk in chunks {
                 try Task.checkCancellation()
                 try await Self.produce(
@@ -30,14 +28,6 @@ struct KokoroTTSAudioSource: TTSAudioSource {
                 )
             }
         }
-    }
-
-    func next() async throws -> TTSAudioFrame? {
-        try await piped.next()
-    }
-
-    func cancel() async {
-        await piped.cancel()
     }
 
     private static func produce(

@@ -44,9 +44,13 @@ enum TTSAudioPipe {
         }
     }
 
+    /// Seconds of queued audio that suspend the producer, and the level that resumes it.
+    static let defaultHighWatermark: TimeInterval = 30
+    static let defaultLowWatermark: TimeInterval = 15
+
     static func make(
-        highWatermark: TimeInterval = 30,
-        lowWatermark: TimeInterval = 15
+        highWatermark: TimeInterval = defaultHighWatermark,
+        lowWatermark: TimeInterval = defaultLowWatermark
     ) -> (sink: Sink, source: Source) {
         precondition(highWatermark > 0)
         precondition(lowWatermark >= 0 && lowWatermark < highWatermark)

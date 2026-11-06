@@ -48,7 +48,7 @@ final class KokoroTTSBackend: TextToSpeechBackend {
                 preferredTarget: 480,
                 hardMaximum: KokoroAneConstants.maxPhonemeLength
             ).chunks(from: phonemes)
-            return KokoroTTSAudioSource(
+            return KokoroTTSAudioSource.make(
                 engine: engine,
                 chunks: chunks,
                 voice: voice,

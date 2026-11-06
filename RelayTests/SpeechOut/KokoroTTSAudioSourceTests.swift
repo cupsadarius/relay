@@ -6,7 +6,7 @@ import XCTest
 final class KokoroTTSAudioSourceTests: XCTestCase {
     func testSegmentsSynthesizeSequentiallyAndPreserveOrder() async throws {
         let engine = FakeLongFormKokoroEngine()
-        let source = KokoroTTSAudioSource(
+        let source = KokoroTTSAudioSource.make(
             engine: engine,
             chunks: ["one", "two", "three"],
             voice: "af_heart",
@@ -29,7 +29,7 @@ final class KokoroTTSAudioSourceTests: XCTestCase {
 
     func testAcousticOverflowSplitsOnlyTheOffendingChunkAndRetries() async throws {
         let engine = FakeLongFormKokoroEngine(maxAcceptedLength: 4)
-        let source = KokoroTTSAudioSource(
+        let source = KokoroTTSAudioSource.make(
             engine: engine,
             chunks: ["abcdefgh"],
             voice: "af_heart",
@@ -60,7 +60,7 @@ final class KokoroTTSAudioSourceTests: XCTestCase {
 
         for run in 0..<100 {
             let engine = FakeLongFormKokoroEngine()
-            let source = KokoroTTSAudioSource(
+            let source = KokoroTTSAudioSource.make(
                 engine: engine,
                 chunks: chunks,
                 voice: "af_heart",

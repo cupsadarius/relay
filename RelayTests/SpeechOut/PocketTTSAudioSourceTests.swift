@@ -9,7 +9,7 @@ final class PocketTTSAudioSourceTests: XCTestCase {
             continuation.yield([0.3, 0.4, 0.5])
             continuation.finish()
         }
-        let source = PocketTTSAudioSource(stream: stream, sampleRate: 24_000)
+        let source = PocketTTSAudioSource.make(stream: stream, sampleRate: 24_000)
 
         let first = try await source.next()
         XCTAssertEqual(first?.samples, [0.1, 0.2])
@@ -29,7 +29,7 @@ final class PocketTTSAudioSourceTests: XCTestCase {
             continuation.yield([0.1])
             continuation.finish(throwing: SynthesisFailure())
         }
-        let source = PocketTTSAudioSource(stream: stream, sampleRate: 24_000)
+        let source = PocketTTSAudioSource.make(stream: stream, sampleRate: 24_000)
 
         let first = try? await source.next()
         XCTAssertEqual(first?.samples, [0.1])
@@ -50,7 +50,7 @@ final class PocketTTSAudioSourceTests: XCTestCase {
             continuation.yield([0.2])
             continuation.finish()
         }
-        let source = PocketTTSAudioSource(stream: stream, sampleRate: 24_000)
+        let source = PocketTTSAudioSource.make(stream: stream, sampleRate: 24_000)
 
         let first = try await source.next()
         XCTAssertEqual(first?.samples, [0.1])
