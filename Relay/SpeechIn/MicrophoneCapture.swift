@@ -53,7 +53,9 @@ actor MicrophoneCapture: MicrophoneCapturing {
 
     private enum State {
         case idle
-        case starting(UUID)
+        /// `cancelRequested`: set by `cancel()`. Only `start()`, once `source.start()` has
+        /// returned, tears the source down; `cancel()` would race an unfinished install.
+        case starting(UUID, cancelRequested: Bool)
         case failedStarting(UUID, Error)
         case recording(UUID)
         case failedRecording(UUID, Error)
@@ -70,11 +72,6 @@ actor MicrophoneCapture: MicrophoneCapturing {
     /// an already-running session's samples are forwarded to.
     private var sampleObserver: (@Sendable ([Float]) -> Void)?
 
-    /// Set by `cancel()` while `.starting`; checked by `start()`'s own post-`source.start()`
-    /// switch so the call that actually knows `source.start()` has returned is the one that
-    /// tears the real source down — never `cancel()` itself, which would otherwise race a
-    /// `source.start()` that hasn't finished installing yet.
-    private var startCancelRequested = false
     /// Resumed once the actor reaches `idle`; lets `cancel()` wait out an in-flight
     /// `start()`/`stop()` instead of returning while the real source is still winding down.
     private var idleWaiters: [CheckedContinuation<Void, Never>] = []
@@ -100,8 +97,7 @@ actor MicrophoneCapture: MicrophoneCapturing {
     func start(onLevel: @escaping @Sendable (Float) -> Void) async throws {
         guard case .idle = state else { throw MicrophoneCaptureError.alreadyRecording }
         let session = UUID()
-        state = .starting(session)
-        startCancelRequested = false
+        state = .starting(session, cancelRequested: false)
         guard await permission.requestPermission() else {
             transitionToIdle()
             throw SpeechBackendError.permissionDenied
@@ -124,14 +120,14 @@ actor MicrophoneCapture: MicrophoneCapturing {
                 }
             )
             switch state {
-            case .starting(session) where !startCancelRequested:
+            case .starting(session, cancelRequested: false):
                 state = .recording(session)
                 lastInputSampleRate = source.currentInputSampleRate()
             case let .failedStarting(failedSession, error) where failedSession == session:
                 transitionToIdle()
                 throw error
-            case .starting(session):
-                // `startCancelRequested` is true and the actor is still `.starting` — nobody
+            case .starting(session, cancelRequested: true):
+                // Cancel was requested and the actor is still `.starting` — nobody
                 // else has progressed past this frame, so it still owns the source and must
                 // tear it down. `source.start()` has now definitely returned, so this is safe.
                 try? await source.stop()
@@ -193,11 +189,11 @@ actor MicrophoneCapture: MicrophoneCapturing {
         switch state {
         case .idle:
             return
-        case .starting:
+        case let .starting(session, _):
             // `source.start()` is still in flight for this session; flag the cancellation and
             // wait for `start()`'s own post-completion switch to tear the source down exactly
-            // once it's safe to do so (see the `default:` branch in `start()`).
-            startCancelRequested = true
+            // once it's safe to do so.
+            state = .starting(session, cancelRequested: true)
             await withCheckedContinuation { idleWaiters.append($0) }
         case let .recording(session):
             state = .stopping(session)
@@ -216,11 +212,10 @@ actor MicrophoneCapture: MicrophoneCapturing {
         }
     }
 
-    /// The single place `state` is set back to `.idle`. Clears `startCancelRequested` and wakes
-    /// every `cancel()` call currently waiting on `.starting`/`.stopping` to resolve.
+    /// The single place `state` is set back to `.idle`. Wakes every `cancel()` call currently
+    /// waiting on `.starting`/`.stopping` to resolve.
     private func transitionToIdle() {
         state = .idle
-        startCancelRequested = false
         let waiters = idleWaiters
         idleWaiters = []
         for waiter in waiters { waiter.resume() }
@@ -233,7 +228,7 @@ actor MicrophoneCapture: MicrophoneCapturing {
     private func sourceTerminated(_ error: Error, session: UUID) {
 
         switch state {
-        case let .starting(activeSession):
+        case let .starting(activeSession, _):
             guard activeSession == session else { return }
             accumulator.reset()
             state = .failedStarting(session, error)
