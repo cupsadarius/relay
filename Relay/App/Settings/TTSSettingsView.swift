@@ -29,10 +29,10 @@ struct TTSSettingsView: View {
                 HStack {
                     Slider(
                         value: Binding(
-                            get: { Double(model.settings.ttsRate) },
-                            set: { model.settingsController.setSpeechRate(Float($0)) }
+                            get: { model.settings.ttsRate },
+                            set: { model.settingsController.setSpeechRate($0) }
                         ),
-                        in: 0.1...1.0,
+                        in: AppSettings.validTTSRateRange,
                         step: 0.05,
                         onEditingChanged: { editing in
                             if !editing { model.settingsController.flushPendingSave() }
