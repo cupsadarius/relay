@@ -183,7 +183,7 @@ final class AppModelTests: XCTestCase {
     func testSelectVoicePersistsThroughProviderNeutralCatalogMapping() {
         let model = makeModel()
 
-        model.speechBackends.selectVoice(backendID: "kokoro", voiceID: "kokoro:am_adam")
+        model.speechBackends.selectVoice(backendID: .kokoro, voiceID: "kokoro:am_adam")
 
         XCTAssertEqual(model.settings.voiceByBackend["kokoro"], "am_adam")
     }
@@ -336,11 +336,11 @@ final class AppModelTests: XCTestCase {
     ) -> (
         model: AppModel, hotkeys: SpyHotkeyManager, pocket: FakeTTSBackend, kokoro: FakeTTSBackend, apple: FakeTTSBackend
     ) {
-        let pocket = FakeTTSBackend(id: "pocket-tts")
+        let pocket = FakeTTSBackend(id: .pocketTTS)
         pocket.availabilityValue = pocketAvailability
-        let kokoro = FakeTTSBackend(id: "kokoro")
+        let kokoro = FakeTTSBackend(id: .kokoro)
         kokoro.availabilityValue = kokoroAvailability
-        let apple = FakeTTSBackend(id: "apple-tts")
+        let apple = FakeTTSBackend(id: .appleTTS)
         var settings = AppSettings.defaults
         settings.ttsBackendOrder = ["pocket-tts", "kokoro", "apple-tts"]
         settings.voiceByBackend = ["kokoro": "af_bella", "pocket-tts": "alba"]
@@ -351,8 +351,8 @@ final class AppModelTests: XCTestCase {
         kokoro.player = player
         apple.player = player
         let router = TTSRouter(
-            backends: ["pocket-tts": pocket, "kokoro": kokoro, "apple-tts": apple],
-            backendOrder: { settings.ttsBackendOrder },
+            backends: [.pocketTTS: pocket, .kokoro: kokoro, .appleTTS: apple],
+            backendOrder: { settings.ttsBackendOrder.compactMap(BackendID.init(rawValue:)) },
             player: player
         )
         let coordinator = SpeechCoordinator(
@@ -368,7 +368,7 @@ final class AppModelTests: XCTestCase {
                 speechCoordinator: coordinator,
                 hotkeyManager: hotkeys,
                 overlayModel: overlay,
-                ttsRegistry: ["pocket-tts": pocket, "kokoro": kokoro, "apple-tts": apple]
+                ttsRegistry: [.pocketTTS: pocket, .kokoro: kokoro, .appleTTS: apple]
             ))
         return (model, hotkeys, pocket, kokoro, apple)
     }
@@ -404,8 +404,8 @@ final class AppModelTests: XCTestCase {
         loginItem: SpyLoginItemController? = nil,
         overlayModel: ActivityOverlayModel? = nil,
         overlayPresenter: (any ActivityOverlayPresenting)? = nil,
-        sttRegistry: [String: any SpeechToTextBackend] = [:],
-        speechModelManagers: [String: any SpeechModelManaging] = [:],
+        sttRegistry: [BackendID: any SpeechToTextBackend] = [:],
+        speechModelManagers: [BackendID: any SpeechModelManaging] = [:],
         diagnostics: DiagnosticsRecorder? = nil,
         sessionRegistry: AgentSessionRegistry? = nil,
         focusResolution: (any SessionFocusResolving)? = nil,
@@ -444,16 +444,14 @@ private enum TestError: Error {
 }
 
 private actor FakeSTTBackend: SpeechToTextBackend {
-    nonisolated let id: String
-    nonisolated let displayName: String
+    nonisolated let id: BackendID
     private var availabilityResult: BackendAvailability
     private var shouldBlockAvailability = false
     private(set) var availabilityCallCount = 0
     private var availabilityContinuation: CheckedContinuation<Void, Never>?
 
-    init(id: String, displayName: String, availability: BackendAvailability = .available) {
+    init(id: BackendID, availability: BackendAvailability = .available) {
         self.id = id
-        self.displayName = displayName
         availabilityResult = availability
     }
 

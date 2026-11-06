@@ -6,7 +6,7 @@ final class AppleSpeechModelManagerTests: XCTestCase {
     func testBackendIDAndSingleAlwaysDownloadedModel() async {
         let manager = SingleModelManager.appleSpeech
 
-        XCTAssertEqual(manager.backendID, "apple-speech")
+        XCTAssertEqual(manager.backendID, .appleSpeech)
 
         let models = await manager.models()
 

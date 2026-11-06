@@ -16,29 +16,29 @@ final class SpeechBackendGraphTests: XCTestCase {
     func testRegistersConcreteSpeechToTextBackendsAndManagers() {
         let graph = makeGraph()
 
-        XCTAssertTrue(graph.sttRegistry["apple-speech"] is AppleSpeechBackend)
-        XCTAssertTrue(graph.sttRegistry["parakeet"] is ParakeetBackend)
-        XCTAssertTrue(graph.sttRegistry["whisper"] is WhisperBackend)
-        XCTAssertEqual((graph.speechModelManagers["apple-speech"] as? SingleModelManager)?.backendID, "apple-speech")
-        XCTAssertTrue(graph.speechModelManagers["parakeet"] is ParakeetModelManager)
-        XCTAssertTrue(graph.speechModelManagers["whisper"] is WhisperModelManager)
+        XCTAssertTrue(graph.sttRegistry[.appleSpeech] is AppleSpeechBackend)
+        XCTAssertTrue(graph.sttRegistry[.parakeet] is ParakeetBackend)
+        XCTAssertTrue(graph.sttRegistry[.whisper] is WhisperBackend)
+        XCTAssertEqual((graph.speechModelManagers[.appleSpeech] as? SingleModelManager)?.backendID, .appleSpeech)
+        XCTAssertTrue(graph.speechModelManagers[.parakeet] is ParakeetModelManager)
+        XCTAssertTrue(graph.speechModelManagers[.whisper] is WhisperModelManager)
     }
 
     func testRegistersConcreteTextToSpeechBackendsAndOnlyModelBackedManagers() {
         let graph = makeGraph()
 
-        XCTAssertTrue(graph.ttsRegistry["pocket-tts"] is PocketTTSBackend)
-        XCTAssertTrue(graph.ttsRegistry["kokoro"] is KokoroTTSBackend)
-        XCTAssertTrue(graph.ttsRegistry["apple-tts"] is AppleTTSBackend)
-        XCTAssertEqual((graph.ttsModelManagers["pocket-tts"] as? SingleModelManager)?.backendID, "pocket-tts")
-        XCTAssertEqual((graph.ttsModelManagers["kokoro"] as? SingleModelManager)?.backendID, "kokoro")
-        XCTAssertNil(graph.ttsModelManagers["apple-tts"])
+        XCTAssertTrue(graph.ttsRegistry[.pocketTTS] is PocketTTSBackend)
+        XCTAssertTrue(graph.ttsRegistry[.kokoro] is KokoroTTSBackend)
+        XCTAssertTrue(graph.ttsRegistry[.appleTTS] is AppleTTSBackend)
+        XCTAssertEqual((graph.ttsModelManagers[.pocketTTS] as? SingleModelManager)?.backendID, .pocketTTS)
+        XCTAssertEqual((graph.ttsModelManagers[.kokoro] as? SingleModelManager)?.backendID, .kokoro)
+        XCTAssertNil(graph.ttsModelManagers[.appleTTS])
     }
 
-    func testRegistryKeysMatchTheIDsAppSettingsRecognizes() {
+    func testRegistryKeysCoverEveryBackendIDOfTheirDirection() {
         let graph = makeGraph()
 
-        XCTAssertEqual(Set(graph.sttRegistry.keys), AppSettings.knownSTTBackendIDs)
-        XCTAssertEqual(Set(graph.ttsRegistry.keys), AppSettings.knownTTSBackendIDs)
+        XCTAssertEqual(Set(graph.sttRegistry.keys), Set(BackendID.allSpeechToText))
+        XCTAssertEqual(Set(graph.ttsRegistry.keys), Set(BackendID.allTextToSpeech))
     }
 }

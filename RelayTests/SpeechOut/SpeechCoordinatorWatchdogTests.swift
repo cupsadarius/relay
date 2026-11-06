@@ -10,7 +10,7 @@ final class SpeechCoordinatorWatchdogTests: XCTestCase {
     private let watchdogTimeout: TimeInterval = 0.05
 
     func testWedgedSessionSelfHealsWithNoNewRequest() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -39,7 +39,7 @@ final class SpeechCoordinatorWatchdogTests: XCTestCase {
     }
 
     func testTerminalEventCancelsWatchdog() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let scheduler = FakeOverlayScheduler()
         let overlay = ActivityOverlayModel(scheduler: scheduler)
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
@@ -63,7 +63,7 @@ final class SpeechCoordinatorWatchdogTests: XCTestCase {
 
     func testPlaybackProgressExtendsWatchdogDeadline() async throws {
         let timeout: TimeInterval = 0.2
-        let backend = FakeTTSBackend(id: "kokoro")
+        let backend = FakeTTSBackend(id: .kokoro)
         let coordinator = makeCoordinator(backend: backend, watchdogTimeout: timeout)
 
         try await coordinator.speak(request(text: "long-form", mode: .automatic))
@@ -84,7 +84,7 @@ final class SpeechCoordinatorWatchdogTests: XCTestCase {
     }
 
     func testWatchdogDoesNotDoubleFire() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -116,7 +116,7 @@ final class SpeechCoordinatorWatchdogTests: XCTestCase {
     /// The user-visible outcome must be `.failed`, not a silently-swallowed `.cancelled`, on every
     /// backend regardless of whether its `stop()` reports synchronously or asynchronously.
     func testWatchdogSurfacesFailedWhenBackendStopEmitsSynchronousTerminal() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 

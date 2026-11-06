@@ -6,7 +6,7 @@ import Foundation
 /// already ruled out, without the router caching a candidate order between calls.
 struct STTSelection: Equatable, Sendable {
     let displayName: String
-    let candidateOrder: [String]
+    let candidateOrder: [BackendID]
 }
 
 @MainActor
@@ -17,8 +17,8 @@ final class STTRouter {
         case skip(SpeechBackendError)
     }
 
-    private let backends: [String: any SpeechToTextBackend]
-    private let backendOrder: () -> [String]
+    private let backends: [BackendID: any SpeechToTextBackend]
+    private let backendOrder: () -> [BackendID]
 
     /// Display name of the backend whose error the most recent FINAL
     /// `transcribe(audio:options:selection:)` threw (the one that failed, or the last one skipped
@@ -28,15 +28,15 @@ final class STTRouter {
     private(set) var lastFailedBackendDisplayName: String?
 
     init(
-        backends: [String: any SpeechToTextBackend],
-        backendOrder: @escaping () -> [String]
+        backends: [BackendID: any SpeechToTextBackend],
+        backendOrder: @escaping () -> [BackendID]
     ) {
         self.backends = backends
         self.backendOrder = backendOrder
     }
 
-    func displayName(forBackendID id: String) -> String? {
-        backends[id]?.displayName
+    func displayName(forBackendID id: BackendID) -> String? {
+        backends[id]?.id.displayName
     }
 
     /// The first available backend in the current order, or `nil` if none is available or a
@@ -47,7 +47,7 @@ final class STTRouter {
             guard let backend = backends[id] else { continue }
             switch classify(await backend.availability()) {
             case .use:
-                return STTSelection(displayName: backend.displayName, candidateOrder: Array(order[index...]))
+                return STTSelection(displayName: backend.id.displayName, candidateOrder: Array(order[index...]))
             case .terminal:
                 return nil
             case .skip:
@@ -71,11 +71,11 @@ final class STTRouter {
             case .use:
                 break
             case let .terminal(error):
-                lastFailedBackendDisplayName = backend.displayName
+                lastFailedBackendDisplayName = backend.id.displayName
                 throw error
             case let .skip(error):
                 lastError = error
-                lastErrorBackendName = backend.displayName
+                lastErrorBackendName = backend.id.displayName
                 continue
             }
 
@@ -83,11 +83,11 @@ final class STTRouter {
                 return try await backend.transcribe(audio: audio, options: options)
             } catch let error as SpeechBackendError where error.isFallbackWorthy {
                 lastError = error
-                lastErrorBackendName = backend.displayName
+                lastErrorBackendName = backend.id.displayName
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                lastFailedBackendDisplayName = backend.displayName
+                lastFailedBackendDisplayName = backend.id.displayName
                 throw error
             }
         }

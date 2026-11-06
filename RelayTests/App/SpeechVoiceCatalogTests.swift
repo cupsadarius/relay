@@ -15,7 +15,7 @@ final class SpeechVoiceCatalogTests: XCTestCase {
         )
         let settings = AppSettings.defaults
 
-        for backendID in ["apple-tts", "kokoro", "pocket-tts"] {
+        for backendID in BackendID.allTextToSpeech {
             let activeID = catalog.activeVoiceID(for: backendID, settings: settings)
             XCTAssertNotNil(activeID)
             XCTAssertEqual(catalog.voices(for: backendID).filter { $0.id == activeID }.count, 1)
@@ -30,11 +30,11 @@ final class SpeechVoiceCatalogTests: XCTestCase {
             pocketVoice: "alba"
         )
 
-        let knownDefault = catalog.storedValue(for: "kokoro:default", backendID: "kokoro")
+        let knownDefault = catalog.storedValue(for: "kokoro:default", backendID: .kokoro)
         XCTAssertNotNil(knownDefault)
         XCTAssertNil(knownDefault!)
-        XCTAssertNil(catalog.storedValue(for: "missing", backendID: "kokoro"))
-        XCTAssertEqual(catalog.storedValue(for: "kokoro:am_adam", backendID: "kokoro")!, "am_adam")
+        XCTAssertNil(catalog.storedValue(for: "missing", backendID: .kokoro))
+        XCTAssertEqual(catalog.storedValue(for: "kokoro:am_adam", backendID: .kokoro)!, "am_adam")
     }
 
     func testOptionsOverrideOnlyClickedProvidersVoiceAndPreserveRate() {
@@ -48,7 +48,7 @@ final class SpeechVoiceCatalogTests: XCTestCase {
         settings.voiceByBackend = ["apple-tts": "apple.saved", "kokoro": "af_heart", "pocket-tts": "alba"]
         settings.ttsRate = 0.75
 
-        let options = catalog.options(for: "kokoro:am_adam", backendID: "kokoro", settings: settings)
+        let options = catalog.options(for: "kokoro:am_adam", backendID: .kokoro, settings: settings)
 
         XCTAssertEqual(options?.voiceIdentifier, "apple.saved")
         XCTAssertEqual(options?.kokoroVoice, "am_adam")

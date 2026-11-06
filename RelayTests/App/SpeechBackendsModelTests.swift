@@ -7,10 +7,10 @@ final class SpeechBackendsModelTests: XCTestCase {
     private func makeModel(
         store: SpySettingsStore? = nil,
         speech: SpySpeechCoordinator? = nil,
-        sttRegistry: [String: any SpeechToTextBackend] = [:],
-        ttsRegistry: [String: any TextToSpeechBackend] = [:],
-        speechModelManagers: [String: any SpeechModelManaging] = [:],
-        ttsModelManagers: [String: any SpeechModelManaging] = [:]
+        sttRegistry: [BackendID: any SpeechToTextBackend] = [:],
+        ttsRegistry: [BackendID: any TextToSpeechBackend] = [:],
+        speechModelManagers: [BackendID: any SpeechModelManaging] = [:],
+        ttsModelManagers: [BackendID: any SpeechModelManaging] = [:]
     ) -> SpeechBackendsModel {
         let store = store ?? SpySettingsStore()
         let speech = speech ?? SpySpeechCoordinator()
@@ -30,8 +30,8 @@ final class SpeechBackendsModelTests: XCTestCase {
     /// `ttsModelManagers` under `.textToSpeech` — never swapped or merged into one domain.
     func testModelControllerBackendKeysAreWiredToTheCorrectDomain() async {
         let model = makeModel(
-            speechModelManagers: ["a": StubModelManager(backendID: "a", modelIDs: [])],
-            ttsModelManagers: ["kokoro": StubModelManager(backendID: "kokoro", modelIDs: [])]
+            speechModelManagers: [.appleSpeech: StubModelManager(backendID: .appleSpeech, modelIDs: [])],
+            ttsModelManagers: [.kokoro: StubModelManager(backendID: .kokoro, modelIDs: [])]
         )
 
         await model.models.refresh(domain: .dictation)
@@ -39,122 +39,122 @@ final class SpeechBackendsModelTests: XCTestCase {
         XCTAssertEqual(
             Set(model.models.models.keys),
             [
-                SpeechModelBackendKey(domain: .dictation, backendID: "a"),
-                SpeechModelBackendKey(domain: .textToSpeech, backendID: "kokoro"),
+                SpeechModelBackendKey(domain: .dictation, backendID: .appleSpeech),
+                SpeechModelBackendKey(domain: .textToSpeech, backendID: .kokoro),
             ])
     }
 
     func testRefreshingADomainUpdatesReadinessAndModelsTogether() async {
-        let backend = StubSTTBackend(id: "a", availability: .modelNotDownloaded)
-        let manager = StubModelManager(backendID: "a", modelIDs: ["tiny"])
-        let model = makeModel(sttRegistry: ["a": backend], speechModelManagers: ["a": manager])
+        let backend = StubSTTBackend(id: .appleSpeech, availability: .modelNotDownloaded)
+        let manager = StubModelManager(backendID: .appleSpeech, modelIDs: ["tiny"])
+        let model = makeModel(sttRegistry: [.appleSpeech: backend], speechModelManagers: [.appleSpeech: manager])
 
         await model.refresh(.dictation)
 
         XCTAssertEqual(model.dictation.rows.map(\.state), [.modelNotDownloaded])
-        XCTAssertEqual(model.models.models[SpeechModelBackendKey(domain: .dictation, backendID: "a")]?.map(\.id), ["tiny"])
+        XCTAssertEqual(model.models.models[SpeechModelBackendKey(domain: .dictation, backendID: .appleSpeech)]?.map(\.id), ["tiny"])
         XCTAssertTrue(model.textToSpeech.rows.isEmpty)
     }
 
     func testRefreshAllCoversBothDomains() async {
-        let manager = StubModelManager(backendID: "kokoro", modelIDs: ["v1"])
+        let manager = StubModelManager(backendID: .kokoro, modelIDs: ["v1"])
         let model = makeModel(
-            sttRegistry: ["a": StubSTTBackend(id: "a")],
-            ttsModelManagers: ["kokoro": manager]
+            sttRegistry: [.appleSpeech: StubSTTBackend(id: .appleSpeech)],
+            ttsModelManagers: [.kokoro: manager]
         )
 
         await model.refreshAll()
 
-        XCTAssertEqual(model.dictation.rows.map(\.id), ["a"])
-        XCTAssertEqual(model.models.models[SpeechModelBackendKey(domain: .textToSpeech, backendID: "kokoro")]?.map(\.id), ["v1"])
+        XCTAssertEqual(model.dictation.rows.map(\.id), [.appleSpeech])
+        XCTAssertEqual(model.models.models[SpeechModelBackendKey(domain: .textToSpeech, backendID: .kokoro)]?.map(\.id), ["v1"])
     }
 
     /// Selecting a model changes readiness; the controller's hook must refresh the owning list.
     func testSelectingAModelRefreshesThatDomainsReadiness() async {
-        let backend = StubSTTBackend(id: "a", availability: .modelNotDownloaded)
-        let manager = StubModelManager(backendID: "a", modelIDs: ["tiny"])
-        let model = makeModel(sttRegistry: ["a": backend], speechModelManagers: ["a": manager])
+        let backend = StubSTTBackend(id: .appleSpeech, availability: .modelNotDownloaded)
+        let manager = StubModelManager(backendID: .appleSpeech, modelIDs: ["tiny"])
+        let model = makeModel(sttRegistry: [.appleSpeech: backend], speechModelManagers: [.appleSpeech: manager])
         await model.refresh(.dictation)
 
         await backend.setAvailability(.available)
-        await model.models.select("tiny", in: SpeechModelBackendKey(domain: .dictation, backendID: "a"))
+        await model.models.select("tiny", in: SpeechModelBackendKey(domain: .dictation, backendID: .appleSpeech))
 
         XCTAssertEqual(model.dictation.rows.map(\.state), [.ready])
     }
 
     /// The activation recheck only needs readiness; it must not re-list models.
     func testRefreshingReadinessLeavesModelListsAlone() async {
-        let backend = StubSTTBackend(id: "a", availability: .modelNotDownloaded)
-        let manager = StubModelManager(backendID: "a", modelIDs: ["tiny"])
-        let model = makeModel(sttRegistry: ["a": backend], speechModelManagers: ["a": manager])
+        let backend = StubSTTBackend(id: .appleSpeech, availability: .modelNotDownloaded)
+        let manager = StubModelManager(backendID: .appleSpeech, modelIDs: ["tiny"])
+        let model = makeModel(sttRegistry: [.appleSpeech: backend], speechModelManagers: [.appleSpeech: manager])
 
         await model.refreshReadiness(.dictation)
 
         XCTAssertEqual(model.dictation.rows.map(\.state), [.modelNotDownloaded])
-        XCTAssertNil(model.models.models[SpeechModelBackendKey(domain: .dictation, backendID: "a")])
+        XCTAssertNil(model.models.models[SpeechModelBackendKey(domain: .dictation, backendID: .appleSpeech)])
     }
 
     func testRemovingATTSModelStopsSpeechFirst() async {
         let speech = SpySpeechCoordinator()
-        let manager = StubModelManager(backendID: "kokoro", modelIDs: ["v1"])
-        let model = makeModel(speech: speech, ttsModelManagers: ["kokoro": manager])
+        let manager = StubModelManager(backendID: .kokoro, modelIDs: ["v1"])
+        let model = makeModel(speech: speech, ttsModelManagers: [.kokoro: manager])
 
-        await model.models.remove("v1", in: SpeechModelBackendKey(domain: .textToSpeech, backendID: "kokoro"))
+        await model.models.remove("v1", in: SpeechModelBackendKey(domain: .textToSpeech, backendID: .kokoro))
 
         XCTAssertEqual(speech.stopCount, 1)
     }
 
     func testRemovingADictationModelDoesNotStopSpeech() async {
         let speech = SpySpeechCoordinator()
-        let manager = StubModelManager(backendID: "a", modelIDs: ["tiny"])
-        let model = makeModel(speech: speech, speechModelManagers: ["a": manager])
+        let manager = StubModelManager(backendID: .appleSpeech, modelIDs: ["tiny"])
+        let model = makeModel(speech: speech, speechModelManagers: [.appleSpeech: manager])
 
-        await model.models.remove("tiny", in: SpeechModelBackendKey(domain: .dictation, backendID: "a"))
+        await model.models.remove("tiny", in: SpeechModelBackendKey(domain: .dictation, backendID: .appleSpeech))
 
         XCTAssertEqual(speech.stopCount, 0)
     }
 
     func testBackendListsPersistOrderThroughSettings() async {
         var settings = AppSettings.defaults
-        settings.sttBackendOrder = ["a"]
+        settings.sttBackendOrder = ["apple-speech"]
         let store = SpySettingsStore(settings: settings)
-        let model = makeModel(store: store, sttRegistry: ["a": StubSTTBackend(id: "a"), "b": StubSTTBackend(id: "b")])
+        let model = makeModel(store: store, sttRegistry: [.appleSpeech: StubSTTBackend(id: .appleSpeech), .parakeet: StubSTTBackend(id: .parakeet)])
         await model.refresh(.dictation)
 
-        model.dictation.setEnabled("b", true)
+        model.dictation.setEnabled(.parakeet, true)
 
-        XCTAssertEqual(store.saved.last?.sttBackendOrder, ["a", "b"])
+        XCTAssertEqual(store.saved.last?.sttBackendOrder, ["apple-speech", "parakeet"])
     }
 
     /// TTS twin of `testBackendListsPersistOrderThroughSettings`: the TTS list must read and
     /// persist through `ttsBackendOrder`, not accidentally share the STT list's order.
     func testTTSBackendListPersistsOrderThroughSettings() async {
         var settings = AppSettings.defaults
-        settings.ttsBackendOrder = ["a"]
+        settings.ttsBackendOrder = ["pocket-tts"]
         let store = SpySettingsStore(settings: settings)
-        let model = makeModel(store: store, ttsRegistry: ["a": FakeTTSBackend(id: "a"), "b": FakeTTSBackend(id: "b")])
+        let model = makeModel(store: store, ttsRegistry: [.pocketTTS: FakeTTSBackend(id: .pocketTTS), .appleTTS: FakeTTSBackend(id: .appleTTS)])
         await model.refresh(.textToSpeech)
 
-        model.textToSpeech.setEnabled("b", true)
+        model.textToSpeech.setEnabled(.appleTTS, true)
 
-        XCTAssertEqual(store.saved.last?.ttsBackendOrder, ["a", "b"])
+        XCTAssertEqual(store.saved.last?.ttsBackendOrder, ["pocket-tts", "apple-tts"])
     }
 
     /// Pins the exact user-facing refusal strings `SpeechBackendsModel` wires per domain — a
     /// generic `BackendListModel` unit test can't catch these two swapping or drifting.
     func testRefusalMessagesUseTheExactProductionStringsPerDomain() async {
         var sttSettings = AppSettings.defaults
-        sttSettings.sttBackendOrder = ["a"]
-        let sttModel = makeModel(store: SpySettingsStore(settings: sttSettings), sttRegistry: ["a": StubSTTBackend(id: "a")])
+        sttSettings.sttBackendOrder = ["apple-speech"]
+        let sttModel = makeModel(store: SpySettingsStore(settings: sttSettings), sttRegistry: [.appleSpeech: StubSTTBackend(id: .appleSpeech)])
         await sttModel.refresh(.dictation)
-        sttModel.dictation.setEnabled("a", false)
+        sttModel.dictation.setEnabled(.appleSpeech, false)
         XCTAssertEqual(sttModel.dictation.message, "At least one speech recognition backend must stay enabled.")
 
         var ttsSettings = AppSettings.defaults
-        ttsSettings.ttsBackendOrder = ["a"]
-        let ttsModel = makeModel(store: SpySettingsStore(settings: ttsSettings), ttsRegistry: ["a": FakeTTSBackend(id: "a")])
+        ttsSettings.ttsBackendOrder = ["pocket-tts"]
+        let ttsModel = makeModel(store: SpySettingsStore(settings: ttsSettings), ttsRegistry: [.pocketTTS: FakeTTSBackend(id: .pocketTTS)])
         await ttsModel.refresh(.textToSpeech)
-        ttsModel.textToSpeech.setEnabled("a", false)
+        ttsModel.textToSpeech.setEnabled(.pocketTTS, false)
         XCTAssertEqual(ttsModel.textToSpeech.message, "At least one TTS backend must stay enabled.")
     }
 
@@ -162,7 +162,7 @@ final class SpeechBackendsModelTests: XCTestCase {
         let store = SpySettingsStore()
         let model = makeModel(store: store)
 
-        model.selectVoice(backendID: BackendID.appleTTS.rawValue, voiceID: "apple:default")
+        model.selectVoice(backendID: .appleTTS, voiceID: "apple:default")
 
         // The default option maps to "no stored voice" — and it is still a persisted write.
         XCTAssertEqual(store.saved.count, 1)
@@ -171,13 +171,11 @@ final class SpeechBackendsModelTests: XCTestCase {
 }
 
 private actor StubSTTBackend: SpeechToTextBackend {
-    nonisolated let id: String
-    nonisolated let displayName: String
+    nonisolated let id: BackendID
     private var availabilityValue: BackendAvailability
 
-    init(id: String, availability: BackendAvailability = .available) {
+    init(id: BackendID, availability: BackendAvailability = .available) {
         self.id = id
-        displayName = id
         availabilityValue = availability
     }
 
@@ -189,10 +187,10 @@ private actor StubSTTBackend: SpeechToTextBackend {
 }
 
 private actor StubModelManager: SpeechModelManaging {
-    nonisolated let backendID: String
+    nonisolated let backendID: BackendID
     private var statuses: [SpeechModelStatus]
 
-    init(backendID: String, modelIDs: [String]) {
+    init(backendID: BackendID, modelIDs: [String]) {
         self.backendID = backendID
         statuses = modelIDs.map {
             SpeechModelStatus(

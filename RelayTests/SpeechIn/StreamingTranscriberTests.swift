@@ -10,7 +10,7 @@ final class StreamingTranscriberTests: XCTestCase {
             tickInterval: .milliseconds(20),
             transcribe: { audio in
                 await recorder.record(audio)
-                return Transcript(text: "hello", backendID: "fake")
+                return Transcript(text: "hello", backendID: .appleSpeech)
             },
             onInterimText: { text in
                 Task { await recorder.recordInterim(text) }
@@ -38,7 +38,7 @@ final class StreamingTranscriberTests: XCTestCase {
                 await recorder.beginCall()
                 await gate.waitUntilOpened()
                 await recorder.endCall()
-                return Transcript(text: "x", backendID: "fake")
+                return Transcript(text: "x", backendID: .appleSpeech)
             },
             onInterimText: { _ in }
         )
@@ -63,7 +63,7 @@ final class StreamingTranscriberTests: XCTestCase {
             maxWindowSamples: 5,
             transcribe: { audio in
                 await recorder.record(audio)
-                return Transcript(text: "x", backendID: "fake")
+                return Transcript(text: "x", backendID: .appleSpeech)
             },
             onInterimText: { _ in }
         )
@@ -88,7 +88,7 @@ final class StreamingTranscriberTests: XCTestCase {
             tickInterval: .milliseconds(15),
             transcribe: { audio in
                 await recorder.record(audio)
-                return Transcript(text: "hi", backendID: "fake")
+                return Transcript(text: "hi", backendID: .appleSpeech)
             },
             onInterimText: { _ in }
         )
@@ -111,7 +111,7 @@ final class StreamingTranscriberTests: XCTestCase {
             tickInterval: .milliseconds(15),
             transcribe: { audio in
                 await recorder.record(audio)
-                return Transcript(text: "x", backendID: "fake")
+                return Transcript(text: "x", backendID: .appleSpeech)
             },
             onInterimText: { _ in }
         )

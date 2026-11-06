@@ -29,7 +29,7 @@ final class AppleSpeechBackendTests: XCTestCase {
             options: STTOptions(localeIdentifier: "fr-FR")
         )
 
-        XCTAssertEqual(transcript, Transcript(text: "Hello", backendID: "apple-speech"))
+        XCTAssertEqual(transcript, Transcript(text: "Hello", backendID: .appleSpeech))
         let operations = await recorder.operations
         XCTAssertEqual(operations, [.prepared("fr-FR"), .transcribed("fr-FR")])
     }

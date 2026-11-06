@@ -4,8 +4,8 @@ import XCTest
 
 @MainActor
 final class BackendListModelTests: XCTestCase {
-    private var order: [String] = []
-    private var writes: [[String]] = []
+    private var order: [BackendID] = []
+    private var writes: [[BackendID]] = []
     private var statusSink = StatusSink()
 
     override func setUp() {
@@ -16,13 +16,13 @@ final class BackendListModelTests: XCTestCase {
     }
 
     private func makeList(
-        _ ids: [String],
-        availability: [String: BackendAvailability] = [:],
+        _ ids: [BackendID],
+        availability: [BackendID: BackendAvailability] = [:],
         refusal: String = "At least one backend must stay enabled."
     ) -> BackendListModel {
         BackendListModel(
             entries: ids.map { id in
-                BackendListEntry(id: id, displayName: id.uppercased(), availability: { availability[id] ?? .available })
+                BackendListEntry(id: id, availability: { availability[id] ?? .available })
             },
             order: { [unowned self] in order },
             setOrder: { [unowned self] in
@@ -34,69 +34,68 @@ final class BackendListModelTests: XCTestCase {
     }
 
     func testRowsListEnabledInOrderThenDisabledByID() async {
-        order = ["b", "a"]
-        let list = makeList(["a", "b", "c"])
+        order = [.parakeet, .appleSpeech]
+        let list = makeList([.appleSpeech, .parakeet, .whisper])
 
         await list.refresh()
 
-        XCTAssertEqual(list.rows.map(\.id), ["b", "a", "c"])
+        XCTAssertEqual(list.rows.map(\.id), [.parakeet, .appleSpeech, .whisper])
         XCTAssertEqual(list.rows.map(\.isEnabled), [true, true, false])
         XCTAssertEqual(list.rows.map(\.position), [0, 1, Int.max])
-        XCTAssertEqual(list.rows.map(\.displayName), ["B", "A", "C"])
         XCTAssertEqual(list.rows.map(\.state), [.ready, .ready, .ready])
     }
 
     func testEnablingAppendsToOrderAndPersists() async {
-        order = ["a"]
-        let list = makeList(["a", "b"])
+        order = [.appleSpeech]
+        let list = makeList([.appleSpeech, .parakeet])
         await list.refresh()
 
-        list.setEnabled("b", true)
+        list.setEnabled(.parakeet, true)
 
-        XCTAssertEqual(writes, [["a", "b"]])
-        XCTAssertEqual(list.rows.first { $0.id == "b" }?.isEnabled, true)
-        XCTAssertEqual(list.rows.first { $0.id == "b" }?.position, 1)
+        XCTAssertEqual(writes, [[.appleSpeech, .parakeet]])
+        XCTAssertEqual(list.rows.first { $0.id == .parakeet }?.isEnabled, true)
+        XCTAssertEqual(list.rows.first { $0.id == .parakeet }?.position, 1)
     }
 
     func testEnablingAlreadyEnabledOrUnknownIDIsANoOp() async {
-        order = ["a"]
-        let list = makeList(["a"])
+        order = [.appleSpeech]
+        let list = makeList([.appleSpeech])
         await list.refresh()
 
-        list.setEnabled("a", true)
-        list.setEnabled("ghost", true)
+        list.setEnabled(.appleSpeech, true)
+        list.setEnabled(.kokoro, true)
 
         XCTAssertTrue(writes.isEmpty)
     }
 
     func testMovingEnabledBackendReorders() async {
-        order = ["a", "b"]
-        let list = makeList(["a", "b"])
+        order = [.appleSpeech, .parakeet]
+        let list = makeList([.appleSpeech, .parakeet])
         await list.refresh()
 
-        list.move("b", up: true)
+        list.move(.parakeet, up: true)
 
-        XCTAssertEqual(writes, [["b", "a"]])
-        XCTAssertEqual(list.rows.map(\.id), ["b", "a"])
+        XCTAssertEqual(writes, [[.parakeet, .appleSpeech]])
+        XCTAssertEqual(list.rows.map(\.id), [.parakeet, .appleSpeech])
     }
 
     func testMovingPastEitherEndIsANoOp() async {
-        order = ["a", "b"]
-        let list = makeList(["a", "b"])
+        order = [.appleSpeech, .parakeet]
+        let list = makeList([.appleSpeech, .parakeet])
         await list.refresh()
 
-        list.move("a", up: true)
-        list.move("b", up: false)
+        list.move(.appleSpeech, up: true)
+        list.move(.parakeet, up: false)
 
         XCTAssertTrue(writes.isEmpty)
     }
 
     func testCannotDisableTheLastEnabledBackend() async {
-        order = ["a"]
-        let list = makeList(["a", "b"], refusal: "At least one TTS backend must stay enabled.")
+        order = [.appleSpeech]
+        let list = makeList([.appleSpeech, .parakeet], refusal: "At least one TTS backend must stay enabled.")
         await list.refresh()
 
-        list.setEnabled("a", false)
+        list.setEnabled(.appleSpeech, false)
 
         XCTAssertTrue(writes.isEmpty)
         XCTAssertEqual(list.message, "At least one TTS backend must stay enabled.")
@@ -104,30 +103,30 @@ final class BackendListModelTests: XCTestCase {
     }
 
     func testMessageClearsOnNextSuccessfulChange() async {
-        order = ["a"]
-        let list = makeList(["a", "b"])
+        order = [.appleSpeech]
+        let list = makeList([.appleSpeech, .parakeet])
         await list.refresh()
-        list.setEnabled("a", false)
+        list.setEnabled(.appleSpeech, false)
         XCTAssertNotNil(list.message)
 
-        list.setEnabled("b", true)
+        list.setEnabled(.parakeet, true)
 
         XCTAssertNil(list.message)
     }
 
-    func testUnknownIDsInSettingsOrderAreIgnoredAndDroppedOnPersist() async {
-        order = ["ghost", "a"]
-        let list = makeList(["a", "b"])
+    func testUnregisteredIDsInSettingsOrderAreIgnoredAndDroppedOnPersist() async {
+        order = [.kokoro, .appleSpeech]
+        let list = makeList([.appleSpeech, .parakeet])
         await list.refresh()
 
-        XCTAssertEqual(list.rows.map(\.id), ["a", "b"])
-        XCTAssertEqual(list.rows.first { $0.id == "a" }?.position, 0)
+        XCTAssertEqual(list.rows.map(\.id), [.appleSpeech, .parakeet])
+        XCTAssertEqual(list.rows.first { $0.id == .appleSpeech }?.position, 0)
 
-        list.setEnabled("a", false)
-        XCTAssertTrue(writes.isEmpty, "ghost must not count toward the last-enabled guard")
+        list.setEnabled(.appleSpeech, false)
+        XCTAssertTrue(writes.isEmpty, "an unregistered id must not count toward the last-enabled guard")
 
-        list.setEnabled("b", true)
-        XCTAssertEqual(writes, [["a", "b"]])
+        list.setEnabled(.parakeet, true)
+        XCTAssertEqual(writes, [[.appleSpeech, .parakeet]])
     }
 
     func testAvailabilityMapsToFixedStates() async {
@@ -140,7 +139,7 @@ final class BackendListModelTests: XCTestCase {
             (.failed("boom"), .unavailable),
         ]
         for (availability, expected) in cases {
-            let list = makeList(["x"], availability: ["x": availability])
+            let list = makeList([.appleSpeech], availability: [.appleSpeech: availability])
             await list.refresh()
             XCTAssertEqual(list.rows.first?.state, expected, "availability: \(availability)")
         }
@@ -149,8 +148,8 @@ final class BackendListModelTests: XCTestCase {
     func testStaleRefreshCannotOverwriteANewerOne() async {
         let gate = AvailabilityGate()
         let list = BackendListModel(
-            entries: [BackendListEntry(id: "a", displayName: "A", availability: { await gate.next() })],
-            order: { ["a"] },
+            entries: [BackendListEntry(id: .appleSpeech, availability: { await gate.next() })],
+            order: { [.appleSpeech] },
             setOrder: { _ in },
             refusalMessage: "",
             statusSink: statusSink
@@ -169,13 +168,13 @@ final class BackendListModelTests: XCTestCase {
     /// A `setEnabled` landing while `refresh()` is still awaiting a probe must win: the refresh
     /// must read the order again after its awaits, not apply the order it started with.
     func testConcurrentOrderChangeDuringRefreshIsNotClobbered() async {
-        order = ["a", "b"]
+        order = [.appleSpeech, .parakeet]
         let gate = AvailabilityGate()
         gate.value = .available
         let list = BackendListModel(
             entries: [
-                BackendListEntry(id: "a", displayName: "A", availability: { await gate.next() }),
-                BackendListEntry(id: "b", displayName: "B", availability: { .available }),
+                BackendListEntry(id: .appleSpeech, availability: { await gate.next() }),
+                BackendListEntry(id: .parakeet, availability: { .available }),
             ],
             order: { [unowned self] in order },
             setOrder: { [unowned self] in
@@ -187,13 +186,13 @@ final class BackendListModelTests: XCTestCase {
 
         let refreshTask = Task { await list.refresh() }
         while gate.pending == nil { await Task.yield() }
-        list.setEnabled("b", false)
+        list.setEnabled(.parakeet, false)
         gate.pending?.resume()
         await refreshTask.value
 
-        XCTAssertEqual(order, ["a"])
-        XCTAssertEqual(list.rows.first { $0.id == "b" }?.isEnabled, false)
-        XCTAssertEqual(list.rows.first { $0.id == "a" }?.isEnabled, true)
+        XCTAssertEqual(order, [.appleSpeech])
+        XCTAssertEqual(list.rows.first { $0.id == .parakeet }?.isEnabled, false)
+        XCTAssertEqual(list.rows.first { $0.id == .appleSpeech }?.isEnabled, true)
     }
 }
 

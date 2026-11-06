@@ -11,32 +11,30 @@ struct BackendStatus: Identifiable, Equatable, Sendable {
         case unavailable
     }
 
-    let id: String
-    let displayName: String
+    let id: BackendID
     var state: State
     var isEnabled: Bool
     var position: Int
 }
 
-/// What the list needs from a backend: identity, label, and a readiness probe. Lets one list type
+/// What the list needs from a backend: identity and a readiness probe. Lets one list type
 /// serve both the `Sendable` STT backends and the `@MainActor` TTS backends.
 struct BackendListEntry {
-    let id: String
-    let displayName: String
+    let id: BackendID
     let availability: @MainActor () async -> BackendAvailability
 }
 
 @MainActor
 extension BackendListEntry {
-    static func entries(_ registry: [String: any SpeechToTextBackend]) -> [BackendListEntry] {
+    static func entries(_ registry: [BackendID: any SpeechToTextBackend]) -> [BackendListEntry] {
         registry.map { id, backend in
-            BackendListEntry(id: id, displayName: backend.displayName, availability: { await backend.availability() })
+            BackendListEntry(id: id, availability: { await backend.availability() })
         }
     }
 
-    static func entries(_ registry: [String: any TextToSpeechBackend]) -> [BackendListEntry] {
+    static func entries(_ registry: [BackendID: any TextToSpeechBackend]) -> [BackendListEntry] {
         registry.map { id, backend in
-            BackendListEntry(id: id, displayName: backend.displayName, availability: { await backend.availability() })
+            BackendListEntry(id: id, availability: { await backend.availability() })
         }
     }
 }
@@ -51,21 +49,21 @@ final class BackendListModel {
     private(set) var message: String?
 
     @ObservationIgnored private let entries: [BackendListEntry]
-    @ObservationIgnored private let knownIDs: Set<String>
-    @ObservationIgnored private let readOrder: @MainActor () -> [String]
-    @ObservationIgnored private let writeOrder: @MainActor ([String]) -> Void
+    @ObservationIgnored private let knownIDs: Set<BackendID>
+    @ObservationIgnored private let readOrder: @MainActor () -> [BackendID]
+    @ObservationIgnored private let writeOrder: @MainActor ([BackendID]) -> Void
     @ObservationIgnored private let refusalMessage: String
     @ObservationIgnored private let statusSink: StatusSink
     @ObservationIgnored private var generation = 0
 
     init(
         entries: [BackendListEntry],
-        order: @escaping @MainActor () -> [String],
-        setOrder: @escaping @MainActor ([String]) -> Void,
+        order: @escaping @MainActor () -> [BackendID],
+        setOrder: @escaping @MainActor ([BackendID]) -> Void,
         refusalMessage: String,
         statusSink: StatusSink
     ) {
-        self.entries = entries.sorted { $0.id < $1.id }
+        self.entries = entries.sorted { $0.id.rawValue < $1.id.rawValue }
         knownIDs = Set(entries.map(\.id))
         readOrder = order
         writeOrder = setOrder
@@ -86,7 +84,6 @@ final class BackendListModel {
             fresh.append(
                 BackendStatus(
                     id: entry.id,
-                    displayName: entry.displayName,
                     state: Self.state(for: availability),
                     isEnabled: false,
                     position: Int.max
@@ -102,7 +99,7 @@ final class BackendListModel {
     }
 
     /// Refuses to disable the last enabled backend; unknown ids and no-op changes are ignored.
-    func setEnabled(_ id: String, _ enabled: Bool) {
+    func setEnabled(_ id: BackendID, _ enabled: Bool) {
         guard knownIDs.contains(id) else { return }
         var order = knownOrder()
         if enabled {
@@ -119,7 +116,7 @@ final class BackendListModel {
         apply(order)
     }
 
-    func move(_ id: String, up: Bool) {
+    func move(_ id: BackendID, up: Bool) {
         var order = knownOrder()
         guard let index = order.firstIndex(of: id) else { return }
         let target = up ? index - 1 : index + 1
@@ -137,7 +134,7 @@ final class BackendListModel {
         }
     }
 
-    private func apply(_ order: [String]) {
+    private func apply(_ order: [BackendID]) {
         writeOrder(order)
         rows = Self.sorted(
             rows.map { row in
@@ -155,7 +152,7 @@ final class BackendListModel {
     }
 
     /// The persisted order restricted to ids this list knows, so stale ids never count.
-    private func knownOrder() -> [String] {
+    private func knownOrder() -> [BackendID] {
         readOrder().filter { knownIDs.contains($0) }
     }
 
@@ -164,7 +161,7 @@ final class BackendListModel {
         statuses.sorted { lhs, rhs in
             if lhs.isEnabled != rhs.isEnabled { return lhs.isEnabled }
             if lhs.isEnabled { return lhs.position < rhs.position }
-            return lhs.id < rhs.id
+            return lhs.id.rawValue < rhs.id.rawValue
         }
     }
 }

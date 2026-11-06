@@ -16,8 +16,7 @@ extension AVSpeechSynthesizer: AppleSpeechSynthesizing {}
 /// `StreamingAudioPlayer` with it. The backend owns no speakers or playback events.
 @MainActor
 final class AppleTTSBackend: TextToSpeechBackend {
-    let id = BackendID.appleTTS.rawValue
-    let displayName = BackendID.appleTTS.displayName
+    let id = BackendID.appleTTS
 
     /// Builds a fresh synthesizer per `makeAudioSource` call so each speech attempt's Apple
     /// callbacks are isolated - a cancelled attempt's late buffers cannot leak into a later one.

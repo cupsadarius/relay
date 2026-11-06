@@ -2,7 +2,7 @@ import Foundation
 
 /// `SpeechModelManaging` for a backend with exactly one model, which is always selected.
 struct SingleModelManager: SpeechModelManaging {
-    let backendID: String
+    let backendID: BackendID
     let descriptor: SpeechModelDescriptor
     let capabilities: SpeechModelCapabilities
     let isPresent: @Sendable () async -> Bool
@@ -43,7 +43,7 @@ extension SingleModelManager {
     /// Voice selection is separate from model selection.
     static func kokoro(engine: any KokoroEngine) -> Self {
         SingleModelManager(
-            backendID: BackendID.kokoro.rawValue,
+            backendID: .kokoro,
             descriptor: SpeechModelDescriptor(id: "kokoro-82m-ane-en", displayName: "Kokoro 82M ANE", detail: "English"),
             capabilities: [.download, .select, .remove],
             isPresent: { await engine.modelsArePresent() },
@@ -54,7 +54,7 @@ extension SingleModelManager {
 
     static func pocketTTS(engine: any PocketTTSEngine) -> Self {
         SingleModelManager(
-            backendID: BackendID.pocketTTS.rawValue,
+            backendID: .pocketTTS,
             descriptor: SpeechModelDescriptor(id: "pocket-tts-v2.1-en", displayName: "PocketTTS v2.1", detail: "English"),
             capabilities: [.download, .select, .remove],
             isPresent: { await engine.modelsArePresent() },
@@ -65,7 +65,7 @@ extension SingleModelManager {
 
     /// Apple's recognizer ships with macOS, so there is nothing to download or remove.
     static let appleSpeech = SingleModelManager(
-        backendID: BackendID.appleSpeech.rawValue,
+        backendID: .appleSpeech,
         descriptor: SpeechModelDescriptor(id: "apple-on-device", displayName: "On-device", detail: nil),
         capabilities: [.select],
         isPresent: { true },

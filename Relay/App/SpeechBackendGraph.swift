@@ -5,10 +5,10 @@ import Foundation
 /// (`SpeechBackendGraphTests`) without building the rest of `RelayRuntime.makeProduction()`.
 @MainActor
 struct SpeechBackendGraph {
-    let ttsRegistry: [String: any TextToSpeechBackend]
-    let ttsModelManagers: [String: any SpeechModelManaging]
-    let sttRegistry: [String: any SpeechToTextBackend]
-    let speechModelManagers: [String: any SpeechModelManaging]
+    let ttsRegistry: [BackendID: any TextToSpeechBackend]
+    let ttsModelManagers: [BackendID: any SpeechModelManaging]
+    let sttRegistry: [BackendID: any SpeechToTextBackend]
+    let speechModelManagers: [BackendID: any SpeechModelManaging]
     let parakeetModelManager: ParakeetModelManager
 
     static func make(

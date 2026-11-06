@@ -10,8 +10,8 @@ import Foundation
 /// response in another voice.
 @MainActor
 final class TTSRouter {
-    private let backends: [String: any TextToSpeechBackend]
-    private let backendOrder: () -> [String]
+    private let backends: [BackendID: any TextToSpeechBackend]
+    private let backendOrder: () -> [BackendID]
     private let player: any StreamingAudioPlaying
 
     /// The backend for the session the player is currently driving. Assigned BEFORE
@@ -32,8 +32,8 @@ final class TTSRouter {
     private var routingGeneration = 0
 
     init(
-        backends: [String: any TextToSpeechBackend],
-        backendOrder: @escaping () -> [String],
+        backends: [BackendID: any TextToSpeechBackend],
+        backendOrder: @escaping () -> [BackendID],
         player: any StreamingAudioPlaying
     ) {
         self.backends = backends
@@ -57,7 +57,7 @@ final class TTSRouter {
         text: String,
         options: TTSOptions,
         sessionID: UUID,
-        preferredBackendID: String? = nil
+        preferredBackendID: BackendID? = nil
     ) async throws {
         routingGeneration &+= 1
         let generation = routingGeneration

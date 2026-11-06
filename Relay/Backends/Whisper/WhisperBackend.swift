@@ -16,8 +16,7 @@ typealias WhisperModelSelection = @Sendable () -> WhisperModelID?
 /// is itself an actor holding mutable state; `WhisperBackend` adds no additional isolated state of
 /// its own beyond forwarding to it.
 actor WhisperBackend: SpeechToTextBackend {
-    nonisolated let id = BackendID.whisper.rawValue
-    nonisolated let displayName = BackendID.whisper.displayName
+    nonisolated let id = BackendID.whisper
 
     private let store: WhisperModelStore
     private let runtime: WhisperRuntime

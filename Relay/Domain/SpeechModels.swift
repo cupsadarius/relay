@@ -16,7 +16,7 @@ struct AudioInput: Sendable, Equatable {
 
 struct Transcript: Sendable, Equatable {
     let text: String
-    let backendID: String
+    let backendID: BackendID
 }
 
 struct STTOptions: Sendable, Equatable {

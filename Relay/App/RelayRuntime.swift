@@ -15,8 +15,8 @@ struct SessionServices {
 /// Speech-output services: the TTS backend registry, model managers for model-backed TTS
 /// providers, the shared `SpeechCoordinator`, and the activity overlay it drives.
 struct SpeechOutputServices {
-    let ttsRegistry: [String: any TextToSpeechBackend]
-    let ttsModelManagers: [String: any SpeechModelManaging]
+    let ttsRegistry: [BackendID: any TextToSpeechBackend]
+    let ttsModelManagers: [BackendID: any SpeechModelManaging]
     let speechCoordinator: any SpeechCoordinating
     let overlayModel: ActivityOverlayModel
     let overlayPresenter: any ActivityOverlayPresenting
@@ -25,8 +25,8 @@ struct SpeechOutputServices {
 /// Speech-input services: the STT backend registry, its per-backend model managers, and the
 /// dictation coordinator built around them.
 struct SpeechInputServices {
-    let sttRegistry: [String: any SpeechToTextBackend]
-    let speechModelManagers: [String: any SpeechModelManaging]
+    let sttRegistry: [BackendID: any SpeechToTextBackend]
+    let speechModelManagers: [BackendID: any SpeechModelManaging]
     let dictationCoordinator: any DictationCoordinating
 }
 
@@ -127,7 +127,7 @@ final class RelayRuntime {
         let ttsPlayer = StreamingAudioPlayer()
         let router = TTSRouter(
             backends: ttsRegistry,
-            backendOrder: { settings.value.ttsBackendOrder },
+            backendOrder: { settings.value.ttsBackendOrder.compactMap(BackendID.init(rawValue:)) },
             player: ttsPlayer
         )
         let coordinator = SpeechCoordinator(
@@ -182,7 +182,7 @@ final class RelayRuntime {
             }),
             sttRouter: STTRouter(
                 backends: sttRegistry,
-                backendOrder: { settings.value.sttBackendOrder }
+                backendOrder: { settings.value.sttBackendOrder.compactMap(BackendID.init(rawValue:)) }
             ),
             processor: RulesTranscriptProcessor(),
             textInserter: TextInsertionService(gate: clipboardGate),

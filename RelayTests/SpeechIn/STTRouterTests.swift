@@ -25,9 +25,9 @@ final class STTRouterTests: XCTestCase {
     }
 
     func testStopsImmediatelyWhenPrimaryAvailabilityDeniesPermission() async {
-        let first = FakeSTTBackend(id: "first")
+        let first = FakeSTTBackend(id: .appleSpeech)
         first.availabilityValue = .permissionDenied
-        let second = FakeSTTBackend(id: "second")
+        let second = FakeSTTBackend(id: .parakeet)
         let router = makeRouter([first, second])
 
         do {
@@ -45,8 +45,8 @@ final class STTRouterTests: XCTestCase {
     }
 
     func testReturnsLastFallbackWorthyErrorWhenAllBackendsFail() async {
-        let first = FakeSTTBackend(id: "first", error: .unavailable("offline"))
-        let second = FakeSTTBackend(id: "second", error: .resourceExhausted)
+        let first = FakeSTTBackend(id: .appleSpeech, error: .unavailable("offline"))
+        let second = FakeSTTBackend(id: .parakeet, error: .resourceExhausted)
         let router = makeRouter([first, second])
 
         do {
@@ -60,9 +60,9 @@ final class STTRouterTests: XCTestCase {
     }
 
     func testReturnsMappedAvailabilityErrorWhenNoBackendCanTranscribe() async {
-        let first = FakeSTTBackend(id: "first")
+        let first = FakeSTTBackend(id: .appleSpeech)
         first.availabilityValue = .unavailable("offline")
-        let second = FakeSTTBackend(id: "second")
+        let second = FakeSTTBackend(id: .parakeet)
         second.availabilityValue = .failed("setup failed")
         let router = makeRouter([first, second])
 
@@ -85,7 +85,7 @@ final class STTRouterTests: XCTestCase {
         ]
 
         for (availability, expectedError) in cases {
-            let backend = FakeSTTBackend(id: "only")
+            let backend = FakeSTTBackend(id: .appleSpeech)
             backend.availabilityValue = availability
             let router = makeRouter([backend])
 
@@ -100,45 +100,45 @@ final class STTRouterTests: XCTestCase {
     }
 
     func testUsesCurrentBackendOrderForEveryTranscription() async throws {
-        let first = FakeSTTBackend(id: "first")
-        let second = FakeSTTBackend(id: "second")
-        var order = ["first", "second"]
+        let first = FakeSTTBackend(id: .appleSpeech)
+        let second = FakeSTTBackend(id: .parakeet)
+        var order: [BackendID] = [.appleSpeech, .parakeet]
         let router = STTRouter(
-            backends: ["first": first, "second": second],
+            backends: [.appleSpeech: first, .parakeet: second],
             backendOrder: { order }
         )
 
         let firstTranscript = try await router.transcribe(audio: audio, options: .init())
-        order = ["second", "first"]
+        order = [.parakeet, .appleSpeech]
         let secondTranscript = try await router.transcribe(audio: audio, options: .init())
 
-        XCTAssertEqual(firstTranscript, Transcript(text: "first", backendID: "first"))
-        XCTAssertEqual(secondTranscript, Transcript(text: "second", backendID: "second"))
+        XCTAssertEqual(firstTranscript, Transcript(text: "apple-speech", backendID: .appleSpeech))
+        XCTAssertEqual(secondTranscript, Transcript(text: "parakeet", backendID: .parakeet))
     }
 
     func testSelectBackendReturnsFirstAvailableBackend() async {
-        let first = FakeSTTBackend(id: "first")
-        let second = FakeSTTBackend(id: "second")
+        let first = FakeSTTBackend(id: .appleSpeech)
+        let second = FakeSTTBackend(id: .parakeet)
         let router = makeRouter([first, second])
 
         let name = await router.selectBackend()?.displayName
 
-        XCTAssertEqual(name, "first")
+        XCTAssertEqual(name, BackendID.appleSpeech.displayName)
     }
 
     func testSelectBackendSkipsUnavailableBackends() async {
-        let first = FakeSTTBackend(id: "first")
+        let first = FakeSTTBackend(id: .appleSpeech)
         first.availabilityValue = .unavailable("offline")
-        let second = FakeSTTBackend(id: "second")
+        let second = FakeSTTBackend(id: .parakeet)
         let router = makeRouter([first, second])
 
         let name = await router.selectBackend()?.displayName
 
-        XCTAssertEqual(name, "second")
+        XCTAssertEqual(name, BackendID.parakeet.displayName)
     }
 
     func testSelectBackendIsNilWhenNoneAreAvailable() async {
-        let first = FakeSTTBackend(id: "first")
+        let first = FakeSTTBackend(id: .appleSpeech)
         first.availabilityValue = .unavailable("offline")
         let router = makeRouter([first])
 
@@ -148,9 +148,9 @@ final class STTRouterTests: XCTestCase {
     }
 
     func testSelectBackendTreatsPermissionDeniedAsTerminal() async {
-        let first = FakeSTTBackend(id: "first")
+        let first = FakeSTTBackend(id: .appleSpeech)
         first.availabilityValue = .permissionDenied
-        let second = FakeSTTBackend(id: "second")
+        let second = FakeSTTBackend(id: .parakeet)
         let router = makeRouter([first, second])
 
         let name = await router.selectBackend()?.displayName
@@ -160,58 +160,58 @@ final class STTRouterTests: XCTestCase {
     }
 
     func testDisplayNameForBackendIDReturnsTheConfiguredBackendsName() {
-        let first = FakeSTTBackend(id: "first")
-        let second = FakeSTTBackend(id: "second")
+        let first = FakeSTTBackend(id: .appleSpeech)
+        let second = FakeSTTBackend(id: .parakeet)
         let router = makeRouter([first, second])
 
-        XCTAssertEqual(router.displayName(forBackendID: "first"), "first")
-        XCTAssertEqual(router.displayName(forBackendID: "second"), "second")
-        XCTAssertNil(router.displayName(forBackendID: "missing"))
+        XCTAssertEqual(router.displayName(forBackendID: .appleSpeech), BackendID.appleSpeech.displayName)
+        XCTAssertEqual(router.displayName(forBackendID: .parakeet), BackendID.parakeet.displayName)
+        XCTAssertNil(router.displayName(forBackendID: .whisper))
     }
 
     func testSelectBackendReturnsTheRemainingCandidateOrder() async {
-        let first = FakeSTTBackend(id: "first")
+        let first = FakeSTTBackend(id: .appleSpeech)
         first.availabilityValue = .unavailable("offline")
-        let second = FakeSTTBackend(id: "second")
-        let third = FakeSTTBackend(id: "third")
+        let second = FakeSTTBackend(id: .parakeet)
+        let third = FakeSTTBackend(id: .whisper)
         let router = makeRouter([first, second, third])
 
         let selection = await router.selectBackend()
 
-        XCTAssertEqual(selection, STTSelection(displayName: "second", candidateOrder: ["second", "third"]))
+        XCTAssertEqual(selection, STTSelection(displayName: BackendID.parakeet.displayName, candidateOrder: [.parakeet, .whisper]))
     }
 
     func testTranscribeWithASelectionStartsAtTheSelectedBackend() async throws {
-        let first = FakeSTTBackend(id: "first")
+        let first = FakeSTTBackend(id: .appleSpeech)
         first.availabilityValue = .unavailable("offline")
-        let second = FakeSTTBackend(id: "second")
+        let second = FakeSTTBackend(id: .parakeet)
         let router = makeRouter([first, second])
         let selection = await router.selectBackend()
         first.availabilityValue = .available
 
         let transcript = try await router.transcribe(audio: audio, options: .init(), selection: selection)
 
-        XCTAssertEqual(transcript, Transcript(text: "second", backendID: "second"))
+        XCTAssertEqual(transcript, Transcript(text: "parakeet", backendID: .parakeet))
         XCTAssertEqual(first.availabilityCallCount, 1, "the selection already ruled out 'first'")
         XCTAssertEqual(first.transcriptionCount, 0)
     }
 
     func testSelectBackendLeavesNoHiddenStateForALaterTranscribe() async throws {
-        let first = FakeSTTBackend(id: "first")
+        let first = FakeSTTBackend(id: .appleSpeech)
         first.availabilityValue = .unavailable("offline")
-        let second = FakeSTTBackend(id: "second")
+        let second = FakeSTTBackend(id: .parakeet)
         let router = makeRouter([first, second])
         _ = await router.selectBackend()
         first.availabilityValue = .available
 
         let transcript = try await router.transcribe(audio: audio, options: .init())
 
-        XCTAssertEqual(transcript, Transcript(text: "first", backendID: "first"))
+        XCTAssertEqual(transcript, Transcript(text: "apple-speech", backendID: .appleSpeech))
     }
 
     func testInterimUsesOnlyTheFirstAvailableBackendAndNeverFallsBack() async {
-        let first = FakeSTTBackend(id: "first", error: .initializationFailed("cold"))
-        let second = FakeSTTBackend(id: "second")
+        let first = FakeSTTBackend(id: .appleSpeech, error: .initializationFailed("cold"))
+        let second = FakeSTTBackend(id: .parakeet)
         let router = makeRouter([first, second])
 
         do {
@@ -225,18 +225,18 @@ final class STTRouterTests: XCTestCase {
     }
 
     func testInterimSkipsUnavailableBackendsToFindTheFirstAvailableOne() async throws {
-        let first = FakeSTTBackend(id: "first")
+        let first = FakeSTTBackend(id: .appleSpeech)
         first.availabilityValue = .modelNotDownloaded
-        let second = FakeSTTBackend(id: "second")
+        let second = FakeSTTBackend(id: .parakeet)
         let router = makeRouter([first, second])
 
         let transcript = try await router.transcribeForInterim(audio: audio, options: .init())
 
-        XCTAssertEqual(transcript, Transcript(text: "second", backendID: "second"))
+        XCTAssertEqual(transcript, Transcript(text: "parakeet", backendID: .parakeet))
     }
 
     func testTranscribeStopsAtTheNextBackendWhenTheTaskIsCancelled() async {
-        let first = FakeSTTBackend(id: "first")
+        let first = FakeSTTBackend(id: .appleSpeech)
         let router = makeRouter([first])
 
         let task = Task { @MainActor in try await router.transcribe(audio: audio, options: .init()) }
@@ -255,7 +255,7 @@ final class STTRouterTests: XCTestCase {
     }
 
     func testCancellationDuringTranscriptionPropagatesWithoutRecordingAFailedBackend() async {
-        let cancelling = CancellingSTTBackend(id: "first")
+        let cancelling = CancellingSTTBackend(id: .appleSpeech)
         let router = makeRouter([cancelling])
 
         do {
@@ -270,14 +270,14 @@ final class STTRouterTests: XCTestCase {
     }
 
     func testTranscribeWithoutAPrecedingLookupPerformsItsOwnFullWalk() async throws {
-        let first = FakeSTTBackend(id: "first")
+        let first = FakeSTTBackend(id: .appleSpeech)
         first.availabilityValue = .unavailable("offline")
-        let second = FakeSTTBackend(id: "second")
+        let second = FakeSTTBackend(id: .parakeet)
         let router = makeRouter([first, second])
 
         let transcript = try await router.transcribe(audio: audio, options: .init())
 
-        XCTAssertEqual(transcript, Transcript(text: "second", backendID: "second"))
+        XCTAssertEqual(transcript, Transcript(text: "parakeet", backendID: .parakeet))
         XCTAssertEqual(first.availabilityCallCount, 1)
         XCTAssertEqual(second.availabilityCallCount, 1)
     }
@@ -285,30 +285,30 @@ final class STTRouterTests: XCTestCase {
     // MARK: lastFailedBackendDisplayName
 
     func testRecordsTheBackendWhoseErrorWasThrown() async {
-        let first = FakeSTTBackend(id: "first", error: .unavailable("offline"))
-        let second = FakeSTTBackend(id: "second", error: .resourceExhausted)
+        let first = FakeSTTBackend(id: .appleSpeech, error: .unavailable("offline"))
+        let second = FakeSTTBackend(id: .parakeet, error: .resourceExhausted)
         let router = makeRouter([first, second])
 
         _ = try? await router.transcribe(audio: audio, options: .init())
 
-        XCTAssertEqual(router.lastFailedBackendDisplayName, "second")
+        XCTAssertEqual(router.lastFailedBackendDisplayName, BackendID.parakeet.displayName)
     }
 
     func testRecordsASkippedBackendWhenItsAvailabilityErrorIsThrown() async {
-        let first = FakeSTTBackend(id: "first")
+        let first = FakeSTTBackend(id: .appleSpeech)
         first.availabilityValue = .modelNotDownloaded
         let router = makeRouter([first])
 
         _ = try? await router.transcribe(audio: audio, options: .init())
 
-        XCTAssertEqual(router.lastFailedBackendDisplayName, "first")
+        XCTAssertEqual(router.lastFailedBackendDisplayName, BackendID.appleSpeech.displayName)
     }
 
     func testClearsTheFailedBackendAfterASuccessfulTranscription() async throws {
-        let first = FakeSTTBackend(id: "first", error: .unavailable("offline"))
+        let first = FakeSTTBackend(id: .appleSpeech, error: .unavailable("offline"))
         let router = makeRouter([first])
         _ = try? await router.transcribe(audio: audio, options: .init())
-        XCTAssertEqual(router.lastFailedBackendDisplayName, "first")
+        XCTAssertEqual(router.lastFailedBackendDisplayName, BackendID.appleSpeech.displayName)
 
         first.error = nil
         _ = try await router.transcribe(audio: audio, options: .init())
@@ -317,7 +317,7 @@ final class STTRouterTests: XCTestCase {
     }
 
     func testInterimFailuresNeverTouchTheFailedBackend() async {
-        let first = FakeSTTBackend(id: "first", error: .unavailable("offline"))
+        let first = FakeSTTBackend(id: .appleSpeech, error: .unavailable("offline"))
         let router = makeRouter([first])
 
         _ = try? await router.transcribeForInterim(audio: audio, options: .init())
@@ -326,18 +326,18 @@ final class STTRouterTests: XCTestCase {
     }
 
     func testTranscribeWithASelectionRecordsTheBackendWhoseErrorWasThrown() async {
-        let first = FakeSTTBackend(id: "first", error: .resourceExhausted)
+        let first = FakeSTTBackend(id: .appleSpeech, error: .resourceExhausted)
         let router = makeRouter([first])
         let selection = await router.selectBackend()
 
         _ = try? await router.transcribe(audio: audio, options: .init(), selection: selection)
 
-        XCTAssertEqual(router.lastFailedBackendDisplayName, "first")
+        XCTAssertEqual(router.lastFailedBackendDisplayName, BackendID.appleSpeech.displayName)
     }
 
-    func testUnknownIDsInTheOrderAreSkipped() async throws {
-        let known = FakeSTTBackend(id: "known")
-        let router = STTRouter(backends: ["known": known], backendOrder: { ["ghost", "known"] })
+    func testUnregisteredIDsInTheOrderAreSkipped() async throws {
+        let known = FakeSTTBackend(id: .parakeet)
+        let router = STTRouter(backends: [.parakeet: known], backendOrder: { [.appleSpeech, .parakeet] })
 
         _ = try await router.transcribe(audio: audio, options: .init())
 
@@ -347,20 +347,20 @@ final class STTRouterTests: XCTestCase {
     private let audio = AudioInput(samples: [0.1], sampleRate: 16_000)
 
     private func assertFallsBack(after error: SpeechBackendError) async throws {
-        let first = FakeSTTBackend(id: "first", error: error)
-        let second = FakeSTTBackend(id: "second")
+        let first = FakeSTTBackend(id: .appleSpeech, error: error)
+        let second = FakeSTTBackend(id: .parakeet)
         let router = makeRouter([first, second])
 
         let transcript = try await router.transcribe(audio: audio, options: .init())
 
-        XCTAssertEqual(transcript, Transcript(text: "second", backendID: "second"))
+        XCTAssertEqual(transcript, Transcript(text: "parakeet", backendID: .parakeet))
         XCTAssertEqual(first.transcriptionCount, 1)
         XCTAssertEqual(second.transcriptionCount, 1)
     }
 
     private func assertStopsRouting(after expectedError: SpeechBackendError) async {
-        let first = FakeSTTBackend(id: "first", error: expectedError)
-        let second = FakeSTTBackend(id: "second")
+        let first = FakeSTTBackend(id: .appleSpeech, error: expectedError)
+        let second = FakeSTTBackend(id: .parakeet)
         let router = makeRouter([first, second])
 
         do {
@@ -383,17 +383,15 @@ final class STTRouterTests: XCTestCase {
 
 @MainActor
 private final class FakeSTTBackend: SpeechToTextBackend {
-    let id: String
-    let displayName: String
+    let id: BackendID
     var availabilityValue: BackendAvailability = .available
     var error: SpeechBackendError?
     private(set) var transcriptionCount = 0
     private(set) var availabilityCallCount = 0
 
-    init(id: String, error: SpeechBackendError? = nil) {
+    init(id: BackendID, error: SpeechBackendError? = nil) {
         self.id = id
         self.error = error
-        displayName = id
     }
 
     func availability() async -> BackendAvailability {
@@ -404,7 +402,7 @@ private final class FakeSTTBackend: SpeechToTextBackend {
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
         transcriptionCount += 1
         if let error { throw error }
-        return Transcript(text: id, backendID: id)
+        return Transcript(text: id.rawValue, backendID: id)
     }
 }
 
@@ -414,12 +412,10 @@ private final class FakeSTTBackend: SpeechToTextBackend {
 /// covers).
 @MainActor
 private final class CancellingSTTBackend: SpeechToTextBackend {
-    let id: String
-    let displayName: String
+    let id: BackendID
 
-    init(id: String) {
+    init(id: BackendID) {
         self.id = id
-        displayName = id
     }
 
     func availability() async -> BackendAvailability { .available }

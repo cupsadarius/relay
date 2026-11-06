@@ -8,8 +8,7 @@ import Foundation
 /// source; the backend owns no speakers or playback events.
 @MainActor
 final class KokoroTTSBackend: TextToSpeechBackend {
-    let id = BackendID.kokoro.rawValue
-    let displayName = BackendID.kokoro.displayName
+    let id = BackendID.kokoro
 
     private let engine: any KokoroEngine
 

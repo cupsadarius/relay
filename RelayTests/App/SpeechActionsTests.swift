@@ -105,10 +105,10 @@ final class SpeechActionsTests: XCTestCase {
         let speech = SpySpeechCoordinator()
         let (actions, runtime) = makeActions(speech: speech, store: store)
 
-        await actions.previewVoice(backendID: "kokoro", voiceID: "kokoro:am_adam")
+        await actions.previewVoice(backendID: .kokoro, voiceID: "kokoro:am_adam")
 
         XCTAssertEqual(speech.previews.count, 1)
-        XCTAssertEqual(speech.previews.first?.backendID, "kokoro")
+        XCTAssertEqual(speech.previews.first?.backendID, .kokoro)
         XCTAssertEqual(speech.previews.first?.options.kokoroVoice, "am_adam")
         XCTAssertEqual(speech.previews.first?.options.rate, 0.75)
         XCTAssertEqual(speech.previews.first?.text, SpeechActions.previewSampleText)

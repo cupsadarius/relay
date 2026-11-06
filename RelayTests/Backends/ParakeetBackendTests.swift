@@ -90,7 +90,7 @@ final class ParakeetBackendTests: XCTestCase {
             options: .init()
         )
 
-        XCTAssertEqual(transcript, Transcript(text: "hello world", backendID: "parakeet"))
+        XCTAssertEqual(transcript, Transcript(text: "hello world", backendID: .parakeet))
         XCTAssertEqual(engine.receivedSamples, samples)
     }
 
@@ -208,7 +208,7 @@ final class ParakeetBackendTests: XCTestCase {
             options: .init()
         )
 
-        XCTAssertEqual(transcript, Transcript(text: "recovered", backendID: "parakeet"))
+        XCTAssertEqual(transcript, Transcript(text: "recovered", backendID: .parakeet))
         XCTAssertEqual(engine.loadCalls, [false, false], "A failed load must not block a later retry")
     }
 

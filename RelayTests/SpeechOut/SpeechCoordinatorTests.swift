@@ -5,8 +5,8 @@ import XCTest
 @MainActor
 final class SpeechCoordinatorTests: XCTestCase {
     func testVoicePreviewInterruptsAndUsesExactBackendOptions() async throws {
-        let first = FakeTTSBackend(id: "first")
-        let preferred = FakeTTSBackend(id: "preferred")
+        let first = FakeTTSBackend(id: .pocketTTS)
+        let preferred = FakeTTSBackend(id: .kokoro)
         let player = FakePlayer()
         first.player = player
         preferred.player = player
@@ -23,7 +23,7 @@ final class SpeechCoordinatorTests: XCTestCase {
         let options = TTSOptions(rate: 0.8, kokoroVoice: "am_adam")
 
         try await coordinator.speak(request(text: "first", mode: .userRequested))
-        try await coordinator.previewVoice(text: "preview", backendID: "preferred", options: options)
+        try await coordinator.previewVoice(text: "preview", backendID: .kokoro, options: options)
 
         XCTAssertEqual(first.spoken.map(\.text), ["first"])
         XCTAssertEqual(preferred.spoken.map(\.text), ["preview"])
@@ -32,7 +32,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testUserRequestedSpeechReplacesActiveSpeech() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let coordinator = makeCoordinator(backend: backend)
 
         try await coordinator.speak(request(text: "first", mode: .automatic))
@@ -43,7 +43,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testAutomaticSpeechEnqueuesBehindActivePlaybackAndStartsOnFinish() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -78,7 +78,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testQueueCapDropsOldestBeyondEightPending() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -99,7 +99,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testUserRequestedClearsQueuedAutomaticRequests() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -120,7 +120,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testStopClearsQueueAndResetsBusyState() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -139,7 +139,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testStopSessionIDClearsQueueWhenItStopsTheCurrentSession() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -160,7 +160,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testReplayLastClearsQueuedAutomaticRequests() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -178,7 +178,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testLastRequestReflectsStartedRequestNotMerelyQueued() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -197,7 +197,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testReplayUsesLastSuccessfulRequestAndCurrentOptions() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         var options = TTSOptions(voiceIdentifier: "first-voice", rate: 0.4)
         let coordinator = makeCoordinator(backend: backend, options: { options })
 
@@ -224,7 +224,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testReplayBeforeSuccessfulSpeechDoesNothing() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let coordinator = makeCoordinator(backend: backend)
 
         try await coordinator.replayLast()
@@ -234,7 +234,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testOverlayShowsPreparingSpeechBeforeBackendReportsStarted() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -248,7 +248,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testAutomaticSpeechDoesNotShowPreparingSpeechBeforeStarted() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -260,7 +260,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testReplayLastShowsPreparingSpeechBeforeBackendReportsStarted() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -278,18 +278,18 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testStartedEventSetsOverlayBackendNameFromBackend() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
         try await coordinator.speak(request(text: "hello", mode: .userRequested))
         backend.emitStarted()
 
-        XCTAssertEqual(overlay.backendName, "apple")
+        XCTAssertEqual(overlay.backendName, BackendID.appleTTS.displayName)
     }
 
     func testLevelEventUpdatesOverlaySpeakingLevel() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -305,7 +305,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testStaleLevelEventForReplacedSessionIsIgnored() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -326,7 +326,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testLateFinishFromStoppedSessionCannotHideReplacement() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -342,7 +342,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testMatchingFinishCompletesOverlay() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let scheduler = FakeOverlayScheduler()
         let overlay = ActivityOverlayModel(scheduler: scheduler)
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
@@ -357,7 +357,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testMatchingFailureReportsSpeechPlaybackErrorWithoutRawText() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -373,7 +373,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testMatchingCancellationHidesOverlay() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -386,7 +386,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testStaleInteractiveStopCannotStopReplacementSpeech() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -407,7 +407,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testMismatchedStopLeavesOverlaySpeaking() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -422,7 +422,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testMatchingInteractiveStopStopsRouterAndHidesOverlay() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -437,7 +437,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testUnconditionalStopCancelsActiveOverlaySession() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -452,7 +452,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testDuplicateTerminalEventForSameSessionDequeuesOnlyOnce() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -472,7 +472,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testCancelledThenLateFinishForSameSessionDequeuesOnlyOnce() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 
@@ -490,7 +490,7 @@ final class SpeechCoordinatorTests: XCTestCase {
     }
 
     func testStartFailureOnADequeuedRequestResetsBusyStateAndKeepsDraining() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let coordinator = makeCoordinator(backend: backend, overlay: overlay)
 

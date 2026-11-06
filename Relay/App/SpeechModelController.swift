@@ -8,7 +8,7 @@ enum SpeechModelDomain: Hashable, Sendable {
 
 struct SpeechModelBackendKey: Hashable, Sendable {
     let domain: SpeechModelDomain
-    let backendID: String
+    let backendID: BackendID
 }
 
 private struct SpeechModelOperationKey: Hashable, Sendable {
@@ -49,7 +49,7 @@ final class SpeechModelController {
         let generation = (generations[domain] ?? 0) + 1
         generations[domain] = generation
         var fresh: [SpeechModelBackendKey: [SpeechModelStatus]] = [:]
-        for key in managers.keys.filter({ $0.domain == domain }).sorted(by: { $0.backendID < $1.backendID }) {
+        for key in managers.keys.filter({ $0.domain == domain }).sorted(by: { $0.backendID.rawValue < $1.backendID.rawValue }) {
             guard let manager = managers[key] else { continue }
             fresh[key] = await manager.models()
         }
@@ -69,7 +69,7 @@ final class SpeechModelController {
 
         messages.removeValue(forKey: backend.domain)
         setInstallState(.downloading(progress: 0), modelID: modelID, backend: backend)
-        diagnostics.record(.speechModelDownloadStarted(backendName: BackendID.displayName(for: backend.backendID)))
+        diagnostics.record(.speechModelDownloadStarted(backendName: backend.backendID.displayName))
         do {
             try await manager.downloadModel(modelID) { [weak self] progress in
                 Task { @MainActor in
@@ -77,14 +77,14 @@ final class SpeechModelController {
                 }
             }
             downloads.remove(operation)
-            diagnostics.record(.speechModelDownloadFinished(backendName: BackendID.displayName(for: backend.backendID)))
+            diagnostics.record(.speechModelDownloadFinished(backendName: backend.backendID.displayName))
             await refresh(domain: backend.domain)
             await refreshBackends(backend.domain)
         } catch {
             downloads.remove(operation)
             setInstallState(.downloadFailed, modelID: modelID, backend: backend)
-            diagnostics.record(.speechModelDownloadFailed(backendName: BackendID.displayName(for: backend.backendID)))
-            messages[backend.domain] = "\(BackendID.displayName(for: backend.backendID)) model download failed. Check your connection and try again."
+            diagnostics.record(.speechModelDownloadFailed(backendName: backend.backendID.displayName))
+            messages[backend.domain] = "\(backend.backendID.displayName) model download failed. Check your connection and try again."
         }
     }
 
@@ -93,14 +93,14 @@ final class SpeechModelController {
         let previous = models[backend]
         do {
             try await manager.selectModel(modelID)
-            diagnostics.record(.speechModelSelectionFinished(backendName: BackendID.displayName(for: backend.backendID)))
+            diagnostics.record(.speechModelSelectionFinished(backendName: backend.backendID.displayName))
             messages.removeValue(forKey: backend.domain)
             await refresh(domain: backend.domain)
             await refreshBackends(backend.domain)
         } catch {
             models[backend] = previous
-            diagnostics.record(.speechModelSelectionFailed(backendName: BackendID.displayName(for: backend.backendID)))
-            messages[backend.domain] = "\(BackendID.displayName(for: backend.backendID)) model selection failed. Try again."
+            diagnostics.record(.speechModelSelectionFailed(backendName: backend.backendID.displayName))
+            messages[backend.domain] = "\(backend.backendID.displayName) model selection failed. Try again."
         }
     }
 
@@ -109,13 +109,13 @@ final class SpeechModelController {
         do {
             await beforeRemoval(backend, modelID)
             try await manager.removeModel(modelID)
-            diagnostics.record(.speechModelRemovalFinished(backendName: BackendID.displayName(for: backend.backendID)))
+            diagnostics.record(.speechModelRemovalFinished(backendName: backend.backendID.displayName))
             messages.removeValue(forKey: backend.domain)
             await refresh(domain: backend.domain)
             await refreshBackends(backend.domain)
         } catch {
-            diagnostics.record(.speechModelRemovalFailed(backendName: BackendID.displayName(for: backend.backendID)))
-            messages[backend.domain] = "\(BackendID.displayName(for: backend.backendID)) model removal failed. Try again."
+            diagnostics.record(.speechModelRemovalFailed(backendName: backend.backendID.displayName))
+            messages[backend.domain] = "\(backend.backendID.displayName) model removal failed. Try again."
             await refresh(domain: backend.domain)
             await refreshBackends(backend.domain)
         }

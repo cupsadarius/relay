@@ -26,10 +26,10 @@ extension RelayRuntime {
         dictationCoordinator: (any DictationCoordinating)? = nil,
         overlayModel: ActivityOverlayModel? = nil,
         overlayPresenter: (any ActivityOverlayPresenting)? = nil,
-        sttRegistry: [String: any SpeechToTextBackend] = [:],
-        speechModelManagers: [String: any SpeechModelManaging] = [:],
-        ttsRegistry: [String: any TextToSpeechBackend] = [:],
-        ttsModelManagers: [String: any SpeechModelManaging] = [:],
+        sttRegistry: [BackendID: any SpeechToTextBackend] = [:],
+        speechModelManagers: [BackendID: any SpeechModelManaging] = [:],
+        ttsRegistry: [BackendID: any TextToSpeechBackend] = [:],
+        ttsModelManagers: [BackendID: any SpeechModelManaging] = [:],
         hookEnvelopeReceiver: HookEnvelopeReceiver? = nil,
         integrationManager: IntegrationManager? = nil,
         claudeCodeInstaller: ClaudeCodeInstaller? = nil,
@@ -169,7 +169,7 @@ final class SpySpeechCoordinator: SpeechCoordinating {
     private(set) var stopCount = 0
     private(set) var stoppedSessionIDs: [UUID] = []
     private(set) var replayCount = 0
-    private(set) var previews: [(text: String, backendID: String, options: TTSOptions)] = []
+    private(set) var previews: [(text: String, backendID: BackendID, options: TTSOptions)] = []
     let replayError: Error?
     let speakError: Error?
 
@@ -182,7 +182,7 @@ final class SpySpeechCoordinator: SpeechCoordinating {
         requests.append(request)
         if let speakError { throw speakError }
     }
-    func previewVoice(text: String, backendID: String, options: TTSOptions) async throws {
+    func previewVoice(text: String, backendID: BackendID, options: TTSOptions) async throws {
         previews.append((text, backendID, options))
         if let speakError { throw speakError }
     }

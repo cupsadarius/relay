@@ -4,8 +4,7 @@ import Speech
 import Synchronization
 
 final class AppleSpeechBackend: SpeechToTextBackend {
-    let id = BackendID.appleSpeech.rawValue
-    let displayName = BackendID.appleSpeech.displayName
+    let id = BackendID.appleSpeech
 
     private let isSpeechTranscriberAvailable: @Sendable () async -> Bool
     private let prepareAssets: @Sendable (Locale) async throws -> Void

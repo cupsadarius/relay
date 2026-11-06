@@ -47,7 +47,7 @@ final class ParakeetModelManagerTests: XCTestCase {
     func testListsBothModelsAndDefaultsToUnified() async {
         let manager = makeManager()
 
-        XCTAssertEqual(manager.backendID, "parakeet")
+        XCTAssertEqual(manager.backendID, .parakeet)
 
         let models = await manager.models()
 

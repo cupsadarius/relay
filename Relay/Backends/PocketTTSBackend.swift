@@ -9,8 +9,7 @@ import Foundation
 /// (`options.rate`) is ignored here.
 @MainActor
 final class PocketTTSBackend: TextToSpeechBackend {
-    let id = BackendID.pocketTTS.rawValue
-    let displayName = BackendID.pocketTTS.displayName
+    let id = BackendID.pocketTTS
 
     private let engine: any PocketTTSEngine
 

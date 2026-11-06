@@ -35,7 +35,7 @@ enum SpeechModelManagerError: Error, Equatable, Sendable {
 }
 
 protocol SpeechModelManaging: Sendable {
-    var backendID: String { get }
+    var backendID: BackendID { get }
     func models() async -> [SpeechModelStatus]
     func downloadModel(_ id: String, progress: @escaping @Sendable (Double) -> Void) async throws
     func removeModel(_ id: String) async throws

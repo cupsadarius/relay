@@ -14,22 +14,13 @@ final class BackendIDTests: XCTestCase {
         XCTAssertEqual(BackendID.kokoro.rawValue, "kokoro")
     }
 
-    func testDisplayNamesAreCanonicalAndUnknownIDsFallBackToRawValue() {
+    func testDisplayNamesAreCanonical() {
         XCTAssertEqual(BackendID.appleSpeech.displayName, "Apple Speech")
         XCTAssertEqual(BackendID.parakeet.displayName, "Parakeet")
         XCTAssertEqual(BackendID.whisper.displayName, "OpenAI Whisper")
         XCTAssertEqual(BackendID.pocketTTS.displayName, "PocketTTS")
         XCTAssertEqual(BackendID.appleTTS.displayName, "Apple System Voice")
         XCTAssertEqual(BackendID.kokoro.displayName, "Kokoro")
-        XCTAssertEqual(BackendID.displayName(for: "future-backend"), "future-backend")
-    }
-
-    func testPatternMatchesPlainStrings() {
-        let id = "kokoro"
-        switch id {
-        case BackendID.kokoro: break
-        default: XCTFail("BackendID must pattern-match its raw string")
-        }
     }
 
     func testKnownIDSetsDeriveFromBackendID() {

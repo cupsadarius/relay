@@ -5,8 +5,8 @@ import XCTest
 @MainActor
 final class SpeechModelControllerTests: XCTestCase {
     func testSameBackendIDInDifferentDomainsDoesNotCollide() async {
-        let dictationKey = SpeechModelBackendKey(domain: .dictation, backendID: "shared")
-        let ttsKey = SpeechModelBackendKey(domain: .textToSpeech, backendID: "shared")
+        let dictationKey = SpeechModelBackendKey(domain: .dictation, backendID: .whisper)
+        let ttsKey = SpeechModelBackendKey(domain: .textToSpeech, backendID: .whisper)
         let controller = SpeechModelController(
             managers: [
                 dictationKey: ControllerModelManager(statuses: [status("dictation")]),
@@ -23,7 +23,7 @@ final class SpeechModelControllerTests: XCTestCase {
     }
 
     func testStaleRefreshCannotOverwriteNewerRefresh() async {
-        let key = SpeechModelBackendKey(domain: .dictation, backendID: "whisper")
+        let key = SpeechModelBackendKey(domain: .dictation, backendID: .whisper)
         let manager = ControllerModelManager(statuses: [status("old")])
         await manager.setModelSnapshots([[status("old")], [status("new")]])
         await manager.setBlockFirstModels(true)
@@ -39,7 +39,7 @@ final class SpeechModelControllerTests: XCTestCase {
     }
 
     func testDownloadProgressIsMonotonicAndDuplicateDownloadIsIgnored() async {
-        let key = SpeechModelBackendKey(domain: .dictation, backendID: "whisper")
+        let key = SpeechModelBackendKey(domain: .dictation, backendID: .whisper)
         let manager = ControllerModelManager(statuses: [status("tiny")])
         await manager.setDownloadProgress([0.8, 0.3, 2.0])
         await manager.setBlockDownload(true)
@@ -60,7 +60,7 @@ final class SpeechModelControllerTests: XCTestCase {
     }
 
     func testDownloadDoesNotSelectModel() async {
-        let key = SpeechModelBackendKey(domain: .dictation, backendID: "whisper")
+        let key = SpeechModelBackendKey(domain: .dictation, backendID: .whisper)
         let manager = ControllerModelManager(statuses: [status("tiny", selected: false)])
         let controller = SpeechModelController(managers: [key: manager], diagnostics: DiagnosticsRecorder())
 
@@ -71,7 +71,7 @@ final class SpeechModelControllerTests: XCTestCase {
     }
 
     func testSelectRefreshesModelsAndOwningBackend() async {
-        let key = SpeechModelBackendKey(domain: .dictation, backendID: "whisper")
+        let key = SpeechModelBackendKey(domain: .dictation, backendID: .whisper)
         let manager = ControllerModelManager(statuses: [status("tiny")])
         var refreshedDomains: [SpeechModelDomain] = []
         let controller = SpeechModelController(
@@ -91,7 +91,7 @@ final class SpeechModelControllerTests: XCTestCase {
     }
 
     func testRemoveRunsPreRemovalThenManagerThenRefreshes() async {
-        let key = SpeechModelBackendKey(domain: .textToSpeech, backendID: "kokoro")
+        let key = SpeechModelBackendKey(domain: .textToSpeech, backendID: .kokoro)
         let events = ControllerEventLog()
         let manager = ControllerModelManager(statuses: [status("model", state: .downloaded)], events: events)
         let controller = SpeechModelController(
@@ -111,7 +111,7 @@ final class SpeechModelControllerTests: XCTestCase {
     /// backend key, so a caller (`SpeechBackendsModel`) can act only on the model actually
     /// involved instead of every removal in the domain.
     func testRemovePassesTheModelIDToPreRemoval() async {
-        let key = SpeechModelBackendKey(domain: .textToSpeech, backendID: "kokoro")
+        let key = SpeechModelBackendKey(domain: .textToSpeech, backendID: .kokoro)
         let manager = ControllerModelManager(statuses: [status("model", state: .downloaded)])
         var seen: (SpeechModelBackendKey, String)?
         let controller = SpeechModelController(
@@ -127,7 +127,7 @@ final class SpeechModelControllerTests: XCTestCase {
     }
 
     func testFailedSelectAndRemovePreserveRowsAndPublishStableMessages() async {
-        let key = SpeechModelBackendKey(domain: .textToSpeech, backendID: "kokoro")
+        let key = SpeechModelBackendKey(domain: .textToSpeech, backendID: .kokoro)
         let original = status("model", state: .downloaded)
         let manager = ControllerModelManager(statuses: [original])
         let controller = SpeechModelController(managers: [key: manager], diagnostics: DiagnosticsRecorder())
@@ -145,7 +145,7 @@ final class SpeechModelControllerTests: XCTestCase {
     }
 
     func testPartialRemovalFailureReconcilesModelsAndBackendReadiness() async {
-        let key = SpeechModelBackendKey(domain: .textToSpeech, backendID: "kokoro")
+        let key = SpeechModelBackendKey(domain: .textToSpeech, backendID: .kokoro)
         let downloaded = status("model", state: .downloaded, selected: true)
         let absent = status("model", state: .notDownloaded, selected: true)
         let manager = ControllerModelManager(statuses: [downloaded])
@@ -167,7 +167,7 @@ final class SpeechModelControllerTests: XCTestCase {
     }
 
     func testTextToSpeechDownloadDiagnosticsNameTheTTSBackend() async {
-        let key = SpeechModelBackendKey(domain: .textToSpeech, backendID: "kokoro")
+        let key = SpeechModelBackendKey(domain: .textToSpeech, backendID: .kokoro)
         let diagnostics = DiagnosticsRecorder()
         let controller = SpeechModelController(
             managers: [key: ControllerModelManager(statuses: [status("model")])],
@@ -217,7 +217,7 @@ private actor ControllerEventLog {
 }
 
 private actor ControllerModelManager: SpeechModelManaging {
-    let backendID = "test"
+    let backendID = BackendID.whisper
     private var statuses: [SpeechModelStatus]
     private var snapshots: [[SpeechModelStatus]] = []
     private var blockFirstModels = false

@@ -83,7 +83,7 @@ final class SpeechActions {
         statusSink.post("Speech stopped")
     }
 
-    func previewVoice(backendID: String, voiceID: String) async {
+    func previewVoice(backendID: BackendID, voiceID: String) async {
         guard let options = voiceCatalog.options(for: voiceID, backendID: backendID, settings: settings.current) else { return }
         do {
             try await speechCoordinator.previewVoice(text: Self.previewSampleText, backendID: backendID, options: options)

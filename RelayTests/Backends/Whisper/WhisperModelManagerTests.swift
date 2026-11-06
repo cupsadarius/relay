@@ -105,7 +105,7 @@ final class WhisperModelManagerTests: XCTestCase {
     }
 
     func testBackendIDIsWhisper() {
-        XCTAssertEqual(manager.backendID, "whisper")
+        XCTAssertEqual(manager.backendID, .whisper)
     }
 
     func testModelsReportsAllElevenWithCorrectInstalledFlags() async throws {

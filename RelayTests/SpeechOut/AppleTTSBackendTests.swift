@@ -8,8 +8,7 @@ final class AppleTTSBackendTests: XCTestCase {
     func testIdentifiesAsApple() {
         let backend = makeBackend()
 
-        XCTAssertEqual(backend.id, "apple-tts")
-        XCTAssertEqual(backend.displayName, "Apple System Voice")
+        XCTAssertEqual(backend.id, .appleTTS)
     }
 
     func testAvailabilityIsAlwaysAvailable() async {

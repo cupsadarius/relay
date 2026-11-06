@@ -261,11 +261,11 @@ final class DictationCoordinatorTests: XCTestCase {
     func testModelNotDownloadedStatusNamesTheSkippedBackend() async {
         let events = EventLog()
         var statuses: [String] = []
-        let parakeet = NamedFakeBackend(id: "parakeet", displayName: "Parakeet", events: events)
+        let parakeet = NamedFakeBackend(id: .parakeet, events: events)
         parakeet.availabilityValue = .modelNotDownloaded
         let coordinator = DictationCoordinator(
             microphone: FakeMicrophone(events: events),
-            sttRouter: STTRouter(backends: [parakeet.id: parakeet], backendOrder: { ["parakeet"] }),
+            sttRouter: STTRouter(backends: [parakeet.id: parakeet], backendOrder: { [.parakeet] }),
             processor: RulesTranscriptProcessor(),
             textInserter: FakeTextInserter(events: events),
             stopSpeech: {},
@@ -281,10 +281,10 @@ final class DictationCoordinatorTests: XCTestCase {
 
     func testFinalTranscriptionUsesTheBackendSelectedWhenListeningBegan() async {
         let events = EventLog()
-        let first = ToggleAvailabilityBackend(id: "first", events: events)
+        let first = ToggleAvailabilityBackend(id: .appleSpeech, events: events)
         first.availabilityValue = .unavailable("offline")
-        let second = ToggleAvailabilityBackend(id: "second", events: events)
-        let sttRouter = STTRouter(backends: [first.id: first, second.id: second], backendOrder: { ["first", "second"] })
+        let second = ToggleAvailabilityBackend(id: .parakeet, events: events)
+        let sttRouter = STTRouter(backends: [first.id: first, second.id: second], backendOrder: { [.appleSpeech, .parakeet] })
         let overlay = RecordingActivityOverlay()
         let coordinator = makeCoordinator(sttRouter: sttRouter, overlay: overlay)
 
@@ -292,7 +292,7 @@ final class DictationCoordinatorTests: XCTestCase {
         first.availabilityValue = .available
         await coordinator.finish()
 
-        XCTAssertEqual(events.values, ["stt.transcribe.second"])
+        XCTAssertEqual(events.values, ["stt.transcribe.parakeet"])
         XCTAssertEqual(first.availabilityCallCount, 1, "the listen-time selection already ruled out 'first'")
     }
 
@@ -326,7 +326,7 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.finish()
         XCTAssertEqual(
             overlay.events,
-            [.listening(session), .backendName(session, "Fake"), .processing(session), .completed(session)]
+            [.listening(session), .backendName(session, BackendID.appleSpeech.displayName), .processing(session), .completed(session)]
         )
     }
 
@@ -367,7 +367,7 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.cancel(sessionID: UUID())
 
         XCTAssertEqual(microphone.cancelCount, 0)
-        XCTAssertEqual(overlay.events, [.listening(session), .backendName(session, "Fake")])
+        XCTAssertEqual(overlay.events, [.listening(session), .backendName(session, BackendID.appleSpeech.displayName)])
     }
 
     /// The overlay must hide the instant `cancel(sessionID:)` is called, not once
@@ -421,7 +421,7 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertNotEqual(newSession, session)
         XCTAssertEqual(
             Array(overlay.events.suffix(2)),
-            [.listening(newSession), .backendName(newSession, "Fake")]
+            [.listening(newSession), .backendName(newSession, BackendID.appleSpeech.displayName)]
         )
     }
 
@@ -543,13 +543,13 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.start()
         let session = overlay.sessionID!
 
-        XCTAssertEqual(overlay.events, [.listening(session), .backendName(session, "Fake")])
+        XCTAssertEqual(overlay.events, [.listening(session), .backendName(session, BackendID.appleSpeech.displayName)])
     }
 
     func testFallbackDuringTranscriptionPublishesTheBackendThatActuallySucceeded() async {
         let events = EventLog()
-        let first = NamedFakeBackend(id: "first", displayName: "First", events: events, error: .inferenceFailed("boom"))
-        let second = NamedFakeBackend(id: "second", displayName: "Second", events: events)
+        let first = NamedFakeBackend(id: .appleSpeech, events: events, error: .inferenceFailed("boom"))
+        let second = NamedFakeBackend(id: .parakeet, events: events)
         let sttRouter = STTRouter(backends: [first.id: first, second.id: second], backendOrder: { [first.id, second.id] })
         let overlay = RecordingActivityOverlay()
         let coordinator = makeCoordinator(sttRouter: sttRouter, overlay: overlay)
@@ -562,9 +562,9 @@ final class DictationCoordinatorTests: XCTestCase {
             overlay.events,
             [
                 .listening(session),
-                .backendName(session, "First"),
+                .backendName(session, BackendID.appleSpeech.displayName),
                 .processing(session),
-                .backendName(session, "Second"),
+                .backendName(session, BackendID.parakeet.displayName),
                 .completed(session),
             ])
     }
@@ -964,8 +964,7 @@ private actor LevelCapturingMicrophone: MicrophoneCapturing {
 
 @MainActor
 private final class AudioRecordingBackend: SpeechToTextBackend {
-    let id = "audio-recording"
-    let displayName = "Audio Recording"
+    let id = BackendID.appleSpeech
     private(set) var callCount = 0
     private(set) var lastSamples: [Float] = []
 
@@ -1014,8 +1013,7 @@ private actor GatedRecordingBackend {
 
 @MainActor
 private final class GatedFakeBackend: SpeechToTextBackend {
-    let id = "gated"
-    let displayName = "Gated"
+    let id = BackendID.appleSpeech
     private let recorder: GatedRecordingBackend
 
     init(recorder: GatedRecordingBackend) {
@@ -1054,8 +1052,7 @@ private actor InterimStaleResultGate {
 /// authoritative call against that same backend.
 @MainActor
 private final class FirstCallGatedThenImmediateBackend: SpeechToTextBackend {
-    let id = "first-call-gated"
-    let displayName = "First Call Gated"
+    let id = BackendID.appleSpeech
     private let gate: InterimStaleResultGate
     private let finalText: String
     private(set) var callCount = 0
@@ -1127,8 +1124,7 @@ private actor SampleStreamingFakeMicrophone: MicrophoneCapturing, MicrophoneSamp
 
 @MainActor
 private final class FakeBackend: SpeechToTextBackend {
-    let id = "fake"
-    let displayName = "Fake"
+    let id = BackendID.appleSpeech
     let events: EventLog
     let transcript: String
     let error: SpeechBackendError?
@@ -1139,18 +1135,16 @@ private final class FakeBackend: SpeechToTextBackend {
     }
 }
 
-/// Like `FakeBackend`, but with a configurable `id`/`displayName` so tests can exercise a
+/// Like `FakeBackend`, but with a configurable `id` so tests can exercise a
 /// multi-backend `STTRouter` fallback and verify which backend's display name is published.
 @MainActor
 private final class NamedFakeBackend: SpeechToTextBackend {
-    let id: String
-    let displayName: String
+    let id: BackendID
     let events: EventLog
     let transcript: String
     let error: SpeechBackendError?
-    init(id: String, displayName: String, events: EventLog, transcript: String = "text", error: SpeechBackendError? = nil) {
+    init(id: BackendID, events: EventLog, transcript: String = "text", error: SpeechBackendError? = nil) {
         self.id = id
-        self.displayName = displayName
         self.events = events
         self.transcript = transcript
         self.error = error
@@ -1166,15 +1160,13 @@ private final class NamedFakeBackend: SpeechToTextBackend {
 
 @MainActor
 private final class ToggleAvailabilityBackend: SpeechToTextBackend {
-    let id: String
-    let displayName: String
+    let id: BackendID
     let events: EventLog
     var availabilityValue: BackendAvailability = .available
     private(set) var availabilityCallCount = 0
 
-    init(id: String, events: EventLog) {
+    init(id: BackendID, events: EventLog) {
         self.id = id
-        self.displayName = id
         self.events = events
     }
 
@@ -1195,8 +1187,7 @@ private final class ToggleAvailabilityBackend: SpeechToTextBackend {
 /// cancelled while suspended (via `withTaskCancellationHandler`, which fires promptly even though
 /// the continuation itself never resumes on its own).
 private final class BlockingBackend: SpeechToTextBackend, @unchecked Sendable {
-    let id = "blocking"
-    let displayName = "Blocking"
+    let id = BackendID.appleSpeech
     private let lock = NSLock()
     private var pending: [CheckedContinuation<Transcript, Error>] = []
     private var cancellations = 0
@@ -1231,8 +1222,7 @@ private final class BlockingBackend: SpeechToTextBackend, @unchecked Sendable {
 /// lookup that's still in flight when a concurrent `finish()` reaches its own (separate)
 /// `transcribe()`-driven availability check on the same backend.
 private final class BlockingAvailabilityBackend: SpeechToTextBackend, @unchecked Sendable {
-    let id = "blocking-availability"
-    let displayName = "Blocking Availability"
+    let id = BackendID.appleSpeech
     private let lock = NSLock()
     private var callCount = 0
     private var waiter: CheckedContinuation<Void, Never>?

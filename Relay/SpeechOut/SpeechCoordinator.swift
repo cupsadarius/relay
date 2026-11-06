@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 protocol SpeechCoordinating: AnyObject {
     func speak(_ request: SpeechRequest) async throws
-    func previewVoice(text: String, backendID: String, options: TTSOptions) async throws
+    func previewVoice(text: String, backendID: BackendID, options: TTSOptions) async throws
     func stop()
     func stop(sessionID: UUID)
     func replayLast() async throws
@@ -100,7 +100,7 @@ final class SpeechCoordinator: SpeechCoordinating {
         isSpeaking = false
     }
 
-    func previewVoice(text: String, backendID: String, options: TTSOptions) async throws {
+    func previewVoice(text: String, backendID: BackendID, options: TTSOptions) async throws {
         pendingAutomaticQueue.removeAll()
         router.stop()
         cancelWatchdog()
@@ -265,7 +265,7 @@ final class SpeechCoordinator: SpeechCoordinating {
             }
             overlay.speak(sessionID: sessionID)
             if let backend {
-                overlay.setBackendName(backend.displayName, sessionID: sessionID)
+                overlay.setBackendName(backend.id.displayName, sessionID: sessionID)
             }
         case let .level(sessionID, level):
             recordPlaybackProgress(sessionID: sessionID)

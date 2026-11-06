@@ -15,7 +15,7 @@ extension ParakeetModelID {
 /// same `ParakeetEngine` seam `ParakeetBackend` uses, one engine per model, so tests fake the
 /// engines and never construct FluidAudio/CoreML types.
 struct ParakeetModelManager: SpeechModelManaging {
-    let backendID = BackendID.parakeet.rawValue
+    let backendID = BackendID.parakeet
 
     private let engines: ParakeetEngines
     private let selectedModel: ParakeetModelSelection

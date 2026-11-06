@@ -6,11 +6,11 @@ struct SpeechBackendSettingsSection<ExpandedContent: View>: View {
     let domain: SpeechModelDomain
     let controller: SpeechModelController
     let message: String?
-    let setEnabled: (String, Bool) -> Void
-    let move: (String, Bool) -> Void
-    let hasExpandedContent: (String) -> Bool
-    let expandedContent: (String) -> ExpandedContent
-    @State private var expandedBackendIDs: Set<String> = []
+    let setEnabled: (BackendID, Bool) -> Void
+    let move: (BackendID, Bool) -> Void
+    let hasExpandedContent: (BackendID) -> Bool
+    let expandedContent: (BackendID) -> ExpandedContent
+    @State private var expandedBackendIDs: Set<BackendID> = []
 
     init(
         title: String,
@@ -18,10 +18,10 @@ struct SpeechBackendSettingsSection<ExpandedContent: View>: View {
         domain: SpeechModelDomain,
         controller: SpeechModelController,
         message: String?,
-        setEnabled: @escaping (String, Bool) -> Void,
-        move: @escaping (String, Bool) -> Void,
-        hasExpandedContent: @escaping (String) -> Bool = { _ in false },
-        @ViewBuilder expandedContent: @escaping (String) -> ExpandedContent
+        setEnabled: @escaping (BackendID, Bool) -> Void,
+        move: @escaping (BackendID, Bool) -> Void,
+        hasExpandedContent: @escaping (BackendID) -> Bool = { _ in false },
+        @ViewBuilder expandedContent: @escaping (BackendID) -> ExpandedContent
     ) {
         self.title = title
         self.backends = backends
@@ -65,7 +65,7 @@ struct SpeechBackendSettingsSection<ExpandedContent: View>: View {
             }
             .buttonStyle(.plain).disabled(!expandable).opacity(expandable ? 1 : 0)
             VStack(alignment: .leading, spacing: 2) {
-                Text(backend.displayName)
+                Text(backend.id.displayName)
                 Text(subtitle(backend, rows: rows, expanded: expanded)).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()

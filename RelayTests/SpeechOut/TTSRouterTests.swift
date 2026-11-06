@@ -7,14 +7,14 @@ final class TTSRouterTests: XCTestCase {
     // MARK: Backend selection and fallback (before audible start)
 
     func testUsesCurrentBackendOrderForEveryRequest() async throws {
-        let first = FakeTTSBackend(id: "first")
-        let second = FakeTTSBackend(id: "second")
+        let first = FakeTTSBackend(id: .pocketTTS)
+        let second = FakeTTSBackend(id: .appleTTS)
         let player = FakePlayer()
-        var order = ["first", "second"]
+        var order: [BackendID] = [.pocketTTS, .appleTTS]
         let router = makeRouter([first, second], player: player, order: { order })
 
         try await router.speak(text: "one", options: .init(), sessionID: UUID())
-        order = ["second", "first"]
+        order = [.appleTTS, .pocketTTS]
         try await router.speak(text: "two", options: .init(), sessionID: UUID())
 
         XCTAssertEqual(first.spoken.map(\.text), ["one"])
@@ -22,9 +22,9 @@ final class TTSRouterTests: XCTestCase {
     }
 
     func testMakeAudioSourceFailureFallsThrough() async throws {
-        let first = FakeTTSBackend(id: "first")
+        let first = FakeTTSBackend(id: .pocketTTS)
         first.error = SpeechBackendError.inferenceFailed("boom")
-        let second = FakeTTSBackend(id: "second")
+        let second = FakeTTSBackend(id: .appleTTS)
         let router = makeRouter([first, second])
 
         try await router.speak(text: "hello", options: .init(), sessionID: UUID())
@@ -34,8 +34,8 @@ final class TTSRouterTests: XCTestCase {
     }
 
     func testPreferredBackendUsesOnlyThatBackendWithoutFallback() async {
-        let first = FakeTTSBackend(id: "first")
-        let preferred = FakeTTSBackend(id: "preferred")
+        let first = FakeTTSBackend(id: .pocketTTS)
+        let preferred = FakeTTSBackend(id: .kokoro)
         preferred.error = SpeechBackendError.inferenceFailed("boom")
         let router = makeRouter([first, preferred])
 
@@ -44,7 +44,7 @@ final class TTSRouterTests: XCTestCase {
                 text: "preview",
                 options: .init(kokoroVoice: "am_adam"),
                 sessionID: UUID(),
-                preferredBackendID: "preferred"
+                preferredBackendID: .kokoro
             )
             XCTFail("Expected preferred backend failure")
         } catch {}
@@ -54,9 +54,9 @@ final class TTSRouterTests: XCTestCase {
     }
 
     func testNewRequestSupersedesOlderRequestStillCreatingItsSource() async throws {
-        let slow = FakeTTSBackend(id: "slow")
+        let slow = FakeTTSBackend(id: .pocketTTS)
         slow.suspendSourceCreation = true
-        let fast = FakeTTSBackend(id: "fast")
+        let fast = FakeTTSBackend(id: .kokoro)
         let player = FakePlayer()
         let router = makeRouter([slow, fast], player: player)
 
@@ -88,9 +88,9 @@ final class TTSRouterTests: XCTestCase {
     }
 
     func testUnavailableBackendIsSkipped() async throws {
-        let first = FakeTTSBackend(id: "first")
+        let first = FakeTTSBackend(id: .pocketTTS)
         first.availabilityValue = .modelNotDownloaded
-        let second = FakeTTSBackend(id: "second")
+        let second = FakeTTSBackend(id: .appleTTS)
         let router = makeRouter([first, second])
 
         try await router.speak(text: "hello", options: .init(), sessionID: UUID())
@@ -100,9 +100,9 @@ final class TTSRouterTests: XCTestCase {
     }
 
     func testNonFallbackWorthyMakeAudioSourceErrorStopsRouting() async {
-        let first = FakeTTSBackend(id: "first")
+        let first = FakeTTSBackend(id: .pocketTTS)
         first.error = SpeechBackendError.invalidInput
-        let second = FakeTTSBackend(id: "second")
+        let second = FakeTTSBackend(id: .appleTTS)
         let router = makeRouter([first, second])
 
         do {
@@ -120,8 +120,8 @@ final class TTSRouterTests: XCTestCase {
     func testPreStartPlayerFailureFallsThrough() async throws {
         // The first backend produces a source, but the shared player fails BEFORE `.started`.
         // That is safe to treat as fallback-worthy, so the second backend takes over.
-        let first = FakeTTSBackend(id: "first")
-        let second = FakeTTSBackend(id: "second")
+        let first = FakeTTSBackend(id: .pocketTTS)
+        let second = FakeTTSBackend(id: .appleTTS)
         let player = FakePlayer()
         player.failNextStart = SpeechBackendError.inferenceFailed("player boom")
         let router = makeRouter([first, second], player: player)
@@ -136,11 +136,11 @@ final class TTSRouterTests: XCTestCase {
     // MARK: Commit-on-started
 
     func testFirstStartedCommitsBackend() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let player = FakePlayer()
         let router = makeRouter([backend], player: player)
 
-        var startedBackendIDs: [String?] = []
+        var startedBackendIDs: [BackendID?] = []
         router.setPlaybackEventHandler { event, backend in
             if case .started = event { startedBackendIDs.append(backend?.id) }
         }
@@ -149,17 +149,17 @@ final class TTSRouterTests: XCTestCase {
         try await router.speak(text: "hello", options: .init(), sessionID: sessionID)
         player.fireEvent(.started(sessionID: sessionID))
 
-        XCTAssertEqual(startedBackendIDs, ["apple"])
+        XCTAssertEqual(startedBackendIDs, [.appleTTS])
     }
 
     func testStartedEventReportsCommittedBackendIdentity() async throws {
-        let first = FakeTTSBackend(id: "first")
+        let first = FakeTTSBackend(id: .pocketTTS)
         first.error = SpeechBackendError.inferenceFailed("boom")
-        let second = FakeTTSBackend(id: "second")
+        let second = FakeTTSBackend(id: .appleTTS)
         let player = FakePlayer()
         let router = makeRouter([first, second], player: player)
 
-        var identities: [String?] = []
+        var identities: [BackendID?] = []
         router.setPlaybackEventHandler { event, backend in
             switch event {
             case .started, .level, .finished:
@@ -176,16 +176,16 @@ final class TTSRouterTests: XCTestCase {
 
         // The fell-through first backend never appears; the committed second backend owns every
         // player-sourced event.
-        XCTAssertEqual(identities, ["second", "second"])
+        XCTAssertEqual(identities, [.appleTTS, .appleTTS])
     }
 
     func testPostStartFailureDoesNotFallThrough() async throws {
-        let first = FakeTTSBackend(id: "first")
-        let second = FakeTTSBackend(id: "second")
+        let first = FakeTTSBackend(id: .pocketTTS)
+        let second = FakeTTSBackend(id: .appleTTS)
         let player = FakePlayer()
         let router = makeRouter([first, second], player: player)
 
-        var terminalBackendIDs: [String?] = []
+        var terminalBackendIDs: [BackendID?] = []
         router.setPlaybackEventHandler { event, backend in
             if case .failed = event { terminalBackendIDs.append(backend?.id) }
         }
@@ -198,13 +198,13 @@ final class TTSRouterTests: XCTestCase {
 
         XCTAssertEqual(first.spoken.map(\.text), ["hello"])
         XCTAssertTrue(second.spoken.isEmpty)
-        XCTAssertEqual(terminalBackendIDs, ["first"])
+        XCTAssertEqual(terminalBackendIDs, [.pocketTTS])
     }
 
     // MARK: Stop / pause / resume delegate to the shared player
 
     func testStopCancelsPlayer() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let player = FakePlayer()
         let router = makeRouter([backend], player: player)
 
@@ -216,7 +216,7 @@ final class TTSRouterTests: XCTestCase {
     }
 
     func testSessionSpecificStopIgnoresStaleID() async throws {
-        let backend = FakeTTSBackend(id: "apple")
+        let backend = FakeTTSBackend(id: .appleTTS)
         let player = FakePlayer()
         let router = makeRouter([backend], player: player)
 
@@ -234,7 +234,7 @@ final class TTSRouterTests: XCTestCase {
     }
 
     func testSessionSpecificStopDuringSourcePreparationCancelsTheRequest() async throws {
-        let slow = FakeTTSBackend(id: "slow")
+        let slow = FakeTTSBackend(id: .pocketTTS)
         slow.suspendSourceCreation = true
         let player = FakePlayer()
         let router = makeRouter([slow], player: player)
@@ -256,7 +256,7 @@ final class TTSRouterTests: XCTestCase {
     }
 
     func testSessionSpecificStopDuringPreparationIgnoresOtherSessionIDs() async throws {
-        let slow = FakeTTSBackend(id: "slow")
+        let slow = FakeTTSBackend(id: .pocketTTS)
         slow.suspendSourceCreation = true
         let player = FakePlayer()
         let router = makeRouter([slow], player: player)
@@ -275,7 +275,7 @@ final class TTSRouterTests: XCTestCase {
     }
 
     func testRoutingSessionIsForgottenOnceRoutingFails() async {
-        let backend = FakeTTSBackend(id: "only")
+        let backend = FakeTTSBackend(id: .appleTTS)
         backend.error = SpeechBackendError.invalidInput
         let router = makeRouter([backend])
         let sessionID = UUID()
@@ -293,7 +293,7 @@ final class TTSRouterTests: XCTestCase {
     private func makeRouter(
         _ backends: [FakeTTSBackend],
         player: FakePlayer? = nil,
-        order: (() -> [String])? = nil
+        order: (() -> [BackendID])? = nil
     ) -> TTSRouter {
         let player = player ?? FakePlayer()
         backends.forEach { $0.player = player }
@@ -323,12 +323,12 @@ final class TTSRouterTests: XCTestCase {
 /// Trivial pull-based source that carries the request that produced it (and the backend that
 /// produced it), so the fake player can record exactly what each backend dispatched.
 final class FakeTTSAudioSource: TTSAudioSource, @unchecked Sendable {
-    let backendID: String
+    let backendID: BackendID
     let text: String
     let options: TTSOptions
     private(set) var cancelled = false
 
-    init(backendID: String, text: String, options: TTSOptions) {
+    init(backendID: BackendID, text: String, options: TTSOptions) {
         self.backendID = backendID
         self.text = text
         self.options = options
@@ -368,7 +368,7 @@ final class FakePlayer: StreamingAudioPlaying {
     var lastSessionID: UUID? { started.last?.sessionID }
 
     /// What each backend dispatched, in play order, for tests that read via the backend proxy.
-    var spoken: [(backendID: String, text: String, options: TTSOptions, sessionID: UUID)] {
+    var spoken: [(backendID: BackendID, text: String, options: TTSOptions, sessionID: UUID)] {
         started.compactMap { entry in
             (entry.source as? FakeTTSAudioSource).map {
                 ($0.backendID, $0.text, $0.options, entry.sessionID)
@@ -419,8 +419,7 @@ final class FakePlayer: StreamingAudioPlaying {
 /// the backend, exactly as they did when backends owned playback.
 @MainActor
 final class FakeTTSBackend: TextToSpeechBackend {
-    let id: String
-    let displayName: String
+    let id: BackendID
     var availabilityValue: BackendAvailability = .available
     /// Thrown from `makeAudioSource`.
     var error: Error?
@@ -430,9 +429,8 @@ final class FakeTTSBackend: TextToSpeechBackend {
     /// The router's shared player; set by the test helper before the router is used.
     var player: FakePlayer!
 
-    init(id: String) {
+    init(id: BackendID) {
         self.id = id
-        displayName = id
     }
 
     func availability() async -> BackendAvailability { availabilityValue }

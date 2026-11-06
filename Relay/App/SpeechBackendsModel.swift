@@ -18,15 +18,15 @@ final class SpeechBackendsModel {
         self.voices = voices
         let dictation = BackendListModel(
             entries: BackendListEntry.entries(runtime.speechIn.sttRegistry),
-            order: { settings.current.sttBackendOrder },
-            setOrder: { settings.setSTTBackendOrder($0) },
+            order: { settings.current.sttBackendOrder.compactMap(BackendID.init(rawValue:)) },
+            setOrder: { settings.setSTTBackendOrder($0.map(\.rawValue)) },
             refusalMessage: "At least one speech recognition backend must stay enabled.",
             statusSink: runtime.status
         )
         let textToSpeech = BackendListModel(
             entries: BackendListEntry.entries(runtime.speechOut.ttsRegistry),
-            order: { settings.current.ttsBackendOrder },
-            setOrder: { settings.setTTSBackendOrder($0) },
+            order: { settings.current.ttsBackendOrder.compactMap(BackendID.init(rawValue:)) },
+            setOrder: { settings.setTTSBackendOrder($0.map(\.rawValue)) },
             refusalMessage: "At least one TTS backend must stay enabled.",
             statusSink: runtime.status
         )
@@ -82,14 +82,14 @@ final class SpeechBackendsModel {
         await refresh(.textToSpeech)
     }
 
-    func selectVoice(backendID: String, voiceID: String) {
+    func selectVoice(backendID: BackendID, voiceID: String) {
         guard let value = voices.storedValue(for: voiceID, backendID: backendID) else { return }
-        settings.setVoice(value, for: backendID)
+        settings.setVoice(value, for: backendID.rawValue)
     }
 
     private static func modelManagers(
-        dictation: [String: any SpeechModelManaging],
-        textToSpeech: [String: any SpeechModelManaging]
+        dictation: [BackendID: any SpeechModelManaging],
+        textToSpeech: [BackendID: any SpeechModelManaging]
     ) -> SpeechModelController.Managers {
         var result: SpeechModelController.Managers = [:]
         for (backendID, manager) in dictation {

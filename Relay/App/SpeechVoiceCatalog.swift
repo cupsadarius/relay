@@ -41,13 +41,13 @@ struct SpeechVoiceCatalog {
         self.pocketVoice = pocketVoice
     }
 
-    func voices(for backendID: String) -> [SpeechVoiceOption] {
+    func voices(for backendID: BackendID) -> [SpeechVoiceOption] {
         switch backendID {
-        case BackendID.appleTTS:
+        case .appleTTS:
             return [
                 .init(id: "apple:default", displayName: "System Default", detail: nil, storedValue: nil)
             ] + appleVoices
-        case BackendID.kokoro:
+        case .kokoro:
             let choices = kokoroVoices.filter { $0 != recommendedKokoroVoice }.map {
                 SpeechVoiceOption(id: "kokoro:\($0)", displayName: $0, detail: nil, storedValue: $0)
             }
@@ -59,7 +59,7 @@ struct SpeechVoiceCatalog {
                     storedValue: nil
                 )
             ] + choices
-        case BackendID.pocketTTS:
+        case .pocketTTS:
             return [
                 .init(
                     id: "pocket:default",
@@ -73,33 +73,33 @@ struct SpeechVoiceCatalog {
         }
     }
 
-    func activeVoiceID(for backendID: String, settings: AppSettings) -> String? {
+    func activeVoiceID(for backendID: BackendID, settings: AppSettings) -> String? {
         let options = voices(for: backendID)
         guard let defaultOption = options.first(where: { $0.storedValue == nil }) else { return nil }
-        guard let value = settings.voiceByBackend[backendID], value != recommendedValue(for: backendID) else {
+        guard let value = settings.voiceByBackend[backendID.rawValue], value != recommendedValue(for: backendID) else {
             return defaultOption.id
         }
         return options.first(where: { $0.storedValue == value })?.id
     }
 
-    func storedValue(for voiceID: String, backendID: String) -> String?? {
+    func storedValue(for voiceID: String, backendID: BackendID) -> String?? {
         voices(for: backendID).first(where: { $0.id == voiceID }).map(\.storedValue)
     }
 
-    func options(for voiceID: String, backendID: String, settings: AppSettings) -> TTSOptions? {
-        guard BackendID.allTextToSpeech.contains(BackendID(rawValue: backendID)),
+    func options(for voiceID: String, backendID: BackendID, settings: AppSettings) -> TTSOptions? {
+        guard BackendID.allTextToSpeech.contains(backendID),
             let mapped = storedValue(for: voiceID, backendID: backendID)
         else { return nil }
         var previewSettings = settings
-        previewSettings.voiceByBackend[backendID] = mapped
+        previewSettings.voiceByBackend[backendID.rawValue] = mapped
         return TTSOptions(settings: previewSettings)
     }
 
     /// The stored value that means "the recommended default" for backends that name one.
-    private func recommendedValue(for backendID: String) -> String? {
+    private func recommendedValue(for backendID: BackendID) -> String? {
         switch backendID {
-        case BackendID.kokoro: recommendedKokoroVoice
-        case BackendID.pocketTTS: pocketVoice
+        case .kokoro: recommendedKokoroVoice
+        case .pocketTTS: pocketVoice
         default: nil
         }
     }

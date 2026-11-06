@@ -7,7 +7,7 @@ typealias WhisperModelSelectionWriter = @MainActor @Sendable (WhisperModelID?) -
 /// `SpeechModelManaging` for the Whisper backend: catalog metadata, on-disk presence through
 /// `WhisperModelStore`, and unloading through `WhisperRuntime` before a removal or switch.
 struct WhisperModelManager: SpeechModelManaging {
-    let backendID = BackendID.whisper.rawValue
+    let backendID = BackendID.whisper
 
     private let store: WhisperModelStore
     private let runtime: WhisperRuntime

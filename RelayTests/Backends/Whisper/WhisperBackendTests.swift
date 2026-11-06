@@ -122,7 +122,7 @@ final class WhisperBackendTests: XCTestCase {
         )
 
         XCTAssertEqual(transcript.text, "fake transcript")
-        XCTAssertEqual(transcript.backendID, "whisper")
+        XCTAssertEqual(transcript.backendID, .whisper)
     }
 
     func testLoadFailureMapsToInitializationFailedSoRouterCanFallThrough() async throws {

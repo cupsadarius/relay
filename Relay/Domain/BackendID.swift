@@ -1,26 +1,21 @@
 /// A speech backend's stable identifier. `rawValue` is persisted in `AppSettings` (backend
-/// orders, per-backend voice/model maps) and in registry keys, so the static members' strings must
-/// never change. `displayName` is the single user-facing name for the backend everywhere (Settings
-/// rows, error messages, diagnostics).
-struct BackendID: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral, CustomStringConvertible {
-    let rawValue: String
-
-    init(rawValue: String) { self.rawValue = rawValue }
-    init(stringLiteral value: String) { rawValue = value }
-
-    var description: String { rawValue }
-
+/// orders, per-backend voice/model maps), so the case strings must never change. `displayName` is
+/// the single user-facing name for the backend everywhere (Settings rows, error messages,
+/// diagnostics).
+enum BackendID: String, CaseIterable, Codable, Sendable, CustomStringConvertible {
     // Speech-to-text
-    static let appleSpeech: BackendID = "apple-speech"
-    static let parakeet: BackendID = "parakeet"
-    static let whisper: BackendID = "whisper"
+    case appleSpeech = "apple-speech"
+    case parakeet
+    case whisper
     // Text-to-speech
-    static let pocketTTS: BackendID = "pocket-tts"
-    static let appleTTS: BackendID = "apple-tts"
-    static let kokoro: BackendID = "kokoro"
+    case pocketTTS = "pocket-tts"
+    case appleTTS = "apple-tts"
+    case kokoro
 
     static let allSpeechToText: [BackendID] = [.appleSpeech, .parakeet, .whisper]
     static let allTextToSpeech: [BackendID] = [.pocketTTS, .appleTTS, .kokoro]
+
+    var description: String { rawValue }
 
     var displayName: String {
         switch self {
@@ -30,16 +25,6 @@ struct BackendID: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiter
         case .pocketTTS: "PocketTTS"
         case .appleTTS: "Apple System Voice"
         case .kokoro: "Kokoro"
-        default: rawValue
         }
-    }
-
-    static func displayName(for rawValue: String) -> String {
-        BackendID(rawValue: rawValue).displayName
-    }
-
-    /// Lets `switch someString { case BackendID.kokoro: … }` match registry/settings strings.
-    static func ~= (pattern: BackendID, value: String) -> Bool {
-        pattern.rawValue == value
     }
 }
