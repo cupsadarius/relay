@@ -78,9 +78,11 @@ flowchart TD
         AppleSpeech[Apple Speech]
         Parakeet[Parakeet]
         Whisper[Whisper]
+        Live["LiveTranscription<br/>(interim text)"]
         Rules[RulesTranscriptProcessor]
         Insert[TextInsertionService]
         Mic --> Dictation
+        Dictation --> Live
         Dictation --> STT
         STT --> AppleSpeech
         STT --> Parakeet
@@ -89,18 +91,18 @@ flowchart TD
     end
 
     subgraph Agents["Agent integrations"]
-        Claude["Claude Code Stop hook"]
-        Codex["Codex Stop hook"]
+        Claude["Claude Code hooks<br/>(Stop, UserPromptSubmit)"]
+        Codex["Codex hooks<br/>(Stop, UserPromptSubmit)"]
         Hook["RelayHook CLI"]
         Receiver["HookEnvelopeReceiver<br/>(UnixSocketServer, relay.sock)"]
-        Manager[IntegrationManager]
+        Manager["IntegrationManager<br/>(HookMessage.parse)"]
         AutoRead[AgentAutoReadCoordinator]
-        Focus["FocusResolutionService<br/>Herdr → tmux → generic terminal"]
+        Focus["FocusResolutionService<br/>Herdr → Rex → tmux → generic terminal"]
         Claude --> Hook
         Codex --> Hook
         Hook -->|"NDJSON HookEnvelope"| Receiver
         Receiver --> Manager
-        Manager -->|"onResponse"| AutoRead
+        Manager -->|"onPrompt / onResponse"| AutoRead
         AutoRead --> Focus
         Focus --> AutoRead
     end
@@ -124,6 +126,10 @@ flowchart TD
         Source --> Player
     end
 
+    Overlay["ActivityOverlayModel<br/>(overlay capsule)"]
+    Live -.->|"interim text"| Overlay
+    Coord -.->|"speaking state"| Overlay
+
     Hotkeys -->|"dictate"| Dictation
     Hotkeys -->|"read selection, replay last, stop"| Actions
     MenuBar -->|"speak latest"| Actions
@@ -134,13 +140,23 @@ flowchart TD
     Dictation -.->|"stop speech on start"| Coord
 ```
 
-**Dictation (speech in).** A hotkey press starts `DictationCoordinator`, which stops any current speech, captures microphone audio, and transcribes it through `STTRouter`. The router tries the backends in the configured order (`sttBackendOrder`) and falls back when one is unavailable. The transcript goes through `RulesTranscriptProcessor` and is inserted at the cursor by `TextInsertionService`. Live interim text feeds the overlay pill. Dictation never goes through `SpeechCoordinator`.
+**Dictation (speech in).** A hotkey press starts `DictationCoordinator`, which stops any current speech, captures microphone audio, and transcribes it through `STTRouter`. The router tries the backends in the configured order (`sttBackendOrder`) and falls back when one is unavailable. The transcript goes through `RulesTranscriptProcessor` and is inserted at the cursor by `TextInsertionService`. `LiveTranscription` feeds interim text to the overlay capsule while you speak. Dictation never goes through `SpeechCoordinator`.
 
-**Agent responses (speech out).** Each agent's `Stop` hook runs the `RelayHook` helper (installed at `~/Library/Application Support/Relay/bin/RelayHook`). The helper forwards the hook payload as a single `HookEnvelope` line over the Unix socket `~/Library/Application Support/Relay/relay.sock`. The Debug build uses `~/Library/Application Support/Relay Debug/` instead (see [Debug and Release builds](#debug-and-release-builds)). `HookEnvelopeReceiver` validates it. `IntegrationManager` decodes it with the provider's `StopHookIntegration` (`.claudeCode` / `.codex`), keeps it in memory as the latest response, and hands it to `AgentAutoReadCoordinator`. The auto-read coordinator records the session, resolves focus, and speaks (mode `.automatic`) only if the session is confidently focused, or if nobody is currently focused and it is the most-recently-active session.
+**Agent responses (speech out).** Each agent's `Stop` hook runs the `RelayHook` helper (installed at `~/Library/Application Support/Relay/bin/RelayHook`). The helper forwards the hook payload as a single `HookEnvelope` line over the Unix socket `~/Library/Application Support/Relay/relay.sock`. The Debug build uses `~/Library/Application Support/Relay Debug/` instead (see [Debug and Release builds](#debug-and-release-builds)). Relay also installs a `UserPromptSubmit` hook, so it knows which session the user prompted last. `HookEnvelopeReceiver` checks the size and shape of each line. `IntegrationManager` parses it once with `HookMessage.parse` into a `.prompt` or a `.response`, keeps the latest response in memory, and hands both kinds to `AgentAutoReadCoordinator`. The auto-read coordinator records the session, resolves focus, and speaks (mode `.automatic`) only if the session is confidently focused, or if nobody is currently focused and it is the most-recently-active session.
 
 **User-requested speech.** Read Selection, Replay Last, Speak Latest and voice previews all go through `SpeechActions`, the single owner of every explicit speech action. Read Selection reads the selection and speaks it directly; Replay Last resolves a session-aware target (the focused session's reply, else the global latest reply via `IntegrationManager`, else the last spoken/selected text); Speak Latest asks `IntegrationManager` for the latest response. Every path submits a `.userRequested` request, which `SpeechCoordinator` starts immediately, clearing the queue.
 
-**Playback.** `SpeechCoordinator` serializes all speech (see [Agent Integrations](#agent-integrations) for queueing rules) and drives `TTSRouter`, which walks the backends in `ttsBackendOrder`, asks the first available one for a `TTSAudioSource`, and hands it to the single shared `StreamingAudioPlayer`. Every current TTS backend builds its source as a `PipedTTSAudioSource`: synthesis runs as a producer task that yields PCM into a bounded `TTSAudioPipe`, so a backend can never race ahead of playback and fill memory. Model-backed STT and TTS backends (Parakeet, Kokoro, PocketTTS) load their on-device model sessions through a shared `ModelSessionLoader`, which de-duplicates concurrent loads and coordinates downloading vs. loading a backend already has locally.
+**Playback.** `SpeechCoordinator` serializes all speech (see [Agent Integrations](#agent-integrations) for queueing rules) and drives `TTSRouter`, which walks the backends in `ttsBackendOrder`, asks the first available one for a `TTSAudioSource`, and hands it to the single shared `StreamingAudioPlayer`. Every current TTS backend builds its source as a `PipedTTSAudioSource`: synthesis runs as a producer task that yields PCM into a bounded `TTSAudioPipe`, so a backend can never race ahead of playback and fill memory. Model-backed STT and TTS backends (Parakeet, Kokoro, PocketTTS) each hold a `LocalModel`, which owns the presence check, load, and removal of the on-device model. `LocalModel` wraps the shared `ModelSessionLoader`, which de-duplicates concurrent loads and coordinates downloading vs. loading a model that is already on disk. Whisper uses WhisperKit through its own `WhisperRuntime`, and downloads only checksum-verified files into its model folder.
+
+```mermaid
+flowchart LR
+    Kokoro[KokoroTTSBackend] --> LM["LocalModel#lt;Session#gt;"]
+    Pocket[PocketTTSBackend] --> LM
+    Parakeet[ParakeetBackend] --> LM
+    LM --> Loader[ModelSessionLoader]
+    Loader --> FA["FluidAudio model load<br/>(the one test seam)"]
+    Whisper[WhisperBackend] --> WR[WhisperRuntime] --> WK[WhisperKit]
+```
 
 ### Text-to-Speech pipeline
 
