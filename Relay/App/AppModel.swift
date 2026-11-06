@@ -45,6 +45,9 @@ final class AppModel {
 
     func clearIntegrationDiagnostics() { runtime.integrationDiagnosticsLog.clear() }
 
+    /// Live pipeline runs, folded from the event bus.
+    var pipelineRuns: PipelineRunStore { runtime.pipelineRuns }
+
     // MARK: Lifecycle
 
     /// The only initializer. Production passes `RelayRuntime.makeProduction()`; tests pass
