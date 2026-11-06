@@ -115,7 +115,7 @@ private actor FakeLongFormKokoroSession: KokoroModelSession {
         defer { inFlightSynthesis -= 1 }
 
         if let maxAcceptedLength, phonemes.count > maxAcceptedLength {
-            throw KokoroEngineError.acousticFramesTooLong
+            throw KokoroModelError.acousticFramesTooLong
         }
         return KokoroPCM(samples: [Float(phonemes.count)], sampleRate: 12.5)
     }

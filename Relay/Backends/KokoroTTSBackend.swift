@@ -37,7 +37,7 @@ final class KokoroTTSBackend: TextToSpeechBackend {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            throw Self.mapEngineError(error)
+            throw Self.mapModelError(error)
         }
 
         let voice = options.voiceByBackend[id] ?? TtsConstants.recommendedVoice
@@ -57,17 +57,17 @@ final class KokoroTTSBackend: TextToSpeechBackend {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            throw Self.mapEngineError(error)
+            throw Self.mapModelError(error)
         }
     }
 
-    private static func mapEngineError(_ error: Error) -> SpeechBackendError {
+    private static func mapModelError(_ error: Error) -> SpeechBackendError {
         switch error {
-        case KokoroEngineError.modelsNotDownloaded:
+        case KokoroModelError.modelsNotDownloaded:
             .modelNotDownloaded
-        case KokoroEngineError.synthesisFailed,
-            KokoroEngineError.textTooLong,
-            KokoroEngineError.acousticFramesTooLong:
+        case KokoroModelError.synthesisFailed,
+            KokoroModelError.textTooLong,
+            KokoroModelError.acousticFramesTooLong:
             .inferenceFailed("Kokoro synthesis failed")
         default:
             .initializationFailed("Kokoro model load failed")

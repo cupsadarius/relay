@@ -38,10 +38,10 @@ extension LocalModel where Session == any ParakeetModelSession {
         return LocalModel(
             isPresent: { await loader.modelsArePresent() },
             loader: ModelSessionLoader(
-                modelsNotDownloaded: { ParakeetEngineError.modelsNotDownloaded },
+                modelsNotDownloaded: { ParakeetModelError.modelsNotDownloaded },
                 mapLoadFailure: { error in
                     logger.debug("Parakeet model load failed: \(error.localizedDescription, privacy: .private)")
-                    return ParakeetEngineError.loadFailed
+                    return ParakeetModelError.loadFailed
                 },
                 validateLocal: {
                     do {
@@ -51,7 +51,7 @@ extension LocalModel where Session == any ParakeetModelSession {
                     } catch {
                         logger.debug(
                             "Parakeet model validation failed: \(error.localizedDescription, privacy: .private)")
-                        throw ParakeetEngineError.validationFailed
+                        throw ParakeetModelError.validationFailed
                     }
                 },
                 loadLocal: {

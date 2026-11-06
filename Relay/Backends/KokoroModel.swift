@@ -7,7 +7,7 @@ struct KokoroPCM: Sendable, Equatable {
     let sampleRate: Double
 }
 
-/// A loaded Kokoro model, ready to synthesize speech. Throws `KokoroEngineError` (or
+/// A loaded Kokoro model, ready to synthesize speech. Throws `KokoroModelError` (or
 /// `CancellationError`), never raw FluidAudio errors.
 protocol KokoroModelSession: Sendable {
     /// Resolves exactly the phoneme stream Kokoro would synthesize for `text`.
@@ -36,7 +36,7 @@ protocol KokoroModelLoading: Sendable {
 /// Kokoro load and synthesis failures. `KokoroTTSBackend` maps these onto `SpeechBackendError`.
 /// Deliberately carries no reason strings: TTS failures must never end up logged or diagnosed
 /// with raw error text, per the privacy rule.
-enum KokoroEngineError: Error, Equatable, Sendable {
+enum KokoroModelError: Error, Equatable, Sendable {
     /// The model was not present on disk and the caller did not allow a download.
     case modelsNotDownloaded
     /// Loading (or downloading) the model failed for a reason other than the model being absent.
@@ -57,9 +57,9 @@ enum KokoroEngineError: Error, Equatable, Sendable {
     static func synthesis(_ error: any Error) -> any Error {
         switch error {
         case is CancellationError: error
-        case KokoroAneError.phonemeSequenceTooLong: KokoroEngineError.textTooLong
-        case KokoroAneError.acousticFramesExceedCap: KokoroEngineError.acousticFramesTooLong
-        default: KokoroEngineError.synthesisFailed
+        case KokoroAneError.phonemeSequenceTooLong: KokoroModelError.textTooLong
+        case KokoroAneError.acousticFramesExceedCap: KokoroModelError.acousticFramesTooLong
+        default: KokoroModelError.synthesisFailed
         }
     }
 }
@@ -80,16 +80,16 @@ extension LocalModel where Session == any KokoroModelSession {
         return LocalModel(
             isPresent: { await loader.modelsArePresent() },
             loader: ModelSessionLoader(
-                modelsNotDownloaded: { KokoroEngineError.modelsNotDownloaded },
+                modelsNotDownloaded: { KokoroModelError.modelsNotDownloaded },
                 mapLoadFailure: { _ in
                     logger.debug("Kokoro model load failed")
-                    return KokoroEngineError.loadFailed
+                    return KokoroModelError.loadFailed
                 },
                 validateLocal: { await loader.modelsArePresent() },
                 loadLocal: { try await loader.loadLocal() },
                 downloadAndLoad: { progress in try await loader.downloadAndLoad(progress: progress) }
             ),
-            removal: Removal(deleteFiles: { try await loader.removeModels() }, filesRemain: KokoroEngineError.loadFailed)
+            removal: Removal(deleteFiles: { try await loader.removeModels() }, filesRemain: KokoroModelError.loadFailed)
         )
     }
 
@@ -200,7 +200,7 @@ private struct KokoroAneManagerSession: KokoroModelSession {
         do {
             return try await manager.phonemes(for: text)
         } catch {
-            throw KokoroEngineError.synthesis(error)
+            throw KokoroModelError.synthesis(error)
         }
     }
 
@@ -209,7 +209,7 @@ private struct KokoroAneManagerSession: KokoroModelSession {
             let result = try await manager.synthesizeFromPhonemesDetailed(phonemes, voice: voice, speed: speed)
             return KokoroPCM(samples: result.samples, sampleRate: Double(result.sampleRate))
         } catch {
-            throw KokoroEngineError.synthesis(error)
+            throw KokoroModelError.synthesis(error)
         }
     }
 }

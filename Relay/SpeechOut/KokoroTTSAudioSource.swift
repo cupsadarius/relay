@@ -45,8 +45,8 @@ enum KokoroTTSAudioSource {
                 try Task.checkCancellation()
                 try await sink.yield(frame)
             }
-        } catch KokoroEngineError.acousticFramesTooLong {
-            guard depth < maxAdaptiveSplitDepth, chunk.count > 1 else { throw KokoroEngineError.acousticFramesTooLong }
+        } catch KokoroModelError.acousticFramesTooLong {
+            guard depth < maxAdaptiveSplitDepth, chunk.count > 1 else { throw KokoroModelError.acousticFramesTooLong }
             let target = max(1, chunk.count / 2)
             let splitter = KokoroPhonemeChunker(
                 preferredTarget: target,
@@ -54,7 +54,7 @@ enum KokoroTTSAudioSource {
             )
             let parts = splitter.chunks(from: chunk)
             guard parts.count > 1, parts.allSatisfy({ $0.count < chunk.count }) else {
-                throw KokoroEngineError.acousticFramesTooLong
+                throw KokoroModelError.acousticFramesTooLong
             }
             for part in parts {
                 try await produce(

@@ -30,7 +30,7 @@ protocol PocketTTSModelLoading: Sendable {
 /// PocketTTS load failures. `PocketTTSBackend` maps these onto `SpeechBackendError`. Deliberately
 /// carries no reason strings: TTS failures must never end up logged or diagnosed with raw error
 /// text, per the privacy rule.
-enum PocketTTSEngineError: Error, Equatable, Sendable {
+enum PocketTTSModelError: Error, Equatable, Sendable {
     /// The model was not present on disk and the caller did not allow a download.
     case modelsNotDownloaded
     /// Loading (or downloading) the model failed for a reason other than the model being absent.
@@ -52,16 +52,16 @@ extension LocalModel where Session == any PocketTTSModelSession {
         return LocalModel(
             isPresent: { await loader.modelsArePresent() },
             loader: ModelSessionLoader(
-                modelsNotDownloaded: { PocketTTSEngineError.modelsNotDownloaded },
+                modelsNotDownloaded: { PocketTTSModelError.modelsNotDownloaded },
                 mapLoadFailure: { _ in
                     logger.debug("PocketTTS model load failed")
-                    return PocketTTSEngineError.loadFailed
+                    return PocketTTSModelError.loadFailed
                 },
                 validateLocal: { await loader.modelsArePresent() },
                 loadLocal: { try await loader.loadLocal() },
                 downloadAndLoad: { progress in try await loader.downloadAndLoad(progress: progress) }
             ),
-            removal: Removal(deleteFiles: { try await loader.removeModels() }, filesRemain: PocketTTSEngineError.loadFailed)
+            removal: Removal(deleteFiles: { try await loader.removeModels() }, filesRemain: PocketTTSModelError.loadFailed)
         )
     }
 

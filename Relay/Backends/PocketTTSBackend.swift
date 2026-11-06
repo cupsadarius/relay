@@ -28,7 +28,7 @@ final class PocketTTSBackend: TextToSpeechBackend {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            throw Self.mapEngineError(error)
+            throw Self.mapModelError(error)
         }
 
         let voice = options.voiceByBackend[id] ?? PocketTtsConstants.defaultVoice
@@ -45,9 +45,9 @@ final class PocketTTSBackend: TextToSpeechBackend {
         }
     }
 
-    private static func mapEngineError(_ error: Error) -> SpeechBackendError {
+    private static func mapModelError(_ error: Error) -> SpeechBackendError {
         switch error {
-        case PocketTTSEngineError.modelsNotDownloaded:
+        case PocketTTSModelError.modelsNotDownloaded:
             .modelNotDownloaded
         default:
             .initializationFailed("PocketTTS model load failed")

@@ -29,7 +29,7 @@ struct ParakeetModels: Sendable {
 
 /// Parakeet load failures. `ParakeetBackend` maps these onto `SpeechBackendError` so the router
 /// can classify them the same way it classifies every other backend's failures.
-enum ParakeetEngineError: Error, Equatable, Sendable {
+enum ParakeetModelError: Error, Equatable, Sendable {
     /// The model was not present (or not verifiably intact) on disk and the caller did not allow
     /// a download.
     case modelsNotDownloaded
@@ -97,9 +97,9 @@ final class ParakeetBackend: SpeechToTextBackend {
 
     private static func mapLoadError(_ error: Error) -> SpeechBackendError {
         switch error {
-        case ParakeetEngineError.modelsNotDownloaded:
+        case ParakeetModelError.modelsNotDownloaded:
             .modelNotDownloaded
-        case ParakeetEngineError.validationFailed:
+        case ParakeetModelError.validationFailed:
             .initializationFailed("Parakeet model validation failed")
         default:
             .initializationFailed("Parakeet model load failed")

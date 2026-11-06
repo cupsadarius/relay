@@ -19,7 +19,7 @@ final class KokoroModelTests: XCTestCase {
             try await model.load()
             XCTFail("Expected presence to be rechecked")
         } catch {
-            XCTAssertEqual(error as? KokoroEngineError, .modelsNotDownloaded)
+            XCTAssertEqual(error as? KokoroModelError, .modelsNotDownloaded)
         }
         let loadLocalCalls = await loader.loadLocalCallCount
         XCTAssertEqual(loadLocalCalls, 1)
@@ -35,14 +35,14 @@ final class KokoroModelTests: XCTestCase {
             try await model.remove()
             XCTFail("Expected loadFailed")
         } catch {
-            XCTAssertEqual(error as? KokoroEngineError, .loadFailed)
+            XCTAssertEqual(error as? KokoroModelError, .loadFailed)
         }
     }
 
     func testSynthesisErrorMappingKeepsOnlyLengthFailuresAndCancellation() {
-        XCTAssertEqual(KokoroEngineError.synthesis(KokoroAneError.phonemeSequenceTooLong(600)) as? KokoroEngineError, .textTooLong)
-        XCTAssertEqual(KokoroEngineError.synthesis(FakeLoaderError.boom) as? KokoroEngineError, .synthesisFailed)
-        XCTAssertTrue(KokoroEngineError.synthesis(CancellationError()) is CancellationError)
+        XCTAssertEqual(KokoroModelError.synthesis(KokoroAneError.phonemeSequenceTooLong(600)) as? KokoroModelError, .textTooLong)
+        XCTAssertEqual(KokoroModelError.synthesis(FakeLoaderError.boom) as? KokoroModelError, .synthesisFailed)
+        XCTAssertTrue(KokoroModelError.synthesis(CancellationError()) is CancellationError)
     }
 
     func testRemoveModelsDeletesOnlyANEAndG2PDirectoriesAndIsIdempotent() async throws {

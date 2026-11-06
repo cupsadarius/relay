@@ -170,7 +170,7 @@ final class KokoroTTSBackendTests: XCTestCase {
     func testMakeAudioSourceMapsPhonemizationFailureToFallbackWorthyError() async {
         let fake = FakeKokoro()
         fake.modelsPresent = true
-        fake.phonemesError = KokoroEngineError.synthesisFailed
+        fake.phonemesError = KokoroModelError.synthesisFailed
         let backend = KokoroTTSBackend(model: .kokoro(loader: fake))
 
         do {

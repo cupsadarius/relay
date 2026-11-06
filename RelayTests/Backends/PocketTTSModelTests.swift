@@ -19,7 +19,7 @@ final class PocketTTSModelTests: XCTestCase {
             try await model.load()
             XCTFail("Expected presence to be rechecked")
         } catch {
-            XCTAssertEqual(error as? PocketTTSEngineError, .modelsNotDownloaded)
+            XCTAssertEqual(error as? PocketTTSModelError, .modelsNotDownloaded)
         }
         let loadLocalCalls = await loader.loadLocalCallCount
         XCTAssertEqual(loadLocalCalls, 1)
