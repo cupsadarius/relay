@@ -20,22 +20,4 @@ enum AudioEngineRouteChangeDecision {
         guard isEngineRunning else { return true }
         return installedSampleRate != currentSampleRate || installedChannelCount != currentChannelCount
     }
-
-    /// A plain description of a disruptive change, for the failed recording step: device names
-    /// and formats only.
-    static func report(
-        isEngineRunning: Bool,
-        installedSampleRate: Double,
-        installedChannelCount: AVAudioChannelCount,
-        currentSampleRate: Double,
-        currentChannelCount: AVAudioChannelCount,
-        inputDevice: String?,
-        defaultInput: String?,
-        defaultOutput: String?
-    ) -> String {
-        func rate(_ hertz: Double) -> String { String(format: "%g kHz", hertz / 1_000) }
-        return "The audio input device changed: engine \(isEngineRunning ? "running" : "stopped"); "
-            + "input \(rate(installedSampleRate)) \(installedChannelCount) ch → \(rate(currentSampleRate)) \(currentChannelCount) ch "
-            + "on \(inputDevice ?? "unknown device"); default in \(defaultInput ?? "unknown"), out \(defaultOutput ?? "unknown")."
-    }
 }

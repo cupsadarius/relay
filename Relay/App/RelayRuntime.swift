@@ -187,7 +187,7 @@ final class RelayRuntime {
 
         let dictation = DictationCoordinator(
             microphone: MicrophoneCapture(
-                source: AVAudioEngineSource(
+                source: CaptureSessionSource(
                     preferredMicrophone: { settings.value.selectedMicrophone },
                     releaseMonitor: MicrophoneReleaseMonitor(probe: CoreAudioProcessInputProbe()) { path in
                         Task { @MainActor in diagnostics.record(.dictation(.microphoneStillOpen(path))) }

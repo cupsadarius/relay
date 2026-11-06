@@ -100,7 +100,7 @@ actor MicrophoneCapture: MicrophoneCapturing {
 
     init(
         permission: any MicrophonePermissionAuthorizing = SystemMicrophonePermissionAuthorizer(),
-        source: any AudioCaptureSourcing = AVAudioEngineSource(),
+        source: any AudioCaptureSourcing = CaptureSessionSource(),
         onCaptureDiagnostics: (@Sendable (MicrophoneCaptureDiagnostics) async -> Void)? = nil,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
