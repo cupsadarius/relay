@@ -50,9 +50,9 @@ final class SpeechVoiceCatalogTests: XCTestCase {
 
         let options = catalog.options(for: "kokoro:am_adam", backendID: .kokoro, settings: settings)
 
-        XCTAssertEqual(options?.voiceIdentifier, "apple.saved")
-        XCTAssertEqual(options?.kokoroVoice, "am_adam")
-        XCTAssertEqual(options?.pocketVoice, "alba")
+        XCTAssertEqual(options?.voiceByBackend[.appleTTS], "apple.saved")
+        XCTAssertEqual(options?.voiceByBackend[.kokoro], "am_adam")
+        XCTAssertEqual(options?.voiceByBackend[.pocketTTS], "alba")
         XCTAssertEqual(options?.rate, 0.75)
     }
 }

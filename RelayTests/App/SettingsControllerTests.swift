@@ -219,14 +219,14 @@ final class SettingsControllerTests: XCTestCase {
         XCTAssertEqual(store.saved.count, 2)
     }
 
-    func testTTSOptionsMapTheVoiceMapOntoBackendFields() {
+    func testTTSOptionsCarryTheVoiceMapAndRate() {
         var settings = AppSettings.defaults
         settings.ttsRate = 0.7
         settings.voiceByBackend = [.appleTTS: "com.apple.voice.x", .kokoro: "am_adam", .pocketTTS: "alba"]
 
         let options = TTSOptions(settings: settings)
 
-        XCTAssertEqual(options, TTSOptions(voiceIdentifier: "com.apple.voice.x", rate: 0.7, kokoroVoice: "am_adam", pocketVoice: "alba"))
+        XCTAssertEqual(options, TTSOptions(voiceByBackend: [.appleTTS: "com.apple.voice.x", .kokoro: "am_adam", .pocketTTS: "alba"], rate: 0.7))
     }
 }
 

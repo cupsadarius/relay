@@ -24,15 +24,9 @@ struct STTOptions: Sendable, Equatable {
 }
 
 struct TTSOptions: Sendable, Equatable {
-    var voiceIdentifier: String?
+    /// Each backend reads only its own entry; a missing entry means that backend's default voice.
+    var voiceByBackend: [BackendID: String] = [:]
     var rate: Float = 0.5
-    /// The Kokoro voice id (e.g. `"af_heart"`), read by `KokoroTTSBackend` and ignored by every
-    /// other backend. `voiceIdentifier` remains Apple's own `com.apple.voice.*` id, which is
-    /// meaningless to Kokoro.
-    var kokoroVoice: String?
-    /// The PocketTTS voice id (e.g. `"alba"`), read by `PocketTTSBackend` and ignored by every
-    /// other backend.
-    var pocketVoice: String?
 }
 
 enum SpeechSource: String, Codable, Equatable, Sendable {

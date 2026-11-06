@@ -60,7 +60,7 @@ final class KokoroTTSBackendTests: XCTestCase {
         engine.modelsPresent = true
         let backend = KokoroTTSBackend(engine: engine)
 
-        let source = try await backend.makeAudioSource(text: "hello", options: .init(kokoroVoice: "am_adam"))
+        let source = try await backend.makeAudioSource(text: "hello", options: .init(voiceByBackend: [.kokoro: "am_adam"]))
         try await drain(source)
 
         XCTAssertEqual(engine.synthesizeCalls.last?.voice, "am_adam")
@@ -71,7 +71,7 @@ final class KokoroTTSBackendTests: XCTestCase {
         engine.modelsPresent = true
         let backend = KokoroTTSBackend(engine: engine)
 
-        let source = try await backend.makeAudioSource(text: "hello", options: .init(kokoroVoice: nil))
+        let source = try await backend.makeAudioSource(text: "hello", options: .init())
         try await drain(source)
 
         XCTAssertEqual(engine.synthesizeCalls.last?.voice, TtsConstants.recommendedVoice)
@@ -84,7 +84,7 @@ final class KokoroTTSBackendTests: XCTestCase {
 
         let source = try await backend.makeAudioSource(
             text: "hello",
-            options: .init(voiceIdentifier: "com.apple.voice.compact.en-US.Samantha", kokoroVoice: "af_bella")
+            options: .init(voiceByBackend: [.appleTTS: "com.apple.voice.compact.en-US.Samantha", .kokoro: "af_bella"])
         )
         try await drain(source)
 

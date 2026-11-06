@@ -39,7 +39,7 @@ final class KokoroTTSBackend: TextToSpeechBackend {
             throw Self.mapEngineError(error)
         }
 
-        let voice = options.kokoroVoice ?? TtsConstants.recommendedVoice
+        let voice = options.voiceByBackend[id] ?? TtsConstants.recommendedVoice
         let speed = Self.speed(forRate: options.rate)
         do {
             let phonemes = try await engine.phonemes(for: text)

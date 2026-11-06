@@ -273,7 +273,7 @@ final class AppModelTests: XCTestCase {
         hotkeys.send(.readSelection, .pressed)
         await waitUntil { !kokoro.spoken.isEmpty || !apple.spoken.isEmpty }
 
-        XCTAssertEqual(kokoro.spoken.map(\.options.kokoroVoice), ["af_bella"])
+        XCTAssertEqual(kokoro.spoken.map { $0.options.voiceByBackend[.kokoro] }, ["af_bella"])
         XCTAssertTrue(apple.spoken.isEmpty)
         XCTAssertTrue(pocket.spoken.isEmpty)
         withExtendedLifetime(model) {}
@@ -289,7 +289,7 @@ final class AppModelTests: XCTestCase {
         await waitUntil { !kokoro.spoken.isEmpty || !apple.spoken.isEmpty }
 
         XCTAssertTrue(kokoro.spoken.isEmpty)
-        XCTAssertEqual(apple.spoken.map(\.options.kokoroVoice), ["af_bella"])
+        XCTAssertEqual(apple.spoken.map { $0.options.voiceByBackend[.kokoro] }, ["af_bella"])
         XCTAssertTrue(pocket.spoken.isEmpty)
         withExtendedLifetime(model) {}
     }
@@ -303,7 +303,7 @@ final class AppModelTests: XCTestCase {
         hotkeys.send(.readSelection, .pressed)
         await waitUntil { !pocket.spoken.isEmpty || !kokoro.spoken.isEmpty || !apple.spoken.isEmpty }
 
-        XCTAssertEqual(pocket.spoken.map(\.options.pocketVoice), ["alba"])
+        XCTAssertEqual(pocket.spoken.map { $0.options.voiceByBackend[.pocketTTS] }, ["alba"])
         XCTAssertTrue(kokoro.spoken.isEmpty)
         XCTAssertTrue(apple.spoken.isEmpty)
         withExtendedLifetime(model) {}
@@ -320,15 +320,15 @@ final class AppModelTests: XCTestCase {
 
         XCTAssertTrue(pocket.spoken.isEmpty)
         XCTAssertTrue(kokoro.spoken.isEmpty)
-        XCTAssertEqual(apple.spoken.map(\.options.pocketVoice), ["alba"])
+        XCTAssertEqual(apple.spoken.map { $0.options.voiceByBackend[.pocketTTS] }, ["alba"])
         withExtendedLifetime(model) {}
     }
 
     /// Builds a real `AppModel` around a real `TTSRouter`/`SpeechCoordinator` pair (not the
     /// `SpySpeechCoordinator` the other tests in this file use) wired exactly like the
     /// production convenience `init()` wires PocketTTS, Apple, and Kokoro: `backendOrder` and the
-    /// `TTSOptions.kokoroVoice`/`pocketVoice` fields all read from the same settings snapshot.
-    /// If `kokoroVoice`/`pocketVoice` stopped reaching `TTSOptions`, the routing tests above
+    /// `TTSOptions.voiceByBackend` all read from the same settings snapshot.
+    /// If the Kokoro/PocketTTS voices stopped reaching `TTSOptions`, the routing tests above
     /// would fail.
     private func makeTTSRoutingModel(
         pocketAvailability: BackendAvailability,

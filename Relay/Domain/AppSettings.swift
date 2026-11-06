@@ -249,12 +249,7 @@ struct AppSettings: Codable, Equatable, Sendable {
 extension TTSOptions {
     /// The single mapping from persisted settings to per-utterance options.
     init(settings: AppSettings) {
-        self.init(
-            voiceIdentifier: settings.voiceByBackend[.appleTTS],
-            rate: settings.ttsRate,
-            kokoroVoice: settings.voiceByBackend[.kokoro],
-            pocketVoice: settings.voiceByBackend[.pocketTTS]
-        )
+        self.init(voiceByBackend: settings.voiceByBackend, rate: settings.ttsRate)
     }
 }
 

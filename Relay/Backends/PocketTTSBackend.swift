@@ -30,7 +30,7 @@ final class PocketTTSBackend: TextToSpeechBackend {
             throw Self.mapEngineError(error)
         }
 
-        let voice = options.pocketVoice ?? PocketTtsConstants.defaultVoice
+        let voice = options.voiceByBackend[id] ?? PocketTtsConstants.defaultVoice
         do {
             let stream = try await engine.synthesizeStream(text: text, voice: voice)
             return PocketTTSAudioSource.make(

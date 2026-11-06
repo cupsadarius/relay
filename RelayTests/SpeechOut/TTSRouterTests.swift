@@ -42,7 +42,7 @@ final class TTSRouterTests: XCTestCase {
         do {
             try await router.speak(
                 text: "preview",
-                options: .init(kokoroVoice: "am_adam"),
+                options: .init(voiceByBackend: [.kokoro: "am_adam"]),
                 sessionID: UUID(),
                 preferredBackendID: .kokoro
             )

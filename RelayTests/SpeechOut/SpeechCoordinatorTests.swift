@@ -20,7 +20,7 @@ final class SpeechCoordinatorTests: XCTestCase {
             options: { .init() },
             overlay: ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         )
-        let options = TTSOptions(rate: 0.8, kokoroVoice: "am_adam")
+        let options = TTSOptions(voiceByBackend: [.kokoro: "am_adam"], rate: 0.8)
 
         try await coordinator.speak(request(text: "first", mode: .userRequested))
         try await coordinator.previewVoice(text: "preview", backendID: .kokoro, options: options)
@@ -198,7 +198,7 @@ final class SpeechCoordinatorTests: XCTestCase {
 
     func testReplayUsesLastSuccessfulRequestAndCurrentOptions() async throws {
         let backend = FakeTTSBackend(id: .appleTTS)
-        var options = TTSOptions(voiceIdentifier: "first-voice", rate: 0.4)
+        var options = TTSOptions(voiceByBackend: [.appleTTS: "first-voice"], rate: 0.4)
         let coordinator = makeCoordinator(backend: backend, options: { options })
 
         try await coordinator.speak(request(text: "remember me", mode: .automatic))
@@ -209,7 +209,7 @@ final class SpeechCoordinatorTests: XCTestCase {
         backend.error = SpeechBackendError.invalidInput
         try? await coordinator.speak(request(text: "do not remember", mode: .automatic))
         backend.error = nil
-        options = TTSOptions(voiceIdentifier: "new-voice", rate: 0.7)
+        options = TTSOptions(voiceByBackend: [.appleTTS: "new-voice"], rate: 0.7)
         try await coordinator.replayLast()
 
         // The failed "do not remember" attempt must never overwrite lastRequest: replay still

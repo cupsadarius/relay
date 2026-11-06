@@ -109,7 +109,7 @@ final class SpeechActionsTests: XCTestCase {
 
         XCTAssertEqual(speech.previews.count, 1)
         XCTAssertEqual(speech.previews.first?.backendID, .kokoro)
-        XCTAssertEqual(speech.previews.first?.options.kokoroVoice, "am_adam")
+        XCTAssertEqual(speech.previews.first?.options.voiceByBackend[.kokoro], "am_adam")
         XCTAssertEqual(speech.previews.first?.options.rate, 0.75)
         XCTAssertEqual(speech.previews.first?.text, SpeechActions.previewSampleText)
         XCTAssertEqual(runtime.settingsController.current.voiceByBackend[.kokoro], "af_heart")

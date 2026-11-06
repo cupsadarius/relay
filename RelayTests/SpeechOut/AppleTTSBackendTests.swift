@@ -27,7 +27,7 @@ final class AppleTTSBackendTests: XCTestCase {
 
         let source = try await backend.makeAudioSource(
             text: "hello",
-            options: TTSOptions(voiceIdentifier: "not-a-real-voice")
+            options: TTSOptions(voiceByBackend: [.appleTTS: "not-a-real-voice"])
         )
 
         XCTAssertTrue(source is AppleTTSAudioSource)

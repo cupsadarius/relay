@@ -50,7 +50,7 @@ final class PocketTTSBackendTests: XCTestCase {
         engine.modelsPresent = true
         let backend = PocketTTSBackend(engine: engine)
 
-        _ = try await backend.makeAudioSource(text: "hello", options: .init(pocketVoice: "alba"))
+        _ = try await backend.makeAudioSource(text: "hello", options: .init(voiceByBackend: [.pocketTTS: "alba"]))
 
         XCTAssertEqual(engine.synthesizeCalls.last?.voice, "alba")
     }
@@ -60,7 +60,7 @@ final class PocketTTSBackendTests: XCTestCase {
         engine.modelsPresent = true
         let backend = PocketTTSBackend(engine: engine)
 
-        _ = try await backend.makeAudioSource(text: "hello", options: .init(pocketVoice: nil))
+        _ = try await backend.makeAudioSource(text: "hello", options: .init())
 
         XCTAssertEqual(engine.synthesizeCalls.last?.voice, PocketTtsConstants.defaultVoice)
     }
@@ -73,9 +73,11 @@ final class PocketTTSBackendTests: XCTestCase {
         _ = try await backend.makeAudioSource(
             text: "hello",
             options: .init(
-                voiceIdentifier: "com.apple.voice.compact.en-US.Samantha",
-                kokoroVoice: "af_bella",
-                pocketVoice: "alba"
+                voiceByBackend: [
+                    .appleTTS: "com.apple.voice.compact.en-US.Samantha",
+                    .kokoro: "af_bella",
+                    .pocketTTS: "alba",
+                ]
             )
         )
 

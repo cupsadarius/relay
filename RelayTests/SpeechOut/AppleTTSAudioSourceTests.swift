@@ -134,7 +134,7 @@ final class AppleTTSAudioSourceTests: XCTestCase {
             bufferConverter: ScriptedConverter()
         )
         var options = TTSOptions()
-        options.voiceIdentifier = "com.example.nonexistent.voice"
+        options.voiceByBackend[.appleTTS] = "com.example.nonexistent.voice"
 
         let source = try await backend.makeAudioSource(text: "hi", options: options)
 
