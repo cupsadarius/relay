@@ -45,7 +45,7 @@ struct PipelineGraphView: View {
 }
 
 private struct PipelineGraphCanvas: View {
-    static let nodeHeight: CGFloat = 64
+    static let nodeHeight: CGFloat = 78
     static let rowSpacing: CGFloat = 22
 
     let run: PipelineRun
@@ -151,16 +151,19 @@ struct PipelineNodeView: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 4) {
                 Image(systemName: status.state.symbol).foregroundStyle(status.state.tint)
-                Text(step.title).font(.caption.weight(.semibold))
-                Spacer(minLength: 0)
-                timing.font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                Text(step.title).font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
             }
             Text(status.detail.isEmpty ? " " : status.detail)
                 .font(.caption2)
                 .foregroundStyle(status.state == .pending ? .tertiary : .secondary)
                 .lineLimit(2)
-            if let level {
-                ProgressView(value: Double(min(max(level, 0), 1))).progressViewStyle(.linear).tint(.blue)
+            Spacer(minLength: 0)
+            HStack(spacing: 4) {
+                if let level {
+                    ProgressView(value: Double(min(max(level, 0), 1))).progressViewStyle(.linear).tint(.blue)
+                }
+                Spacer(minLength: 0)
+                timing.font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
             }
         }
         .padding(7)
