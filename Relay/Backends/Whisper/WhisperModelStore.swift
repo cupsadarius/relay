@@ -49,7 +49,7 @@ enum WhisperModelStoreError: Error, Equatable, Sendable {
 }
 
 /// Owns the on-disk lifecycle of Whisper model bundles: presence, download+verify, and removal.
-/// Mirrors `FluidAudioParakeetEngine`/`FluidAudioKokoroEngine`'s presence-gate + atomic-promote
+/// Mirrors the Parakeet and Kokoro models' presence-gate + atomic-promote
 /// shape, generalized to a bundle of many files instead of one model.
 ///
 /// Model files live at `<cacheDirectory>/<id>/`. A download first lands in a private staging

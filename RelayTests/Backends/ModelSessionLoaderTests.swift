@@ -2,7 +2,7 @@ import XCTest
 
 @testable import Relay
 
-/// Pins the single-flight load rules every FluidAudio engine shares.
+/// Pins the single-flight load rules every FluidAudio model shares.
 final class ModelSessionLoaderTests: XCTestCase {
     func testLocalLoadThatFailsValidationThrowsModelsNotDownloadedWithoutLoading() async {
         let probe = LoaderProbe()
@@ -60,8 +60,8 @@ final class ModelSessionLoaderTests: XCTestCase {
         let callsWhileGated = await probe.localCalls
 
         await probe.openLocalGate()
-        try await first.value
-        try await second.value
+        _ = try await first.value
+        _ = try await second.value
 
         XCTAssertEqual(callsWhileGated, 1)
         let finalCalls = await probe.localCalls
@@ -79,8 +79,8 @@ final class ModelSessionLoaderTests: XCTestCase {
         await settle()
 
         await probe.openDownloadGate()
-        try await first.value
-        try await second.value
+        _ = try await first.value
+        _ = try await second.value
 
         let downloadCalls = await probe.downloadCalls
         XCTAssertEqual(downloadCalls, 1)
@@ -100,7 +100,7 @@ final class ModelSessionLoaderTests: XCTestCase {
         XCTAssertEqual(session, "download-1")
     }
 
-    func testLoadFailureIsMappedAndClearsTheValidationCacheSoARetryRevalidates() async throws {
+    func testLoadFailureIsMappedAndARetryRevalidates() async throws {
         let probe = LoaderProbe()
         await probe.setLocalError(LoaderTestError.boom)
         let loader = makeLoader(probe)
@@ -112,7 +112,7 @@ final class ModelSessionLoaderTests: XCTestCase {
 
         let validateCalls = await probe.validateCalls
         let localCalls = await probe.localCalls
-        XCTAssertEqual(validateCalls, 2, "a failed load must not leave a trusted positive validation behind")
+        XCTAssertEqual(validateCalls, 2)
         XCTAssertEqual(localCalls, 2)
     }
 
@@ -126,7 +126,7 @@ final class ModelSessionLoaderTests: XCTestCase {
         XCTAssertEqual(localCalls, 0)
     }
 
-    func testCancellationIsNotMappedAndKeepsTheValidationCache() async throws {
+    func testCancellationIsNotMappedAndARetryLoadsAgain() async throws {
         let probe = LoaderProbe()
         await probe.setLocalError(CancellationError())
         let loader = makeLoader(probe)
@@ -140,11 +140,11 @@ final class ModelSessionLoaderTests: XCTestCase {
 
         await probe.setLocalError(nil)
         try await loader.load(allowDownload: false, progress: { _ in })
-        let validateCalls = await probe.validateCalls
-        XCTAssertEqual(validateCalls, 1, "cancellation says nothing about on-disk state")
+        let localCalls = await probe.localCalls
+        XCTAssertEqual(localCalls, 2)
     }
 
-    func testLocalCallerFailsFastWhileAnUnvalidatedDownloadIsRunning() async throws {
+    func testLocalCallerFailsFastWhileADownloadIsRunning() async throws {
         let probe = LoaderProbe()
         await probe.gateDownloads()
         let loader = makeLoader(probe)
@@ -157,30 +157,7 @@ final class ModelSessionLoaderTests: XCTestCase {
         XCTAssertEqual(validateCalls, 0)
 
         await probe.openDownloadGate()
-        try await download.value
-    }
-
-    func testLocalCallerJoinsARunningDownloadWhenPresenceIsAlreadyValidated() async throws {
-        let probe = LoaderProbe()
-        let loader = makeLoader(probe)
-        await probe.setLocalError(CancellationError())
-        _ = try? await loader.load(allowDownload: false, progress: { _ in })
-        await probe.setLocalError(nil)
-        await probe.gateDownloads()
-
-        let download = Task { try await loader.load(allowDownload: true, progress: { _ in }) }
-        await waitUntil { await probe.downloadCalls == 1 }
-        let local = Task { try await loader.load(allowDownload: false, progress: { _ in }) }
-        await settle()
-
-        await probe.openDownloadGate()
-        try await download.value
-        try await local.value
-
-        let localCalls = await probe.localCalls
-        XCTAssertEqual(localCalls, 1)
-        let session = await loader.session
-        XCTAssertEqual(session, "download-1")
+        _ = try await download.value
     }
 
     func testDownloadCallerWaitsForARunningLocalLoadThenDownloadsIfItFailed() async throws {
@@ -196,9 +173,9 @@ final class ModelSessionLoaderTests: XCTestCase {
         let downloadsWhileLocalRuns = await probe.downloadCalls
 
         await probe.openLocalGate()
-        try await download.value
+        _ = try await download.value
         do {
-            try await local.value
+            _ = try await local.value
             XCTFail("The local load itself still fails")
         } catch {
             XCTAssertEqual(error as? LoaderTestError, .mapped)
@@ -223,8 +200,8 @@ final class ModelSessionLoaderTests: XCTestCase {
 
         await probe.openLocalGate()
         _ = await local.value
-        try await firstDownload.value
-        try await secondDownload.value
+        _ = try await firstDownload.value
+        _ = try await secondDownload.value
 
         let downloadCalls = await probe.downloadCalls
         XCTAssertEqual(downloadCalls, 1, "the second waiter must join the first waiter's download")
@@ -241,7 +218,7 @@ final class ModelSessionLoaderTests: XCTestCase {
         await settle()
 
         await probe.openLocalGate()
-        try await local.value
+        _ = try await local.value
         let downloadResult = try await download.value
 
         XCTAssertEqual(downloadResult, "local-1")
@@ -251,7 +228,7 @@ final class ModelSessionLoaderTests: XCTestCase {
         XCTAssertEqual(session, "local-1")
     }
 
-    func testResetDropsTheSessionAndForgetsValidation() async throws {
+    func testResetDropsTheSessionAndARetryRevalidates() async throws {
         let probe = LoaderProbe()
         let loader = makeLoader(probe)
         try await loader.load(allowDownload: false, progress: { _ in })

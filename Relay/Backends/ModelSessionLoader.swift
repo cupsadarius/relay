@@ -1,21 +1,18 @@
 import Foundation
 
 /// Single-flight, download-aware loader for one heavyweight on-device model session, shared by
-/// the FluidAudio engines. Error types stay engine-specific through the injected closures.
+/// the FluidAudio models. Error types stay backend-specific through the injected closures.
 ///
 /// Rules (pinned by `ModelSessionLoaderTests`):
 /// - Once a session is loaded, `load` is a no-op.
 /// - Concurrent loads of the same kind share one underlying load.
 /// - A download caller that finds a local-only load running waits for it (ignoring its outcome),
 ///   then starts its own download unless that local load produced a session.
-/// - A local-only caller that finds a download running joins it only when local presence is
-///   already validated; otherwise it fails fast with `modelsNotDownloaded()` rather than block on
-///   a transfer it never asked for.
+/// - A local-only caller that finds a download running fails fast with `modelsNotDownloaded()`
+///   rather than block on a transfer it never asked for.
 /// - `allowDownload: false` never calls `downloadAndLoad`, and calls `loadLocal` only after
-///   `validateLocal` returned `true`. A positive validation is cached; a negative one never is.
-///   Any non-cancellation failure clears the cache, because a failed FluidAudio load may have
-///   deleted or replaced files on disk.
-/// - `validateLocal` errors propagate as thrown (the engine maps them); `loadLocal` and
+///   `validateLocal` returned `true`.
+/// - `validateLocal` errors propagate as thrown (the caller maps them); `loadLocal` and
 ///   `downloadAndLoad` errors go through `mapLoadFailure`, except `CancellationError`.
 actor ModelSessionLoader<Session: Sendable> {
     typealias Progress = @Sendable (Double) -> Void
@@ -34,7 +31,6 @@ actor ModelSessionLoader<Session: Sendable> {
     /// The loaded session, or `nil` before a successful load and after `reset()`.
     private(set) var session: Session?
     private var inFlightLoad: (task: Task<Session, Error>, kind: LoadKind)?
-    private var validatedModelsPresent = false
 
     init(
         modelsNotDownloaded: @escaping @Sendable () -> any Error,
@@ -71,18 +67,15 @@ actor ModelSessionLoader<Session: Sendable> {
                 clearIfCurrent(inFlightLoad.task)
 
             case (.download, false):
-                guard validatedModelsPresent else {
-                    throw modelsNotDownloaded()
-                }
-                return try await awaitAndClear(inFlightLoad.task)
+                throw modelsNotDownloaded()
             }
         }
 
         return try await startLoad(allowDownload: allowDownload, progress: progress)
     }
 
-    /// Cancels and awaits any in-flight load, then drops the session and forgets the cached
-    /// validation. Call before deleting model files.
+    /// Cancels and awaits any in-flight load, then drops the session. Call before deleting model
+    /// files.
     func reset() async {
         if let inFlightLoad {
             inFlightLoad.task.cancel()
@@ -90,7 +83,6 @@ actor ModelSessionLoader<Session: Sendable> {
             clearIfCurrent(inFlightLoad.task)
         }
         session = nil
-        validatedModelsPresent = false
     }
 
     private func startLoad(allowDownload: Bool, progress: @escaping Progress) async throws -> Session {
@@ -103,18 +95,8 @@ actor ModelSessionLoader<Session: Sendable> {
     /// Clears `inFlightLoad` only if it still refers to `task`, so a newer load started while
     /// this caller was suspended is never clobbered.
     private func awaitAndClear(_ task: Task<Session, Error>) async throws -> Session {
-        do {
-            let loaded = try await task.value
-            clearIfCurrent(task)
-            return loaded
-        } catch is CancellationError {
-            clearIfCurrent(task)
-            throw CancellationError()
-        } catch {
-            clearIfCurrent(task)
-            validatedModelsPresent = false
-            throw error
-        }
+        defer { clearIfCurrent(task) }
+        return try await task.value
     }
 
     private func clearIfCurrent(_ task: Task<Session, Error>) {
@@ -125,7 +107,7 @@ actor ModelSessionLoader<Session: Sendable> {
 
     private func performLoad(allowDownload: Bool, progress: @escaping Progress) async throws -> Session {
         if !allowDownload {
-            guard try await modelsAreValidatedLocally() else {
+            guard try await validateLocal() else {
                 throw modelsNotDownloaded()
             }
         }
@@ -140,16 +122,5 @@ actor ModelSessionLoader<Session: Sendable> {
         }
         session = loaded
         return loaded
-    }
-
-    private func modelsAreValidatedLocally() async throws -> Bool {
-        if validatedModelsPresent {
-            return true
-        }
-        let valid = try await validateLocal()
-        if valid {
-            validatedModelsPresent = true
-        }
-        return valid
     }
 }
