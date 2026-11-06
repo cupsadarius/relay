@@ -121,8 +121,9 @@ final class DictationCoordinator: DictationCoordinating {
             finishRequested = false
             await stopStreamingTranscription()
             diagnostics?.record(.dictation(.failed(.microphoneCapture)))
-            activity.fail(sessionID: session, category: .microphone, message: "Microphone error.")
-            status("Could not start dictation: \(actionableMessage(for: error))")
+            let failure = DictationFailure(error, stage: .microphoneCapture)
+            activity.fail(sessionID: session, category: failure.category, message: failure.capsuleMessage)
+            status("Could not start dictation: \(failure.statusMessage)")
             return
         }
 
@@ -313,8 +314,8 @@ final class DictationCoordinator: DictationCoordinating {
         guard !text.isEmpty else {
             state = .idle
             diagnostics?.record(.dictation(.failed(.transcription)))
-            activity.fail(sessionID: session, category: .noUsableAudio, message: "No speech was recognized.")
-            status("No speech was recognized. Try again.")
+            activity.fail(sessionID: session, category: .noUsableAudio, message: DictationFailure.noSpeechCapsuleMessage)
+            status(DictationFailure.noSpeechStatusMessage)
             return
         }
 
@@ -333,76 +334,10 @@ final class DictationCoordinator: DictationCoordinating {
     private func fail(_ error: Error, at stage: DictationFailureStage, session: UUID) {
         state = .idle
         diagnostics?.record(.dictation(.failed(stage)))
-        activity.fail(sessionID: session, category: category(for: error, stage: stage), message: capsuleMessage(for: stage, error: error))
         // Only a transcription-stage error came from a speech backend; name the one that failed.
         let backendName = stage == .transcription ? sttRouter.lastFailedBackendDisplayName : nil
-        status("Dictation failed: \(actionableMessage(for: error, backendName: backendName))")
-    }
-
-    /// `SpeechBackendError.noUsableAudio` always means "no usable audio", regardless of which
-    /// stage surfaced it (the microphone itself can throw it from `stop()`, not just the STT
-    /// backend from `transcribe()`), so it's checked before the per-stage mapping below.
-    private func category(for error: Error, stage: DictationFailureStage) -> ActivityOverlayErrorCategory {
-        if case SpeechBackendError.noUsableAudio = error { return .noUsableAudio }
-        switch stage {
-        case .microphoneCapture:
-            return .microphone
-        case .insertion:
-            return .insertion
-        case .transcription:
-            return error is SpeechBackendError ? .speechRecognition : .unexpected
-        }
-    }
-
-    private func capsuleMessage(for stage: DictationFailureStage, error: Error) -> String {
-        if case SpeechBackendError.noUsableAudio = error { return "No speech was recognized." }
-        switch stage {
-        case .microphoneCapture:
-            return "Microphone error."
-        case .insertion:
-            return "Could not insert text."
-        case .transcription:
-            return "Speech recognition failed."
-        }
-    }
-
-    /// `backendName` is the display name of the speech backend that produced `error`, when
-    /// known (see `STTRouter.lastFailedBackendDisplayName`). Never hardcode one backend here.
-    private func actionableMessage(for error: Error, backendName: String? = nil) -> String {
-        switch error {
-        case SpeechBackendError.unavailable:
-            "Speech recognition is unavailable. Try again after it is ready."
-        case SpeechBackendError.modelNotDownloaded:
-            backendName.map { "Download the \($0) model in Settings, then try again." }
-                ?? "Download a speech recognition model in Settings, then try again."
-        case SpeechBackendError.initializationFailed:
-            "Speech recognition could not start. Try again."
-        case SpeechBackendError.unsupportedHardware:
-            "\(backendName ?? "This speech recognition backend") is unavailable on this Mac."
-        case SpeechBackendError.inferenceFailed:
-            "Speech recognition could not understand the audio. Try again."
-        case SpeechBackendError.resourceExhausted:
-            "Speech recognition is busy. Try again shortly."
-        case SpeechBackendError.permissionDenied:
-            "Allow Microphone permission in System Settings, then try again."
-        case SpeechBackendError.noUsableAudio:
-            "No usable audio was captured. Check your microphone and try again."
-        case SpeechBackendError.invalidInput:
-            "The recorded audio was invalid. Try again."
-        case MicrophoneCaptureError.unavailable:
-            "Microphone is unavailable. Check its connection and permissions."
-        case MicrophoneCaptureError.alreadyRecording:
-            "Microphone recording is already in progress. Try again shortly."
-        case MicrophoneCaptureError.notRecording:
-            "Microphone recording was interrupted. Try again."
-        case TextInsertionError.clipboardWriteFailed:
-            "Relay could not insert text. Grant Accessibility permission and try again."
-        case TextInsertionError.accessibilityPermissionDenied:
-            "Allow Accessibility permission in System Settings before inserting dictation."
-        case TextInsertionError.emptyText:
-            "No speech was recognized. Try again."
-        default:
-            "An unexpected error occurred. Try again."
-        }
+        let failure = DictationFailure(error, stage: stage, backendName: backendName)
+        activity.fail(sessionID: session, category: failure.category, message: failure.capsuleMessage)
+        status("Dictation failed: \(failure.statusMessage)")
     }
 }

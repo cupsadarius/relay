@@ -158,6 +158,7 @@
 		94AE744F4CA8CE70CBB9687B /* RelayHook in Resources */ = {isa = PBXBuildFile; fileRef = CD7B5DDABCD6925ACF15C1B3 /* RelayHook */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		95C9BCDDDA4FE8DE23CED11C /* GenericTerminalFocusResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23D267BE7B2C822655C9AE70 /* GenericTerminalFocusResolverTests.swift */; };
 		96CA4958B0285694F49DC95C /* AgentAutoReadCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4238C69567BF32B43ABBF612 /* AgentAutoReadCoordinatorTests.swift */; };
+		96F422D59670120E62638E84 /* DictationFailure.swift in Sources */ = {isa = PBXBuildFile; fileRef = 868EA40824432EC20211438F /* DictationFailure.swift */; };
 		975663B0D629B8FDB447502D /* STTRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 751588B739A8C2497A075C0A /* STTRouter.swift */; };
 		9756AF051A9C26FDF8B4BA30 /* RulesSpeechPreprocessorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75A5D0DD6ECBB171B17FC747 /* RulesSpeechPreprocessorTests.swift */; };
 		97BBF047A631155332E9FB06 /* HookEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0007CFDD668AB6C9B6207607 /* HookEnvelope.swift */; };
@@ -432,6 +433,7 @@
 		84A0C0F43582E9D7B099E3FB /* ActivityOverlayModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverlayModelTests.swift; sourceTree = "<group>"; };
 		84D0F01BE03AABC2C7C604FC /* ActivityOverlayActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverlayActions.swift; sourceTree = "<group>"; };
 		85842060D11E3427D905C000 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		868EA40824432EC20211438F /* DictationFailure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationFailure.swift; sourceTree = "<group>"; };
 		87E54AB134474A0A195FFA2A /* SingleModelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingleModelManager.swift; sourceTree = "<group>"; };
 		88315C1ADD14F6767C42B75C /* IntegrationManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrationManagerTests.swift; sourceTree = "<group>"; };
 		887DB4ADA3775E932C1B5211 /* PocketTTSBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PocketTTSBackend.swift; sourceTree = "<group>"; };
@@ -714,6 +716,7 @@
 			children = (
 				EC0BB09A2F4395043553B1FC /* CaptureCallbackGate.swift */,
 				1B6ABB9D76B40D6F416C4B0C /* DictationCoordinator.swift */,
+				868EA40824432EC20211438F /* DictationFailure.swift */,
 				90563D92C2FAAA30698339C5 /* MicrophoneCapture.swift */,
 				9F9345EEDE9FA0BA054B69BC /* RulesTranscriptProcessor.swift */,
 				06E124777F58D54CEDE5CA61 /* SpeechToTextBackend.swift */,
@@ -1434,6 +1437,7 @@
 				BDB3AFBC914BC5F55A9E04B9 /* Diagnostics.swift in Sources */,
 				26689C3A31F905B40F2AF9BF /* DiagnosticsView.swift in Sources */,
 				35992EC60E1B8ECDA828B776 /* DictationCoordinator.swift in Sources */,
+				96F422D59670120E62638E84 /* DictationFailure.swift in Sources */,
 				79500C340512BA5276E98EB2 /* DictationSettingsView.swift in Sources */,
 				4608679CC210E16C4D702708 /* FluidAudioKokoroEngine.swift in Sources */,
 				37FBA412106C897F84C4B36A /* FluidAudioParakeetEngine.swift in Sources */,

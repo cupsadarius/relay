@@ -232,35 +232,26 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(events.values, ["microphone.start", "microphone.start"])
     }
 
-    func testEveryKnownDictationErrorHasStableActionableStatus() async {
+    func testEveryKnownDictationErrorHasStableActionableStatus() {
         let cases: [(Error, String)] = [
-            (SpeechBackendError.unavailable("offline"), "Dictation failed: Speech recognition is unavailable. Try again after it is ready."),
-            (SpeechBackendError.modelNotDownloaded, "Dictation failed: Download the Fake model in Settings, then try again."),
-            (SpeechBackendError.initializationFailed("x"), "Dictation failed: Speech recognition could not start. Try again."),
-            (SpeechBackendError.unsupportedHardware, "Dictation failed: Fake is unavailable on this Mac."),
-            (SpeechBackendError.inferenceFailed("x"), "Dictation failed: Speech recognition could not understand the audio. Try again."),
-            (SpeechBackendError.resourceExhausted, "Dictation failed: Speech recognition is busy. Try again shortly."),
-            (SpeechBackendError.permissionDenied, "Dictation failed: Allow Microphone permission in System Settings, then try again."),
-            (SpeechBackendError.noUsableAudio, "Dictation failed: No usable audio was captured. Check your microphone and try again."),
-            (SpeechBackendError.invalidInput, "Dictation failed: The recorded audio was invalid. Try again."),
-            (TextInsertionError.clipboardWriteFailed, "Dictation failed: Relay could not insert text. Grant Accessibility permission and try again."),
+            (SpeechBackendError.unavailable("offline"), "Speech recognition is unavailable. Try again after it is ready."),
+            (SpeechBackendError.modelNotDownloaded, "Download the Fake model in Settings, then try again."),
+            (SpeechBackendError.initializationFailed("x"), "Speech recognition could not start. Try again."),
+            (SpeechBackendError.unsupportedHardware, "Fake is unavailable on this Mac."),
+            (SpeechBackendError.inferenceFailed("x"), "Speech recognition could not understand the audio. Try again."),
+            (SpeechBackendError.resourceExhausted, "Speech recognition is busy. Try again shortly."),
+            (SpeechBackendError.permissionDenied, "Allow Microphone permission in System Settings, then try again."),
+            (SpeechBackendError.noUsableAudio, "No usable audio was captured. Check your microphone and try again."),
+            (SpeechBackendError.invalidInput, "The recorded audio was invalid. Try again."),
+            (TextInsertionError.clipboardWriteFailed, "Relay could not insert text. Grant Accessibility permission and try again."),
             (
                 TextInsertionError.accessibilityPermissionDenied,
-                "Dictation failed: Allow Accessibility permission in System Settings before inserting dictation."
+                "Allow Accessibility permission in System Settings before inserting dictation."
             ),
-            (TextInsertionError.emptyText, "Dictation failed: No speech was recognized. Try again."),
+            (TextInsertionError.emptyText, "No speech was recognized. Try again."),
         ]
         for (error, expected) in cases {
-            let events = EventLog()
-            var statuses: [String] = []
-            let coordinator = DictationCoordinator(
-                microphone: FakeMicrophone(events: events), sttRouter: router(events: events, error: error as? SpeechBackendError),
-                processor: RulesTranscriptProcessor(), textInserter: ErrorTextInserter(error: error), stopSpeech: {}, status: { statuses.append($0) },
-                activity: RecordingActivityOverlay()
-            )
-            await coordinator.start()
-            await coordinator.finish()
-            XCTAssertEqual(statuses.last, expected)
+            XCTAssertEqual(DictationFailure(error, stage: .transcription, backendName: "Fake").statusMessage, expected)
         }
     }
 
