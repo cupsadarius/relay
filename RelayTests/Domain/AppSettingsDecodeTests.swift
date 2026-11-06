@@ -193,6 +193,57 @@ final class AppSettingsDecodeTests: XCTestCase {
         XCTAssertEqual(decoded.dictationMode, .toggle)
     }
 
+    /// Pins the on-disk shape of every backend-keyed field: orders are arrays of id strings, maps
+    /// are JSON objects keyed by id strings.
+    func testBackendFieldsKeepTheirOnDiskShape() throws {
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(AppSettings.defaults)) as? [String: Any]
+        )
+        object["sttBackendOrder"] = ["whisper", "parakeet", "apple-speech"]
+        object["ttsBackendOrder"] = ["kokoro", "apple-tts", "pocket-tts"]
+        object["voiceByBackend"] = ["apple-tts": "com.apple.voice.x", "kokoro": "am_adam", "pocket-tts": "alba"]
+        object["selectedSpeechModelByBackend"] = ["whisper": "small.en", "parakeet": "parakeet-v2"]
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
+
+        let encoded = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(decoded)) as? [String: Any]
+        )
+
+        XCTAssertEqual(encoded["sttBackendOrder"] as? [String], ["whisper", "parakeet", "apple-speech"])
+        XCTAssertEqual(encoded["ttsBackendOrder"] as? [String], ["kokoro", "apple-tts", "pocket-tts"])
+        XCTAssertEqual(
+            encoded["voiceByBackend"] as? [String: String],
+            ["apple-tts": "com.apple.voice.x", "kokoro": "am_adam", "pocket-tts": "alba"]
+        )
+        XCTAssertEqual(
+            encoded["selectedSpeechModelByBackend"] as? [String: String],
+            ["whisper": "small.en", "parakeet": "parakeet-v2"]
+        )
+    }
+
+    /// An unknown backend id in any backend field drops only that id; the known entries survive.
+    func testUnknownBackendIDDropsOnlyThatEntry() throws {
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(AppSettings.defaults)) as? [String: Any]
+        )
+        object["dictationMode"] = "toggle"
+        object["sttBackendOrder"] = ["future-stt", "parakeet"]
+        object["ttsBackendOrder"] = ["kokoro", "future-tts"]
+        object["voiceByBackend"] = ["future-tts": "v", "kokoro": "am_adam"]
+        object["selectedSpeechModelByBackend"] = ["future-stt": "m", "whisper": "small.en"]
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
+
+        let encoded = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(decoded)) as? [String: Any]
+        )
+
+        XCTAssertEqual(decoded.dictationMode, .toggle)
+        XCTAssertEqual(encoded["sttBackendOrder"] as? [String], ["parakeet"])
+        XCTAssertEqual(encoded["ttsBackendOrder"] as? [String], ["kokoro"])
+        XCTAssertEqual((encoded["voiceByBackend"] as? [String: String])?["kokoro"], "am_adam")
+        XCTAssertEqual((encoded["selectedSpeechModelByBackend"] as? [String: String])?["whisper"], "small.en")
+    }
+
     func testUnknownActivityOverlayStyleFallsBackToDefault() throws {
         var saved = AppSettings.defaults
         saved.autoReadEnabled = false
