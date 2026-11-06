@@ -141,7 +141,18 @@ final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendable {
                 self.logger.debug("Ignoring a non-disruptive audio route change")
                 return
             }
-            self.fail(MicrophoneCaptureError.unavailable("The audio input device changed."))
+            self.fail(
+                MicrophoneCaptureError.unavailable(
+                    AudioEngineRouteChangeDecision.report(
+                        isEngineRunning: engine.isRunning,
+                        installedSampleRate: installed.0,
+                        installedChannelCount: installed.1,
+                        currentSampleRate: current.sampleRate,
+                        currentChannelCount: current.channelCount,
+                        inputDevice: Self.currentDeviceName(of: engine.inputNode),
+                        defaultInput: AudioInputDevices.defaultInputName(),
+                        defaultOutput: AudioInputDevices.defaultOutputName()
+                    )))
         }
         stateLock.withLock { configurationObserver = observer }
     }
@@ -173,6 +184,16 @@ final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendable {
         self.engine = nil
         releaseMonitor?.captureReleased(path, tracer: engineTracer)
         engineTracer = nil
+    }
+
+    /// The device the input unit records from now.
+    private static func currentDeviceName(of input: AVAudioInputNode) -> String? {
+        guard let unit = input.audioUnit else { return nil }
+        var id = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        guard AudioUnitGetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &id, &size) == noErr
+        else { return nil }
+        return AudioInputDevices.name(of: id)
     }
 
     /// `engineQueue` only. Must run before the input format is read. Falls back to the system

@@ -54,9 +54,17 @@ enum AudioInputDevices {
     }
 
     /// The name of the system default input device, if CoreAudio reports one.
-    static func defaultInputName() -> String? {
+    static func defaultInputName() -> String? { defaultDeviceName(kAudioHardwarePropertyDefaultInputDevice) }
+
+    /// The name of the system default output device, if CoreAudio reports one.
+    static func defaultOutputName() -> String? { defaultDeviceName(kAudioHardwarePropertyDefaultOutputDevice) }
+
+    /// The name of a device by its CoreAudio ID.
+    static func name(of id: AudioDeviceID) -> String? { stringProperty(kAudioObjectPropertyName, of: id) }
+
+    private static func defaultDeviceName(_ selector: AudioObjectPropertySelector) -> String? {
         var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mSelector: selector,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
