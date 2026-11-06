@@ -78,7 +78,7 @@ struct WhisperModelStore: Sendable {
 
     let cacheDirectory: URL
     private let downloader: any WhisperDownloader
-    private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "whisper-model-store")
+    private let logger = Logger.relay("whisper-model-store")
 
     init(cacheDirectory: URL, downloader: any WhisperDownloader) {
         self.cacheDirectory = cacheDirectory

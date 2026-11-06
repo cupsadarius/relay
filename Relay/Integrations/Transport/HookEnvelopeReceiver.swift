@@ -41,7 +41,7 @@ final class HookEnvelopeReceiver: @unchecked Sendable {
 
     private let server: UnixSocketServer
     private let decoder = JSONDecoder()
-    private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "integrations")
+    private let logger = Logger.relay("integrations")
     private let continuation: AsyncStream<HookEnvelope>.Continuation
     private let diagnostics: IntegrationDiagnosticsLog
 

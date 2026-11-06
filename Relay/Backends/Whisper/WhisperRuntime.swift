@@ -53,7 +53,7 @@ actor WhisperRuntime {
 
     private let engine: any WhisperEngine
     private let modelFolder: @Sendable (WhisperModelID) -> URL
-    private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "whisper")
+    private let logger = Logger.relay("whisper")
 
     private var loaded: (id: WhisperModelID, context: any LoadedWhisperContext)?
     private var inFlightTransition: Transition?

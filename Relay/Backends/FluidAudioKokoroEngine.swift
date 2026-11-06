@@ -100,7 +100,7 @@ extension KokoroEngine {
 /// `synthesize(phonemes:voice:speed:)`, and a bounded audio source feeds the shared player.
 /// Single-flight loading and the local-validation gate live in `ModelSessionLoader`.
 actor FluidAudioKokoroEngine: KokoroEngine {
-    private static let logger = Logger(subsystem: "dev.relaymac.Relay", category: "kokoro")
+    private static let logger = Logger.relay("kokoro")
 
     private let modelLoader: any KokoroModelLoading
     private let sessionLoader: ModelSessionLoader<any KokoroModelSession>

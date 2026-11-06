@@ -41,8 +41,8 @@ actor FluidAudioParakeetEngine: ParakeetEngine {
     private static let unifiedTrailingSilenceSampleCount = 6_400
     /// FluidAudio requires at least one second of 16 kHz audio (`ASRError.invalidAudioData`);
     /// shorter clips are zero-padded up to this length before transcription.
-    private static let minimumSampleCount = 16_000
-    private static let logger = Logger(subsystem: "dev.relaymac.Relay", category: "parakeet")
+    private static let minimumSampleCount = Int(AudioInput.sttSampleRate)
+    private static let logger = Logger.relay("parakeet")
 
     /// The directory FluidAudio stores this model's files in. For v2 it is always
     /// `AsrModels.defaultCacheDirectory(for: .v2)`: `AsrModels.isModelValid` takes no directory

@@ -2,6 +2,12 @@ import Foundation
 import Observation
 import os
 
+extension Logger {
+    static func relay(_ category: String) -> Logger {
+        Logger(subsystem: "dev.relaymac.Relay", category: category)
+    }
+}
+
 enum DiagnosticsEvent: Equatable, Sendable {
     case permissionRechecked, permissionRequested, eventTapRegistered, eventTapUnavailable
     case eventTapDisabled, eventTapReenabled, keyboardEventReceived
@@ -144,7 +150,7 @@ struct DiagnosticsCounters: Equatable, Sendable { var received = 0; var matched 
 
 @MainActor @Observable
 final class DiagnosticsRecorder {
-    private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "diagnostics")
+    private let logger = Logger.relay("diagnostics")
     private(set) var buffer: DiagnosticsBuffer
     private(set) var counters = DiagnosticsCounters()
     /// The most recent microphone capture's privacy-safe metadata (input sample rate, frame

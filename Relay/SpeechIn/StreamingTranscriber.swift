@@ -7,7 +7,7 @@ import os
 actor StreamingTranscriber {
     static let defaultTickInterval: Duration = .milliseconds(450)
 
-    private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "streaming-transcriber")
+    private let logger = Logger.relay("streaming-transcriber")
     private let tickInterval: Duration
     /// Bounds the cost of re-transcribing a growing buffer every tick.
     private let maxWindowSamples: Int
@@ -21,7 +21,7 @@ actor StreamingTranscriber {
 
     init(
         tickInterval: Duration = StreamingTranscriber.defaultTickInterval,
-        maxWindowSamples: Int = 15 * 16_000,
+        maxWindowSamples: Int = 15 * Int(AudioInput.sttSampleRate),
         transcribe: @escaping @MainActor (AudioInput) async throws -> Transcript,
         onInterimText: @escaping @Sendable (String) -> Void
     ) {
@@ -81,7 +81,7 @@ actor StreamingTranscriber {
 
         let snapshot = samples
         do {
-            let result = try await transcribe(AudioInput(samples: snapshot, sampleRate: 16_000))
+            let result = try await transcribe(AudioInput(samples: snapshot, sampleRate: AudioInput.sttSampleRate))
             guard !Task.isCancelled else { return }
             onInterimText(result.text)
         } catch is CancellationError {

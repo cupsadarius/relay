@@ -41,7 +41,7 @@ final class IntegrationManager {
     @ObservationIgnored private let onResponse: @Sendable (AgentResponseEvent) async -> Void
     /// Invoked for each `UserPromptSubmit` envelope with the session the user just prompted.
     @ObservationIgnored nonisolated private let onPrompt: @Sendable (AgentSessionID) async -> Void
-    @ObservationIgnored nonisolated private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "integrations")
+    @ObservationIgnored nonisolated private let logger = Logger.relay("integrations")
     @ObservationIgnored nonisolated private let diagnostics: IntegrationDiagnosticsLog
     @ObservationIgnored private var consumeTask: Task<Void, Never>?
 

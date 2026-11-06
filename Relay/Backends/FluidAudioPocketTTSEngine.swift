@@ -84,7 +84,7 @@ extension PocketTTSEngine {
 /// meant to reach the network. Single-flight loading and the local-validation gate live in
 /// `ModelSessionLoader`.
 actor FluidAudioPocketTTSEngine: PocketTTSEngine {
-    private static let logger = Logger(subsystem: "dev.relaymac.Relay", category: "pocket-tts")
+    private static let logger = Logger.relay("pocket-tts")
 
     private let modelLoader: any PocketTTSModelLoading
     private let sessionLoader: ModelSessionLoader<any PocketTTSModelSession>

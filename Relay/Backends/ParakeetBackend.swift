@@ -71,7 +71,7 @@ extension ParakeetEngine {
         do {
             try await load(allowDownload: false)
         } catch {
-            Logger(subsystem: "dev.relaymac.Relay", category: "parakeet")
+            Logger.relay("parakeet")
                 .debug("Parakeet prewarm failed: \(error.localizedDescription, privacy: .private)")
         }
     }
@@ -98,12 +98,7 @@ final class ParakeetBackend: SpeechToTextBackend {
     }
 
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
-        guard !audio.samples.isEmpty else {
-            throw SpeechBackendError.noUsableAudio
-        }
-        guard audio.sampleRate == 16_000 else {
-            throw SpeechBackendError.invalidInput
-        }
+        try audio.requireSTTFormat()
 
         let engine = engine
         try await ensureLoaded(engine)

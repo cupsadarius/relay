@@ -3,6 +3,15 @@ import Foundation
 struct AudioInput: Sendable, Equatable {
     let samples: [Float]
     let sampleRate: Double
+
+    /// The mono rate `MicrophoneCapture` produces and the FluidAudio and Whisper backends require.
+    static let sttSampleRate: Double = 16_000
+
+    /// Throws unless this is non-empty audio at `sttSampleRate`.
+    func requireSTTFormat() throws {
+        guard !samples.isEmpty else { throw SpeechBackendError.noUsableAudio }
+        guard sampleRate == Self.sttSampleRate else { throw SpeechBackendError.invalidInput }
+    }
 }
 
 struct Transcript: Sendable, Equatable {

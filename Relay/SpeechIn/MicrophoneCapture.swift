@@ -191,7 +191,7 @@ actor MicrophoneCapture: MicrophoneCapturing, MicrophoneSampleStreaming {
                     capturedAt: now()
                 ))
             guard !samples.isEmpty else { throw SpeechBackendError.noUsableAudio }
-            return AudioInput(samples: samples, sampleRate: 16_000)
+            return AudioInput(samples: samples, sampleRate: AudioInput.sttSampleRate)
         } catch {
             accumulator.reset()
             transitionToIdle()
@@ -323,7 +323,7 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, AudioInputFormatR
     private var installedInputChannelCount: AVAudioChannelCount = 0
     private var terminalErrorHandler: (@Sendable (Error) async -> Void)?
     private var configurationObserver: AudioEngineConfigurationObserver?
-    private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "microphone")
+    private let logger = Logger.relay("microphone")
 
     /// Only touched on `engineQueue`.
     private var tapInstalled = false
@@ -347,7 +347,7 @@ private final class AVAudioEngineSource: AudioCaptureSourcing, AudioInputFormatR
             guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0,
                 let outputFormat = AVAudioFormat(
                     commonFormat: .pcmFormatFloat32,
-                    sampleRate: 16_000,
+                    sampleRate: AudioInput.sttSampleRate,
                     channels: 1,
                     interleaved: false
                 ),

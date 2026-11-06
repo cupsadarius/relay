@@ -22,7 +22,7 @@ actor WhisperBackend: SpeechToTextBackend {
     private let store: WhisperModelStore
     private let runtime: WhisperRuntime
     private let selectedModel: WhisperModelSelection
-    private let logger = Logger(subsystem: "dev.relaymac.Relay", category: "whisper-backend")
+    private let logger = Logger.relay("whisper-backend")
 
     /// - Parameters:
     ///   - store: owns presence/download/remove of verified local model folders.
@@ -44,12 +44,7 @@ actor WhisperBackend: SpeechToTextBackend {
     }
 
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
-        guard !audio.samples.isEmpty else {
-            throw SpeechBackendError.noUsableAudio
-        }
-        guard audio.sampleRate == 16_000 else {
-            throw SpeechBackendError.invalidInput
-        }
+        try audio.requireSTTFormat()
 
         try await ensureLoaded()
 

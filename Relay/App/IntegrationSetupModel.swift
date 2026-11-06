@@ -44,7 +44,7 @@ final class IntegrationSetupModel {
     @ObservationIgnored private let services: IntegrationServices
     @ObservationIgnored private let sessionRegistry: AgentSessionRegistry
     @ObservationIgnored private let integrationDiagnosticsLog: IntegrationDiagnosticsLog
-    @ObservationIgnored private let installerLogger = Logger(subsystem: "dev.relaymac.Relay", category: "integrations")
+    @ObservationIgnored private let installerLogger = Logger.relay("integrations")
 
     init(runtime: RelayRuntime) {
         services = runtime.integrations
