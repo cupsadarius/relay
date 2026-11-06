@@ -88,8 +88,7 @@ final class HotkeyControllerTests: XCTestCase {
         hotkeys.send(.dictate, .pressed)
         hotkeys.send(.dictate, .released)
         await waitUntil { dictation.events == ["start", "finish"] }
-
-        XCTAssertEqual(controller.dictationPhase, .released)
+        withExtendedLifetime(controller) {}
     }
 
     func testToggleDictationAlternatesOnPressAndIgnoresRelease() async {

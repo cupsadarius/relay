@@ -431,7 +431,7 @@ final class AppModelTests: XCTestCase {
                 diagnostics: diagnostics ?? DiagnosticsRecorder(capacity: 10),
                 dictationCoordinator: dictation,
                 overlayModel: overlayModel ?? ActivityOverlayModel(),
-                overlayPresenter: overlayPresenter ?? NoOpActivityOverlayPresenter(),
+                overlayPresenter: overlayPresenter ?? SpyOverlayPresenter(),
                 sttRegistry: sttRegistry,
                 speechModelManagers: speechModelManagers,
                 integrationManager: integrationManager,

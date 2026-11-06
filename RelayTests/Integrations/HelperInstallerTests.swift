@@ -71,12 +71,6 @@ final class HelperInstallerTests: XCTestCase {
         XCTAssertEqual(binDirectoryContents.map(\.lastPathComponent), ["RelayHook"])
     }
 
-    func testStableHelperURLPointsUnderThisBuildsSupportDirectory() {
-        let resolved = HelperInstaller.stableHelperURL()
-        XCTAssertEqual(resolved, RelayPaths.supportDirectory().appendingPathComponent("bin/RelayHook"))
-        XCTAssertTrue(resolved.path.contains("/Library/Application Support/Relay"))
-    }
-
     func testBinDirectoryIsCreatedWithRestrictedPermissions() throws {
         try writeSourceHelper()
         let installer = HelperInstaller(baseDirectory: tempDirectory)

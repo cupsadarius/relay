@@ -265,7 +265,6 @@ final class AgentAutoReadCoordinatorTests: XCTestCase {
 
         let session = await harness.registry.sessions().first
         XCTAssertEqual(session?.processAncestry, [4242, 20, 1])
-        XCTAssertEqual(session?.tty, "ttys001")
     }
 
     func testWithoutEnvelopeAncestryFallsBackToSnapshotCapture() async {
@@ -304,37 +303,6 @@ final class AgentAutoReadCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(focus.lastAmongIDs.map(\.providerSessionID), ["a", "b"])
     }
-
-    /// The agent process itself may have no tty (e.g. its stdio is piped); the tty must come from
-    /// the first ancestor UP the chain that has one, not just the agent's own snapshot record.
-    func testEnvelopeAncestryTtyComesFromTheFirstAncestorThatHasOne() async {
-        let runner = FixedProcessTableRunner(
-            table: """
-                900 800 ?? agent
-                800 700 ttys002 zsh
-                700 1 ?? Ghostty
-                """)
-        let harness = makeCoordinatorHarness(
-            focus: MutableStubFocusResolver(), speech: RecordingSpeechSink(), autoRead: true,
-            processInspector: ProcessInspector(runner: runner)
-        )
-
-        await harness.coordinator.handle(makeAutoReadEvent(text: "done", parentPID: 900, processAncestry: [900, 800, 700]))
-
-        let session = await harness.registry.sessions().first
-        XCTAssertEqual(session?.tty, "ttys002")
-    }
-}
-
-/// Reports a fixed, caller-supplied `ps`-format process table, so tests can control exactly
-/// which pids have a tty and which don't (unlike `AlwaysAliveProcessRunner`/
-/// `MutableAliveProcessRunner`, which give every pid the same fixed tty).
-private final class FixedProcessTableRunner: ProcessRunning, @unchecked Sendable {
-    let table: String
-    init(table: String) { self.table = table }
-    func run(executable: URL, arguments: [String], timeout: TimeInterval, maxOutputBytes: Int) throws -> ProcessResult {
-        ProcessResult(stdout: Data(table.utf8), terminationStatus: 0)
-    }
 }
 
 private final class MutableStubFocusResolver: SessionFocusResolving, @unchecked Sendable {
@@ -345,12 +313,6 @@ private final class MutableStubFocusResolver: SessionFocusResolving, @unchecked 
     /// before this resolver ever saw a candidate list.
     private(set) var lastAmongIDs: [AgentSessionID] = []
     private(set) var lastSnapshotWasProvided = false
-
-    func resolve(session: AgentSession) async -> FocusDecision {
-        session.id == focusedSessionID
-            ? .focused(resolverID: "stub", reason: "stubbed focused session")
-            : .unknown(resolverID: "stub", reason: "not the stubbed focused session")
-    }
 
     func resolveFocus(among sessions: [AgentSession], processSnapshot: ProcessSnapshot?) async -> FocusResolution {
         lastAmongIDs = sessions.map(\.id)
@@ -368,7 +330,7 @@ private final class CountingProcessRunner: ProcessRunning, @unchecked Sendable {
     var runCount: Int { lock.withLock { count } }
     func run(executable: URL, arguments: [String], timeout: TimeInterval, maxOutputBytes: Int) throws -> ProcessResult {
         lock.withLock { count += 1 }
-        let lines = (1...2_000).map { "\($0) 1 ttys001 fake" }.joined(separator: "\n")
+        let lines = (1...2_000).map { "\($0) 1 fake" }.joined(separator: "\n")
         return ProcessResult(stdout: Data(lines.utf8), terminationStatus: 0)
     }
 }
@@ -378,7 +340,7 @@ private final class CountingProcessRunner: ProcessRunning, @unchecked Sendable {
 /// treated as dead now that `AgentAutoReadCoordinator` prunes before every focus decision.
 private final class AlwaysAliveProcessRunner: ProcessRunning, @unchecked Sendable {
     func run(executable: URL, arguments: [String], timeout: TimeInterval, maxOutputBytes: Int) throws -> ProcessResult {
-        let lines = (1...2_000).map { "\($0) 1 ttys001 fake" }.joined(separator: "\n")
+        let lines = (1...2_000).map { "\($0) 1 fake" }.joined(separator: "\n")
         return ProcessResult(stdout: Data(lines.utf8), terminationStatus: 0)
     }
 }
@@ -389,7 +351,7 @@ private final class MutableAliveProcessRunner: ProcessRunning, @unchecked Sendab
     var alivePIDs: Set<Int32>
     init(alivePIDs: Set<Int32>) { self.alivePIDs = alivePIDs }
     func run(executable: URL, arguments: [String], timeout: TimeInterval, maxOutputBytes: Int) throws -> ProcessResult {
-        let lines = alivePIDs.map { "\($0) 1 ttys001 fake" }.joined(separator: "\n")
+        let lines = alivePIDs.map { "\($0) 1 fake" }.joined(separator: "\n")
         return ProcessResult(stdout: Data(lines.utf8), terminationStatus: 0)
     }
 }
@@ -452,7 +414,7 @@ private func makeAutoReadEvent(
     processAncestry: [Int32]? = nil
 ) -> AgentResponseEvent {
     .init(
-        id: UUID(), provider: .claudeCode, providerSessionID: providerSessionID,
+        provider: .claudeCode, providerSessionID: providerSessionID,
         text: text, cwd: "/tmp/repo",
         parentPID: parentPID, environment: [:], capturedAt: Date(),
         processAncestry: processAncestry

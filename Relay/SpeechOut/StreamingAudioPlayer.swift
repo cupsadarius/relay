@@ -100,6 +100,7 @@ enum StreamingAudioPlayerError: Error, Equatable, Sendable {
     case bufferAllocationFailed
     case conversionFailed
     case outputConfigurationChanged
+    case outputNodeMissing
 }
 
 @MainActor
@@ -141,7 +142,6 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
     private var sourceFinished = false
     private var sourceFailure: (any Error)?
     private var started = false
-    private var explicitlyStopped = false
 
     init(makeOutputNode: @escaping @MainActor () -> any AudioOutputNode = { AVEngineOutputNode() }) {
         self.makeOutputNode = makeOutputNode
@@ -164,7 +164,6 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
         scheduledCount = 0
         playedCount = 0
         started = false
-        explicitlyStopped = false
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             startContinuation = continuation
@@ -176,7 +175,6 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
 
     func stop() {
         guard let sessionID = currentSessionID else { return }
-        explicitlyStopped = true
         let source = activeSource
         tearDownPlayback(cancelSource: false)
         currentSessionID = nil
@@ -193,7 +191,7 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
     private func pump(_ source: any TTSAudioSource, sessionID: UUID) async {
         do {
             while let frame = try await source.next() {
-                guard currentSessionID == sessionID, !explicitlyStopped else { return }
+                guard currentSessionID == sessionID else { return }
                 guard !frame.samples.isEmpty else { continue }
 
                 let converted = try convert(frame)
@@ -205,7 +203,7 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
 
                 if started {
                     await waitForSchedulingCapacity(sessionID: sessionID)
-                    guard currentSessionID == sessionID, !explicitlyStopped else { return }
+                    guard currentSessionID == sessionID else { return }
                     schedule(pendingBuffer, sessionID: sessionID)
                 } else {
                     pending.append(pendingBuffer)
@@ -216,7 +214,7 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
                 }
             }
         } catch is CancellationError {
-            guard currentSessionID == sessionID, !explicitlyStopped else { return }
+            guard currentSessionID == sessionID else { return }
             if started {
                 endCancelled(sessionID: sessionID)
             } else {
@@ -226,7 +224,7 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
             }
             return
         } catch {
-            guard currentSessionID == sessionID, !explicitlyStopped else { return }
+            guard currentSessionID == sessionID else { return }
             handleSourceFailure(error, sessionID: sessionID)
             return
         }
@@ -251,7 +249,7 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
     /// awaiting a throw, so the failure is remembered and reported as `.failed` only after already
     /// scheduled valid audio has drained.
     private func handleSourceFailure(_ error: any Error, sessionID: UUID) {
-        guard currentSessionID == sessionID, !explicitlyStopped else { return }
+        guard currentSessionID == sessionID else { return }
 
         if !started {
             tearDownPlayback(cancelSource: false)
@@ -273,7 +271,7 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
     /// - After it, the session ends `.failed`.
     /// Either way the healthy source is cancelled.
     private func handleOutputConfigurationChange() {
-        guard let sessionID = currentSessionID, !explicitlyStopped else { return }
+        guard let sessionID = currentSessionID else { return }
         let wasStarted = started
         tearDownPlayback(cancelSource: true)
         currentSessionID = nil
@@ -309,7 +307,7 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
             return
         }
 
-        guard let outputNode else { throw StreamingAudioPlayerError.invalidSourceFormat }
+        guard let outputNode else { throw StreamingAudioPlayerError.outputNodeMissing }
         for item in pending {
             schedule(item, sessionID: sessionID)
         }
@@ -350,7 +348,7 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
     /// the prebuffer flush would burst ~8 levels at once, and those levels would re-arm the
     /// speech watchdog for audio nobody has heard yet.
     private func handlePlayed(duration: TimeInterval, level: Float, sessionID: UUID) {
-        guard currentSessionID == sessionID, !explicitlyStopped else { return }
+        guard currentSessionID == sessionID else { return }
         playedCount += 1
         playedDuration += duration
         onEvent?(.level(sessionID: sessionID, level: level))
@@ -361,7 +359,7 @@ final class StreamingAudioPlayer: StreamingAudioPlaying {
     }
 
     private func checkForCompletion(sessionID: UUID) {
-        guard currentSessionID == sessionID, !explicitlyStopped else { return }
+        guard currentSessionID == sessionID else { return }
         guard sourceFinished, playedCount >= scheduledCount else { return }
 
         let failed = sourceFailure != nil

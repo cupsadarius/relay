@@ -178,7 +178,7 @@ final class STTRouterTests: XCTestCase {
 
         let selection = await router.selectBackend()
 
-        XCTAssertEqual(selection, STTSelection(backendID: "second", displayName: "second", candidateOrder: ["second", "third"]))
+        XCTAssertEqual(selection, STTSelection(displayName: "second", candidateOrder: ["second", "third"]))
     }
 
     func testTranscribeWithASelectionStartsAtTheSelectedBackend() async throws {

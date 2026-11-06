@@ -6,12 +6,12 @@ import Foundation
 enum ActivityOverlayActions {
     static func perform(
         _ action: ActivityOverlayAction,
-        dictation: (any DictationCoordinating)?,
+        dictation: any DictationCoordinating,
         speech: any SpeechCoordinating
     ) async {
         switch action {
         case let .cancelDictation(sessionID):
-            await dictation?.cancel(sessionID: sessionID)
+            await dictation.cancel(sessionID: sessionID)
         case let .stopSpeech(sessionID):
             speech.stop(sessionID: sessionID)
         }

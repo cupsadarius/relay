@@ -25,7 +25,6 @@ final class SpeechModelController {
 
     private(set) var models: [SpeechModelBackendKey: [SpeechModelStatus]] = [:]
     private(set) var messages: [SpeechModelDomain: String] = [:]
-    var backendKeys: Set<SpeechModelBackendKey> { Set(managers.keys) }
 
     @ObservationIgnored private let managers: Managers
     @ObservationIgnored private let diagnostics: DiagnosticsRecorder

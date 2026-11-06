@@ -5,13 +5,6 @@ import XCTest
 
 @MainActor
 final class KokoroTTSBackendTests: XCTestCase {
-    func testIdentifiesAsKokoro() {
-        let backend = KokoroTTSBackend(engine: FakeKokoroEngine())
-
-        XCTAssertEqual(backend.id, "kokoro")
-        XCTAssertEqual(backend.displayName, "Kokoro")
-    }
-
     func testAvailabilityIsAvailableWhenModelsArePresent() async {
         let engine = FakeKokoroEngine()
         engine.modelsPresent = true

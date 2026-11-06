@@ -66,36 +66,6 @@ final class CodexInstallerTests: XCTestCase {
         groups.flatMap { $0["hooks"] as? [[String: Any]] ?? [] }
     }
 
-    // MARK: - Identification logic
-
-    func testRelayOwnedCommandRecognizedRegardlessOfAbsolutePath() {
-        XCTAssertTrue(
-            CodexInstaller.isRelayHookCommand(
-                "\"/Applications/Relay.app/Contents/Helpers/RelayHook\" --provider codex"
-            ))
-        XCTAssertTrue(
-            CodexInstaller.isRelayHookCommand(
-                "\"/Users/me/Downloads/Relay 2.app/Contents/Helpers/RelayHook\" --provider codex"
-            ))
-    }
-
-    func testUnrelatedCommandsAreNotRecognizedAsRelayOwned() {
-        XCTAssertFalse(CodexInstaller.isRelayHookCommand("echo hello"))
-        XCTAssertFalse(
-            CodexInstaller.isRelayHookCommand(
-                "\"/usr/local/bin/some-other-tool\" --provider codex"
-            ))
-        XCTAssertFalse(
-            CodexInstaller.isRelayHookCommand(
-                "\"/Applications/Relay.app/Contents/Helpers/RelayHook\" --provider claude-code"
-            ))
-        // Same basename, but not the Relay flag suffix.
-        XCTAssertFalse(
-            CodexInstaller.isRelayHookCommand(
-                "\"/Applications/Relay.app/Contents/Helpers/RelayHook\""
-            ))
-    }
-
     // MARK: - Base directory resolution
 
     func testDefaultBaseDirectoryUsesCodexHomeWhenSet() {

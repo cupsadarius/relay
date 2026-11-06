@@ -98,7 +98,6 @@ struct StopHookIntegration: RelayIntegration {
         }
 
         return AgentResponseEvent(
-            id: UUID(),
             provider: provider,
             providerSessionID: payload.sessionID,
             text: text,

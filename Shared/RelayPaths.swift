@@ -41,7 +41,12 @@ enum RelayPaths {
         flavor: BuildFlavor = .current,
         home: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> URL {
-        supportDirectory(flavor: flavor, home: home)
+        helperURL(inSupportDirectory: supportDirectory(flavor: flavor, home: home))
+    }
+
+    /// `<supportDirectory>/bin/RelayHook`.
+    static func helperURL(inSupportDirectory supportDirectory: URL) -> URL {
+        supportDirectory
             .appendingPathComponent("bin", isDirectory: true)
             .appendingPathComponent(helperBasename, isDirectory: false)
     }

@@ -5,29 +5,13 @@ protocol HerdrHostOwnershipChecking: Sendable {
 }
 
 struct HerdrHostOwnershipChecker: HerdrHostOwnershipChecking {
-    /// How long we'll wait for `lsof` to produce output before giving up. `lsof -a -p <pid> -U -Fn`
-    /// against a single process's open unix sockets is normally a few milliseconds, but this check
-    /// runs on the focus path, so a short timeout keeps a hung/misbehaving `lsof` from blocking focus
-    /// resolution indefinitely.
-    private static let defaultTimeout: TimeInterval = 2
+    /// This check runs on the focus path, so a hung `lsof` must not block focus resolution.
+    private static let lsofTimeout: TimeInterval = 2
+    private static let lsofExecutableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
 
-    /// Executable/arguments/timeout are injectable (defaulting to real `/usr/sbin/lsof` and its
-    /// normal arguments) purely so tests can point the ownership check at a slow/blocking fake
-    /// command to exercise the watchdog without touching real sockets.
-    private let lsofExecutableURL: URL
-    private let lsofArguments: @Sendable (Int32) -> [String]
-    private let lsofTimeout: TimeInterval
     private let runner: ProcessRunning
 
-    init(
-        lsofExecutableURL: URL = URL(fileURLWithPath: "/usr/sbin/lsof"),
-        lsofArguments: @escaping @Sendable (Int32) -> [String] = { pid in ["-a", "-p", String(pid), "-U", "-Fn"] },
-        lsofTimeout: TimeInterval = HerdrHostOwnershipChecker.defaultTimeout,
-        runner: ProcessRunning = BoundedProcessRunner()
-    ) {
-        self.lsofExecutableURL = lsofExecutableURL
-        self.lsofArguments = lsofArguments
-        self.lsofTimeout = lsofTimeout
+    init(runner: ProcessRunning = BoundedProcessRunner()) {
         self.runner = runner
     }
 
@@ -42,11 +26,15 @@ struct HerdrHostOwnershipChecker: HerdrHostOwnershipChecking {
     }
 
     private func lsof(pid: Int32, contains socketPath: String) async -> Bool {
-        guard FileManager.default.isExecutableFile(atPath: lsofExecutableURL.path) else { return false }
-        // Bounded via the shared runner (stderr discarded, stdout drained, `lsofTimeout`).
+        guard FileManager.default.isExecutableFile(atPath: Self.lsofExecutableURL.path) else { return false }
         // Ownership is unproven on any failure, so the fallback is always `false`.
         guard
-            let result = try? await runner.run(executable: lsofExecutableURL, arguments: lsofArguments(pid), timeout: lsofTimeout, maxOutputBytes: 1024 * 1024)
+            let result = try? await runner.run(
+                executable: Self.lsofExecutableURL,
+                arguments: ["-a", "-p", String(pid), "-U", "-Fn"],
+                timeout: Self.lsofTimeout,
+                maxOutputBytes: 1024 * 1024
+            )
         else {
             return false
         }

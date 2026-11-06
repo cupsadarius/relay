@@ -59,7 +59,7 @@ extension RelayRuntime {
         let diagnostics = diagnostics ?? DiagnosticsRecorder(capacity: 10)
         let status = status ?? StatusSink()
         let overlayModel = overlayModel ?? ActivityOverlayModel()
-        let overlayPresenter = overlayPresenter ?? NoOpActivityOverlayPresenter()
+        let overlayPresenter = overlayPresenter ?? SpyOverlayPresenter()
         let frontmostApps = frontmostApps ?? StubFrontmostAppMonitor(pid: nil)
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent("relay-tests-\(UUID().uuidString)", isDirectory: true)
@@ -91,9 +91,7 @@ extension RelayRuntime {
                 processInspector: processInspector,
                 focusResolution: focusResolution
                     ?? FocusResolutionService(
-                        registry: sessionRegistry,
                         frontmostApps: frontmostApps,
-                        processSnapshots: processInspector,
                         resolvers: []
                     )
             ),
@@ -107,7 +105,7 @@ extension RelayRuntime {
             speechIn: SpeechInputServices(
                 sttRegistry: sttRegistry,
                 speechModelManagers: speechModelManagers,
-                dictationCoordinator: dictationCoordinator
+                dictationCoordinator: dictationCoordinator ?? SpyDictationCoordinator()
             ),
             integrations: IntegrationServices(
                 socketPath: socketPath,
@@ -318,11 +316,8 @@ final class SpyOverlayPresenter: ActivityOverlayPresenting {
 /// Reports `focusedSessionID` (when set) as confidently `.focused`; everything else `.unknown`.
 struct StubSessionFocusResolver: SessionFocusResolving {
     let focusedSessionID: AgentSessionID?
-    func resolve(session: AgentSession) async -> FocusDecision {
-        guard let focusedSessionID, session.id == focusedSessionID else {
-            return .unknown(resolverID: "stub", reason: "not the stubbed focused session")
-        }
-        return .focused(resolverID: "stub", reason: "stubbed focused session")
+    func resolveFocus(among sessions: [AgentSession], processSnapshot: ProcessSnapshot?) async -> FocusResolution {
+        FocusResolution(focused: sessions.first { $0.id == focusedSessionID }, decisions: [])
     }
 }
 
@@ -331,14 +326,14 @@ struct StubFrontmostAppMonitor: FrontmostAppMonitoring {
     let pid: Int32?
     func current() async -> FrontmostApplication? {
         guard let pid else { return nil }
-        return FrontmostApplication(pid: pid, bundleIdentifier: "com.test.terminal", localizedName: "TestTerminal")
+        return FrontmostApplication(pid: pid, bundleIdentifier: "com.test.terminal")
     }
 }
 
 /// A process table where every pid in 1...10_000 is alive, so fabricated pids are never pruned.
 final class AllPIDsAliveProcessRunner: ProcessRunning, @unchecked Sendable {
     func run(executable: URL, arguments: [String], timeout: TimeInterval, maxOutputBytes: Int) throws -> ProcessResult {
-        let lines = (1...10_000).map { "\($0) 1 ttys001 fake" }.joined(separator: "\n")
+        let lines = (1...10_000).map { "\($0) 1 fake" }.joined(separator: "\n")
         return ProcessResult(stdout: Data(lines.utf8), terminationStatus: 0)
     }
 }
@@ -359,7 +354,7 @@ extension AgentResponseEvent {
         capturedAt: Date = Date()
     ) -> AgentResponseEvent {
         .init(
-            id: UUID(), provider: provider, providerSessionID: providerSessionID,
+            provider: provider, providerSessionID: providerSessionID,
             text: text, cwd: "/tmp/repo",
             parentPID: parentPID, environment: [:], capturedAt: capturedAt
         )

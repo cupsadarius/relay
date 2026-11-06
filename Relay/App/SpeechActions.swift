@@ -43,7 +43,7 @@ final class SpeechActions {
             let selection = try await selectionReader.readSelection()
             diagnostics.record(selection.source == .accessibility ? .selectionAccessibility : .selectionClipboard)
             let request = SpeechRequest(
-                text: preprocessor.prepare(text: selection.text, mode: .userRequested),
+                text: preprocessor.prepare(text: selection.text),
                 source: .selection,
                 mode: .userRequested,
                 sessionID: nil

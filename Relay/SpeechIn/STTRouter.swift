@@ -5,7 +5,6 @@ import Foundation
 /// `candidateOrder` starts at the chosen backend, so the final transcription skips backends
 /// already ruled out, without the router caching a candidate order between calls.
 struct STTSelection: Equatable, Sendable {
-    let backendID: String
     let displayName: String
     let candidateOrder: [String]
 }
@@ -48,7 +47,7 @@ final class STTRouter {
             guard let backend = backends[id] else { continue }
             switch classify(await backend.availability()) {
             case .use:
-                return STTSelection(backendID: id, displayName: backend.displayName, candidateOrder: Array(order[index...]))
+                return STTSelection(displayName: backend.displayName, candidateOrder: Array(order[index...]))
             case .terminal:
                 return nil
             case .skip:

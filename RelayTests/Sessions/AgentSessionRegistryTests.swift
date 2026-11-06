@@ -5,7 +5,6 @@ import XCTest
 final class AgentSessionRegistryTests: XCTestCase {
     func testTerminalContextExtractsMultiplexerMetadata() {
         let event = AgentResponseEvent(
-            id: UUID(),
             provider: .claudeCode,
             providerSessionID: "claude-a",
             text: "done",
@@ -33,8 +32,8 @@ final class AgentSessionRegistryTests: XCTestCase {
         let a = makeEvent(provider: .claudeCode, session: "a", at: 10)
         let b = makeEvent(provider: .codex, session: "b", at: 11)
 
-        await registry.upsert(response: a, processAncestry: [101, 20, 1], tty: "/dev/ttys001")
-        await registry.upsert(response: b, processAncestry: [202, 20, 1], tty: "/dev/ttys002")
+        await registry.upsert(response: a, processAncestry: [101, 20, 1])
+        await registry.upsert(response: b, processAncestry: [202, 20, 1])
 
         let sessions = await registry.sessions()
         XCTAssertEqual(
@@ -47,7 +46,7 @@ final class AgentSessionRegistryTests: XCTestCase {
 
     private func makeEvent(provider: AgentProvider, session: String, at: TimeInterval) -> AgentResponseEvent {
         AgentResponseEvent(
-            id: UUID(), provider: provider, providerSessionID: session,
+            provider: provider, providerSessionID: session,
             text: "response", cwd: "/tmp/repo",
             parentPID: 42, environment: [:], capturedAt: Date(timeIntervalSince1970: at)
         )

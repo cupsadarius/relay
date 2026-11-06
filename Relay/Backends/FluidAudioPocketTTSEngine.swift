@@ -90,14 +90,12 @@ actor FluidAudioPocketTTSEngine: PocketTTSEngine {
     private let sessionLoader: ModelSessionLoader<any PocketTTSModelSession>
 
     init(
-        modelLoader: (any PocketTTSModelLoading)? = nil,
-        validatedModelsPresent: Bool = false
+        modelLoader: (any PocketTTSModelLoading)? = nil
     ) {
         let modelLoader = modelLoader ?? FluidAudioPocketTTSModelLoader(cacheDirectory: Self.defaultCacheDirectory())
         self.modelLoader = modelLoader
         let logger = Self.logger
         sessionLoader = ModelSessionLoader(
-            validatedModelsPresent: validatedModelsPresent,
             modelsNotDownloaded: { PocketTTSEngineError.modelsNotDownloaded },
             mapLoadFailure: { _ in
                 logger.debug("PocketTTS model load failed")

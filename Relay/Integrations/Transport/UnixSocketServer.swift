@@ -326,7 +326,7 @@ final class UnixSocketServer: @unchecked Sendable {
     }
 
     private func beginReading(clientFD: Int32) {
-        let connection = UnixSocketClientConnection(fd: clientFD)
+        let connection = UnixSocketClientConnection()
         let source = DispatchSource.makeReadSource(fileDescriptor: clientFD, queue: queue)
         source.setEventHandler { [weak self] in
             self?.handleReadable(clientFD: clientFD)
@@ -528,11 +528,6 @@ final class UnixSocketServer: @unchecked Sendable {
 /// Per-connection state, confined to `UnixSocketServer`'s serial queue. Not `Sendable`: never
 /// touch it off that queue. Framing lives in `NewlineFramer`, which is tested directly.
 final class UnixSocketClientConnection {
-    let fd: Int32
     var source: DispatchSourceRead?
     var framer = NewlineFramer(maxLineBytes: UnixSocketServer.maxLineBytes)
-
-    init(fd: Int32) {
-        self.fd = fd
-    }
 }

@@ -82,7 +82,7 @@ final class SpeechActionsTests: XCTestCase {
 
     func testFocusedSessionReplaySpeaksThatSessionsReply() async {
         let registry = AgentSessionRegistry()
-        let sessionA = await registry.upsert(response: .fixture(providerSessionID: "session-a", text: "Reply A"), processAncestry: [], tty: nil)
+        let sessionA = await registry.upsert(response: .fixture(providerSessionID: "session-a", text: "Reply A"), processAncestry: [])
         let speech = SpySpeechCoordinator()
         let (actions, _) = makeActions(speech: speech, registry: registry, focused: sessionA.id)
 
@@ -95,7 +95,7 @@ final class SpeechActionsTests: XCTestCase {
 
     func testGlobalLatestReplaySpeaksTheLatestAgentResponse() async {
         let registry = AgentSessionRegistry()
-        _ = await registry.upsert(response: .fixture(providerSessionID: "session-a"), processAncestry: [4242], tty: nil)
+        _ = await registry.upsert(response: .fixture(providerSessionID: "session-a"), processAncestry: [4242])
         let speech = SpySpeechCoordinator()
         let manager = await drivenManager(
             latest: .fixture(providerSessionID: "global-latest", text: "Global reply"),

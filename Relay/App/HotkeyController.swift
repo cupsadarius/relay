@@ -6,12 +6,11 @@ import Observation
 @MainActor
 @Observable
 final class HotkeyController {
-    private(set) var dictationPhase: HotkeyPhase?
     private(set) var eventTapStatus: HotkeyRegistrationStatus = .unavailable("Not checked")
 
     @ObservationIgnored private let manager: any HotkeyManaging
     @ObservationIgnored private let settings: SettingsController
-    @ObservationIgnored private let dictation: (any DictationCoordinating)?
+    @ObservationIgnored private let dictation: any DictationCoordinating
     @ObservationIgnored private let speechActions: SpeechActions
     @ObservationIgnored private let diagnostics: DiagnosticsRecorder
     @ObservationIgnored private let statusSink: StatusSink
@@ -61,10 +60,11 @@ final class HotkeyController {
     }
 
     private func handle(_ action: HotkeyAction, phase: HotkeyPhase) {
-        if action == .dictate {
-            diagnostics.record(.actionDispatched(action: action, phase: phase))
-            dictationPhase = phase
-            guard dictation != nil else { return }
+        guard action == .dictate || phase == .pressed else { return }
+        diagnostics.record(.actionDispatched(action: action, phase: phase))
+
+        switch action {
+        case .dictate:
             switch settings.current.dictationMode {
             case .holdToTalk:
                 if phase == .pressed { enqueueDictation { await $0.start() } } else { enqueueDictation { await $0.finish() } }
@@ -72,14 +72,6 @@ final class HotkeyController {
                 guard phase == .pressed else { return }
                 enqueueDictation { await $0.toggle() }
             }
-            return
-        }
-        guard phase == .pressed else { return }
-        diagnostics.record(.actionDispatched(action: action, phase: phase))
-
-        switch action {
-        case .dictate:
-            break
         case .readSelection:
             runSpeechAction { await $0.readSelection() }
         case .stopSpeech:
@@ -109,7 +101,6 @@ final class HotkeyController {
         let coordinator = dictation
         dictationTask = Task { @MainActor in
             await previous?.value
-            guard let coordinator else { return }
             await operation(coordinator)
         }
     }

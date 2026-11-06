@@ -38,7 +38,7 @@ final class IntegrationSetupModel {
     /// Install-time status per provider; `status(for:)` merges it with the manager's runtime status.
     private(set) var installerStatuses: [AgentProvider: IntegrationStatus] = [:]
 
-    /// Where `start()` opens the hook socket (`IntegrationServices.productionSocketPath` in the
+    /// Where `start()` opens the hook socket (`RelayPaths.socketPath()` in the
     /// app, a temp path in tests). Shown in Integrations settings.
     @ObservationIgnored let socketPath: String
     @ObservationIgnored private let services: IntegrationServices

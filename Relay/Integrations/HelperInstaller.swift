@@ -1,56 +1,26 @@
 import Foundation
 
 /// Installs the bundled `RelayHook` helper binary to a stable, app-bundle-independent
-/// location under Application Support.
-///
-/// Both Claude Code's and Codex's hook configs store the helper's path verbatim as an
-/// absolute string. Historically that path was `Bundle.main.bundleURL/Contents/Helpers/
-/// RelayHook` — which changes (or stops existing) whenever the app is rebuilt, moved, or
-/// DerivedData is cleared, silently breaking the hook without any error. Copying the
-/// bundled helper here first means the installers can always point at ONE path that
-/// outlives any particular app bundle.
+/// location under Application Support. Hook configs store the helper's absolute path, and an
+/// app-bundle path breaks silently whenever the app is rebuilt or moved.
 ///
 /// Never logs the source or destination path; only structural facts (success/failure).
 struct HelperInstaller {
-    private static let helperBasename = "RelayHook"
-
     private let baseDirectory: URL
 
-    /// - Parameter baseDirectory: this build's support directory (`RelayPaths`). Tests MUST
-    ///   inject a unique temporary directory here rather than relying on the default, so the
-    ///   real `~/Library/Application Support` is never read or written.
-    init(baseDirectory: URL = HelperInstaller.defaultBaseDirectory()) {
+    /// - Parameter baseDirectory: this build's support directory. Tests MUST inject a unique
+    ///   temporary directory, so the real `~/Library/Application Support` is never touched.
+    init(baseDirectory: URL = RelayPaths.supportDirectory()) {
         self.baseDirectory = baseDirectory
     }
 
-    /// This build's own directory under `~/Library/Application Support` (`Relay` or
-    /// `Relay Debug`, see `BuildFlavor`).
-    static func defaultBaseDirectory() -> URL {
-        RelayPaths.supportDirectory()
-    }
-
-    /// The stable, bundle-independent path this build's hook commands point at:
-    /// `<support dir>/bin/RelayHook`.
-    static func stableHelperURL() -> URL {
-        RelayPaths.stableHelperURL()
-    }
-
-    private static func binDirectory(under baseDirectory: URL) -> URL {
-        baseDirectory.appendingPathComponent("bin", isDirectory: true)
+    /// Where this installer's `installBundledHelper` writes: `<baseDirectory>/bin/RelayHook`.
+    var installedHelperURL: URL {
+        RelayPaths.helperURL(inSupportDirectory: baseDirectory)
     }
 
     private var binDirectory: URL {
-        Self.binDirectory(under: baseDirectory)
-    }
-
-    /// Where THIS installer's `installBundledHelper` writes to — `<baseDirectory>/bin/
-    /// RelayHook`. For an installer constructed with the default `baseDirectory`, this equals
-    /// `HelperInstaller.stableHelperURL()`; exposed as an instance property (rather than only
-    /// the static default) so a caller holding an injected installer — production code built
-    /// around a non-default base directory, or a test — can verify the destination this
-    /// SPECIFIC instance actually targets, instead of always the real default path.
-    var installedHelperURL: URL {
-        binDirectory.appendingPathComponent(Self.helperBasename, isDirectory: false)
+        installedHelperURL.deletingLastPathComponent()
     }
 
     /// Copies `bundledURL` to this installer's stable helper location.
@@ -69,7 +39,7 @@ struct HelperInstaller {
             attributes: [.posixPermissions: 0o700]
         )
 
-        let temporaryURL = binDirectory.appendingPathComponent(".\(Self.helperBasename)-\(UUID().uuidString)")
+        let temporaryURL = binDirectory.appendingPathComponent(".\(RelayPaths.helperBasename)-\(UUID().uuidString)")
         try fileManager.copyItem(at: bundledURL, to: temporaryURL)
         do {
             try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: temporaryURL.path)

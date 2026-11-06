@@ -163,8 +163,11 @@ final class ModelSessionLoaderTests: XCTestCase {
 
     func testLocalCallerJoinsARunningDownloadWhenPresenceIsAlreadyValidated() async throws {
         let probe = LoaderProbe()
+        let loader = makeLoader(probe)
+        await probe.setLocalError(CancellationError())
+        _ = try? await loader.load(allowDownload: false, progress: { _ in })
+        await probe.setLocalError(nil)
         await probe.gateDownloads()
-        let loader = makeLoader(probe, validatedModelsPresent: true)
 
         let download = Task { try await loader.load(allowDownload: true, progress: { _ in }) }
         await waitUntil { await probe.downloadCalls == 1 }
@@ -176,7 +179,7 @@ final class ModelSessionLoaderTests: XCTestCase {
         try await local.value
 
         let localCalls = await probe.localCalls
-        XCTAssertEqual(localCalls, 0)
+        XCTAssertEqual(localCalls, 1)
         let session = await loader.session
         XCTAssertEqual(session, "download-1")
     }
@@ -279,37 +282,10 @@ final class ModelSessionLoaderTests: XCTestCase {
         XCTAssertNil(session, "a load that finishes during reset must not resurrect the session")
     }
 
-    func testUnloadDropsTheSessionButKeepsValidation() async throws {
-        let probe = LoaderProbe()
-        let loader = makeLoader(probe)
-        try await loader.load(allowDownload: false, progress: { _ in })
-
-        await loader.unload()
-
-        let sessionAfterUnload = await loader.session
-        XCTAssertNil(sessionAfterUnload)
-        try await loader.load(allowDownload: false, progress: { _ in })
-        let validateCalls = await probe.validateCalls
-        let localCalls = await probe.localCalls
-        XCTAssertEqual(validateCalls, 1)
-        XCTAssertEqual(localCalls, 2)
-    }
-
-    func testInitialValidationSkipsTheFirstCheck() async throws {
-        let probe = LoaderProbe()
-        let loader = makeLoader(probe, validatedModelsPresent: true)
-
-        try await loader.load(allowDownload: false, progress: { _ in })
-
-        let validateCalls = await probe.validateCalls
-        XCTAssertEqual(validateCalls, 0)
-    }
-
     // MARK: - Helpers
 
-    private func makeLoader(_ probe: LoaderProbe, validatedModelsPresent: Bool = false) -> ModelSessionLoader<String> {
+    private func makeLoader(_ probe: LoaderProbe) -> ModelSessionLoader<String> {
         ModelSessionLoader(
-            validatedModelsPresent: validatedModelsPresent,
             modelsNotDownloaded: { LoaderTestError.notDownloaded },
             mapLoadFailure: { _ in LoaderTestError.mapped },
             validateLocal: { try await probe.validate() },

@@ -54,8 +54,7 @@ actor FluidAudioParakeetEngine: ParakeetEngine {
 
     init(
         model: ParakeetModelID = .v2,
-        modelLoader: (any ParakeetModelLoading)? = nil,
-        validatedModelsPresent: Bool = false
+        modelLoader: (any ParakeetModelLoading)? = nil
     ) {
         self.model = model
         let v2Directory = AsrModels.defaultCacheDirectory(for: Self.version)
@@ -77,7 +76,6 @@ actor FluidAudioParakeetEngine: ParakeetEngine {
             }()
         let logger = Self.logger
         sessionLoader = ModelSessionLoader(
-            validatedModelsPresent: validatedModelsPresent,
             modelsNotDownloaded: { ParakeetEngineError.modelsNotDownloaded },
             mapLoadFailure: { error in
                 logger.debug("Parakeet model load failed: \(error.localizedDescription, privacy: .private)")

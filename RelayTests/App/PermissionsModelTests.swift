@@ -69,7 +69,7 @@ final class PermissionsModelTests: XCTestCase {
         let (model, _) = makeModel(opener: opener)
 
         model.openPrivacySettings(.accessibility)
-        model.openMicrophoneSettings()
+        model.openPrivacySettings(.microphone)
 
         XCTAssertEqual(opener.opened, [.accessibility, .microphone])
     }

@@ -1,7 +1,6 @@
 import Foundation
 
 struct AgentResponseEvent: Equatable, Sendable {
-    let id: UUID
     let provider: AgentProvider
     let providerSessionID: String
     let text: String

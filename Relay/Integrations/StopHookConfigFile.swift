@@ -34,7 +34,6 @@ enum IntegrationInstallerError: Error, Equatable, Sendable {
 ///
 /// Never logs file contents; only structural facts.
 struct StopHookConfigFile: Sendable {
-    static let helperBasename = "RelayHook"
     static let backupSuffix = ".relay-backup"
     /// Mode for a config file Relay creates from scratch (what `Data.write` produced before under
     /// the default umask).
@@ -84,12 +83,6 @@ struct StopHookConfigFile: Sendable {
         "--provider \(provider.rawValue)"
     }
 
-    /// Structural check only: ends with the exact `--provider <raw>` suffix and the executable
-    /// before it has basename `RelayHook`. True for EVERY build's entries.
-    static func isRelayHookCommand(_ command: String, provider: AgentProvider) -> Bool {
-        helperPath(inCommand: command, provider: provider) != nil
-    }
-
     /// The (unquoted) helper path of a Relay hook command, or `nil` if `command` is not one.
     static func helperPath(inCommand command: String, provider: AgentProvider) -> String? {
         let suffix = commandSuffix(for: provider)
@@ -97,7 +90,7 @@ struct StopHookConfigFile: Sendable {
         var pathPortion = String(command.dropLast(suffix.count))
         pathPortion = pathPortion.trimmingCharacters(in: .whitespaces)
         pathPortion = pathPortion.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
-        guard (pathPortion as NSString).lastPathComponent == helperBasename else { return nil }
+        guard (pathPortion as NSString).lastPathComponent == RelayPaths.helperBasename else { return nil }
         return pathPortion
     }
 

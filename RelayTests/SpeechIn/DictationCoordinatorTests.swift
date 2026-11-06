@@ -834,22 +834,6 @@ final class DictationCoordinatorTests: XCTestCase {
 
     // MARK: - Inserted text
 
-    func testRulesTextIsInsertedWithThePlainStatus() async {
-        let events = EventLog()
-        let inserter = FakeTextInserter(events: events)
-        var statuses: [String] = []
-        let coordinator = makeCoordinator(
-            sttRouter: router(events: events, transcript: "  hello   relay  "), textInserter: inserter,
-            status: { statuses.append($0) }, overlay: RecordingActivityOverlay()
-        )
-
-        await coordinator.start()
-        await coordinator.finish()
-
-        XCTAssertEqual(inserter.inserted, ["hello relay"])
-        XCTAssertEqual(statuses.last, "Inserted dictation")
-    }
-
     func testEmptyTranscriptInsertsNothing() async {
         let events = EventLog()
         let inserter = FakeTextInserter(events: events)

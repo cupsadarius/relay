@@ -109,14 +109,12 @@ actor FluidAudioKokoroEngine: KokoroEngine {
     private let sessionLoader: ModelSessionLoader<any KokoroModelSession>
 
     init(
-        modelLoader: (any KokoroModelLoading)? = nil,
-        validatedModelsPresent: Bool = false
+        modelLoader: (any KokoroModelLoading)? = nil
     ) {
         let modelLoader = modelLoader ?? FluidAudioKokoroModelLoader(cacheDirectory: Self.defaultCacheDirectory())
         self.modelLoader = modelLoader
         let logger = Self.logger
         sessionLoader = ModelSessionLoader(
-            validatedModelsPresent: validatedModelsPresent,
             modelsNotDownloaded: { KokoroEngineError.modelsNotDownloaded },
             mapLoadFailure: { _ in
                 logger.debug("Kokoro model load failed")

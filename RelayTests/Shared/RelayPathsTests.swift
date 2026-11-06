@@ -45,11 +45,10 @@ final class RelayPathsTests: XCTestCase {
 
     func testAppAndHelperDefaultsAgreeWithRelayPaths() {
         // Test host is the Debug app, so the app listens on the Debug socket...
-        XCTAssertEqual(IntegrationServices.productionSocketPath, RelayPaths.socketPath(flavor: .debug))
-        XCTAssertNotEqual(IntegrationServices.productionSocketPath, RelayPaths.socketPath(flavor: .release))
+        XCTAssertEqual(RelayPaths.socketPath(), RelayPaths.socketPath(flavor: .debug))
+        XCTAssertNotEqual(RelayPaths.socketPath(), RelayPaths.socketPath(flavor: .release))
         // ...and HookTransportClient's default (computed from the running executable, which here
         // is not a stable helper) falls back to Release.
         XCTAssertEqual(HookTransportClient.defaultSocketPath, RelayPaths.socketPath(flavor: .release))
-        XCTAssertEqual(HelperInstaller.stableHelperURL(), RelayPaths.stableHelperURL(flavor: .debug))
     }
 }

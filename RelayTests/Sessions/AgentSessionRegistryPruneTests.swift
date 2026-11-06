@@ -5,8 +5,8 @@ import XCTest
 final class AgentSessionRegistryPruneTests: XCTestCase {
     func testPruneRemovesDeadProcessSessions() async {
         let registry = AgentSessionRegistry()
-        _ = await registry.upsert(response: makeEvent(session: "a", at: 100), processAncestry: [111, 20, 1], tty: nil)
-        let b = await registry.upsert(response: makeEvent(session: "b", at: 100), processAncestry: [222, 20, 1], tty: nil)
+        _ = await registry.upsert(response: makeEvent(session: "a", at: 100), processAncestry: [111, 20, 1])
+        let b = await registry.upsert(response: makeEvent(session: "b", at: 100), processAncestry: [222, 20, 1])
 
         await registry.prune(now: Date(timeIntervalSince1970: 130), isAlive: { $0 != 111 })
 
@@ -16,7 +16,7 @@ final class AgentSessionRegistryPruneTests: XCTestCase {
 
     func testPruneRemovesSessionsPastTTL() async {
         let registry = AgentSessionRegistry()
-        let session = await registry.upsert(response: makeEvent(session: "a", at: 0), processAncestry: [111, 20, 1], tty: nil)
+        let session = await registry.upsert(response: makeEvent(session: "a", at: 0), processAncestry: [111, 20, 1])
         let inserted = await registry.sessions()
         XCTAssertEqual(inserted.map(\.id), [session.id])
 
@@ -32,7 +32,7 @@ final class AgentSessionRegistryPruneTests: XCTestCase {
 
     func testPruneKeepsFreshLiveSessions() async {
         let registry = AgentSessionRegistry()
-        let session = await registry.upsert(response: makeEvent(session: "a", at: 1_000), processAncestry: [111, 20, 1], tty: nil)
+        let session = await registry.upsert(response: makeEvent(session: "a", at: 1_000), processAncestry: [111, 20, 1])
 
         await registry.prune(
             now: Date(timeIntervalSince1970: 1_000).addingTimeInterval(60),
@@ -46,7 +46,7 @@ final class AgentSessionRegistryPruneTests: XCTestCase {
 
     private func makeEvent(session: String, at: TimeInterval = 100) -> AgentResponseEvent {
         AgentResponseEvent(
-            id: UUID(), provider: .claudeCode, providerSessionID: session,
+            provider: .claudeCode, providerSessionID: session,
             text: "response", cwd: "/tmp/repo",
             parentPID: 42, environment: [:], capturedAt: Date(timeIntervalSince1970: at)
         )

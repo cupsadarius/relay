@@ -157,7 +157,7 @@ final class IntegrationManager {
     /// `AppModel.replayLast()`'s focused-session tier, so both paths build the request
     /// identically. Never invoked automatically; only ever reached from an explicit user action.
     func speakResponse(_ event: AgentResponseEvent) async throws {
-        let prepared = preprocessor.prepare(text: event.text, mode: .automatic)
+        let prepared = preprocessor.prepare(text: event.text)
         try await speechCoordinator.speak(event.speechRequest(text: prepared, mode: .userRequested))
     }
 

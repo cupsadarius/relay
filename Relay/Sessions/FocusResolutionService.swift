@@ -1,37 +1,15 @@
 import Foundation
 
-/// Runs the ordered resolver chain (Herdr -> tmux -> generic terminal) for agent sessions.
-///
-/// `resolveFocus(among:processSnapshot:)` is the hot path: ONE frontmost-app lookup and the
-/// caller's ONE process snapshot are put into a single `FocusContext` that every resolver and
-/// every candidate session shares. `resolve(session:)` is the standalone form and takes its own
-/// snapshot.
+/// Runs the ordered resolver chain (Herdr -> Rex -> tmux -> generic terminal) for agent sessions.
+/// One frontmost-app lookup and the caller's one process snapshot form a single `FocusContext`
+/// that every resolver and every candidate session shares.
 actor FocusResolutionService {
-    private let registry: AgentSessionRegistry
     private let frontmostApps: FrontmostAppMonitoring
-    private let processSnapshots: any ProcessSnapshotProviding
     private let resolvers: [any FocusResolver]
 
-    init(
-        registry: AgentSessionRegistry,
-        frontmostApps: FrontmostAppMonitoring,
-        processSnapshots: any ProcessSnapshotProviding = ProcessInspector(),
-        resolvers: [any FocusResolver]
-    ) {
-        self.registry = registry
+    init(frontmostApps: FrontmostAppMonitoring, resolvers: [any FocusResolver]) {
         self.frontmostApps = frontmostApps
-        self.processSnapshots = processSnapshots
         self.resolvers = resolvers
-    }
-
-    func resolve(session: AgentSession) async -> FocusDecision {
-        let snapshot = try? await processSnapshots.snapshot()
-        let context = FocusContext(
-            frontmostApplication: await frontmostApps.current(),
-            sessions: await registry.sessions(),
-            processSnapshot: snapshot
-        )
-        return await decide(session: session, context: context)
     }
 
     func resolveFocus(among sessions: [AgentSession], processSnapshot: ProcessSnapshot?) async -> FocusResolution {

@@ -9,22 +9,20 @@ final class FocusResolutionServiceTests: XCTestCase {
             decision: .focused(resolverID: "exact", reason: "exact pane")
         )
         let service = FocusResolutionService(
-            registry: AgentSessionRegistry(),
             frontmostApps: StubFrontmostApp(pid: 20),
             resolvers: [resolver]
         )
-        let decision = await service.resolve(session: makeSession())
+        let decision = await service.resolveFocus(among: [makeSession()], processSnapshot: nil).decisions[0]
         XCTAssertEqual(decision.state, .focused)
         XCTAssertEqual(decision.confidence, .high)
     }
 
     func testUnknownNeverBecomesFocusedByDefault() async {
         let service = FocusResolutionService(
-            registry: AgentSessionRegistry(),
             frontmostApps: StubFrontmostApp(pid: 20),
             resolvers: [StubFocusResolver(id: "x", decision: .unknown(resolverID: "x", reason: "ambiguous"))]
         )
-        let decision = await service.resolve(session: makeSession())
+        let decision = await service.resolveFocus(among: [makeSession()], processSnapshot: nil).decisions[0]
         XCTAssertEqual(decision.state, .unknown)
     }
 
@@ -33,7 +31,6 @@ final class FocusResolutionServiceTests: XCTestCase {
         let b = makeSession(providerSessionID: "b")
         let c = makeSession(providerSessionID: "c")
         let service = FocusResolutionService(
-            registry: AgentSessionRegistry(),
             frontmostApps: StubFrontmostApp(pid: 20),
             resolvers: [SelectiveFocusResolver(focusedSessionID: b.id)]
         )
@@ -46,7 +43,6 @@ final class FocusResolutionServiceTests: XCTestCase {
 
     func testResolveFocusReturnsNilWhenNoneAreConfidentlyFocused() async {
         let service = FocusResolutionService(
-            registry: AgentSessionRegistry(),
             frontmostApps: StubFrontmostApp(pid: 20),
             resolvers: [StubFocusResolver(id: "x", decision: .unknown(resolverID: "x", reason: "ambiguous"))]
         )
@@ -60,8 +56,9 @@ final class FocusResolutionServiceTests: XCTestCase {
     func testResolveFocusLooksUpTheFrontmostAppOnceAndSharesOneSnapshot() async throws {
         let frontmost = CountingFrontmostApp(pid: 20)
         let recorder = SnapshotRecordingResolver()
-        let service = FocusResolutionService(registry: AgentSessionRegistry(), frontmostApps: frontmost, resolvers: [recorder])
-        let snapshot = try ProcessSnapshot.parse("42 1 ?? agent")
+        let service = FocusResolutionService(
+            frontmostApps: frontmost, resolvers: [recorder])
+        let snapshot = ProcessSnapshot.parse("42 1 agent")
 
         _ = await service.resolveFocus(
             among: [makeSession(providerSessionID: "a"), makeSession(providerSessionID: "b"), makeSession(providerSessionID: "c")],
@@ -75,12 +72,11 @@ final class FocusResolutionServiceTests: XCTestCase {
 
     func testUnresolvedSessionKeepsTheResolversSpecificReason() async {
         let service = FocusResolutionService(
-            registry: AgentSessionRegistry(),
             frontmostApps: StubFrontmostApp(pid: 20),
             resolvers: [StubFocusResolver(id: "generic-terminal", decision: .unknown(resolverID: "generic-terminal", reason: "ambiguous"))]
         )
 
-        let decision = await service.resolve(session: makeSession())
+        let decision = await service.resolveFocus(among: [makeSession()], processSnapshot: nil).decisions[0]
 
         XCTAssertEqual(decision.resolverID, "generic-terminal")
         XCTAssertEqual(decision.reason, "ambiguous")
@@ -93,7 +89,7 @@ private actor CountingFrontmostApp: FrontmostAppMonitoring {
     init(pid: Int32) { self.pid = pid }
     func current() async -> FrontmostApplication? {
         lookups += 1
-        return .init(pid: pid, bundleIdentifier: nil, localizedName: "Test Terminal")
+        return .init(pid: pid, bundleIdentifier: nil)
     }
 }
 
@@ -113,7 +109,7 @@ private final class SnapshotRecordingResolver: FocusResolver, @unchecked Sendabl
 private struct StubFrontmostApp: FrontmostAppMonitoring {
     let pid: Int32
     func current() async -> FrontmostApplication? {
-        .init(pid: pid, bundleIdentifier: nil, localizedName: "Test Terminal")
+        .init(pid: pid, bundleIdentifier: nil)
     }
 }
 
@@ -138,7 +134,7 @@ private struct SelectiveFocusResolver: FocusResolver {
 
 private func makeSession(providerSessionID: String = "a") -> AgentSession {
     let event = AgentResponseEvent(
-        id: UUID(), provider: .claudeCode, providerSessionID: providerSessionID,
+        provider: .claudeCode, providerSessionID: providerSessionID,
         text: "done", cwd: "/tmp/repo",
         parentPID: 900, environment: [:], capturedAt: Date()
     )
@@ -147,7 +143,6 @@ private func makeSession(providerSessionID: String = "a") -> AgentSession {
         cwd: event.cwd,
         terminalContext: TerminalContext(event: event),
         processAncestry: [900, 20, 1],
-        tty: "/dev/ttys001",
         latestResponse: event,
         lastActivityAt: event.capturedAt
     )

@@ -1,34 +1,5 @@
 import Foundation
 
-/// Process ancestry and tty for the process that emitted an agent response, used by
-/// `AgentSessionRegistry`/focus resolvers to identify which terminal/multiplexer pane a session
-/// runs in.
-struct AgentProcessContext: Sendable, Equatable {
-    let ancestry: [Int32]
-    let tty: String?
-
-    /// Walks `parentPID`'s ancestry in `snapshot`. No snapshot (failed `ps`) degrades to an empty
-    /// context: session tracking and gating treat "no ancestry" as "unknown", never a crash.
-    static func capture(parentPID: Int32, in snapshot: ProcessSnapshot?) -> AgentProcessContext {
-        guard let snapshot else { return AgentProcessContext(ancestry: [], tty: nil) }
-        let records = snapshot.ancestry(from: parentPID)
-        return AgentProcessContext(ancestry: records.map(\.pid), tty: records.compactMap(\.tty).first)
-    }
-
-    /// Prefers the ancestry `RelayHook` captured itself (exact, and still correct after a
-    /// wrapper shell has exited); falls back to walking `event.parentPID` in `snapshot` for
-    /// envelopes from older helpers. The tty comes from the snapshot either way: the agent
-    /// process itself may have no tty (e.g. its stdio is piped), so this takes the first
-    /// non-nil tty found walking UP the ancestry chain, not just the agent's own entry.
-    static func resolve(for event: AgentResponseEvent, in snapshot: ProcessSnapshot?) -> AgentProcessContext {
-        if let ancestry = event.processAncestry, !ancestry.isEmpty {
-            let tty = ancestry.lazy.compactMap { snapshot?.record(pid: $0)?.tty }.first
-            return AgentProcessContext(ancestry: ancestry, tty: tty)
-        }
-        return capture(parentPID: event.parentPID, in: snapshot)
-    }
-}
-
 /// Publishes decoded `AgentResponseEvent`s into session intelligence (`AgentSessionRegistry`) and,
 /// only when auto-read is enabled, decides whether the producing session (`S`) should be spoken
 /// (mode `.automatic`).
@@ -97,11 +68,9 @@ actor AgentAutoReadCoordinator {
     func handle(_ event: AgentResponseEvent) async {
         // One snapshot per event, shared by ancestry capture, pruning, and every focus resolver.
         let snapshot = try? await processInspector.snapshot()
-        let captured = AgentProcessContext.resolve(for: event, in: snapshot)
         let session = await registry.upsert(
             response: event,
-            processAncestry: captured.ancestry,
-            tty: captured.tty
+            processAncestry: Self.processAncestry(for: event, in: snapshot)
         )
         diagnostics.append(
             stage: "coordinator",
@@ -176,6 +145,15 @@ actor AgentAutoReadCoordinator {
                 detail: "resolver=\(decision.resolverID) confidence=\(decision.confidence) reason=\(decision.reason)"
             )
         }
+    }
+
+    /// Prefers the ancestry `RelayHook` captured itself (still correct after a wrapper shell
+    /// exits); otherwise walks `event.parentPID` in `snapshot`. No snapshot gives no ancestry.
+    private static func processAncestry(for event: AgentResponseEvent, in snapshot: ProcessSnapshot?) -> [Int32] {
+        if let ancestry = event.processAncestry, !ancestry.isEmpty {
+            return ancestry
+        }
+        return snapshot?.ancestry(from: event.parentPID).map(\.pid) ?? []
     }
 
     private static func label(_ id: AgentSessionID) -> String {

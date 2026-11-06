@@ -71,11 +71,6 @@ final class PermissionsModel {
         opener.open(pane)
     }
 
-    /// One-click fix for a stale post-rebuild microphone grant.
-    func openMicrophoneSettings() {
-        opener.open(.microphone)
-    }
-
     /// On failure (e.g. a dev build outside /Applications) re-reads the real status instead of
     /// drifting, and posts a non-fatal message.
     func setLaunchAtLogin(_ enabled: Bool) {

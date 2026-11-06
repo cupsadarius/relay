@@ -6,7 +6,7 @@ final class GenericTerminalFocusResolverTests: XCTestCase {
     func testSingleDirectSessionWhoseAncestryContainsFrontmostAppIsFocused() async {
         let session = makeDirectSession(id: "a", ancestry: [900, 100, 20, 1])
         let context = FocusContext(
-            frontmostApplication: .init(pid: 20, bundleIdentifier: "com.example.Terminal", localizedName: "Terminal Host"),
+            frontmostApplication: .init(pid: 20, bundleIdentifier: "com.example.Terminal"),
             sessions: [session],
             processSnapshot: nil
         )
@@ -19,7 +19,7 @@ final class GenericTerminalFocusResolverTests: XCTestCase {
         let a = makeDirectSession(id: "a", ancestry: [900, 100, 20, 1])
         let b = makeDirectSession(id: "b", ancestry: [901, 101, 20, 1])
         let context = FocusContext(
-            frontmostApplication: .init(pid: 20, bundleIdentifier: nil, localizedName: "Any Terminal"),
+            frontmostApplication: .init(pid: 20, bundleIdentifier: nil),
             sessions: [a, b],
             processSnapshot: nil
         )
@@ -30,7 +30,7 @@ final class GenericTerminalFocusResolverTests: XCTestCase {
     func testDifferentFrontmostAppIsNotFocused() async {
         let session = makeDirectSession(id: "a", ancestry: [900, 100, 20, 1])
         let context = FocusContext(
-            frontmostApplication: .init(pid: 88, bundleIdentifier: "com.apple.Safari", localizedName: "Safari"),
+            frontmostApplication: .init(pid: 88, bundleIdentifier: "com.apple.Safari"),
             sessions: [session],
             processSnapshot: nil
         )
@@ -41,7 +41,7 @@ final class GenericTerminalFocusResolverTests: XCTestCase {
 
 private func makeDirectSession(id: String, ancestry: [Int32]) -> AgentSession {
     let event = AgentResponseEvent(
-        id: UUID(), provider: .claudeCode, providerSessionID: id,
+        provider: .claudeCode, providerSessionID: id,
         text: "done", cwd: "/tmp/\(id)",
         parentPID: ancestry.first ?? 0, environment: [:], capturedAt: Date()
     )
@@ -50,7 +50,6 @@ private func makeDirectSession(id: String, ancestry: [Int32]) -> AgentSession {
         cwd: event.cwd,
         terminalContext: TerminalContext(event: event),
         processAncestry: ancestry,
-        tty: nil,
         latestResponse: event,
         lastActivityAt: event.capturedAt
     )

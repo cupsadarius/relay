@@ -14,8 +14,6 @@ struct NewlineFramer {
         self.maxLineBytes = maxLineBytes
     }
 
-    var bufferedByteCount: Int { buffer.count }
-
     /// Appends `bytes` and calls `onLine` once per complete line (without its newline).
     /// Newline-terminated lines longer than `maxLineBytes` are skipped and reported via
     /// `onOversizedLine` with their byte count, and the lines after them still arrive. Lines

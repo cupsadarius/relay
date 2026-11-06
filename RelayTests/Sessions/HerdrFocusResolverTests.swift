@@ -2,7 +2,7 @@ import XCTest
 
 @testable import Relay
 
-private let emptySnapshot = try! ProcessSnapshot.parse("")
+private let emptySnapshot = ProcessSnapshot.parse("")
 
 final class HerdrFocusResolverTests: XCTestCase {
     func testFocusedPaneAndMatchingNativeAgentSessionIsFocused() async {
@@ -17,7 +17,7 @@ final class HerdrFocusResolverTests: XCTestCase {
         let resolver = HerdrFocusResolver(herdr: herdr, hostOwnership: ownership)
         let session = makeHerdrSession(provider: .claudeCode, sessionID: "claude-a", pane: "w1:p2")
         let context = FocusContext(
-            frontmostApplication: .init(pid: 20, bundleIdentifier: nil, localizedName: "Ghostty"),
+            frontmostApplication: .init(pid: 20, bundleIdentifier: nil),
             sessions: [session], processSnapshot: emptySnapshot
         )
         let decision = await resolver.resolve(session: session, context: context)
@@ -29,7 +29,7 @@ final class HerdrFocusResolverTests: XCTestCase {
         let resolver = HerdrFocusResolver(herdr: herdr, hostOwnership: StubHerdrHostOwnership(owns: false))
         let session = makeHerdrSession(provider: .claudeCode, sessionID: "a", pane: "w1:p2")
         let context = FocusContext(
-            frontmostApplication: .init(pid: 88, bundleIdentifier: "com.apple.Safari", localizedName: "Safari"),
+            frontmostApplication: .init(pid: 88, bundleIdentifier: "com.apple.Safari"),
             sessions: [session], processSnapshot: emptySnapshot
         )
         let decision = await resolver.resolve(session: session, context: context)
@@ -43,7 +43,7 @@ final class HerdrFocusResolverTests: XCTestCase {
         )
         let session = makeHerdrSession(provider: .codex, sessionID: "c", pane: "w1:p2")
         let context = FocusContext(
-            frontmostApplication: .init(pid: 20, bundleIdentifier: nil, localizedName: "Ghostty"), sessions: [session], processSnapshot: emptySnapshot)
+            frontmostApplication: .init(pid: 20, bundleIdentifier: nil), sessions: [session], processSnapshot: emptySnapshot)
         let decision = await resolver.resolve(session: session, context: context)
         XCTAssertEqual(decision.state, .notFocused)
     }
@@ -55,7 +55,7 @@ final class HerdrFocusResolverTests: XCTestCase {
         )
         let session = makeHerdrSession(provider: .claudeCode, sessionID: "a", pane: "w1:p2")
         let context = FocusContext(
-            frontmostApplication: .init(pid: 20, bundleIdentifier: nil, localizedName: "Ghostty"),
+            frontmostApplication: .init(pid: 20, bundleIdentifier: nil),
             sessions: [session],
             processSnapshot: nil
         )
@@ -76,13 +76,13 @@ private struct StubHerdrHostOwnership: HerdrHostOwnershipChecking {
 
 private func makeHerdrSession(provider: AgentProvider, sessionID: String, pane: String) -> AgentSession {
     let event = AgentResponseEvent(
-        id: UUID(), provider: provider, providerSessionID: sessionID,
+        provider: provider, providerSessionID: sessionID,
         text: "done", cwd: "/tmp/repo", parentPID: 900,
         environment: ["HERDR_SOCKET_PATH": "/tmp/herdr.sock", "HERDR_PANE_ID": pane], capturedAt: Date()
     )
     return AgentSession(
         id: .init(provider: provider, providerSessionID: sessionID), cwd: event.cwd,
-        terminalContext: TerminalContext(event: event), processAncestry: [], tty: nil,
+        terminalContext: TerminalContext(event: event), processAncestry: [],
         latestResponse: event, lastActivityAt: event.capturedAt
     )
 }

@@ -28,14 +28,16 @@ final class SpeechBackendsModelTests: XCTestCase {
     /// Pins the domain mapping `SpeechBackendsModel` wires into `SpeechModelController`:
     /// `speechModelManagers` (from `RelayRuntime.testing`) must land under `.dictation`, and
     /// `ttsModelManagers` under `.textToSpeech` — never swapped or merged into one domain.
-    func testModelControllerBackendKeysAreWiredToTheCorrectDomain() {
+    func testModelControllerBackendKeysAreWiredToTheCorrectDomain() async {
         let model = makeModel(
             speechModelManagers: ["a": StubModelManager(backendID: "a", modelIDs: [])],
             ttsModelManagers: ["kokoro": StubModelManager(backendID: "kokoro", modelIDs: [])]
         )
 
+        await model.models.refresh(domain: .dictation)
+        await model.models.refresh(domain: .textToSpeech)
         XCTAssertEqual(
-            model.models.backendKeys,
+            Set(model.models.models.keys),
             [
                 SpeechModelBackendKey(domain: .dictation, backendID: "a"),
                 SpeechModelBackendKey(domain: .textToSpeech, backendID: "kokoro"),

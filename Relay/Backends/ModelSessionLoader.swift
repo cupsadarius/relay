@@ -1,8 +1,7 @@
 import Foundation
 
-/// Single-flight, download-aware loader for one heavyweight on-device model session. Shared by
-/// the FluidAudio engines (Parakeet, Kokoro, PocketTTS), which each used to carry an identical
-/// copy of this state machine. Error types stay engine-specific through the injected closures.
+/// Single-flight, download-aware loader for one heavyweight on-device model session, shared by
+/// the FluidAudio engines. Error types stay engine-specific through the injected closures.
 ///
 /// Rules (pinned by `ModelSessionLoaderTests`):
 /// - Once a session is loaded, `load` is a no-op.
@@ -32,20 +31,18 @@ actor ModelSessionLoader<Session: Sendable> {
     private let loadLocal: @Sendable () async throws -> Session
     private let downloadAndLoad: @Sendable (@escaping Progress) async throws -> Session
 
-    /// The loaded session, or `nil` before a successful load and after `reset()`/`unload()`.
+    /// The loaded session, or `nil` before a successful load and after `reset()`.
     private(set) var session: Session?
     private var inFlightLoad: (task: Task<Void, Error>, kind: LoadKind)?
-    private var validatedModelsPresent: Bool
+    private var validatedModelsPresent = false
 
     init(
-        validatedModelsPresent: Bool = false,
         modelsNotDownloaded: @escaping @Sendable () -> any Error,
         mapLoadFailure: @escaping @Sendable (any Error) -> any Error,
         validateLocal: @escaping @Sendable () async throws -> Bool,
         loadLocal: @escaping @Sendable () async throws -> Session,
         downloadAndLoad: @escaping @Sendable (@escaping Progress) async throws -> Session
     ) {
-        self.validatedModelsPresent = validatedModelsPresent
         self.modelsNotDownloaded = modelsNotDownloaded
         self.mapLoadFailure = mapLoadFailure
         self.validateLocal = validateLocal
@@ -95,16 +92,6 @@ actor ModelSessionLoader<Session: Sendable> {
         }
         session = nil
         validatedModelsPresent = false
-    }
-
-    /// Awaits any in-flight load, then drops the session to free its memory. Keeps the cached
-    /// validation: the files are still on disk, so the next local load can skip the check.
-    func unload() async {
-        if let inFlightLoad {
-            _ = try? await inFlightLoad.task.value
-            clearIfCurrent(inFlightLoad.task)
-        }
-        session = nil
     }
 
     private func startLoad(allowDownload: Bool, progress: @escaping Progress) async throws {

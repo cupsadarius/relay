@@ -29,7 +29,6 @@ final class IntegrationManagerTests: XCTestCase {
         capturedAt: Date = Date(timeIntervalSince1970: 1_700_000_000)
     ) -> AgentResponseEvent {
         AgentResponseEvent(
-            id: UUID(),
             provider: provider,
             providerSessionID: providerSessionID,
             text: text,
@@ -387,27 +386,6 @@ final class IntegrationManagerTests: XCTestCase {
         XCTAssertTrue(speech.requests.isEmpty)
     }
 
-    func testOnResponseDefaultsToNoOpWhenNotConfigured() async {
-        let claudeEvent = event(provider: .claudeCode, providerSessionID: "claude-onresponse-3")
-        let claude = SpyIntegration(provider: .claudeCode, result: .success(claudeEvent))
-        let speech = FakeSpeechCoordinator()
-        var continuation: AsyncStream<HookEnvelope>.Continuation!
-        let events = AsyncStream<HookEnvelope> { continuation = $0 }
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [claude],
-            speechCoordinator: speech
-        )
-        manager.start()
-        defer { manager.stop() }
-
-        continuation.yield(envelope(provider: .claudeCode))
-
-        await waitUntil { manager.latestResponse != nil }
-
-        XCTAssertTrue(speech.requests.isEmpty)
-    }
-
     // MARK: - speakLatest
 
     func testSpeakLatestPreprocessesAutomaticStyleThenSubmitsUserRequestedSpeech() async throws {
@@ -427,7 +405,7 @@ final class IntegrationManagerTests: XCTestCase {
         let spoke = try await manager.speakLatest()
 
         XCTAssertTrue(spoke)
-        let expectedText = RulesSpeechPreprocessor().prepare(text: rawText, mode: .automatic)
+        let expectedText = RulesSpeechPreprocessor().prepare(text: rawText)
         XCTAssertEqual(speech.requests.count, 1)
         let request = try XCTUnwrap(speech.requests.first)
         XCTAssertEqual(request.text, expectedText)

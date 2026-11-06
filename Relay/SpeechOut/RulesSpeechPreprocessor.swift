@@ -21,7 +21,7 @@ struct RulesSpeechPreprocessor {
 
     private static let whitespace = try! NSRegularExpression(pattern: #"\s+"#)
 
-    func prepare(text: String, mode: SpeechMode) -> String {
+    func prepare(text: String) -> String {
         var prepared = replacingFencedCode(in: text)
         for rule in Self.rules {
             prepared = Self.replacingMatches(in: prepared, using: rule.expression, with: rule.template)

@@ -93,12 +93,6 @@ final class AppModel {
     }
 }
 
-/// Default presenter for tests and any composition that doesn't host the overlay panel.
-@MainActor
-final class NoOpActivityOverlayPresenter: ActivityOverlayPresenting {
-    func update(state: ActivityOverlayState, style: ActivityOverlayStyle) {}
-}
-
 extension HotkeyAction {
     var title: String {
         switch self {

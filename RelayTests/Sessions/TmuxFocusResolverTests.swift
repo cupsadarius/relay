@@ -4,18 +4,18 @@ import XCTest
 
 final class TmuxFocusResolverTests: XCTestCase {
     /// Ghostty (20) -> login (100) -> tmux clients 300 and 301.
-    private let snapshot = try! ProcessSnapshot.parse(
+    private let snapshot = ProcessSnapshot.parse(
         """
-          1   0 ??      launchd
-         20   1 ??      Ghostty
-        100  20 ttys001 login
-        300 100 ttys001 tmux
-        301 100 ttys002 tmux
+          1   0 launchd
+         20   1 Ghostty
+        100  20 login
+        300 100 tmux
+        301 100 tmux
         """)
 
     private func context(frontmostPID: Int32 = 20, snapshot: ProcessSnapshot?) -> FocusContext {
         FocusContext(
-            frontmostApplication: .init(pid: frontmostPID, bundleIdentifier: nil, localizedName: "Terminal"),
+            frontmostApplication: .init(pid: frontmostPID, bundleIdentifier: nil),
             sessions: [],
             processSnapshot: snapshot
         )
@@ -61,13 +61,13 @@ private struct StubTmuxRunner: TmuxCommandRunning {
 
 private func makeTmuxSession(pane: String) -> AgentSession {
     let event = AgentResponseEvent(
-        id: UUID(), provider: .claudeCode, providerSessionID: "a",
+        provider: .claudeCode, providerSessionID: "a",
         text: "done", cwd: "/tmp/repo", parentPID: 900,
         environment: ["TMUX": "/tmp/tmux.sock,10,0", "TMUX_PANE": pane], capturedAt: Date()
     )
     return AgentSession(
         id: .init(provider: .claudeCode, providerSessionID: "a"), cwd: event.cwd,
-        terminalContext: TerminalContext(event: event), processAncestry: [], tty: nil,
+        terminalContext: TerminalContext(event: event), processAncestry: [],
         latestResponse: event, lastActivityAt: event.capturedAt
     )
 }

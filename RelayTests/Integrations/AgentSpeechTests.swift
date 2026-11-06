@@ -5,7 +5,7 @@ import XCTest
 final class AgentSpeechTests: XCTestCase {
     private func event(_ provider: AgentProvider, session: String) -> AgentResponseEvent {
         AgentResponseEvent(
-            id: UUID(), provider: provider, providerSessionID: session,
+            provider: provider, providerSessionID: session,
             text: "raw", cwd: "/tmp", parentPID: 1, environment: [:], capturedAt: Date()
         )
     }

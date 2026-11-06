@@ -27,7 +27,7 @@ struct CodexInstaller {
     ///   - helperPath: Absolute path to the stable `RelayHook` helper.
     init(
         baseDirectory: URL = CodexInstaller.defaultBaseDirectory(),
-        helperPath: String = CodexInstaller.defaultHelperPath(),
+        helperPath: String = RelayPaths.stableHelperURL().path,
         migratesLegacyEntries: Bool = BuildFlavor.current.ownsLegacyHookEntries
     ) {
         self.configFile = StopHookConfigFile(
@@ -46,16 +46,6 @@ struct CodexInstaller {
             return URL(fileURLWithPath: override, isDirectory: true)
         }
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex", isDirectory: true)
-    }
-
-    /// The stable, app-bundle-independent helper location `HelperInstaller` maintains.
-    static func defaultHelperPath() -> String {
-        HelperInstaller.stableHelperURL().path
-    }
-
-    /// Structural: true for any build's Relay hook command for this provider.
-    static func isRelayHookCommand(_ command: String) -> Bool {
-        StopHookConfigFile.isRelayHookCommand(command, provider: .codex)
     }
 
     /// Throws `.hooksDisabledInConfig` without touching `hooks.json` when `config.toml`

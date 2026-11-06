@@ -6,8 +6,7 @@ actor AgentSessionRegistry {
     @discardableResult
     func upsert(
         response: AgentResponseEvent,
-        processAncestry: [Int32],
-        tty: String?
+        processAncestry: [Int32]
     ) -> AgentSession {
         let id = response.sessionID
         let value = AgentSession(
@@ -15,7 +14,6 @@ actor AgentSessionRegistry {
             cwd: response.cwd,
             terminalContext: TerminalContext(event: response),
             processAncestry: processAncestry,
-            tty: tty,
             latestResponse: response,
             lastActivityAt: response.capturedAt
         )

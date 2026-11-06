@@ -19,7 +19,7 @@ final class ReplayLastResolverTests: XCTestCase {
     }
 
     private func upsert(_ registry: AgentSessionRegistry, _ id: String, ancestry: [Int32] = []) async -> AgentSession {
-        await registry.upsert(response: .fixture(providerSessionID: id), processAncestry: ancestry, tty: nil)
+        await registry.upsert(response: .fixture(providerSessionID: id), processAncestry: ancestry)
     }
 
     func testConfidentlyFocusedSessionWins() async {

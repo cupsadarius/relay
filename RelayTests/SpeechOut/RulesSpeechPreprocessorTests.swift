@@ -20,7 +20,7 @@ final class RulesSpeechPreprocessorTests: XCTestCase {
             After.
             """
 
-        let output = subject.prepare(text: source, mode: .automatic)
+        let output = subject.prepare(text: source)
 
         XCTAssertEqual(
             output,
@@ -44,7 +44,7 @@ final class RulesSpeechPreprocessorTests: XCTestCase {
             After.
             """
 
-        let output = subject.prepare(text: source, mode: .userRequested)
+        let output = subject.prepare(text: source)
 
         XCTAssertEqual(
             output,
@@ -61,7 +61,7 @@ final class RulesSpeechPreprocessorTests: XCTestCase {
             """
 
         XCTAssertEqual(
-            subject.prepare(text: source, mode: .automatic),
+            subject.prepare(text: source),
             "Release notes Read the migration guide and run tests."
         )
     }
@@ -75,7 +75,7 @@ final class RulesSpeechPreprocessorTests: XCTestCase {
             """
 
         XCTAssertEqual(
-            subject.prepare(text: source, mode: .automatic),
+            subject.prepare(text: source),
             "Shopping list: apples. pears. plums."
         )
     }
@@ -84,7 +84,7 @@ final class RulesSpeechPreprocessorTests: XCTestCase {
         let source = "First\n\n\nSecond    third\t\t\tfourth"
 
         XCTAssertEqual(
-            subject.prepare(text: source, mode: .automatic),
+            subject.prepare(text: source),
             "First Second third fourth"
         )
     }
@@ -96,7 +96,7 @@ final class RulesSpeechPreprocessorTests: XCTestCase {
             let secret = true
             """
 
-        let output = subject.prepare(text: source, mode: .automatic)
+        let output = subject.prepare(text: source)
 
         XCTAssertEqual(output, "Before. \(codeBlockCue)")
         XCTAssertFalse(output.contains("secret"))
@@ -110,7 +110,7 @@ final class RulesSpeechPreprocessorTests: XCTestCase {
               { "secret": true }
             """
 
-        let output = subject.prepare(text: source, mode: .userRequested)
+        let output = subject.prepare(text: source)
 
         XCTAssertEqual(output, "Before. \(codeBlockCue)")
         XCTAssertFalse(output.contains("secret"))
@@ -128,7 +128,7 @@ final class RulesSpeechPreprocessorTests: XCTestCase {
             After.
             """
 
-        let output = subject.prepare(text: source, mode: .automatic)
+        let output = subject.prepare(text: source)
 
         XCTAssertEqual(output, "Before. \(codeBlockCue) After.")
         XCTAssertFalse(output.contains("hidden"))
@@ -143,7 +143,7 @@ final class RulesSpeechPreprocessorTests: XCTestCase {
             After.
             """
 
-        let output = subject.prepare(text: source, mode: .userRequested)
+        let output = subject.prepare(text: source)
 
         XCTAssertEqual(output, "Before. \(codeBlockCue) After.")
         XCTAssertFalse(output.contains("hidden"))
@@ -153,7 +153,7 @@ final class RulesSpeechPreprocessorTests: XCTestCase {
         let source = "Explain ```this phrase``` briefly."
 
         XCTAssertEqual(
-            subject.prepare(text: source, mode: .automatic),
+            subject.prepare(text: source),
             "Explain this phrase briefly."
         )
     }
@@ -167,7 +167,7 @@ final class RulesSpeechPreprocessorTests: XCTestCase {
             """
 
         XCTAssertEqual(
-            subject.prepare(text: source, mode: .automatic),
+            subject.prepare(text: source),
             "Release notes Migration guide Read this now."
         )
     }

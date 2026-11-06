@@ -53,36 +53,6 @@ final class ClaudeCodeInstallerTests: XCTestCase {
         }
     }
 
-    // MARK: - Identification logic
-
-    func testRelayOwnedCommandRecognizedRegardlessOfAbsolutePath() {
-        XCTAssertTrue(
-            ClaudeCodeInstaller.isRelayHookCommand(
-                "\"/Applications/Relay.app/Contents/Helpers/RelayHook\" --provider claude-code"
-            ))
-        XCTAssertTrue(
-            ClaudeCodeInstaller.isRelayHookCommand(
-                "\"/Users/me/Downloads/Relay 2.app/Contents/Helpers/RelayHook\" --provider claude-code"
-            ))
-    }
-
-    func testUnrelatedCommandsAreNotRecognizedAsRelayOwned() {
-        XCTAssertFalse(ClaudeCodeInstaller.isRelayHookCommand("echo hello"))
-        XCTAssertFalse(
-            ClaudeCodeInstaller.isRelayHookCommand(
-                "\"/usr/local/bin/some-other-tool\" --provider claude-code"
-            ))
-        XCTAssertFalse(
-            ClaudeCodeInstaller.isRelayHookCommand(
-                "\"/Applications/Relay.app/Contents/Helpers/RelayHook\" --provider codex"
-            ))
-        // Same basename, but not the Relay flag suffix.
-        XCTAssertFalse(
-            ClaudeCodeInstaller.isRelayHookCommand(
-                "\"/Applications/Relay.app/Contents/Helpers/RelayHook\""
-            ))
-    }
-
     // MARK: - Base directory resolution
 
     func testDefaultBaseDirectoryUsesClaudeConfigDirWhenSet() {

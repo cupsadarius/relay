@@ -16,7 +16,7 @@ struct ClaudeCodeInstaller {
     ///   - helperPath: Absolute path to the stable `RelayHook` helper.
     init(
         baseDirectory: URL = ClaudeCodeInstaller.defaultBaseDirectory(),
-        helperPath: String = ClaudeCodeInstaller.defaultHelperPath(),
+        helperPath: String = RelayPaths.stableHelperURL().path,
         migratesLegacyEntries: Bool = BuildFlavor.current.ownsLegacyHookEntries
     ) {
         self.configFile = StopHookConfigFile(
@@ -33,16 +33,6 @@ struct ClaudeCodeInstaller {
             return URL(fileURLWithPath: override, isDirectory: true)
         }
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude", isDirectory: true)
-    }
-
-    /// The stable, app-bundle-independent helper location `HelperInstaller` maintains.
-    static func defaultHelperPath() -> String {
-        HelperInstaller.stableHelperURL().path
-    }
-
-    /// Structural: true for any build's Relay hook command for this provider.
-    static func isRelayHookCommand(_ command: String) -> Bool {
-        StopHookConfigFile.isRelayHookCommand(command, provider: .claudeCode)
     }
 
     func install() throws {

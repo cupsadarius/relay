@@ -77,21 +77,15 @@ final class StopHookConfigFileTests: XCTestCase {
     }
 
     func testRelayOwnedCommandIsProviderSpecificAndPathIndependent() {
-        XCTAssertTrue(
-            StopHookConfigFile.isRelayHookCommand(
-                "\"/Users/me/Downloads/Relay 2.app/Contents/Helpers/RelayHook\" --provider claude-code",
-                provider: .claudeCode
-            ))
-        XCTAssertFalse(
-            StopHookConfigFile.isRelayHookCommand(
-                "\"/Applications/Relay.app/Contents/Helpers/RelayHook\" --provider claude-code",
-                provider: .codex
-            ))
-        XCTAssertFalse(
-            StopHookConfigFile.isRelayHookCommand(
-                "\"/usr/local/bin/other\" --provider codex",
-                provider: .codex
-            ))
+        func isRelay(_ command: String, _ provider: AgentProvider) -> Bool {
+            StopHookConfigFile.helperPath(inCommand: command, provider: provider) != nil
+        }
+        XCTAssertTrue(isRelay("\"/Users/me/Downloads/Relay 2.app/Contents/Helpers/RelayHook\" --provider claude-code", .claudeCode))
+        XCTAssertTrue(isRelay("\"/Applications/Relay.app/Contents/Helpers/RelayHook\" --provider codex", .codex))
+        XCTAssertFalse(isRelay("\"/Applications/Relay.app/Contents/Helpers/RelayHook\" --provider claude-code", .codex))
+        XCTAssertFalse(isRelay("\"/usr/local/bin/other\" --provider codex", .codex))
+        XCTAssertFalse(isRelay("\"/Applications/Relay.app/Contents/Helpers/RelayHook\"", .codex))
+        XCTAssertFalse(isRelay("echo hello", .claudeCode))
     }
 
     // MARK: - Install

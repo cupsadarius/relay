@@ -49,11 +49,17 @@ final class NewlineFramerTests: XCTestCase {
                 onOversizedUnterminated: { unterminated.append($0) }
             ))
         XCTAssertEqual(unterminated, [5])
-        XCTAssertEqual(framer.bufferedByteCount, 0)
+
+        var lines: [String] = []
+        _ = framer.append(
+            ArraySlice(bytes("1\n")),
+            onLine: { lines.append($0) },
+            onOversizedLine: { _ in XCTFail() },
+            onOversizedUnterminated: { _ in XCTFail() }
+        )
+        XCTAssertEqual(lines, ["1"])
     }
 
-    /// Ported from `UnixSocketServerTests.testOversizedTerminatedLineIsReportedAndFollowingLinesStillArrive`
-    /// (which drove `UnixSocketClientConnection.append` directly) at the real limit.
     func testOversizedTerminatedLineReportsItsByteCountAndFollowingLinesStillArrive() {
         var framer = NewlineFramer(maxLineBytes: UnixSocketServer.maxLineBytes)
         var lines: [String] = []

@@ -61,24 +61,6 @@ protocol FocusResolver: Sendable {
 }
 
 protocol SessionFocusResolving: Sendable {
-    func resolve(session: AgentSession) async -> FocusDecision
-
-    /// Resolves `sessions` in order and stops at the first confidently focused one. Conformers
-    /// that can share one context across sessions (`FocusResolutionService`) use
-    /// `processSnapshot` for it; the default below simply calls `resolve(session:)` per session.
+    /// Resolves `sessions` in order and stops at the first confidently focused one.
     func resolveFocus(among sessions: [AgentSession], processSnapshot: ProcessSnapshot?) async -> FocusResolution
-}
-
-extension SessionFocusResolving {
-    func resolveFocus(among sessions: [AgentSession], processSnapshot: ProcessSnapshot?) async -> FocusResolution {
-        var decisions: [FocusDecision] = []
-        for session in sessions {
-            let decision = await resolve(session: session)
-            decisions.append(decision)
-            if decision.isConfidentlyFocused {
-                return FocusResolution(focused: session, decisions: decisions)
-            }
-        }
-        return FocusResolution(focused: nil, decisions: decisions)
-    }
 }

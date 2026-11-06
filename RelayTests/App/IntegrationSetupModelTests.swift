@@ -281,7 +281,6 @@ final class IntegrationSetupModelTests: XCTestCase {
 
     func testLatestAgentResponseAvailableReflectsTheInjectedManager() async {
         let event = AgentResponseEvent(
-            id: UUID(),
             provider: .claudeCode,
             providerSessionID: "session-1",
             text: "All done.",
@@ -317,7 +316,6 @@ final class IntegrationSetupModelTests: XCTestCase {
     func testIntegrationStatusPrefersActiveRuntimeStatusOverInstallerStatus() async {
         let claudeInstaller = makeClaudeInstaller()
         let event = AgentResponseEvent(
-            id: UUID(),
             provider: .claudeCode,
             providerSessionID: "session-3",
             text: "All done.",
@@ -488,7 +486,6 @@ final class IntegrationSetupModelTests: XCTestCase {
     func testUninstallAfterRuntimeActiveReportsNotInstalledInsteadOfStaleActive() async {
         let claudeInstaller = makeClaudeInstaller()
         let event = AgentResponseEvent(
-            id: UUID(),
             provider: .claudeCode,
             providerSessionID: "session-4",
             text: "All done.",
@@ -658,7 +655,6 @@ private struct AutoReadWiringHarness {
 @MainActor
 private func makeAutoReadWiringHarness(focus: FocusDecision, autoRead: Bool) -> AutoReadWiringHarness {
     let event = AgentResponseEvent(
-        id: UUID(),
         provider: .claudeCode,
         providerSessionID: "wiring-session",
         text: "All wired up.",
@@ -699,7 +695,9 @@ private func makeAutoReadWiringHarness(focus: FocusDecision, autoRead: Bool) -> 
 
 private struct StubWiringSessionFocusResolver: SessionFocusResolving {
     let decision: FocusDecision
-    func resolve(session: AgentSession) async -> FocusDecision { decision }
+    func resolveFocus(among sessions: [AgentSession], processSnapshot: ProcessSnapshot?) async -> FocusResolution {
+        FocusResolution(focused: decision.isConfidentlyFocused ? sessions.first : nil, decisions: sessions.isEmpty ? [] : [decision])
+    }
 }
 
 /// `@unchecked Sendable`: `AgentAutoReadCoordinator` requires `any SpeechSubmitting & Sendable`

@@ -48,13 +48,6 @@ final class ParakeetBackendTests: XCTestCase {
         XCTAssertEqual(availability, .modelNotDownloaded)
     }
 
-    func testIdentifiesAsParakeet() {
-        let backend = makeBackend(FakeParakeetEngine())
-
-        XCTAssertEqual(backend.id, "parakeet")
-        XCTAssertEqual(backend.displayName, "Parakeet")
-    }
-
     func testAvailabilityIsModelNotDownloadedWhenModelsAreAbsent() async {
         let engine = FakeParakeetEngine()
         engine.modelsPresent = false

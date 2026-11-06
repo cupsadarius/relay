@@ -28,15 +28,15 @@ struct SpeechOutputServices {
 struct SpeechInputServices {
     let sttRegistry: [String: any SpeechToTextBackend]
     let speechModelManagers: [String: any SpeechModelManaging]
-    let dictationCoordinator: (any DictationCoordinating)?
+    let dictationCoordinator: any DictationCoordinating
 }
 
 /// Agent-integration services: the fixed-path Unix-socket receiver, the manager that decodes and
 /// dispatches hook events (wired to auto-read), the per-provider installers, and the bundled
 /// `RelayHook` helper installer/location.
 struct IntegrationServices {
-    /// Where `IntegrationSetupModel.start()` opens the hook socket. `productionSocketPath` in the
-    /// app; a short temp path in tests (`RelayRuntime.testing`), so tests never bind the real one.
+    /// `RelayPaths.socketPath()` in the app; a short temp path in tests, so tests never bind the
+    /// real socket.
     let socketPath: String
     let hookEnvelopeReceiver: HookEnvelopeReceiver
     let integrationManager: IntegrationManager
@@ -44,10 +44,6 @@ struct IntegrationServices {
     let codexInstaller: CodexInstaller
     let helperInstaller: HelperInstaller
     let bundledHelperURL: URL
-
-    /// This build's socket (`Relay/relay.sock` for Release, `Relay Debug/relay.sock` for Debug).
-    /// `RelayHook` derives the same path from its own location.
-    static var productionSocketPath: String { RelayPaths.socketPath() }
 }
 
 /// The composition root for Relay's dependency graph. Constructs every subsystem; `AppModel`
@@ -171,16 +167,12 @@ final class RelayRuntime {
         }
         resolvers.append(GenericTerminalFocusResolver())
 
-        let focusResolution = FocusResolutionService(
-            registry: sessionRegistry,
-            frontmostApps: frontmostApps,
-            processSnapshots: processInspector,
-            resolvers: resolvers
-        )
+        let focusResolution = FocusResolutionService(frontmostApps: frontmostApps, resolvers: resolvers)
+        let preprocessor = RulesSpeechPreprocessor()
         let autoReadCoordinator = AgentAutoReadCoordinator(
             registry: sessionRegistry,
             focus: focusResolution,
-            preprocess: { RulesSpeechPreprocessor().prepare(text: $0, mode: .automatic) },
+            preprocess: { preprocessor.prepare(text: $0) },
             speech: coordinator,
             autoReadEnabled: { settings.value.autoReadEnabled },
             diagnostics: integrationDiagnosticsLog,
@@ -255,7 +247,7 @@ final class RelayRuntime {
                 dictationCoordinator: dictation
             ),
             integrations: IntegrationServices(
-                socketPath: IntegrationServices.productionSocketPath,
+                socketPath: RelayPaths.socketPath(),
                 hookEnvelopeReceiver: hookEnvelopeReceiver,
                 integrationManager: integrationManager,
                 claudeCodeInstaller: ClaudeCodeInstaller(),
@@ -268,7 +260,7 @@ final class RelayRuntime {
                 accessibility: AccessibilityService(),
                 clipboard: ClipboardService(gate: clipboardGate)
             ),
-            preprocessor: RulesSpeechPreprocessor()
+            preprocessor: preprocessor
         )
     }
 }

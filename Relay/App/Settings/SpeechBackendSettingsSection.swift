@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct SpeechBackendSettingsSection<LeadingContent: View, ExpandedContent: View>: View {
+struct SpeechBackendSettingsSection<ExpandedContent: View>: View {
     let title: String
     let backends: [BackendStatus]
     let domain: SpeechModelDomain
@@ -9,7 +9,6 @@ struct SpeechBackendSettingsSection<LeadingContent: View, ExpandedContent: View>
     let setEnabled: (String, Bool) -> Void
     let move: (String, Bool) -> Void
     let hasExpandedContent: (String) -> Bool
-    let leadingContent: () -> LeadingContent
     let expandedContent: (String) -> ExpandedContent
     @State private var expandedBackendIDs: Set<String> = []
 
@@ -22,7 +21,6 @@ struct SpeechBackendSettingsSection<LeadingContent: View, ExpandedContent: View>
         setEnabled: @escaping (String, Bool) -> Void,
         move: @escaping (String, Bool) -> Void,
         hasExpandedContent: @escaping (String) -> Bool = { _ in false },
-        @ViewBuilder leadingContent: @escaping () -> LeadingContent = { EmptyView() },
         @ViewBuilder expandedContent: @escaping (String) -> ExpandedContent
     ) {
         self.title = title
@@ -33,13 +31,11 @@ struct SpeechBackendSettingsSection<LeadingContent: View, ExpandedContent: View>
         self.setEnabled = setEnabled
         self.move = move
         self.hasExpandedContent = hasExpandedContent
-        self.leadingContent = leadingContent
         self.expandedContent = expandedContent
     }
 
     var body: some View {
         Section(title) {
-            leadingContent()
             ForEach(backends) { backend in
                 let key = SpeechModelBackendKey(domain: domain, backendID: backend.id)
                 let rows = controller.models[key] ?? []

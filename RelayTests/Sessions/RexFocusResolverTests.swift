@@ -70,7 +70,7 @@ private struct StubRexQuery: RexQuerying {
 
 private func rexContext(_ session: AgentSession, bundleID: String) -> FocusContext {
     FocusContext(
-        frontmostApplication: .init(pid: 20, bundleIdentifier: bundleID, localizedName: "App"),
+        frontmostApplication: .init(pid: 20, bundleIdentifier: bundleID),
         sessions: [session],
         processSnapshot: nil
     )
@@ -78,14 +78,14 @@ private func rexContext(_ session: AgentSession, bundleID: String) -> FocusConte
 
 private func makeRexSession(block: String) -> AgentSession {
     let event = AgentResponseEvent(
-        id: UUID(), provider: .claudeCode, providerSessionID: "a",
+        provider: .claudeCode, providerSessionID: "a",
         text: "done", cwd: "/tmp/repo", parentPID: 900,
         environment: ["REX_SERVER": "unix:///tmp/rex.sock", "REX_SESSION": "session:1", "REX_BLOCK": block],
         capturedAt: Date()
     )
     return AgentSession(
         id: .init(provider: .claudeCode, providerSessionID: "a"), cwd: event.cwd,
-        terminalContext: TerminalContext(event: event), processAncestry: [], tty: nil,
+        terminalContext: TerminalContext(event: event), processAncestry: [],
         latestResponse: event, lastActivityAt: event.capturedAt
     )
 }
