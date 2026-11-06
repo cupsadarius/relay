@@ -24,6 +24,19 @@ struct PipelineRun: Identifiable, Equatable, Sendable {
 
     var isLive: Bool { steps.values.contains { $0.state == .active } }
 
+    /// The step that ended the run early, if any. A failure whose fallback branch finished did
+    /// not end the run.
+    var stopReason: (step: PipelineStep, status: PipelineStepStatus)? {
+        let branches = PipelineGraph.of(flow).edges.filter(\.isBranch)
+        for step in reachedSteps {
+            let status = status(of: step)
+            guard status.state == .failed || status.state == .stopped else { continue }
+            let recovered = branches.contains { $0.from == step && self.status(of: $0.to).state == .done }
+            if !recovered { return (step, status) }
+        }
+        return nil
+    }
+
     /// The steps this run reached, in graph order.
     var reachedSteps: [PipelineStep] {
         PipelineGraph.of(flow).nodes.map(\.step).filter { status(of: $0).state != .pending }
@@ -179,8 +192,9 @@ final class PipelineRunStore {
         let visibleRuns = runs.filter { visible.contains($0.flow) }
         let live = visibleRuns.first(where: \.isLive)
         if let selected, let picked = visibleRuns.first(where: { $0.id == selected.id }) {
-            if let live, live.id != picked.id, now.timeIntervalSince(selected.at) >= 10 { return live }
-            return picked
+            let isFresh = now.timeIntervalSince(selected.at) < 10
+            let newerRunStarted = visibleRuns.contains { $0.startedAt > selected.at }
+            if isFresh || (live == nil && !newerRunStarted) || live?.id == picked.id { return picked }
         }
         return live ?? visibleRuns.first
     }

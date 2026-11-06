@@ -276,6 +276,7 @@ actor MicrophoneCapture: MicrophoneCapturing {
             guard activeSession == session else { return }
             accumulator.reset()
             state = .failedRecording(session, error)
+            tracer?.fail(.recording, Self.reason(error))
         case .idle, .failedStarting, .failedRecording, .stopping:
             break
         }

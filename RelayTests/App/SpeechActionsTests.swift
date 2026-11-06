@@ -32,7 +32,7 @@ final class SpeechActionsTests: XCTestCase {
     }
 
     func testReadSelectionWithNothingSelectedStopsAtTheTextStep() async {
-        let (actions, runtime) = makeActions(selection: SpySelectionReader(error: .noUsableSelection))
+        let (actions, runtime) = makeActions(selection: SpySelectionReader(error: SelectionReadingError.noUsableSelection))
         let events = runtime.pipeline.events()
 
         await actions.readSelection()
@@ -44,6 +44,19 @@ final class SpeechActionsTests: XCTestCase {
         XCTAssertEqual(steps.first?.1, .finished("Read selection"))
         XCTAssertEqual(steps.last?.0, .source)
         XCTAssertEqual(steps.last?.1, .stopped("Nothing selected"))
+    }
+
+    func testCancelledSelectionReadStopsTheTextStep() async {
+        let (actions, runtime) = makeActions(selection: SpySelectionReader(error: CancellationError()))
+        let events = runtime.pipeline.events()
+
+        await actions.readSelection()
+        runtime.pipeline.finish()
+
+        var last: (PipelineStep, PipelinePhase)?
+        for await event in events { last = (event.step, event.phase) }
+        XCTAssertEqual(last?.0, .source)
+        XCTAssertEqual(last?.1, .stopped("Cancelled"))
     }
 
     func testReadSelectionHandsItsRunToSpeech() async {

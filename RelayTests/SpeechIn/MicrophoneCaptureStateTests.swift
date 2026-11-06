@@ -70,6 +70,22 @@ final class MicrophoneCaptureStateTests: XCTestCase {
         XCTAssertEqual(steps.last, .init(step: .recording, phase: .finished("1.5 s")))
     }
 
+    func testDeviceFailureDuringRecordingIsAnnouncedAtOnce() async throws {
+        let recorder = PipelineEventRecorder()
+        let source = FakeAudioSource()
+        let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
+        await capture.setTracer(recorder.tracer(.dictation))
+        try await capture.start(onLevel: { _ in })
+        await source.failTerminally(MicrophoneCaptureError.unavailable("The audio input device changed."))
+        await capture.cancel()
+
+        let steps = await recorder.steps()
+        XCTAssertEqual(
+            steps.last,
+            .init(step: .recording, phase: .failed("Microphone capture is unavailable: The audio input device changed."))
+        )
+    }
+
     func testCancelledRecordingIsAnnouncedAsStopped() async throws {
         let recorder = PipelineEventRecorder()
         let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: FakeAudioSource())

@@ -51,7 +51,13 @@ final class SpeechActions {
         let tracer = beginRun("Read selection")
         tracer.start(.source, "Reading selection")
         do {
-            let selection = try await selectionReader.readSelection()
+            let selection: SelectionResult
+            do {
+                selection = try await selectionReader.readSelection()
+            } catch is CancellationError {
+                tracer.stop(.source, "Cancelled")
+                throw CancellationError()
+            }
             diagnostics.record(selection.source == .accessibility ? .selectionAccessibility : .selectionClipboard)
             tracer.finish(
                 .source,

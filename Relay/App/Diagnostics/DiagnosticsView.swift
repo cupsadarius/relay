@@ -115,10 +115,16 @@ struct DiagnosticsView: View {
                         Spacer()
                     }
                     PipelineGraphView(run: run)
-                    if let reason = stopReason(of: run) {
-                        Label(reason.text, systemImage: reason.state.symbol)
-                            .font(.callout)
-                            .foregroundStyle(reason.state.tint)
+                    if let reason = run.stopReason {
+                        let state = reason.status.state
+                        Label(
+                            state == .failed
+                                ? "\(reason.step.title) failed: \(reason.status.detail)"
+                                : "Stopped at \(reason.step.title): \(reason.status.detail)",
+                            systemImage: state.symbol
+                        )
+                        .font(.callout)
+                        .foregroundStyle(state.tint)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -128,15 +134,6 @@ struct DiagnosticsView: View {
                     .frame(maxWidth: .infinity, minHeight: 90)
             }
         }
-    }
-
-    private func stopReason(of run: PipelineRun) -> (text: String, state: PipelineStepState)? {
-        for step in run.reachedSteps {
-            let status = run.status(of: step)
-            if status.state == .failed { return ("\(step.title) failed: \(status.detail)", .failed) }
-            if status.state == .stopped { return ("Stopped at \(step.title): \(status.detail)", .stopped) }
-        }
-        return nil
     }
 
     // MARK: Run list

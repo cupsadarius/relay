@@ -90,6 +90,29 @@ final class PipelineRunStoreTests: XCTestCase {
         )
     }
 
+    func testAnOldSelectionDoesNotComeBackAfterANewerRunEnds() {
+        let picked = PipelineRun(id: UUID(), flow: .dictation, startedAt: t0)
+        let newer = PipelineRun(id: UUID(), flow: .dictation, startedAt: t0.addingTimeInterval(15))
+        let all = Set(PipelineFlow.allCases)
+
+        XCTAssertEqual(
+            PipelineRunStore.displayedRun(in: [newer, picked], visible: all, selected: (picked.id, t0), now: t0.addingTimeInterval(20))?.id,
+            newer.id
+        )
+    }
+
+    func testStopReasonIgnoresAFailureThatALaterStepRecoveredFrom() {
+        var run = PipelineRun(id: UUID(), flow: .dictation, startedAt: t0)
+        run.steps[.transcribe] = PipelineStepStatus(state: .failed, detail: "Parakeet failed")
+        run.steps[.fallback] = PipelineStepStatus(state: .done, detail: "Whisper")
+        run.steps[.cleanUp] = PipelineStepStatus(state: .done)
+        run.steps[.insert] = PipelineStepStatus(state: .done, detail: "Pasted")
+        XCTAssertNil(run.stopReason)
+
+        run.steps[.insert] = PipelineStepStatus(state: .failed, detail: "Could not insert the text")
+        XCTAssertEqual(run.stopReason?.step, .insert)
+    }
+
     func testBusDeliversEventsToTheStoreInOrder() async {
         let bus = PipelineEventBus()
         let store = PipelineRunStore()
