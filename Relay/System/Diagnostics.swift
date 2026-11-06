@@ -86,6 +86,8 @@ enum DictationDiagnostic: Equatable, Sendable {
     case listening, processing
     case inserted(TextInsertionMechanism)
     case failed(DictationFailureStage)
+    case microphoneStillOpen(MicrophoneStopPath)
+    case microphoneFallback(missingName: String)
 
     var message: String {
         switch self {
@@ -97,6 +99,8 @@ enum DictationDiagnostic: Equatable, Sendable {
             case .paste: "Dictation inserted via paste"
             }
         case let .failed(stage): "Dictation failed during \(stage.message)"
+        case let .microphoneStillOpen(path): "Microphone still open after dictation stopped (\(path.rawValue))"
+        case let .microphoneFallback(name): "\(name) is not connected. Using the system default microphone."
         }
     }
 }

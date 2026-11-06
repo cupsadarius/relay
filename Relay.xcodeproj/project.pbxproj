@@ -142,6 +142,7 @@
 		8352A4F3F66B4FC5015055D9 /* TmuxExecutableLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C30617862641BA93DED04F2 /* TmuxExecutableLocator.swift */; };
 		8364B21972FCCAC67036630C /* BackendAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1230C06958285AB1CAE2418A /* BackendAvailability.swift */; };
 		83A8BA29AC759A450A261572 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 359767A5465051721E7F2076 /* Assets.xcassets */; };
+		845A8DC458A01DEC5EE5DC2F /* MicrophoneReleaseMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2E87BC5AF10430497C87F2E /* MicrophoneReleaseMonitorTests.swift */; };
 		8602F959E709BCBCB4B52245 /* ProcessAncestryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 811868D4DBF1715BA4FC311E /* ProcessAncestryTests.swift */; };
 		86F3A49FF09100BA7BCB82CC /* BoundedProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63B10F2696AABEA7BC2126A /* BoundedProcessRunner.swift */; };
 		8747B8E9A0B7811647A5E841 /* HookMessageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ADFE04BBA79C08E038ADEE1 /* HookMessageTests.swift */; };
@@ -175,6 +176,7 @@
 		9FE03DC36147EFCCF7FD4D45 /* FocusModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3332E401CE6B77C9E9402E3 /* FocusModels.swift */; };
 		A15BB32BD4ADCD03C2E06DDB /* AudioEngineConfigurationObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB762454C8D84D6E76309FF /* AudioEngineConfigurationObserver.swift */; };
 		A6E1A60876F04F0F1C465F34 /* SpeechModelManaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1051DD5EB76A94B3E60AA1D /* SpeechModelManaging.swift */; };
+		A7601A6357A2275045742D38 /* MicrophoneReleaseMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4D4878705D9032AFA60039B /* MicrophoneReleaseMonitor.swift */; };
 		AC21C5CAF0A02A9029C1127C /* UnixSocketServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91ED1D7A6F95F0D69DB81AEF /* UnixSocketServer.swift */; };
 		ACDE15917036721CB1E97F72 /* WhisperModelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CBE40EFE5F3963B9976AA13 /* WhisperModelStore.swift */; };
 		ACF9928864FA603052194AC3 /* SpeechModelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C548A33FC956251EDBE84B56 /* SpeechModelController.swift */; };
@@ -459,9 +461,11 @@
 		9C81ED5851D60E63A6A62C0B /* PocketTTSAudioSourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PocketTTSAudioSourceTests.swift; sourceTree = "<group>"; };
 		9F9345EEDE9FA0BA054B69BC /* RulesTranscriptProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RulesTranscriptProcessor.swift; sourceTree = "<group>"; };
 		A0354860CB30156236B9B877 /* TmuxClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxClient.swift; sourceTree = "<group>"; };
+		A2E87BC5AF10430497C87F2E /* MicrophoneReleaseMonitorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicrophoneReleaseMonitorTests.swift; sourceTree = "<group>"; };
 		A31863012B9508704CEEE90C /* TmuxFocusResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxFocusResolver.swift; sourceTree = "<group>"; };
 		A32773776BC3D567722793A5 /* IntegrationSetupModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrationSetupModelTests.swift; sourceTree = "<group>"; };
 		A3A1971CFBDF8C170DD9B32F /* ActivityOverlayPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverlayPresentation.swift; sourceTree = "<group>"; };
+		A4D4878705D9032AFA60039B /* MicrophoneReleaseMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicrophoneReleaseMonitor.swift; sourceTree = "<group>"; };
 		A5BACFD43E570A4F8E383E3E /* SpeechCoordinatorWatchdogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechCoordinatorWatchdogTests.swift; sourceTree = "<group>"; };
 		A7357E0F76AF76DF9C69ACD1 /* TextToSpeechBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextToSpeechBackend.swift; sourceTree = "<group>"; };
 		A9200D8D23AD5235ED457245 /* WhisperBackendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperBackendTests.swift; sourceTree = "<group>"; };
@@ -674,6 +678,7 @@
 				50CCAD282954A3B8571C1D11 /* AudioBufferUtilitiesTests.swift */,
 				E714F94C2BB7152EF07DAE54 /* AudioEngineConfigurationObserverTests.swift */,
 				5109D36CA7804BDA995833FB /* AudioEngineRouteChangeDecisionTests.swift */,
+				A2E87BC5AF10430497C87F2E /* MicrophoneReleaseMonitorTests.swift */,
 				FFA17FF6E3B5BF74184E56F6 /* MicrophoneSelectionTests.swift */,
 			);
 			path = Audio;
@@ -822,6 +827,7 @@
 				0AB762454C8D84D6E76309FF /* AudioEngineConfigurationObserver.swift */,
 				78703EFE3AB81B041003FB70 /* AudioEngineRouteChangeDecision.swift */,
 				81834BAA14DCBD957B0A089B /* AudioInputDevices.swift */,
+				A4D4878705D9032AFA60039B /* MicrophoneReleaseMonitor.swift */,
 			);
 			path = Audio;
 			sourceTree = "<group>";
@@ -1332,6 +1338,7 @@
 				122B40DA5BC1B32E59DBF00C /* KokoroTTSAudioSourceTests.swift in Sources */,
 				0C3C74A43B72D383164C555C /* KokoroTTSBackendTests.swift in Sources */,
 				30F97D8C0898E2D97E683F3F /* MicrophoneCaptureStateTests.swift in Sources */,
+				845A8DC458A01DEC5EE5DC2F /* MicrophoneReleaseMonitorTests.swift in Sources */,
 				886D4A990CF7F82E3BC572D0 /* MicrophoneSelectionTests.swift in Sources */,
 				C557148B1A381D9A078AAB24 /* ModelFileVerifierTests.swift in Sources */,
 				5BA5D477DC0DE4D8E14DE5CA /* ModelSessionLoaderTests.swift in Sources */,
@@ -1485,6 +1492,7 @@
 				D13BFFB3458D91D933FF5F51 /* LoginItemController.swift in Sources */,
 				629B951FA84E58D245591D7B /* MenuBarContentView.swift in Sources */,
 				5DFE942299A26F7BEA31560A /* MicrophoneCapture.swift in Sources */,
+				A7601A6357A2275045742D38 /* MicrophoneReleaseMonitor.swift in Sources */,
 				5E6775C267587F0C352B70F9 /* ModelFileVerifier.swift in Sources */,
 				610D41E773DD963F5BB5A9F6 /* ModelSessionLoader.swift in Sources */,
 				E1079FED61AD57DA8CFE468C /* NewlineFramer.swift in Sources */,
