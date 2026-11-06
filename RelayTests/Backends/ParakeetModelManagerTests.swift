@@ -6,7 +6,7 @@ import XCTest
 /// use -- so `ParakeetModelManager` can be exercised without constructing FluidAudio/CoreML
 /// types. Kept local to this file (mirrors `ParakeetBackendTests`' own `FakeParakeetEngine`,
 /// which is `private` there too) since the two fakes' needs have already diverged slightly.
-private final class FakeParakeetModelEngine: ParakeetEngine {
+private final class FakeParakeetModelEngine: ParakeetEngine, @unchecked Sendable {
     var modelsPresent = false
     var progressToReport: [Double] = [0.5, 1.0]
     private(set) var loadCalls: [Bool] = []
@@ -28,55 +28,76 @@ private final class FakeParakeetModelEngine: ParakeetEngine {
 }
 
 final class ParakeetModelManagerTests: XCTestCase {
-    func testBackendIDAndSingleModel() async {
-        let manager = ParakeetModelManager(engine: FakeParakeetModelEngine())
+    private final class SelectionBox: @unchecked Sendable {
+        var value: ParakeetModelID?
+    }
+
+    private func makeManager(
+        unified: FakeParakeetModelEngine = FakeParakeetModelEngine(),
+        v2: FakeParakeetModelEngine = FakeParakeetModelEngine(),
+        selection: SelectionBox = SelectionBox()
+    ) -> ParakeetModelManager {
+        ParakeetModelManager(
+            engines: ParakeetEngines(unifiedEnglish: unified, v2: v2),
+            selectedModel: { selection.value },
+            setSelectedModel: { selection.value = $0 }
+        )
+    }
+
+    func testListsBothModelsAndDefaultsToUnified() async {
+        let manager = makeManager()
 
         XCTAssertEqual(manager.backendID, "parakeet")
 
         let models = await manager.models()
 
-        XCTAssertEqual(models.count, 1)
-        XCTAssertEqual(models[0].descriptor.id, "parakeet-v2")
+        XCTAssertEqual(models.map(\.descriptor.id), ["parakeet-unified-en", "parakeet-v2"])
+        XCTAssertEqual(models.map(\.isSelected), [true, false])
         XCTAssertEqual(models[0].capabilities, [.download, .select])
-        XCTAssertTrue(models[0].isSelected)
     }
 
-    func testInstallStateReflectsPresence() async {
-        let presentEngine = FakeParakeetModelEngine()
-        presentEngine.modelsPresent = true
-        let presentManager = ParakeetModelManager(engine: presentEngine)
-        let presentModels = await presentManager.models()
-        XCTAssertEqual(presentModels[0].installState, .downloaded)
+    func testSavedSelectionMarksThatModelSelected() async {
+        let selection = SelectionBox()
+        selection.value = .v2
+        let models = await makeManager(selection: selection).models()
 
-        let absentEngine = FakeParakeetModelEngine()
-        absentEngine.modelsPresent = false
-        let absentManager = ParakeetModelManager(engine: absentEngine)
-        let absentModels = await absentManager.models()
-        XCTAssertEqual(absentModels[0].installState, .notDownloaded)
+        XCTAssertEqual(models.map(\.isSelected), [false, true])
     }
 
-    func testDownloadDelegatesToParakeetDownloadWithProgress() async throws {
-        let engine = FakeParakeetModelEngine()
-        let manager = ParakeetModelManager(engine: engine)
+    func testInstallStateReflectsEachModelsOwnPresence() async {
+        let unified = FakeParakeetModelEngine()
+        unified.modelsPresent = true
+        let models = await makeManager(unified: unified).models()
+
+        XCTAssertEqual(models.map(\.installState), [.downloaded, .notDownloaded])
+    }
+
+    func testDownloadUsesTheNamedModelsEngineWithProgress() async throws {
+        let unified = FakeParakeetModelEngine()
+        let v2 = FakeParakeetModelEngine()
+        let manager = makeManager(unified: unified, v2: v2)
         var reportedProgress: [Double] = []
 
         try await manager.downloadModel("parakeet-v2", progress: { reportedProgress.append($0) })
 
-        XCTAssertEqual(engine.loadCalls, [true])
+        XCTAssertEqual(v2.loadCalls, [true])
+        XCTAssertTrue(unified.loadCalls.isEmpty)
         XCTAssertEqual(reportedProgress, [0.5, 1.0])
     }
 
-    func testSelectIsNoOpSuccessForTheOneModel() async throws {
-        let engine = FakeParakeetModelEngine()
-        let manager = ParakeetModelManager(engine: engine)
+    func testSelectModelCallsTheWriterAndNeverDownloads() async throws {
+        let unified = FakeParakeetModelEngine()
+        let v2 = FakeParakeetModelEngine()
+        let selection = SelectionBox()
 
-        try await manager.selectModel("parakeet-v2")
+        try await makeManager(unified: unified, v2: v2, selection: selection).selectModel("parakeet-v2")
 
-        XCTAssertTrue(engine.loadCalls.isEmpty, "selectModel must not touch the engine")
+        XCTAssertEqual(selection.value, .v2)
+        XCTAssertFalse(v2.loadCalls.contains(true), "selectModel must never download")
     }
 
     func testUnknownModelIdThrows() async {
-        let manager = ParakeetModelManager(engine: FakeParakeetModelEngine())
+        let manager = makeManager()
 
         do {
             try await manager.downloadModel("whisper-large", progress: { _ in })
@@ -98,10 +119,8 @@ final class ParakeetModelManagerTests: XCTestCase {
     }
 
     func testRemoveBehaviour() async {
-        let manager = ParakeetModelManager(engine: FakeParakeetModelEngine())
-
         do {
-            try await manager.removeModel("parakeet-v2")
+            try await makeManager().removeModel("parakeet-v2")
             XCTFail("Expected removeNotSupported")
         } catch let error as ParakeetModelManagerError {
             XCTAssertEqual(error, .removeNotSupported)

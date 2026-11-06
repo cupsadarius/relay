@@ -137,8 +137,52 @@ final class FluidAudioParakeetEngineTests: XCTestCase {
         }
     }
 
-    private func makeEngine(loader: FakeModelLoader) -> FluidAudioParakeetEngine {
-        FluidAudioParakeetEngine(modelLoader: loader)
+    func testUnifiedAppendsTrailingSilenceThenPadsToTheMinimum() async throws {
+        let loader = FakeModelLoader()
+        let engine = makeEngine(loader: loader, model: .unifiedEnglish)
+        try await engine.load(allowDownload: false)
+
+        _ = try await engine.transcribe(samples: [0.1, 0.2, 0.3])
+
+        let received = await loader.lastSessionReceivedSamples()
+        XCTAssertEqual(received?.count, 16_000)
+        XCTAssertEqual(Array(received?.prefix(3) ?? []), [0.1, 0.2, 0.3])
+        XCTAssertEqual(received?.dropFirst(3).allSatisfy { $0 == 0 }, true)
+    }
+
+    func testUnifiedAddsFourHundredMillisecondsOfSilenceAfterALongClip() async throws {
+        let loader = FakeModelLoader()
+        let engine = makeEngine(loader: loader, model: .unifiedEnglish)
+        try await engine.load(allowDownload: false)
+
+        _ = try await engine.transcribe(samples: Array(repeating: Float(0.5), count: 32_000))
+
+        let received = await loader.lastSessionReceivedSamples() ?? []
+        XCTAssertEqual(received.count, 38_400)
+        XCTAssertEqual(received[31_999], 0.5)
+        XCTAssertEqual(received.suffix(6_400).allSatisfy { $0 == 0 }, true)
+    }
+
+    func testV2AddsNoTrailingSilenceToALongClip() async throws {
+        let loader = FakeModelLoader()
+        let engine = makeEngine(loader: loader, model: .v2)
+        try await engine.load(allowDownload: false)
+
+        _ = try await engine.transcribe(samples: Array(repeating: Float(0.5), count: 32_000))
+
+        let receivedCount = await loader.lastSessionReceivedSamples()?.count
+        XCTAssertEqual(receivedCount, 32_000)
+    }
+
+    func testUnifiedUsesItsOwnCacheDirectory() async {
+        let engine = makeEngine(loader: FakeModelLoader(), model: .unifiedEnglish)
+        let modelDirectory = await engine.modelDirectory
+
+        XCTAssertEqual(modelDirectory.lastPathComponent, "parakeet-unified-en-0.6b")
+    }
+
+    private func makeEngine(loader: FakeModelLoader, model: ParakeetModelID = .v2) -> FluidAudioParakeetEngine {
+        FluidAudioParakeetEngine(model: model, modelLoader: loader)
     }
 }
 

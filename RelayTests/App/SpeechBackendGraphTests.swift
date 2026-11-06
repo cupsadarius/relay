@@ -8,7 +8,8 @@ import XCTest
 final class SpeechBackendGraphTests: XCTestCase {
     private func makeGraph() -> SpeechBackendGraph {
         SpeechBackendGraph.make(
-            whisperSelection: { nil }, setWhisperSelection: { _ in }
+            whisperSelection: { nil }, setWhisperSelection: { _ in },
+            parakeetSelection: { nil }, setParakeetSelection: { _ in }
         )
     }
 

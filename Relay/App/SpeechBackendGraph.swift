@@ -9,10 +9,13 @@ struct SpeechBackendGraph {
     let ttsModelManagers: [String: any SpeechModelManaging]
     let sttRegistry: [String: any SpeechToTextBackend]
     let speechModelManagers: [String: any SpeechModelManaging]
+    let parakeetModelManager: ParakeetModelManager
 
     static func make(
         whisperSelection: @escaping WhisperModelSelection,
-        setWhisperSelection: @escaping WhisperModelSelectionWriter
+        setWhisperSelection: @escaping WhisperModelSelectionWriter,
+        parakeetSelection: @escaping ParakeetModelSelection,
+        setParakeetSelection: @escaping ParakeetModelSelectionWriter
     ) -> SpeechBackendGraph {
         let appleTTS = AppleTTSBackend()
         let kokoroEngine: any KokoroEngine = FluidAudioKokoroEngine()
@@ -24,9 +27,17 @@ struct SpeechBackendGraph {
 
         let appleSpeech = AppleSpeechBackend()
         let appleSpeechModelManager = AppleSpeechModelManager()
-        let parakeetEngine: any ParakeetEngine = FluidAudioParakeetEngine()
-        let parakeetBackend = ParakeetBackend(engine: parakeetEngine)
-        let parakeetModelManager = ParakeetModelManager(engine: parakeetEngine)
+        // razor: both engines may stay resident (~600 MB each); unload on switch if memory matters
+        let parakeetEngines = ParakeetEngines(
+            unifiedEnglish: FluidAudioParakeetEngine(model: .unifiedEnglish),
+            v2: FluidAudioParakeetEngine(model: .v2)
+        )
+        let parakeetBackend = ParakeetBackend(engines: parakeetEngines, selectedModel: parakeetSelection)
+        let parakeetModelManager = ParakeetModelManager(
+            engines: parakeetEngines,
+            selectedModel: parakeetSelection,
+            setSelectedModel: setParakeetSelection
+        )
 
         // Whisper is registered but never enabled by default: `sttBackendOrder` defaults to
         // `["apple-speech"]`; the user opts in and picks a model in Settings.
@@ -72,7 +83,8 @@ struct SpeechBackendGraph {
                 appleSpeechModelManager.backendID: appleSpeechModelManager,
                 parakeetModelManager.backendID: parakeetModelManager,
                 whisperModelManager.backendID: whisperModelManager,
-            ]
+            ],
+            parakeetModelManager: parakeetModelManager
         )
     }
 }

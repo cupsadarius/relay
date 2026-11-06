@@ -1,4 +1,31 @@
 import Foundation
+import os
+
+/// The Parakeet models a user can pick between. Raw values are the ids the settings store and
+/// `SpeechModelManaging` use; `.v2` keeps its original id so an existing download and selection
+/// still map.
+enum ParakeetModelID: String, CaseIterable, Sendable {
+    case unifiedEnglish = "parakeet-unified-en"
+    case v2 = "parakeet-v2"
+
+    static let `default`: ParakeetModelID = .unifiedEnglish
+}
+
+typealias ParakeetModelSelection = @Sendable () -> ParakeetModelID?
+typealias ParakeetModelSelectionWriter = @MainActor @Sendable (ParakeetModelID?) -> Void
+
+/// One engine per model. A struct with a field per case, so every model always has an engine.
+struct ParakeetEngines: Sendable {
+    let unifiedEnglish: any ParakeetEngine
+    let v2: any ParakeetEngine
+
+    subscript(model: ParakeetModelID) -> any ParakeetEngine {
+        switch model {
+        case .unifiedEnglish: unifiedEnglish
+        case .v2: v2
+        }
+    }
+}
 
 /// Errors surfaced by a `ParakeetEngine` implementation. `ParakeetBackend` maps these onto
 /// `SpeechBackendError` so the router can classify them the same way it classifies every other
@@ -37,18 +64,33 @@ extension ParakeetEngine {
     func load(allowDownload: Bool) async throws {
         try await load(allowDownload: allowDownload, progress: { _ in })
     }
+
+    /// Loads the model in the background-friendly way: never downloads, swallows errors.
+    func prewarmIfPresent() async {
+        guard await modelsArePresent() else { return }
+        do {
+            try await load(allowDownload: false)
+        } catch {
+            Logger(subsystem: "dev.relaymac.Relay", category: "parakeet")
+                .debug("Parakeet prewarm failed: \(error.localizedDescription, privacy: .private)")
+        }
+    }
 }
 
-/// On-device speech-to-text backend built on FluidAudio's Parakeet v2 (English) model. Fully
+/// On-device speech-to-text backend built on FluidAudio's Parakeet models (English). Fully
 /// offline once its model is downloaded; never uploads audio or transcript text anywhere.
 final class ParakeetBackend: SpeechToTextBackend {
     let id = BackendID.parakeet.rawValue
     let displayName = BackendID.parakeet.displayName
 
-    private let engine: any ParakeetEngine
+    private let engines: ParakeetEngines
+    private let selectedModel: ParakeetModelSelection
 
-    init(engine: any ParakeetEngine) {
-        self.engine = engine
+    private var engine: any ParakeetEngine { engines[selectedModel() ?? .default] }
+
+    init(engines: ParakeetEngines, selectedModel: @escaping ParakeetModelSelection) {
+        self.engines = engines
+        self.selectedModel = selectedModel
     }
 
     func availability() async -> BackendAvailability {
@@ -63,7 +105,8 @@ final class ParakeetBackend: SpeechToTextBackend {
             throw SpeechBackendError.invalidInput
         }
 
-        try await ensureLoaded()
+        let engine = engine
+        try await ensureLoaded(engine)
 
         do {
             let text = try await engine.transcribe(samples: audio.samples)
@@ -81,7 +124,7 @@ final class ParakeetBackend: SpeechToTextBackend {
         }
     }
 
-    private func ensureLoaded() async throws {
+    private func ensureLoaded(_ engine: any ParakeetEngine) async throws {
         do {
             try await engine.load(allowDownload: false)
         } catch is CancellationError {

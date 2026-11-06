@@ -120,8 +120,12 @@ final class RelayRuntime {
         let overlayModel = ActivityOverlayModel()
         let graph = SpeechBackendGraph.make(
             whisperSelection: settingsController.whisperSelection,
-            setWhisperSelection: settingsController.whisperSelectionWriter
+            setWhisperSelection: settingsController.whisperSelectionWriter,
+            parakeetSelection: settingsController.parakeetSelection,
+            setParakeetSelection: settingsController.parakeetSelectionWriter
         )
+        let parakeetModelManager = graph.parakeetModelManager
+        Task.detached { await parakeetModelManager.prewarmSelected() }
         let ttsRegistry = graph.ttsRegistry
         let sttRegistry = graph.sttRegistry
 

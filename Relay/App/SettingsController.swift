@@ -150,6 +150,21 @@ final class SettingsController {
         }
     }
 
+    // MARK: Parakeet selection seam
+
+    var parakeetSelection: ParakeetModelSelection {
+        let snapshot = snapshot
+        return {
+            snapshot.value.selectedSpeechModelByBackend[BackendID.parakeet.rawValue].flatMap(ParakeetModelID.init(rawValue:))
+        }
+    }
+
+    var parakeetSelectionWriter: ParakeetModelSelectionWriter {
+        { [weak self] modelID in
+            self?.setSelectedSpeechModel(backendID: BackendID.parakeet.rawValue, modelID: modelID?.rawValue)
+        }
+    }
+
     // MARK: Private
 
     private func apply(_ change: (inout AppSettings) -> Void) {

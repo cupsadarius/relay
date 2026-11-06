@@ -1,86 +1,88 @@
 import Foundation
 
-/// Errors `ParakeetModelManager` throws. `unknownModel` covers any id other than
-/// `ParakeetModelManager.modelID`; `removeNotSupported` is returned by `removeModel` -- see its
-/// doc comment for why Parakeet has no remove path today.
+/// Errors `ParakeetModelManager` throws. `unknownModel` covers any id that is not a
+/// `ParakeetModelID`; `removeNotSupported` is returned by `removeModel`.
 enum ParakeetModelManagerError: Error, Equatable, Sendable {
     case unknownModel(String)
     case removeNotSupported
 }
 
-/// The one-model `SpeechModelManaging` implementation for Relay's Parakeet backend. Parakeet
-/// (unlike Whisper) has exactly one model, so this is the "0/1 model" counterpart to
-/// `WhisperModelManager`'s many-model case: `models()` always returns a single status that is
-/// always selected, and `selectModel` is a validating no-op since there is nothing else the
-/// selection could ever be.
-///
-/// Wraps the same `ParakeetEngine` seam `ParakeetBackend` already uses -- `modelsArePresent()`
-/// for presence, `load(allowDownload: true, progress:)` for download -- rather than inventing a
-/// second seam over the same underlying engine. That means tests fake `ParakeetEngine` (as
-/// `ParakeetBackendTests` and `FluidAudioParakeetEngineTests` already do) and never construct
-/// FluidAudio/CoreML types. Every stored property is itself `Sendable` (`ParakeetEngine` is
-/// `Sendable`), so this can be a plain struct like `WhisperModelManager`, with no isolation of
-/// its own.
-struct ParakeetModelManager: SpeechModelManaging {
-    /// Relay's one Parakeet model id. FluidAudio has no public string id for this model (only
-    /// `AsrModelVersion.v2` and a cache-folder name, `parakeet-tdt-0.6b-v2`), so this is minted
-    /// here as the id this `SpeechModelManaging` surface exposes.
-    static let modelID = "parakeet-v2"
+extension ParakeetModelID {
+    fileprivate var descriptor: SpeechModelDescriptor {
+        switch self {
+        case .unifiedEnglish:
+            SpeechModelDescriptor(id: rawValue, displayName: "Parakeet Unified (English)", detail: "English · punctuation")
+        case .v2:
+            SpeechModelDescriptor(id: rawValue, displayName: "Parakeet v2", detail: "English only")
+        }
+    }
+}
 
+/// The two-model `SpeechModelManaging` implementation for Relay's Parakeet backend. Wraps the
+/// same `ParakeetEngine` seam `ParakeetBackend` uses, one engine per model, so tests fake the
+/// engines and never construct FluidAudio/CoreML types.
+struct ParakeetModelManager: SpeechModelManaging {
     let backendID = BackendID.parakeet.rawValue
 
-    private let engine: any ParakeetEngine
+    private let engines: ParakeetEngines
+    private let selectedModel: ParakeetModelSelection
+    private let setSelectedModel: ParakeetModelSelectionWriter
 
-    init(engine: any ParakeetEngine) {
-        self.engine = engine
+    init(
+        engines: ParakeetEngines,
+        selectedModel: @escaping ParakeetModelSelection,
+        setSelectedModel: @escaping ParakeetModelSelectionWriter
+    ) {
+        self.engines = engines
+        self.selectedModel = selectedModel
+        self.setSelectedModel = setSelectedModel
     }
 
-    /// Always exactly one status. `isSelected` is always true: a one-model backend's only model
-    /// is always "the selection".
     func models() async -> [SpeechModelStatus] {
-        let present = await engine.modelsArePresent()
-        return [
-            SpeechModelStatus(
-                descriptor: Self.descriptor,
-                capabilities: [.download, .select],
-                installState: present ? .downloaded : .notDownloaded,
-                isSelected: true
-            )
-        ]
+        let selected = selectedModel() ?? .default
+        var statuses: [SpeechModelStatus] = []
+        for model in ParakeetModelID.allCases {
+            statuses.append(
+                SpeechModelStatus(
+                    descriptor: model.descriptor,
+                    capabilities: [.download, .select],
+                    installState: await engines[model].modelsArePresent() ? .downloaded : .notDownloaded,
+                    isSelected: model == selected
+                ))
+        }
+        return statuses
     }
 
-    /// Validates `id`, then delegates to the engine's own download-and-load.
+    /// Downloads and loads the named model. Never selects it.
     func downloadModel(_ id: String, progress: @escaping @Sendable (Double) -> Void) async throws {
-        try Self.validate(id)
-        try await engine.load(allowDownload: true, progress: progress)
+        let model = try Self.model(for: id)
+        try await engines[model].load(allowDownload: true, progress: progress)
     }
 
-    /// No-op beyond validating `id`: with exactly one model, "select" can't change anything.
+    /// Persists the selection, then warms the model in the background when it is on disk.
     func selectModel(_ id: String) async throws {
-        try Self.validate(id)
+        let model = try Self.model(for: id)
+        await setSelectedModel(model)
+        let engine = engines[model]
+        Task { await engine.prewarmIfPresent() }
     }
 
-    /// Parakeet has no remove path today -- `ParakeetEngine` exposes no delete, only presence and
-    /// load. Unlike Whisper's per-model removal (one of eleven, with ten others to fall back to),
-    /// deleting Relay's only always-offline STT model is enough of a distinct, consequential
-    /// action that it deserves its own explicit support later rather than a half-built delete
-    /// here that reaches into `FluidAudioParakeetEngine.modelDirectory` behind the engine's back.
-    /// So this validates `id` (an unknown id still reports `unknownModel`, not
-    /// `removeNotSupported`) and then always throws `removeNotSupported`.
+    /// Parakeet has no remove path: `ParakeetEngine` exposes no delete. Validates `id` first, so
+    /// an unknown id still reports `unknownModel`.
     func removeModel(_ id: String) async throws {
-        try Self.validate(id)
+        _ = try Self.model(for: id)
         throw ParakeetModelManagerError.removeNotSupported
     }
 
-    private static let descriptor = SpeechModelDescriptor(
-        id: modelID,
-        displayName: "Parakeet v2",
-        detail: "English only"
-    )
+    /// Loads the selected model at launch when it is on disk. Never downloads.
+    func prewarmSelected() async {
+        await engines[selectedModel() ?? .default].prewarmIfPresent()
+    }
 
-    private static func validate(_ id: String) throws {
-        guard id == modelID else {
+    private static func model(for id: String) throws -> ParakeetModelID {
+        guard let model = ParakeetModelID(rawValue: id) else {
             throw ParakeetModelManagerError.unknownModel(id)
         }
+        return model
     }
 }

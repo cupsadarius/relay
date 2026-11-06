@@ -25,8 +25,8 @@ protocol ParakeetModelLoading: Sendable {
     func downloadAndLoad(progress: @escaping @Sendable (Double) -> Void) async throws -> any ParakeetModelSession
 }
 
-/// Production `ParakeetEngine` backed by FluidAudio's English-only Parakeet TDT v2 model. Loads
-/// and runs the model entirely on-device.
+/// Production `ParakeetEngine` backed by FluidAudio's English Parakeet models (TDT v2 or Unified).
+/// Loads and runs the model entirely on-device.
 ///
 /// `load(allowDownload: false)` never *initiates* a download: it first calls
 /// `AsrModels.isModelValid`, which only opens local files, and refuses to proceed to
@@ -38,25 +38,43 @@ protocol ParakeetModelLoading: Sendable {
 /// Single-flight loading and the local-validation gate live in `ModelSessionLoader`.
 actor FluidAudioParakeetEngine: ParakeetEngine {
     private static let version: AsrModelVersion = .v2
+    private static let unifiedTrailingSilenceSampleCount = 6_400
     /// FluidAudio requires at least one second of 16 kHz audio (`ASRError.invalidAudioData`);
     /// shorter clips are zero-padded up to this length before transcription.
     private static let minimumSampleCount = 16_000
     private static let logger = Logger(subsystem: "dev.relaymac.Relay", category: "parakeet")
 
-    /// The directory FluidAudio stores the Parakeet model files in. Always
-    /// `AsrModels.defaultCacheDirectory(for: .v2)`: FluidAudio's own `AsrModels.isModelValid`
-    /// takes no directory parameter and only ever checks that location.
+    /// The directory FluidAudio stores this model's files in. For v2 it is always
+    /// `AsrModels.defaultCacheDirectory(for: .v2)`: `AsrModels.isModelValid` takes no directory
+    /// parameter and only ever checks that location.
     let modelDirectory: URL
 
+    private let model: ParakeetModelID
     private let sessionLoader: ModelSessionLoader<any ParakeetModelSession>
 
     init(
+        model: ParakeetModelID = .v2,
         modelLoader: (any ParakeetModelLoading)? = nil,
         validatedModelsPresent: Bool = false
     ) {
-        let modelDirectory = AsrModels.defaultCacheDirectory(for: Self.version)
+        self.model = model
+        let v2Directory = AsrModels.defaultCacheDirectory(for: Self.version)
+        let modelDirectory =
+            switch model {
+            case .v2: v2Directory
+            case .unifiedEnglish:
+                v2Directory.deletingLastPathComponent()
+                    .appendingPathComponent(Repo.parakeetUnified.folderName, isDirectory: true)
+            }
         self.modelDirectory = modelDirectory
-        let modelLoader = modelLoader ?? FluidAudioModelLoader(modelDirectory: modelDirectory, version: Self.version)
+        let modelLoader =
+            modelLoader
+            ?? {
+                switch model {
+                case .v2: FluidAudioModelLoader(modelDirectory: modelDirectory, version: Self.version)
+                case .unifiedEnglish: UnifiedModelLoader(modelDirectory: modelDirectory)
+                }
+            }()
         let logger = Self.logger
         sessionLoader = ModelSessionLoader(
             validatedModelsPresent: validatedModelsPresent,
@@ -81,7 +99,10 @@ actor FluidAudioParakeetEngine: ParakeetEngine {
     }
 
     func modelsArePresent() async -> Bool {
-        AsrModels.modelsExist(at: modelDirectory, version: Self.version)
+        switch model {
+        case .v2: AsrModels.modelsExist(at: modelDirectory, version: Self.version)
+        case .unifiedEnglish: UnifiedModelLoader.filesPresent(at: modelDirectory)
+        }
     }
 
     func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws {
@@ -94,6 +115,10 @@ actor FluidAudioParakeetEngine: ParakeetEngine {
         }
 
         var paddedSamples = samples
+        // Unified drops the final full stop or question mark without trailing silence.
+        if model == .unifiedEnglish {
+            paddedSamples.append(contentsOf: repeatElement(Float(0), count: Self.unifiedTrailingSilenceSampleCount))
+        }
         if paddedSamples.count < Self.minimumSampleCount {
             paddedSamples.append(
                 contentsOf: repeatElement(Float(0), count: Self.minimumSampleCount - paddedSamples.count)
@@ -155,5 +180,45 @@ private struct AsrManagerSession: ParakeetModelSession {
         var decoderState = TdtDecoderState.make(decoderLayers: await manager.decoderLayerCount)
         let result = try await manager.transcribe(samples, decoderState: &decoderState)
         return result.text
+    }
+}
+
+/// Live loader for Parakeet Unified. FluidAudio has no network-free validity check for it, so
+/// validity is the presence of every file `UnifiedAsrManager` requires.
+private struct UnifiedModelLoader: ParakeetModelLoading {
+    let modelDirectory: URL
+
+    static func filesPresent(at directory: URL) -> Bool {
+        let names = ModelNames.ParakeetUnified.self
+        return [
+            names.offlineEncoderFile(precision: .int8), names.decoderFile, names.jointDecisionFile, names.vocab,
+        ].allSatisfy { FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path) }
+    }
+
+    func isModelValid() async throws -> Bool {
+        Self.filesPresent(at: modelDirectory)
+    }
+
+    func load() async throws -> any ParakeetModelSession {
+        let manager = UnifiedAsrManager()
+        try await manager.loadModels(from: modelDirectory)
+        return UnifiedAsrSession(manager: manager)
+    }
+
+    func downloadAndLoad(progress: @escaping @Sendable (Double) -> Void) async throws -> any ParakeetModelSession {
+        let manager = UnifiedAsrManager()
+        try await manager.loadModels(
+            to: modelDirectory.deletingLastPathComponent(),
+            progressHandler: { progress($0.fractionCompleted) }
+        )
+        return UnifiedAsrSession(manager: manager)
+    }
+}
+
+private struct UnifiedAsrSession: ParakeetModelSession {
+    let manager: UnifiedAsrManager
+
+    func transcribe(samples: [Float]) async throws -> String {
+        try await manager.transcribe(samples)
     }
 }

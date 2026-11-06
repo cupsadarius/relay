@@ -4,8 +4,52 @@ import XCTest
 
 @MainActor
 final class ParakeetBackendTests: XCTestCase {
+    private func makeBackend(_ engine: FakeParakeetEngine) -> ParakeetBackend {
+        ParakeetBackend(
+            engines: ParakeetEngines(unifiedEnglish: engine, v2: engine),
+            selectedModel: { nil }
+        )
+    }
+
+    func testTranscribesWithTheEngineOfTheSelectedModel() async throws {
+        let unified = FakeParakeetEngine()
+        unified.transcriptionResult = "unified"
+        let v2 = FakeParakeetEngine()
+        v2.transcriptionResult = "v2"
+        let audio = AudioInput(samples: [0.1], sampleRate: 16_000)
+
+        func transcript(selected: ParakeetModelID?) async throws -> String {
+            let backend = ParakeetBackend(
+                engines: ParakeetEngines(unifiedEnglish: unified, v2: v2),
+                selectedModel: { selected }
+            )
+            return try await backend.transcribe(audio: audio, options: .init()).text
+        }
+
+        let none = try await transcript(selected: nil)
+        let chosenV2 = try await transcript(selected: .v2)
+        let chosenUnified = try await transcript(selected: .unifiedEnglish)
+        XCTAssertEqual(none, "unified")
+        XCTAssertEqual(chosenV2, "v2")
+        XCTAssertEqual(chosenUnified, "unified")
+    }
+
+    func testAvailabilityReflectsTheSelectedModel() async {
+        let unified = FakeParakeetEngine()
+        unified.modelsPresent = true
+        let v2 = FakeParakeetEngine()
+        let backend = ParakeetBackend(
+            engines: ParakeetEngines(unifiedEnglish: unified, v2: v2),
+            selectedModel: { .v2 }
+        )
+
+        let availability = await backend.availability()
+
+        XCTAssertEqual(availability, .modelNotDownloaded)
+    }
+
     func testIdentifiesAsParakeet() {
-        let backend = ParakeetBackend(engine: FakeParakeetEngine())
+        let backend = makeBackend(FakeParakeetEngine())
 
         XCTAssertEqual(backend.id, "parakeet")
         XCTAssertEqual(backend.displayName, "Parakeet")
@@ -14,7 +58,7 @@ final class ParakeetBackendTests: XCTestCase {
     func testAvailabilityIsModelNotDownloadedWhenModelsAreAbsent() async {
         let engine = FakeParakeetEngine()
         engine.modelsPresent = false
-        let backend = ParakeetBackend(engine: engine)
+        let backend = makeBackend(engine)
 
         let availability = await backend.availability()
 
@@ -24,7 +68,7 @@ final class ParakeetBackendTests: XCTestCase {
     func testAvailabilityIsAvailableWhenModelsArePresent() async {
         let engine = FakeParakeetEngine()
         engine.modelsPresent = true
-        let backend = ParakeetBackend(engine: engine)
+        let backend = makeBackend(engine)
 
         let availability = await backend.availability()
 
@@ -34,7 +78,7 @@ final class ParakeetBackendTests: XCTestCase {
     func testAvailabilityNeverTriggersLoad() async {
         let engine = FakeParakeetEngine()
         engine.modelsPresent = true
-        let backend = ParakeetBackend(engine: engine)
+        let backend = makeBackend(engine)
 
         _ = await backend.availability()
 
@@ -45,7 +89,7 @@ final class ParakeetBackendTests: XCTestCase {
         let engine = FakeParakeetEngine()
         engine.modelsPresent = true
         engine.transcriptionResult = "hello world"
-        let backend = ParakeetBackend(engine: engine)
+        let backend = makeBackend(engine)
         let samples: [Float] = [0.1, -0.2, 0.3]
 
         let transcript = try await backend.transcribe(
@@ -60,7 +104,7 @@ final class ParakeetBackendTests: XCTestCase {
     func testTranscribeThrowsNoUsableAudioForEmptySamples() async {
         let engine = FakeParakeetEngine()
         engine.modelsPresent = true
-        let backend = ParakeetBackend(engine: engine)
+        let backend = makeBackend(engine)
 
         do {
             _ = try await backend.transcribe(
@@ -77,7 +121,7 @@ final class ParakeetBackendTests: XCTestCase {
     func testTranscribeThrowsInvalidInputForWrongSampleRate() async {
         let engine = FakeParakeetEngine()
         engine.modelsPresent = true
-        let backend = ParakeetBackend(engine: engine)
+        let backend = makeBackend(engine)
 
         do {
             _ = try await backend.transcribe(
@@ -95,7 +139,7 @@ final class ParakeetBackendTests: XCTestCase {
         let engine = FakeParakeetEngine()
         engine.modelsPresent = true
         engine.transcriptionResult = "lazy"
-        let backend = ParakeetBackend(engine: engine)
+        let backend = makeBackend(engine)
 
         _ = try await backend.transcribe(
             audio: AudioInput(samples: [0.1], sampleRate: 16_000),
@@ -109,7 +153,7 @@ final class ParakeetBackendTests: XCTestCase {
         let engine = FakeParakeetEngine()
         engine.modelsPresent = true
         engine.transcriptionResult = "hi"
-        let backend = ParakeetBackend(engine: engine)
+        let backend = makeBackend(engine)
 
         _ = try await backend.transcribe(audio: AudioInput(samples: [0.1], sampleRate: 16_000), options: .init())
         _ = try await backend.transcribe(audio: AudioInput(samples: [0.1], sampleRate: 16_000), options: .init())
@@ -121,7 +165,7 @@ final class ParakeetBackendTests: XCTestCase {
         let engine = FakeParakeetEngine()
         engine.modelsPresent = true
         engine.loadError = ParakeetEngineError.modelsNotDownloaded
-        let backend = ParakeetBackend(engine: engine)
+        let backend = makeBackend(engine)
 
         do {
             _ = try await backend.transcribe(
@@ -138,7 +182,7 @@ final class ParakeetBackendTests: XCTestCase {
         let engine = FakeParakeetEngine()
         engine.modelsPresent = true
         engine.loadError = ParakeetEngineError.loadFailed("boom")
-        let backend = ParakeetBackend(engine: engine)
+        let backend = makeBackend(engine)
 
         do {
             _ = try await backend.transcribe(
@@ -155,7 +199,7 @@ final class ParakeetBackendTests: XCTestCase {
         let engine = FakeParakeetEngine()
         engine.modelsPresent = true
         engine.loadError = ParakeetEngineError.loadFailed("boom")
-        let backend = ParakeetBackend(engine: engine)
+        let backend = makeBackend(engine)
 
         do {
             _ = try await backend.transcribe(audio: AudioInput(samples: [0.1], sampleRate: 16_000), options: .init())
@@ -179,7 +223,7 @@ final class ParakeetBackendTests: XCTestCase {
         let engine = FakeParakeetEngine()
         engine.modelsPresent = true
         engine.transcribeError = ParakeetEngineError.transcriptionFailed("bad audio")
-        let backend = ParakeetBackend(engine: engine)
+        let backend = makeBackend(engine)
 
         do {
             _ = try await backend.transcribe(
@@ -196,7 +240,7 @@ final class ParakeetBackendTests: XCTestCase {
         let engine = FakeParakeetEngine()
         engine.modelsPresent = true
         engine.transcribeError = ParakeetEngineError.notLoaded
-        let backend = ParakeetBackend(engine: engine)
+        let backend = makeBackend(engine)
 
         do {
             _ = try await backend.transcribe(
@@ -213,7 +257,7 @@ final class ParakeetBackendTests: XCTestCase {
         let engine = FakeParakeetEngine()
         engine.modelsPresent = true
         engine.transcribeError = CancellationError()
-        let backend = ParakeetBackend(engine: engine)
+        let backend = makeBackend(engine)
 
         do {
             _ = try await backend.transcribe(
@@ -232,7 +276,7 @@ final class ParakeetBackendTests: XCTestCase {
         let engine = FakeParakeetEngine()
         engine.modelsPresent = true
         engine.loadError = CancellationError()
-        let backend = ParakeetBackend(engine: engine)
+        let backend = makeBackend(engine)
 
         do {
             _ = try await backend.transcribe(

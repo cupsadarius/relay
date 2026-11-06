@@ -191,6 +191,16 @@ final class SettingsControllerTests: XCTestCase {
         XCTAssertNil(read())
     }
 
+    func testParakeetSelectionPersistsAndReadsBack() {
+        let controller = makeController(store: SpySettingsStore())
+        XCTAssertNil(controller.parakeetSelection())
+
+        controller.parakeetSelectionWriter(.v2)
+
+        XCTAssertEqual(controller.current.selectedSpeechModelByBackend["parakeet"], "parakeet-v2")
+        XCTAssertEqual(controller.parakeetSelection(), .v2)
+    }
+
     func testUnknownPersistedWhisperIDReadsAsNoSelection() {
         var saved = AppSettings.defaults
         saved.selectedSpeechModelByBackend["whisper"] = "not-a-model"
