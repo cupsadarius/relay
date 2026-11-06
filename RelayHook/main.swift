@@ -8,21 +8,14 @@ import Darwin
 //
 // `HookEnvelope` and `AgentProvider` are compiled into this target straight
 // from `Relay/Integrations/Domain/` (see `project.yml`), so the helper and the
-// app always share one definition of the wire schema. Wire schema version is `1`.
+// app share one wire schema.
 
 // MARK: - Constants
 
 /// Reject stdin larger than this before building an envelope at all.
 private let maxInputBytes = 1_500 * 1_024 // 1.5 MiB
 
-/// Exactly the variables `TerminalContext` (Relay/Sessions/Domain/TerminalContext.swift) reads.
-/// Keep the two in sync: forwarding anything else widens what leaves the agent's environment
-/// with no consumer.
-private let environmentAllowlist = [
-    "TMUX", "TMUX_PANE",
-    "HERDR_SOCKET_PATH", "HERDR_PANE_ID", "HERDR_ACTIVE_PANE_ID",
-    "REX_SERVER", "REX_SESSION", "REX_BLOCK",
-]
+private let environmentAllowlist = TerminalEnvironmentKey.allCases.map(\.rawValue)
 
 // MARK: - Debug logging
 //

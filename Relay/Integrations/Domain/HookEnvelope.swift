@@ -17,6 +17,19 @@ struct HookEnvelope: Codable, Equatable, Sendable {
     var processAncestry: [Int32]? = nil
 }
 
+/// The terminal variables `RelayHook` forwards and `TerminalContext` reads. Forwarding anything
+/// else widens what leaves the agent's environment with no consumer.
+enum TerminalEnvironmentKey: String, CaseIterable, Sendable {
+    case tmux = "TMUX"
+    case tmuxPane = "TMUX_PANE"
+    case herdrSocketPath = "HERDR_SOCKET_PATH"
+    case herdrPaneID = "HERDR_PANE_ID"
+    case herdrActivePaneID = "HERDR_ACTIVE_PANE_ID"
+    case rexServer = "REX_SERVER"
+    case rexSession = "REX_SESSION"
+    case rexBlock = "REX_BLOCK"
+}
+
 extension HookEnvelope {
     /// Largest encoded envelope, in bytes, excluding the trailing newline, that Relay's hook
     /// socket accepts as one line. `RelayHook` checks it before sending and `UnixSocketServer`
