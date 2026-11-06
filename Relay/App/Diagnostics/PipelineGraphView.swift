@@ -29,49 +29,56 @@ enum PipelineDurationFormat {
     }
 }
 
-/// The selected run drawn on its flow's fixed graph. Steps the run never reached stay grey.
+/// The selected run drawn on its flow's fixed graph, scaled to the available width. Steps the
+/// run never reached stay grey.
 struct PipelineGraphView: View {
     let run: PipelineRun
 
-    private static let nodeSize = CGSize(width: 132, height: 64)
-    private static let spacing = CGSize(width: 34, height: 26)
+    var body: some View {
+        let graph = PipelineGraph.of(run.flow)
+        let rows = (graph.nodes.map(\.row).max() ?? 0) + 1
+        GeometryReader { proxy in
+            PipelineGraphCanvas(run: run, graph: graph, width: proxy.size.width)
+        }
+        .frame(height: CGFloat(rows) * PipelineGraphCanvas.nodeHeight + CGFloat(rows - 1) * PipelineGraphCanvas.rowSpacing)
+    }
+}
 
-    private var graph: PipelineGraph { PipelineGraph.of(run.flow) }
+private struct PipelineGraphCanvas: View {
+    static let nodeHeight: CGFloat = 64
+    static let rowSpacing: CGFloat = 22
+
+    let run: PipelineRun
+    let graph: PipelineGraph
+    let width: CGFloat
+
+    private var columns: Int { (graph.nodes.map(\.column).max() ?? 0) + 1 }
+    private var spacing: CGSize { CGSize(width: columns > 5 ? 18 : 26, height: Self.rowSpacing) }
+    private var nodeSize: CGSize {
+        let available = width - CGFloat(columns - 1) * spacing.width
+        return CGSize(width: max(70, available / CGFloat(columns)), height: Self.nodeHeight)
+    }
 
     var body: some View {
-        let size = canvasSize
-        ScrollView(.horizontal, showsIndicators: false) {
-            ZStack(alignment: .topLeading) {
-                Canvas { context, _ in drawEdges(in: &context) }
-                    .frame(width: size.width, height: size.height)
-                ForEach(graph.nodes, id: \.step) { node in
-                    PipelineNodeView(step: node.step, status: run.status(of: node.step), isBranch: node.isBranch, level: level(for: node.step))
-                        .frame(width: Self.nodeSize.width, height: Self.nodeSize.height)
-                        .offset(x: origin(of: node).x, y: origin(of: node).y)
-                }
+        ZStack(alignment: .topLeading) {
+            Canvas { context, _ in drawEdges(in: &context) }
+            ForEach(graph.nodes, id: \.step) { node in
+                PipelineNodeView(step: node.step, status: run.status(of: node.step), isBranch: node.isBranch, level: level(for: node.step))
+                    .frame(width: nodeSize.width, height: nodeSize.height)
+                    .offset(x: origin(of: node).x, y: origin(of: node).y)
             }
-            .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .padding(4)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func level(for step: PipelineStep) -> Float? {
         step == .recording && run.status(of: .recording).state == .active ? run.level : nil
     }
 
-    private var canvasSize: CGSize {
-        let columns = (graph.nodes.map(\.column).max() ?? 0) + 1
-        let rows = (graph.nodes.map(\.row).max() ?? 0) + 1
-        return CGSize(
-            width: CGFloat(columns) * Self.nodeSize.width + CGFloat(columns - 1) * Self.spacing.width,
-            height: CGFloat(rows) * Self.nodeSize.height + CGFloat(rows - 1) * Self.spacing.height
-        )
-    }
-
     private func origin(of node: PipelineGraph.Node) -> CGPoint {
         CGPoint(
-            x: CGFloat(node.column) * (Self.nodeSize.width + Self.spacing.width),
-            y: CGFloat(node.row) * (Self.nodeSize.height + Self.spacing.height)
+            x: CGFloat(node.column) * (nodeSize.width + spacing.width),
+            y: CGFloat(node.row) * (nodeSize.height + spacing.height)
         )
     }
 
@@ -83,14 +90,14 @@ struct PipelineGraphView: View {
             let start: CGPoint
             let end: CGPoint
             if from.row == to.row {
-                start = CGPoint(x: origin(of: from).x + Self.nodeSize.width, y: origin(of: from).y + Self.nodeSize.height / 2)
-                end = CGPoint(x: origin(of: to).x, y: origin(of: to).y + Self.nodeSize.height / 2)
+                start = CGPoint(x: origin(of: from).x + nodeSize.width, y: origin(of: from).y + nodeSize.height / 2)
+                end = CGPoint(x: origin(of: to).x, y: origin(of: to).y + nodeSize.height / 2)
             } else if from.row < to.row {
-                start = CGPoint(x: origin(of: from).x + Self.nodeSize.width / 2, y: origin(of: from).y + Self.nodeSize.height)
-                end = CGPoint(x: origin(of: to).x + Self.nodeSize.width / 2, y: origin(of: to).y)
+                start = CGPoint(x: origin(of: from).x + nodeSize.width / 2, y: origin(of: from).y + nodeSize.height)
+                end = CGPoint(x: origin(of: to).x + nodeSize.width / 2, y: origin(of: to).y)
             } else {
-                start = CGPoint(x: origin(of: from).x + Self.nodeSize.width, y: origin(of: from).y + Self.nodeSize.height / 2)
-                end = CGPoint(x: origin(of: to).x + Self.nodeSize.width / 2, y: origin(of: to).y + Self.nodeSize.height)
+                start = CGPoint(x: origin(of: from).x + nodeSize.width, y: origin(of: from).y + nodeSize.height / 2)
+                end = CGPoint(x: origin(of: to).x + nodeSize.width / 2, y: origin(of: to).y + nodeSize.height)
             }
             var path = Path()
             path.move(to: start)
@@ -129,9 +136,18 @@ struct PipelineNodeView: View {
     let isBranch: Bool
     let level: Float?
 
-    @State private var pulse = false
-
     var body: some View {
+        if status.state == .active {
+            TimelineView(.animation(minimumInterval: 1 / 15)) { context in
+                card(pulse: (sin(context.date.timeIntervalSinceReferenceDate * .pi / 0.7) + 1) / 2)
+            }
+        } else {
+            card(pulse: 0)
+        }
+    }
+
+    /// `pulse` runs 0...1 on the active node only, so no animation outlives the step.
+    private func card(pulse: Double) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 4) {
                 Image(systemName: status.state.symbol).foregroundStyle(status.state.tint)
@@ -155,12 +171,10 @@ struct PipelineNodeView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(
-                    status.state.tint.opacity(status.state == .active ? (pulse ? 1 : 0.35) : 0.5),
+                    status.state.tint.opacity(status.state == .active ? 0.35 + 0.65 * pulse : 0.5),
                     style: StrokeStyle(lineWidth: status.state == .active ? 2 : 1, dash: isBranch && status.state == .pending ? [4, 3] : [])
                 )
         )
-        .onAppear { startPulse() }
-        .onChange(of: status.state) { startPulse() }
         .help(status.detail)
     }
 
@@ -172,14 +186,6 @@ struct PipelineNodeView: View {
         } else if let startedAt = status.startedAt, let endedAt = status.endedAt, endedAt.timeIntervalSince(startedAt) >= 0.05 {
             Text(PipelineDurationFormat.string(endedAt.timeIntervalSince(startedAt)))
         }
-    }
-
-    private func startPulse() {
-        guard status.state == .active else {
-            pulse = false
-            return
-        }
-        withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { pulse = true }
     }
 }
 
