@@ -147,8 +147,12 @@ final class SpeechCoordinatorTests: XCTestCase {
         let first = backend.lastSessionID!
         backend.emit(.started(sessionID: first))
         try await coordinator.speak(request(text: "queued", mode: .automatic))
+        // The real player emits `.cancelled` synchronously from inside `stop()`.
+        backend.onStop = { backend.emit(.cancelled(sessionID: first)) }
 
         coordinator.stop(sessionID: first)
+        await pumpMainActor()
+        XCTAssertEqual(backend.spoken.map(\.text), ["first"])
 
         try await coordinator.speak(request(text: "after-stop", mode: .automatic))
 
@@ -509,34 +513,10 @@ final class SpeechCoordinatorTests: XCTestCase {
         XCTAssertEqual(backend.spoken.map(\.text), ["first", "after-failure"])
     }
 
-    func testStuckInFlightSessionSelfHealsAfterStaleTimeout() async throws {
-        let backend = FakeTTSBackend(id: "apple")
-        let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())
-        var clock = Date(timeIntervalSince1970: 0)
-        let coordinator = makeCoordinator(backend: backend, overlay: overlay, now: { clock })
-
-        try await coordinator.speak(request(text: "wedged", mode: .automatic))
-        backend.emit(.started(sessionID: backend.lastSessionID!))
-        // No terminal event ever arrives for "wedged" - simulating a backend that dropped it.
-
-        clock = clock.addingTimeInterval(60)
-        try await coordinator.speak(request(text: "too-soon", mode: .automatic))
-        // Still within the generous bound: enqueued, not dispatched.
-        XCTAssertEqual(backend.spoken.map(\.text), ["wedged"])
-
-        clock = clock.addingTimeInterval(300)
-        try await coordinator.speak(request(text: "self-heal", mode: .automatic))
-
-        // Past the stale bound: the wedged session is abandoned and this request starts
-        // immediately, ahead of "too-soon" (still queued behind it).
-        XCTAssertEqual(backend.spoken.map(\.text), ["wedged", "self-heal"])
-    }
-
     private func makeCoordinator(
         backend: FakeTTSBackend,
         overlay: ActivityOverlayModel? = nil,
-        options: @escaping () -> TTSOptions = { .init() },
-        now: @escaping () -> Date = Date.init
+        options: @escaping () -> TTSOptions = { .init() }
     ) -> SpeechCoordinator {
         let overlay = overlay ?? ActivityOverlayModel(scheduler: FakeOverlayScheduler())
         let player = FakePlayer()
@@ -546,7 +526,7 @@ final class SpeechCoordinatorTests: XCTestCase {
             backendOrder: { [backend.id] },
             player: player
         )
-        return SpeechCoordinator(router: router, options: options, overlay: overlay, now: now)
+        return SpeechCoordinator(router: router, options: options, overlay: overlay)
     }
 
     private func request(text: String, mode: SpeechMode) -> SpeechRequest {

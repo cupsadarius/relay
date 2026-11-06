@@ -139,9 +139,14 @@ final class TTSRouter {
     /// throws `CancellationError` instead of starting playback.
     @discardableResult
     func stop(sessionID: UUID) -> Bool {
-        guard routingSessionID == sessionID || candidate?.sessionID == sessionID else { return false }
+        guard owns(sessionID) else { return false }
         stop()
         return true
+    }
+
+    /// Whether `sessionID` is the session being routed or played.
+    func owns(_ sessionID: UUID) -> Bool {
+        routingSessionID == sessionID || candidate?.sessionID == sessionID
     }
 
     private func clearCandidate(sessionID: UUID) {

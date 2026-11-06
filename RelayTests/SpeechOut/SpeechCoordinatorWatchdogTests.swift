@@ -2,11 +2,7 @@ import XCTest
 
 @testable import Relay
 
-/// Covers the independent playback watchdog: a defense-in-depth timer started the moment a
-/// session is handed to the router, which self-heals a wedged session (one whose backend never
-/// delivers a terminal event) without requiring any further request to arrive. See
-/// `SpeechCoordinator`'s `staleInFlightTimeout`/`isInFlightSessionStale()` doc comments for the
-/// older, request-driven self-heal this backstops.
+/// The playback watchdog retires a session that makes no progress, with no new request needed.
 @MainActor
 final class SpeechCoordinatorWatchdogTests: XCTestCase {
     /// Real wall-clock timeout used across these tests - short enough to keep the suite fast,

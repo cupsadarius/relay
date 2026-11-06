@@ -27,39 +27,15 @@ final class SpeechCoordinator: SpeechCoordinating {
     /// first so a long silent backlog can never build up behind whatever is currently playing.
     private static let queueCap = 8
 
-    /// How long a single in-flight session may sit "speaking" with no terminal playback event
-    /// before the queue gives up on it and treats it as abandoned. This is deliberately generous
-    /// — far longer than any legitimate utterance — because it exists only as a defense-in-depth
-    /// self-heal, not a normal control-flow path.
-    ///
-    /// Why this exists: `isSpeaking` is otherwise only ever cleared by a terminal
-    /// `.finished`/`.cancelled`/`.failed` event reaching `handle(_:)`. Every backend now feeds the
-    /// one shared `StreamingAudioPlayer`, which emits the terminal event from its `AVAudioPlayerNode`
-    /// buffer-completion callbacks, plus `TTSRouter.speak(...)`'s synchronous `.failed` emission on a
-    /// start failure - each *should* always deliver exactly one terminal event per session. But that
-    /// guarantee rests on AVFoundation completion contracts under conditions this codebase can't
-    /// fully exercise from tests (a mid-playback decode error, an audio route change interrupting
-    /// `AVAudioEngine`, or a rare OS bug) — if any of those ever silently drops a terminal event,
-    /// `isSpeaking` would otherwise stay `true` forever and every future `.automatic` response
-    /// would queue silently, permanently killing auto-read until a manual Stop. This bound makes
-    /// that failure mode self-heal instead.
-    private static let staleInFlightTimeout: TimeInterval = 300
+    /// Longest gap with no playback progress before the watchdog retires a session.
+    static let defaultWatchdogTimeout: TimeInterval = 300
 
     private let router: TTSRouter
     private let options: () -> TTSOptions
     private let overlay: ActivityOverlayModel
-    private let now: () -> Date
-    /// How long the independent playback watchdog (`startWatchdog(for:)`) allows a session to go
-    /// without playback progress. The deadline starts when the session is handed to the router
-    /// and is rearmed whenever playback starts or another audio level arrives. Unlike
-    /// `staleInFlightTimeout` this is a real wall-clock duration (driven by `Task.sleep`, not the
-    /// injectable `now()` clock), so tests can shorten it directly rather than by faking time.
     private let watchdogTimeout: TimeInterval
     private var lastRequest: SpeechRequest?
     private var currentSessionID: UUID?
-    /// When the currently in-flight session was handed to the router. `nil` whenever nothing is
-    /// in flight. Used only by the `staleInFlightTimeout` self-heal check.
-    private var inFlightStartedAt: Date?
     /// The watchdog `Task` for the currently in-flight session, if any. Cancelled the moment a
     /// terminal event (or an explicit `stop`) retires that session, so it never fires after a
     /// legitimate finish; replaced (not merely cancelled) whenever a new session starts.
@@ -88,13 +64,11 @@ final class SpeechCoordinator: SpeechCoordinating {
         router: TTSRouter,
         options: @escaping () -> TTSOptions,
         overlay: ActivityOverlayModel,
-        now: @escaping () -> Date = Date.init,
-        watchdogTimeout: TimeInterval = SpeechCoordinator.staleInFlightTimeout
+        watchdogTimeout: TimeInterval = SpeechCoordinator.defaultWatchdogTimeout
     ) {
         self.router = router
         self.options = options
         self.overlay = overlay
-        self.now = now
         self.watchdogTimeout = watchdogTimeout
         router.setPlaybackEventHandler { [weak self] event, backend in
             self?.handle(event, backend: backend)
@@ -109,15 +83,8 @@ final class SpeechCoordinator: SpeechCoordinating {
             try await start(request)
         case .automatic:
             if isSpeaking {
-                if isInFlightSessionStale() {
-                    // Self-heal: the in-flight session's backend apparently dropped its terminal
-                    // event. Give up on tracking it any further and take over immediately, rather
-                    // than queueing behind a session that will never finish.
-                    isSpeaking = false
-                } else {
-                    enqueue(request)
-                    return
-                }
+                enqueue(request)
+                return
             }
             try await start(request)
         }
@@ -134,7 +101,6 @@ final class SpeechCoordinator: SpeechCoordinating {
         }
         cancelWatchdog()
         currentSessionID = nil
-        inFlightStartedAt = nil
         pendingAutomaticSessions.removeAll()
         isSpeaking = false
     }
@@ -145,7 +111,6 @@ final class SpeechCoordinator: SpeechCoordinating {
         cancelWatchdog()
         let sessionID = UUID()
         currentSessionID = sessionID
-        inFlightStartedAt = now()
         isSpeaking = true
         startWatchdog(for: sessionID)
         overlay.begin(sessionID: sessionID)
@@ -162,13 +127,14 @@ final class SpeechCoordinator: SpeechCoordinating {
     /// router, hides only the matching overlay session, and clears any queued
     /// automatic backlog.
     func stop(sessionID: UUID) {
-        guard router.stop(sessionID: sessionID) else { return }
+        guard router.owns(sessionID) else { return }
+        // Clear first: the player emits `.cancelled` synchronously, and that drains the queue.
         pendingAutomaticQueue.removeAll()
+        router.stop(sessionID: sessionID)
         overlay.cancel(sessionID: sessionID)
         if currentSessionID == sessionID {
             cancelWatchdog()
             currentSessionID = nil
-            inFlightStartedAt = nil
         }
         pendingAutomaticSessions.remove(sessionID)
         isSpeaking = false
@@ -181,7 +147,6 @@ final class SpeechCoordinator: SpeechCoordinating {
         router.stop()
         let sessionID = UUID()
         currentSessionID = sessionID
-        inFlightStartedAt = now()
         isSpeaking = true
         startWatchdog(for: sessionID)
         overlay.begin(sessionID: sessionID)
@@ -197,19 +162,6 @@ final class SpeechCoordinator: SpeechCoordinating {
         if pendingAutomaticQueue.count > Self.queueCap {
             pendingAutomaticQueue.removeFirst(pendingAutomaticQueue.count - Self.queueCap)
         }
-    }
-
-    /// Whether the currently in-flight session has been "speaking" with no terminal event for at
-    /// least `staleInFlightTimeout`. See that constant's doc comment for why this exists.
-    ///
-    /// This is now a backstop behind the independent `startWatchdog(for:)` timer, which
-    /// self-heals a wedged session on its own without waiting for a new request to arrive. This
-    /// check is kept anyway because it is driven by the injectable `now()` clock rather than real
-    /// wall-clock time, so it stays reachable deterministically in a single synchronous test step
-    /// (jump the fake clock, then call `speak(_:)`) in a way the real-time watchdog cannot be.
-    private func isInFlightSessionStale() -> Bool {
-        guard let inFlightStartedAt else { return false }
-        return now().timeIntervalSince(inFlightStartedAt) >= Self.staleInFlightTimeout
     }
 
     /// Starts (replacing any previous) watchdog timer for `sessionID`. The first deadline starts
@@ -259,7 +211,6 @@ final class SpeechCoordinator: SpeechCoordinating {
         guard sessionID == currentSessionID else { return }
         cancelWatchdog()
         currentSessionID = nil
-        inFlightStartedAt = nil
         isSpeaking = false
 
         watchdogRetiringSessionID = sessionID
@@ -279,7 +230,6 @@ final class SpeechCoordinator: SpeechCoordinating {
     private func start(_ request: SpeechRequest) async throws {
         let sessionID = UUID()
         currentSessionID = sessionID
-        inFlightStartedAt = now()
         isSpeaking = true
         startWatchdog(for: sessionID)
 
@@ -306,7 +256,6 @@ final class SpeechCoordinator: SpeechCoordinating {
         guard sessionID == currentSessionID else { return }
         cancelWatchdog()
         currentSessionID = nil
-        inFlightStartedAt = nil
         isSpeaking = false
         drainQueueIfNeeded()
     }
