@@ -730,6 +730,32 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.cancel(sessionID: overlay.sessionID!)
     }
 
+    func testCancelDuringLiveTranscriptionStartLeavesNothingRunning() async {
+        let events = EventLog()
+        let microphone = ObserverGatedFakeMicrophone(events: events)
+        let overlay = RecordingActivityOverlay(trace: events)
+        let coordinator = DictationCoordinator(
+            microphone: microphone,
+            sttRouter: router(events: events),
+            processor: RulesTranscriptProcessor(),
+            textInserter: FakeTextInserter(events: events),
+            stopSpeech: {},
+            status: { _ in },
+            activity: overlay,
+            liveTranscriptionEnabled: { true }
+        )
+
+        let start = Task { await coordinator.start() }
+        await waitUntil { await microphone.isHoldingObserver }
+        await coordinator.cancel(sessionID: overlay.sessionID!)
+        await microphone.releaseObserver()
+        await start.value
+
+        let hasObserver = await microphone.hasObserver
+        XCTAssertFalse(hasObserver, "a cancelled session must not keep a sample observer")
+        XCTAssertFalse(events.values.contains("microphone.start"), "a cancelled session must not start the microphone")
+    }
+
     /// Rewritten for the new contract (was `testFinalTranscribeDoesNotStartUntilTheInFlightInterimCallCompletesAfterStop`):
     /// that version asserted the OLD, buggy behavior -- that `finish()` blocked inside
     /// `stopStreamingTranscription()`/`stop()` until the in-flight interim call finished before
@@ -1125,6 +1151,41 @@ private actor SampleStreamingFakeMicrophone: MicrophoneCapturing {
 
     func emitSamples(_ samples: [Float]) {
         sampleObserver?(samples)
+    }
+}
+
+/// Holds the first non-nil `setSampleObserver` call until `releaseObserver()`.
+private actor ObserverGatedFakeMicrophone: MicrophoneCapturing {
+    let events: EventLog
+    private var sampleObserver: (@Sendable ([Float]) -> Void)?
+    private var held: CheckedContinuation<Void, Never>?
+    private var hasHeld = false
+
+    init(events: EventLog) { self.events = events }
+
+    var isHoldingObserver: Bool { held != nil }
+    var hasObserver: Bool { sampleObserver != nil }
+
+    func start(onLevel: @escaping @Sendable (Float) -> Void) async throws {
+        await events.append("microphone.start")
+    }
+    func stop() async throws -> AudioInput {
+        await events.append("microphone.stop")
+        return AudioInput(samples: [0.1], sampleRate: 16_000)
+    }
+    func cancel() async { await events.append("microphone.cancel") }
+
+    func setSampleObserver(_ observer: (@Sendable ([Float]) -> Void)?) async {
+        if observer != nil, !hasHeld {
+            hasHeld = true
+            await withCheckedContinuation { held = $0 }
+        }
+        sampleObserver = observer
+    }
+
+    func releaseObserver() {
+        held?.resume()
+        held = nil
     }
 }
 

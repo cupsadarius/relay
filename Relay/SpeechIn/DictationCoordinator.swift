@@ -85,6 +85,11 @@ final class DictationCoordinator: DictationCoordinating {
         stopSpeech()
         // Must run before microphone.start(onLevel:); see setSampleObserver.
         await live?.start()
+        // A cancel during `live.start()` already ran `stop()`, which this start then undid.
+        guard case let .starting(id, _, _) = state, id == session else {
+            await live?.stop()
+            return
+        }
         do {
             try await microphone.start(onLevel: { [weak self] level in
                 // Each level batch hops to the main actor via its own `Task`, so relative
