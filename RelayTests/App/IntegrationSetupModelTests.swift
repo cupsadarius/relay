@@ -289,26 +289,17 @@ final class IntegrationSetupModelTests: XCTestCase {
             environment: [:],
             capturedAt: Date(timeIntervalSince1970: 1_700_000_000)
         )
-        let integration = AlwaysSucceedIntegration(provider: .claudeCode, event: event)
         let speech = FakeSpeechCoordinator()
         var continuation: AsyncStream<HookEnvelope>.Continuation!
         let events = AsyncStream<HookEnvelope> { continuation = $0 }
-        let manager = IntegrationManager(events: events, integrations: [integration], speechCoordinator: speech)
+        let manager = IntegrationManager(events: events, speechCoordinator: speech)
         let model = AppModel(runtime: makeRuntime(integrationManager: manager))
 
         XCTAssertFalse(model.integrationSetup.latestResponseAvailable)
 
         manager.start()
         defer { manager.stop() }
-        continuation.yield(
-            HookEnvelope(
-                schemaVersion: 1,
-                provider: .claudeCode,
-                rawPayload: "{}",
-                parentPID: 100,
-                environment: [:],
-                capturedAt: Date(timeIntervalSince1970: 1_700_000_000)
-            ))
+        continuation.yield(.stop(event))
 
         await waitUntil { model.integrationSetup.latestResponseAvailable }
     }
@@ -324,10 +315,9 @@ final class IntegrationSetupModelTests: XCTestCase {
             environment: [:],
             capturedAt: Date(timeIntervalSince1970: 1_700_000_777)
         )
-        let integration = AlwaysSucceedIntegration(provider: .claudeCode, event: event)
         var continuation: AsyncStream<HookEnvelope>.Continuation!
         let events = AsyncStream<HookEnvelope> { continuation = $0 }
-        let manager = IntegrationManager(events: events, integrations: [integration], speechCoordinator: FakeSpeechCoordinator())
+        let manager = IntegrationManager(events: events, speechCoordinator: FakeSpeechCoordinator())
         let model = makeModel(claudeCodeInstaller: claudeInstaller, integrationManager: manager)
 
         model.install(.claudeCode)
@@ -335,15 +325,7 @@ final class IntegrationSetupModelTests: XCTestCase {
 
         manager.start()
         defer { manager.stop() }
-        continuation.yield(
-            HookEnvelope(
-                schemaVersion: 1,
-                provider: .claudeCode,
-                rawPayload: "{}",
-                parentPID: 100,
-                environment: [:],
-                capturedAt: event.capturedAt
-            ))
+        continuation.yield(.stop(event))
 
         await waitUntil { model.status(for: .claudeCode) == .active(lastEventAt: event.capturedAt) }
     }
@@ -494,10 +476,9 @@ final class IntegrationSetupModelTests: XCTestCase {
             environment: [:],
             capturedAt: Date(timeIntervalSince1970: 1_700_000_888)
         )
-        let integration = AlwaysSucceedIntegration(provider: .claudeCode, event: event)
         var continuation: AsyncStream<HookEnvelope>.Continuation!
         let events = AsyncStream<HookEnvelope> { continuation = $0 }
-        let manager = IntegrationManager(events: events, integrations: [integration], speechCoordinator: FakeSpeechCoordinator())
+        let manager = IntegrationManager(events: events, speechCoordinator: FakeSpeechCoordinator())
         let model = makeModel(claudeCodeInstaller: claudeInstaller, integrationManager: manager)
 
         model.install(.claudeCode)
@@ -505,15 +486,7 @@ final class IntegrationSetupModelTests: XCTestCase {
 
         manager.start()
         defer { manager.stop() }
-        continuation.yield(
-            HookEnvelope(
-                schemaVersion: 1,
-                provider: .claudeCode,
-                rawPayload: "{}",
-                parentPID: 100,
-                environment: [:],
-                capturedAt: event.capturedAt
-            ))
+        continuation.yield(.stop(event))
         await waitUntil { model.status(for: .claudeCode) == .active(lastEventAt: event.capturedAt) }
 
         model.uninstall(.claudeCode)
@@ -565,15 +538,7 @@ final class IntegrationSetupModelTests: XCTestCase {
         harness.manager.start()
         defer { harness.manager.stop() }
 
-        harness.continuation.yield(
-            HookEnvelope(
-                schemaVersion: 1,
-                provider: .claudeCode,
-                rawPayload: "{}",
-                parentPID: harness.event.parentPID,
-                environment: [:],
-                capturedAt: harness.event.capturedAt
-            ))
+        harness.continuation.yield(.stop(harness.event))
 
         await waitUntil { !harness.speech.requests.isEmpty }
 
@@ -593,15 +558,7 @@ final class IntegrationSetupModelTests: XCTestCase {
         harness.manager.start()
         defer { harness.manager.stop() }
 
-        harness.continuation.yield(
-            HookEnvelope(
-                schemaVersion: 1,
-                provider: .claudeCode,
-                rawPayload: "{}",
-                parentPID: harness.event.parentPID,
-                environment: [:],
-                capturedAt: harness.event.capturedAt
-            ))
+        harness.continuation.yield(.stop(harness.event))
 
         await waitUntil { model.latestResponseAvailable }
 
@@ -626,15 +583,7 @@ final class IntegrationSetupModelTests: XCTestCase {
         harness.manager.start()
         defer { harness.manager.stop() }
 
-        harness.continuation.yield(
-            HookEnvelope(
-                schemaVersion: 1,
-                provider: .claudeCode,
-                rawPayload: "{}",
-                parentPID: harness.event.parentPID,
-                environment: [:],
-                capturedAt: harness.event.capturedAt
-            ))
+        harness.continuation.yield(.stop(harness.event))
 
         await waitUntil { model.latestResponseAvailable }
 
@@ -665,7 +614,6 @@ private func makeAutoReadWiringHarness(focus: FocusDecision, autoRead: Bool) -> 
         // matter how recently the test actually runs.
         capturedAt: Date()
     )
-    let integration = AlwaysSucceedIntegration(provider: .claudeCode, event: event)
     let registry = AgentSessionRegistry()
     let speech = RecordingWiringSpeechSink()
     let coordinator = AgentAutoReadCoordinator(
@@ -684,7 +632,6 @@ private func makeAutoReadWiringHarness(focus: FocusDecision, autoRead: Bool) -> 
     let events = AsyncStream<HookEnvelope> { continuation = $0 }
     let manager = IntegrationManager(
         events: events,
-        integrations: [integration],
         speechCoordinator: FakeSpeechCoordinator(),
         onResponse: { decoded in await coordinator.handle(decoded) }
     )
@@ -711,15 +658,6 @@ private final class RecordingWiringSpeechSink: SpeechSubmitting, @unchecked Send
 
 private enum TestError: Error {
     case boom
-}
-
-/// A `RelayIntegration` test double that always succeeds with a fixed event, regardless of the
-/// envelope's contents.
-private struct AlwaysSucceedIntegration: RelayIntegration {
-    let provider: AgentProvider
-    let event: AgentResponseEvent
-
-    func decode(_ envelope: HookEnvelope) throws -> AgentResponseEvent { event }
 }
 
 @MainActor

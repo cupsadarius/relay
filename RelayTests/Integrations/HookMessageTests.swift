@@ -2,7 +2,7 @@ import XCTest
 
 @testable import Relay
 
-final class StopHookIntegrationTests: XCTestCase {
+final class HookMessageTests: XCTestCase {
     private func envelope(provider: AgentProvider, rawPayload: String) -> HookEnvelope {
         HookEnvelope(
             schemaVersion: 1,
@@ -27,8 +27,15 @@ final class StopHookIntegrationTests: XCTestCase {
         return String(decoding: try! JSONSerialization.data(withJSONObject: object), as: UTF8.self)
     }
 
+    private struct NotAResponse: Error {}
+
+    private func response(_ envelope: HookEnvelope) throws -> AgentResponseEvent {
+        guard case let .response(event) = try HookMessage.parse(envelope) else { throw NotAResponse() }
+        return event
+    }
+
     func testClaudeCodeDecodesStopEventWithoutTurnID() throws {
-        let event = try StopHookIntegration.claudeCode.decode(envelope(provider: .claudeCode, rawPayload: payload()))
+        let event = try response(envelope(provider: .claudeCode, rawPayload: payload()))
 
         XCTAssertEqual(event.provider, .claudeCode)
         XCTAssertEqual(event.providerSessionID, "abc123")
@@ -40,35 +47,35 @@ final class StopHookIntegrationTests: XCTestCase {
     }
 
     func testCodexDecodesStopEventWithTurnID() throws {
-        let event = try StopHookIntegration.codex.decode(envelope(provider: .codex, rawPayload: payload(turnID: "turn_456")))
+        let event = try response(envelope(provider: .codex, rawPayload: payload(turnID: "turn_456")))
 
         XCTAssertEqual(event.provider, .codex)
         XCTAssertEqual(event.providerSessionID, "abc123")
     }
 
     func testCodexRejectsMissingTurnIDAsMalformed() {
-        XCTAssertThrowsError(try StopHookIntegration.codex.decode(envelope(provider: .codex, rawPayload: payload()))) { error in
-            XCTAssertEqual(error as? StopHookIntegrationError, .malformedPayload)
+        XCTAssertThrowsError(try HookMessage.parse(envelope(provider: .codex, rawPayload: payload()))) { error in
+            XCTAssertEqual(error as? HookMessageError, .malformedPayload)
         }
     }
 
     func testUnknownFieldsFromEitherAgentAreIgnored() throws {
         let raw = payload(extra: ["transcript_path": "/tmp/t.jsonl", "stop_hook_active": false, "model": "x"])
-        XCTAssertNoThrow(try StopHookIntegration.claudeCode.decode(envelope(provider: .claudeCode, rawPayload: raw)))
+        XCTAssertNoThrow(try response(envelope(provider: .claudeCode, rawPayload: raw)))
     }
 
     /// Claude Code does not use `turn_id`; a wrong-typed value there must never fail decoding of
     /// an otherwise-valid Claude payload (only Codex structurally requires it as a string).
     func testClaudeCodeDecodesStopEventWithNonStringTurnID() throws {
         let raw = payload(extra: ["turn_id": 12345])
-        XCTAssertNoThrow(try StopHookIntegration.claudeCode.decode(envelope(provider: .claudeCode, rawPayload: raw)))
+        XCTAssertNoThrow(try response(envelope(provider: .claudeCode, rawPayload: raw)))
     }
 
     func testMissingOrBlankFinalMessageIsRejectedForBothProviders() {
-        for (integration, turnID) in [(StopHookIntegration.claudeCode, nil), (StopHookIntegration.codex, "t")] as [(StopHookIntegration, String?)] {
+        for (provider, turnID) in [(AgentProvider.claudeCode, nil), (.codex, "t")] as [(AgentProvider, String?)] {
             for raw in [payload(message: nil, turnID: turnID), payload(message: "   \n", turnID: turnID)] {
-                XCTAssertThrowsError(try integration.decode(envelope(provider: integration.provider, rawPayload: raw))) { error in
-                    XCTAssertEqual(error as? StopHookIntegrationError, .missingFinalMessage)
+                XCTAssertThrowsError(try HookMessage.parse(envelope(provider: provider, rawPayload: raw))) { error in
+                    XCTAssertEqual(error as? HookMessageError, .missingFinalMessage)
                 }
             }
         }
@@ -76,20 +83,20 @@ final class StopHookIntegrationTests: XCTestCase {
 
     func testNonStopHookEventIsRejected() {
         let raw = payload(event: "PreToolUse")
-        XCTAssertThrowsError(try StopHookIntegration.claudeCode.decode(envelope(provider: .claudeCode, rawPayload: raw))) { error in
-            XCTAssertEqual(error as? StopHookIntegrationError, .unsupportedHookEvent)
+        XCTAssertThrowsError(try response(envelope(provider: .claudeCode, rawPayload: raw))) { error in
+            XCTAssertEqual(error as? HookMessageError, .unsupportedHookEvent)
         }
     }
 
     func testMalformedRawPayloadIsRejected() {
-        XCTAssertThrowsError(try StopHookIntegration.codex.decode(envelope(provider: .codex, rawPayload: "not json"))) { error in
-            XCTAssertEqual(error as? StopHookIntegrationError, .malformedPayload)
+        XCTAssertThrowsError(try HookMessage.parse(envelope(provider: .codex, rawPayload: "not json"))) { error in
+            XCTAssertEqual(error as? HookMessageError, .malformedPayload)
         }
     }
 
     func testEnvelopeAncestryIsCarriedOntoTheEvent() throws {
         var hookEnvelope = envelope(provider: .claudeCode, rawPayload: payload())
         hookEnvelope.processAncestry = [800, 700]
-        XCTAssertEqual(try StopHookIntegration.claudeCode.decode(hookEnvelope).processAncestry, [800, 700])
+        XCTAssertEqual(try response(hookEnvelope).processAncestry, [800, 700])
     }
 }

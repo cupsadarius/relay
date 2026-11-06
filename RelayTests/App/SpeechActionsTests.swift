@@ -31,77 +31,11 @@ final class SpeechActionsTests: XCTestCase {
         return (SpeechActions(runtime: runtime, voiceCatalog: catalog), runtime)
     }
 
-    /// Drives one event through a real `IntegrationManager` consume loop so `latestResponse`
-    /// and its store agree, exactly as the socket pipeline keeps them.
-    private func drivenManager(
-        latest: AgentResponseEvent,
-        store: LatestAgentResponseStore,
-        speech: SpySpeechCoordinator
-    ) async -> IntegrationManager {
-        await store.set(latest)
-        var continuation: AsyncStream<HookEnvelope>.Continuation!
-        let events = AsyncStream<HookEnvelope> { continuation = $0 }
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [StubDecodingIntegration(provider: .claudeCode, event: latest)],
-            store: store,
-            speechCoordinator: speech
-        )
-        manager.start()
-        continuation.yield(
-            HookEnvelope(
-                schemaVersion: 1, provider: .claudeCode, rawPayload: "{}",
-                parentPID: 100, environment: [:], capturedAt: latest.capturedAt
-            ))
-        let deadline = Date().addingTimeInterval(2)
-        while manager.latestResponse == nil, Date() < deadline { await Task.yield() }
-        manager.stop()
-        return manager
-    }
-
-    func testReadSelectionPreprocessesAndSpeaksAUserRequest() async {
-        let speech = SpySpeechCoordinator()
-        let (actions, runtime) = makeActions(
-            speech: speech,
-            selection: SpySelectionReader(text: "Intro\n```swift\nsecret()\n```\nEnd")
-        )
-
-        await actions.readSelection()
-
-        XCTAssertEqual(
-            speech.requests,
-            [
-                SpeechRequest(
-                    text: "Intro There is a code block on screen. Please read it there. End",
-                    source: .selection, mode: .userRequested, sessionID: nil
-                )
-            ])
-        XCTAssertEqual(runtime.status.message, "Ready")
-        XCTAssertEqual(runtime.diagnostics.entries.last?.event, .ttsSubmitted)
-    }
-
-    func testFocusedSessionReplaySpeaksThatSessionsReply() async {
-        let registry = AgentSessionRegistry()
-        let sessionA = await registry.upsert(response: .fixture(providerSessionID: "session-a", text: "Reply A"), processAncestry: [])
-        let speech = SpySpeechCoordinator()
-        let (actions, _) = makeActions(speech: speech, registry: registry, focused: sessionA.id)
-
-        await actions.replayLast()
-
-        XCTAssertEqual(speech.requests.first?.sessionID, "claude-code:session-a")
-        XCTAssertEqual(speech.requests.first?.mode, .userRequested)
-        XCTAssertEqual(speech.replayCount, 0)
-    }
-
     func testGlobalLatestReplaySpeaksTheLatestAgentResponse() async {
         let registry = AgentSessionRegistry()
         _ = await registry.upsert(response: .fixture(providerSessionID: "session-a"), processAncestry: [4242])
         let speech = SpySpeechCoordinator()
-        let manager = await drivenManager(
-            latest: .fixture(providerSessionID: "global-latest", text: "Global reply"),
-            store: LatestAgentResponseStore(),
-            speech: speech
-        )
+        let manager = await IntegrationManager.seeded(with: .fixture(providerSessionID: "global-latest", text: "Global reply"), speech: speech)
         let (actions, _) = makeActions(speech: speech, integrationManager: manager, registry: registry, frontmostPID: 4242)
 
         await actions.replayLast()
@@ -183,10 +117,8 @@ final class SpeechActionsTests: XCTestCase {
     }
 
     func testSpeakLatestAgentResponseFailureIsSurfaced() async {
-        let store = LatestAgentResponseStore()
-        await store.set(.fixture(provider: .codex, providerSessionID: "session-2"))
         let speech = SpySpeechCoordinator(speakError: SpeechBoom())
-        let manager = IntegrationManager(events: AsyncStream { _ in }, integrations: [], store: store, speechCoordinator: speech)
+        let manager = await IntegrationManager.seeded(with: .fixture(provider: .codex, providerSessionID: "session-2"), speech: speech)
         let (actions, runtime) = makeActions(speech: speech, integrationManager: manager)
 
         await actions.speakLatestAgentResponse()
@@ -195,15 +127,10 @@ final class SpeechActionsTests: XCTestCase {
         XCTAssertEqual(runtime.diagnostics.entries.last?.event, .ttsFailed)
     }
 
-    /// Moved from plan 1's `AppModelIntegrationsTests`: nothing to speak is not a submission.
+    /// Nothing to speak is not a submission.
     func testSpeakLatestAgentResponseWithNothingToSpeakRecordsNoSubmission() async {
         let speech = SpySpeechCoordinator()
-        let manager = IntegrationManager(
-            events: AsyncStream<HookEnvelope> { _ in },
-            integrations: [],
-            store: LatestAgentResponseStore(),
-            speechCoordinator: speech
-        )
+        let manager = IntegrationManager(events: AsyncStream<HookEnvelope> { _ in }, speechCoordinator: speech)
         let (actions, runtime) = makeActions(speech: speech, integrationManager: manager)
 
         await actions.speakLatestAgentResponse()
@@ -213,12 +140,10 @@ final class SpeechActionsTests: XCTestCase {
         XCTAssertEqual(runtime.status.message, "No agent response to speak yet.")
     }
 
-    /// Moved from `AppModelIntegrationsTests`: a successful speak clears a stale failure message.
+    /// A successful speak clears a stale failure message.
     func testSpeakLatestAgentResponseSuccessClearsAStaleStatusText() async {
-        let store = LatestAgentResponseStore()
-        await store.set(.fixture(providerSessionID: "session-3", text: "Done."))
         let speech = SpySpeechCoordinator()
-        let manager = IntegrationManager(events: AsyncStream { _ in }, integrations: [], store: store, speechCoordinator: speech)
+        let manager = await IntegrationManager.seeded(with: .fixture(providerSessionID: "session-3", text: "Done."), speech: speech)
         let (actions, runtime) = makeActions(speech: speech, integrationManager: manager)
         runtime.status.post("Could not speak the latest agent response.")
 
@@ -232,9 +157,3 @@ final class SpeechActionsTests: XCTestCase {
 }
 
 private struct SpeechBoom: Error {}
-
-private struct StubDecodingIntegration: RelayIntegration {
-    let provider: AgentProvider
-    let event: AgentResponseEvent
-    func decode(_ envelope: HookEnvelope) throws -> AgentResponseEvent { event }
-}

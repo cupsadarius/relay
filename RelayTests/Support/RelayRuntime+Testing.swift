@@ -63,7 +63,6 @@ extension RelayRuntime {
             integrationManager
             ?? IntegrationManager(
                 events: receiver.events,
-                integrations: [StopHookIntegration.claudeCode, StopHookIntegration.codex],
                 speechCoordinator: speechCoordinator,
                 diagnostics: integrationDiagnosticsLog
             )
@@ -352,5 +351,42 @@ extension AgentResponseEvent {
             text: text, cwd: "/tmp/repo",
             parentPID: parentPID, environment: [:], capturedAt: capturedAt
         )
+    }
+}
+
+extension HookEnvelope {
+    /// A real `Stop` envelope that `HookMessage.parse` turns back into `event`.
+    static func stop(_ event: AgentResponseEvent) -> HookEnvelope {
+        let payload: [String: Any] = [
+            "session_id": event.providerSessionID,
+            "cwd": event.cwd,
+            "hook_event_name": HookEvent.stop.rawValue,
+            "last_assistant_message": event.text,
+            "turn_id": "turn-1",
+        ]
+        return HookEnvelope(
+            schemaVersion: 1,
+            provider: event.provider,
+            rawPayload: String(decoding: try! JSONSerialization.data(withJSONObject: payload), as: UTF8.self),
+            parentPID: event.parentPID,
+            environment: event.environment,
+            capturedAt: event.capturedAt,
+            processAncestry: event.processAncestry
+        )
+    }
+}
+
+extension IntegrationManager {
+    /// A manager whose `latestResponse` is `event`, delivered through the real consume loop.
+    static func seeded(with event: AgentResponseEvent, speech: any SpeechCoordinating) async -> IntegrationManager {
+        var continuation: AsyncStream<HookEnvelope>.Continuation!
+        let events = AsyncStream<HookEnvelope> { continuation = $0 }
+        let manager = IntegrationManager(events: events, speechCoordinator: speech)
+        manager.start()
+        continuation.yield(.stop(event))
+        let deadline = Date().addingTimeInterval(2)
+        while manager.latestResponse == nil, Date() < deadline { await Task.yield() }
+        manager.stop()
+        return manager
     }
 }

@@ -7,18 +7,14 @@ import XCTest
 final class IntegrationManagerTests: XCTestCase {
     // MARK: - Fixtures
 
-    private func envelope(
-        provider: AgentProvider,
-        rawPayload: String = "{}",
-        capturedAt: Date = Date(timeIntervalSince1970: 1_700_000_000)
-    ) -> HookEnvelope {
+    private func envelope(provider: AgentProvider, rawPayload: String) -> HookEnvelope {
         HookEnvelope(
             schemaVersion: 1,
             provider: provider,
             rawPayload: rawPayload,
             parentPID: 100,
             environment: [:],
-            capturedAt: capturedAt
+            capturedAt: Date(timeIntervalSince1970: 1_700_000_000)
         )
     }
 
@@ -39,6 +35,26 @@ final class IntegrationManagerTests: XCTestCase {
         )
     }
 
+    private func makeManager(
+        speech: FakeSpeechCoordinator? = nil,
+        initialStatus: [AgentProvider: IntegrationStatus] = [:],
+        diagnostics: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog(),
+        onResponse: @escaping @Sendable (AgentResponseEvent) async -> Void = { _ in },
+        onPrompt: @escaping @Sendable (AgentSessionID) async -> Void = { _ in }
+    ) -> (manager: IntegrationManager, continuation: AsyncStream<HookEnvelope>.Continuation) {
+        var continuation: AsyncStream<HookEnvelope>.Continuation!
+        let events = AsyncStream<HookEnvelope> { continuation = $0 }
+        let manager = IntegrationManager(
+            events: events,
+            speechCoordinator: speech ?? FakeSpeechCoordinator(),
+            initialStatus: initialStatus,
+            diagnostics: diagnostics,
+            onResponse: onResponse,
+            onPrompt: onPrompt
+        )
+        return (manager, continuation)
+    }
+
     /// Polls `condition` on a bounded loop. Never waits unboundedly: fails the test outright if
     /// `timeout` elapses first.
     private func waitUntil(
@@ -57,40 +73,37 @@ final class IntegrationManagerTests: XCTestCase {
         }
     }
 
-    // MARK: - Provider dispatch
+    // MARK: - Parsing and latest response
 
-    func testClaudeEnvelopeIsDecodedOnlyByClaudeAdapterAndBecomesLatest() async {
+    func testClaudeEnvelopeBecomesLatest() async {
         let claudeEvent = event(provider: .claudeCode, providerSessionID: "claude-1")
-        let claude = SpyIntegration(provider: .claudeCode, result: .success(claudeEvent))
-        let codex = SpyIntegration(provider: .codex, result: .failure(TestError.shouldNotBeCalled))
-        var continuation: AsyncStream<HookEnvelope>.Continuation!
-        let events = AsyncStream<HookEnvelope> { continuation = $0 }
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [claude, codex],
-            speechCoordinator: FakeSpeechCoordinator()
-        )
+        let (manager, continuation) = makeManager()
         manager.start()
         defer { manager.stop() }
 
-        continuation.yield(envelope(provider: .claudeCode))
+        continuation.yield(.stop(claudeEvent))
 
         await waitUntil { manager.latestResponse != nil }
-
         XCTAssertEqual(manager.latestResponse, claudeEvent)
-        XCTAssertEqual(claude.decodeCount, 1)
-        XCTAssertEqual(codex.decodeCount, 0)
     }
 
-    func testUserPromptSubmitReportsThePromptAndIsNeverDecodedAsAResponse() async {
-        let claude = SpyIntegration(provider: .claudeCode, result: .failure(TestError.shouldNotBeCalled))
-        var continuation: AsyncStream<HookEnvelope>.Continuation!
-        let events = AsyncStream<HookEnvelope> { continuation = $0 }
+    func testCodexEnvelopeBecomesLatest() async {
+        let codexEvent = event(provider: .codex, providerSessionID: "codex-1")
+        let (manager, continuation) = makeManager()
+        manager.start()
+        defer { manager.stop() }
+
+        continuation.yield(.stop(codexEvent))
+
+        await waitUntil { manager.latestResponse != nil }
+        XCTAssertEqual(manager.latestResponse, codexEvent)
+    }
+
+    func testUserPromptSubmitReportsThePromptAndIsNeverAResponse() async {
         let prompts = PromptRecorder()
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [claude],
-            speechCoordinator: FakeSpeechCoordinator(),
+        let responses = ResponseRecorder()
+        let (manager, continuation) = makeManager(
+            onResponse: { responses.record($0) },
             onPrompt: { prompts.record($0) }
         )
         manager.start()
@@ -101,311 +114,126 @@ final class IntegrationManagerTests: XCTestCase {
 
         await waitUntil { !prompts.ids.isEmpty }
         XCTAssertEqual(prompts.ids, [AgentSessionID(provider: .claudeCode, providerSessionID: "s1")])
-        XCTAssertEqual(claude.decodeCount, 0)
-    }
-
-    func testCodexEnvelopeIsDecodedOnlyByCodexAdapterAndBecomesLatest() async {
-        let codexEvent = event(provider: .codex, providerSessionID: "codex-1")
-        let claude = SpyIntegration(provider: .claudeCode, result: .failure(TestError.shouldNotBeCalled))
-        let codex = SpyIntegration(provider: .codex, result: .success(codexEvent))
-        var continuation: AsyncStream<HookEnvelope>.Continuation!
-        let events = AsyncStream<HookEnvelope> { continuation = $0 }
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [claude, codex],
-            speechCoordinator: FakeSpeechCoordinator()
-        )
-        manager.start()
-        defer { manager.stop() }
-
-        continuation.yield(envelope(provider: .codex))
-
-        await waitUntil { manager.latestResponse != nil }
-
-        XCTAssertEqual(manager.latestResponse, codexEvent)
-        XCTAssertEqual(codex.decodeCount, 1)
-        XCTAssertEqual(claude.decodeCount, 0)
+        XCTAssertNil(manager.latestResponse)
+        XCTAssertTrue(responses.events.isEmpty)
     }
 
     // MARK: - Status transitions
 
     func testFirstValidCodexEventFlipsStatusFromTrustRequiredToActive() async {
         let codexEvent = event(provider: .codex, capturedAt: Date(timeIntervalSince1970: 1_700_000_500))
-        let codex = SpyIntegration(provider: .codex, result: .success(codexEvent))
-        var continuation: AsyncStream<HookEnvelope>.Continuation!
-        let events = AsyncStream<HookEnvelope> { continuation = $0 }
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [codex],
-            speechCoordinator: FakeSpeechCoordinator(),
-            initialStatus: [.codex: .installedTrustRequired]
-        )
+        let (manager, continuation) = makeManager(initialStatus: [.codex: .installedTrustRequired])
         manager.start()
         defer { manager.stop() }
 
         XCTAssertEqual(manager.status[.codex], .installedTrustRequired)
 
-        continuation.yield(envelope(provider: .codex))
+        continuation.yield(.stop(codexEvent))
 
         await waitUntil { manager.status[.codex] == .active(lastEventAt: codexEvent.capturedAt) }
-
-        XCTAssertEqual(manager.status[.codex], .active(lastEventAt: codexEvent.capturedAt))
     }
 
     func testFirstValidClaudeEventFlipsStatusToActive() async {
         let claudeEvent = event(provider: .claudeCode, capturedAt: Date(timeIntervalSince1970: 1_700_000_600))
-        let claude = SpyIntegration(provider: .claudeCode, result: .success(claudeEvent))
-        var continuation: AsyncStream<HookEnvelope>.Continuation!
-        let events = AsyncStream<HookEnvelope> { continuation = $0 }
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [claude],
-            speechCoordinator: FakeSpeechCoordinator(),
-            initialStatus: [.claudeCode: .installedAwaitingFirstEvent]
-        )
+        let (manager, continuation) = makeManager(initialStatus: [.claudeCode: .installedAwaitingFirstEvent])
         manager.start()
         defer { manager.stop() }
 
-        continuation.yield(envelope(provider: .claudeCode))
+        continuation.yield(.stop(claudeEvent))
 
         await waitUntil { manager.status[.claudeCode] == .active(lastEventAt: claudeEvent.capturedAt) }
-
-        XCTAssertEqual(manager.status[.claudeCode], .active(lastEventAt: claudeEvent.capturedAt))
     }
 
     // MARK: - Malformed events
 
-    func testMalformedEnvelopeLeavesLatestAndStatusUnchanged() async {
-        let claude = SpyIntegration(provider: .claudeCode, result: .failure(TestError.malformed))
-        var continuation: AsyncStream<HookEnvelope>.Continuation!
-        let events = AsyncStream<HookEnvelope> { continuation = $0 }
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [claude],
-            speechCoordinator: FakeSpeechCoordinator(),
-            initialStatus: [.claudeCode: .installedAwaitingFirstEvent]
+    func testMalformedEnvelopeLeavesLatestStatusAndOnResponseUnchanged() async {
+        let diagnostics = IntegrationDiagnosticsLog()
+        let recorder = ResponseRecorder()
+        let (manager, continuation) = makeManager(
+            initialStatus: [.claudeCode: .installedAwaitingFirstEvent],
+            diagnostics: diagnostics,
+            onResponse: { recorder.record($0) }
         )
         manager.start()
         defer { manager.stop() }
 
         continuation.yield(envelope(provider: .claudeCode, rawPayload: "not json"))
 
-        // Bounded settle: give the (rejected) event a chance to be processed before asserting
-        // nothing changed.
-        await waitUntil(timeout: 0.3) { claude.decodeCount >= 1 }
-
-        XCTAssertEqual(claude.decodeCount, 1)
+        await waitUntil { diagnostics.snapshot().contains { $0.outcome == "dropped" } }
         XCTAssertNil(manager.latestResponse)
         XCTAssertEqual(manager.status[.claudeCode], .installedAwaitingFirstEvent)
+        XCTAssertTrue(recorder.events.isEmpty)
     }
 
-    func testEnvelopeWithNoRegisteredAdapterLeavesLatestAndStatusUnchanged() async {
-        let codex = SpyIntegration(provider: .codex, result: .failure(TestError.shouldNotBeCalled))
-        var continuation: AsyncStream<HookEnvelope>.Continuation!
-        let events = AsyncStream<HookEnvelope> { continuation = $0 }
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [codex],
-            speechCoordinator: FakeSpeechCoordinator()
-        )
+    func testRejectedPayloadRecordsDroppedDiagnosticsEntry() async {
+        let diagnostics = IntegrationDiagnosticsLog()
+        let (manager, continuation) = makeManager(diagnostics: diagnostics)
         manager.start()
         defer { manager.stop() }
 
-        continuation.yield(envelope(provider: .claudeCode))
+        continuation.yield(envelope(provider: .claudeCode, rawPayload: "not json"))
 
-        // No Claude adapter registered, so nothing can ever mark this handled; give it a bounded
-        // window and confirm state never moved.
-        try? await Task.sleep(nanoseconds: 100_000_000)
-
-        XCTAssertNil(manager.latestResponse)
-        XCTAssertEqual(codex.decodeCount, 0)
-        XCTAssertNil(manager.status[.claudeCode])
+        await waitUntil {
+            diagnostics.snapshot().contains { $0.outcome == "dropped" && $0.detail.contains("adapter-rejected") }
+        }
+        let dropped = diagnostics.snapshot().first { $0.outcome == "dropped" }
+        XCTAssertEqual(dropped?.stage, "manager")
     }
 
     // MARK: - Replacement
 
-    func testSecondEventReplacesLatestInMemoryOnly() async {
+    func testSecondEventReplacesLatest() async {
         let firstEvent = event(provider: .claudeCode, providerSessionID: "first")
         let secondEvent = event(provider: .codex, providerSessionID: "second")
-        let claude = SpyIntegration(provider: .claudeCode, result: .success(firstEvent))
-        let codex = SpyIntegration(provider: .codex, result: .success(secondEvent))
-        var continuation: AsyncStream<HookEnvelope>.Continuation!
-        let events = AsyncStream<HookEnvelope> { continuation = $0 }
-        let store = LatestAgentResponseStore()
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [claude, codex],
-            store: store,
-            speechCoordinator: FakeSpeechCoordinator()
-        )
+        let (manager, continuation) = makeManager()
         manager.start()
         defer { manager.stop() }
 
-        continuation.yield(envelope(provider: .claudeCode))
+        continuation.yield(.stop(firstEvent))
         await waitUntil { manager.latestResponse == firstEvent }
 
-        continuation.yield(envelope(provider: .codex))
+        continuation.yield(.stop(secondEvent))
         await waitUntil { manager.latestResponse == secondEvent }
-
-        XCTAssertEqual(manager.latestResponse, secondEvent)
-        let stored = await store.get()
-        XCTAssertEqual(stored, secondEvent)
-    }
-
-    // MARK: - Single source of truth (gate cannot diverge from content)
-
-    /// Hardens the actual bug: the gate (`latestResponse`) and the spoken content (`store.get()`)
-    /// must trace back to the SAME state, so anything that mutates `store` — not only the
-    /// manager's own consume loop — has to be reflected in the gate too. Before the fix,
-    /// `latestResponse` was written only from inside `recordActive()`, so a direct `store.set`
-    /// left the gate stale and `waitUntil` below would time out. After the fix, `latestResponse`
-    /// is a projection of `store` itself.
-    func testGateCannotDivergeFromStoreAcrossDirectMutation() async {
-        let store = LatestAgentResponseStore()
-        let events = AsyncStream<HookEnvelope> { _ in }
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [],
-            store: store,
-            speechCoordinator: FakeSpeechCoordinator()
-        )
-        manager.start()
-        defer { manager.stop() }
-
-        let latest = event(provider: .claudeCode, providerSessionID: "direct-set")
-        await store.set(latest)
-        await waitUntil { manager.latestResponse != nil }
-
-        XCTAssertEqual(
-            manager.latestResponse, latest,
-            "the gate must reflect every store mutation, not just ones routed through the manager's own consume loop"
-        )
-        let stored = await store.get()
-        XCTAssertEqual(stored, latest)
     }
 
     // MARK: - onResponse callback
 
-    /// The manager publishes every decoded event through `onResponse` and never speaks itself.
-    func testOnResponseInvokedOnceForAValidClaudeEvent() async {
+    /// The manager publishes every response through `onResponse` and never speaks itself.
+    func testOnResponseInvokedOnceForEachProvidersResponse() async {
         let claudeEvent = event(provider: .claudeCode, providerSessionID: "claude-onresponse-1", text: "**Done.** All set.")
-        let claude = SpyIntegration(provider: .claudeCode, result: .success(claudeEvent))
-        let recorder = ResponseRecorder()
-        var continuation: AsyncStream<HookEnvelope>.Continuation!
-        let events = AsyncStream<HookEnvelope> { continuation = $0 }
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [claude],
-            speechCoordinator: FakeSpeechCoordinator(),
-            onResponse: { event in recorder.record(event) }
-        )
-        manager.start()
-        defer { manager.stop() }
-
-        continuation.yield(envelope(provider: .claudeCode))
-
-        await waitUntil { recorder.events.count == 1 }
-
-        XCTAssertEqual(recorder.events, [claudeEvent])
-    }
-
-    func testOnResponseInvokedOnceForAValidCodexEvent() async {
         let codexEvent = event(provider: .codex, providerSessionID: "codex-onresponse-1", text: "Finished the task.")
-        let codex = SpyIntegration(provider: .codex, result: .success(codexEvent))
-        let recorder = ResponseRecorder()
-        var continuation: AsyncStream<HookEnvelope>.Continuation!
-        let events = AsyncStream<HookEnvelope> { continuation = $0 }
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [codex],
-            speechCoordinator: FakeSpeechCoordinator(),
-            onResponse: { event in recorder.record(event) }
-        )
-        manager.start()
-        defer { manager.stop() }
-
-        continuation.yield(envelope(provider: .codex))
-
-        await waitUntil { recorder.events.count == 1 }
-
-        XCTAssertEqual(recorder.events, [codexEvent])
-    }
-
-    func testOnResponseNotInvokedForMalformedEvent() async {
-        let claude = SpyIntegration(provider: .claudeCode, result: .failure(TestError.malformed))
-        let recorder = ResponseRecorder()
-        var continuation: AsyncStream<HookEnvelope>.Continuation!
-        let events = AsyncStream<HookEnvelope> { continuation = $0 }
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [claude],
-            speechCoordinator: FakeSpeechCoordinator(),
-            onResponse: { event in recorder.record(event) }
-        )
-        manager.start()
-        defer { manager.stop() }
-
-        continuation.yield(envelope(provider: .claudeCode, rawPayload: "not json"))
-
-        // Bounded settle: give the (rejected) event a chance to be processed before asserting
-        // onResponse was never invoked.
-        await waitUntil(timeout: 0.3) { claude.decodeCount >= 1 }
-
-        XCTAssertEqual(claude.decodeCount, 1)
-        XCTAssertTrue(recorder.events.isEmpty)
-    }
-
-    /// The manager itself must never submit speech on the auto (decoded-event) path, regardless
-    /// of whether a caller supplies `onResponse` — that decision now lives entirely outside this
-    /// type.
-    func testManagerSubmitsNoSpeechOnTheAutoPath() async {
-        let claudeEvent = event(provider: .claudeCode, providerSessionID: "claude-onresponse-2")
-        let claude = SpyIntegration(provider: .claudeCode, result: .success(claudeEvent))
         let speech = FakeSpeechCoordinator()
         let recorder = ResponseRecorder()
-        var continuation: AsyncStream<HookEnvelope>.Continuation!
-        let events = AsyncStream<HookEnvelope> { continuation = $0 }
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [claude],
-            speechCoordinator: speech,
-            onResponse: { event in recorder.record(event) }
-        )
+        let (manager, continuation) = makeManager(speech: speech, onResponse: { recorder.record($0) })
         manager.start()
         defer { manager.stop() }
 
-        continuation.yield(envelope(provider: .claudeCode))
+        continuation.yield(.stop(claudeEvent))
+        continuation.yield(.stop(codexEvent))
 
-        await waitUntil { manager.latestResponse != nil }
-
-        XCTAssertEqual(manager.latestResponse, claudeEvent)
-        XCTAssertEqual(recorder.events, [claudeEvent])
+        await waitUntil { recorder.events.count == 2 }
+        XCTAssertEqual(recorder.events, [claudeEvent, codexEvent])
         XCTAssertTrue(speech.requests.isEmpty)
     }
 
     // MARK: - speakLatest
 
-    func testSpeakLatestPreprocessesAutomaticStyleThenSubmitsUserRequestedSpeech() async throws {
+    func testSpeakLatestPreprocessesThenSubmitsUserRequestedSpeech() async throws {
         let rawText = "**Done.**\n```swift\nlet secret = 1\n```\nAll set."
         let latest = event(provider: .codex, providerSessionID: "codex-session-42", text: rawText)
-        let store = LatestAgentResponseStore()
-        await store.set(latest)
         let speech = FakeSpeechCoordinator()
-        let events = AsyncStream<HookEnvelope> { _ in }
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [],
-            store: store,
-            speechCoordinator: speech
-        )
+        let (manager, continuation) = makeManager(speech: speech)
+        manager.start()
+        defer { manager.stop() }
+        continuation.yield(.stop(latest))
+        await waitUntil { manager.latestResponse != nil }
 
         let spoke = try await manager.speakLatest()
 
         XCTAssertTrue(spoke)
-        let expectedText = RulesSpeechPreprocessor().prepare(text: rawText)
         XCTAssertEqual(speech.requests.count, 1)
         let request = try XCTUnwrap(speech.requests.first)
-        XCTAssertEqual(request.text, expectedText)
+        XCTAssertEqual(request.text, RulesSpeechPreprocessor().prepare(text: rawText))
         XCTAssertEqual(request.source, .codex)
         XCTAssertEqual(request.mode, .userRequested)
         XCTAssertEqual(request.sessionID, "codex:codex-session-42")
@@ -413,16 +241,12 @@ final class IntegrationManagerTests: XCTestCase {
 
     func testSpeakLatestWithClaudeEventUsesClaudeSource() async throws {
         let latest = event(provider: .claudeCode, providerSessionID: "claude-session-7", text: "All done.")
-        let store = LatestAgentResponseStore()
-        await store.set(latest)
         let speech = FakeSpeechCoordinator()
-        let events = AsyncStream<HookEnvelope> { _ in }
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [],
-            store: store,
-            speechCoordinator: speech
-        )
+        let (manager, continuation) = makeManager(speech: speech)
+        manager.start()
+        defer { manager.stop() }
+        continuation.yield(.stop(latest))
+        await waitUntil { manager.latestResponse != nil }
 
         try await manager.speakLatest()
 
@@ -432,16 +256,9 @@ final class IntegrationManagerTests: XCTestCase {
         XCTAssertEqual(request.sessionID, "claude-code:claude-session-7")
     }
 
-    func testSpeakLatestWithNoStoredEventSubmitsNothing() async throws {
-        let store = LatestAgentResponseStore()
+    func testSpeakLatestWithNoResponseSubmitsNothing() async throws {
         let speech = FakeSpeechCoordinator()
-        let events = AsyncStream<HookEnvelope> { _ in }
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [],
-            store: store,
-            speechCoordinator: speech
-        )
+        let (manager, _) = makeManager(speech: speech)
 
         let spoke = try await manager.speakLatest()
 
@@ -452,21 +269,12 @@ final class IntegrationManagerTests: XCTestCase {
     // MARK: - Diagnostics
 
     func testAcceptedEventRecordsEventAcceptedThenOnResponseReturned() async {
-        let claudeEvent = event(provider: .claudeCode, providerSessionID: "claude-diag-1")
-        let claude = SpyIntegration(provider: .claudeCode, result: .success(claudeEvent))
         let diagnostics = IntegrationDiagnosticsLog()
-        var continuation: AsyncStream<HookEnvelope>.Continuation!
-        let events = AsyncStream<HookEnvelope> { continuation = $0 }
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [claude],
-            speechCoordinator: FakeSpeechCoordinator(),
-            diagnostics: diagnostics
-        )
+        let (manager, continuation) = makeManager(diagnostics: diagnostics)
         manager.start()
         defer { manager.stop() }
 
-        continuation.yield(envelope(provider: .claudeCode))
+        continuation.yield(.stop(event(provider: .claudeCode, providerSessionID: "claude-diag-1")))
 
         await waitUntil { diagnostics.snapshot().contains { $0.outcome == "onResponse-returned" } }
 
@@ -481,72 +289,11 @@ final class IntegrationManagerTests: XCTestCase {
             XCTAssertLessThan(returnedIndex, acceptedIndex)
         }
     }
-
-    func testAdapterRejectedPayloadRecordsDroppedDiagnosticsEntry() async {
-        let claude = SpyIntegration(provider: .claudeCode, result: .failure(TestError.malformed))
-        let diagnostics = IntegrationDiagnosticsLog()
-        var continuation: AsyncStream<HookEnvelope>.Continuation!
-        let events = AsyncStream<HookEnvelope> { continuation = $0 }
-        let manager = IntegrationManager(
-            events: events,
-            integrations: [claude],
-            speechCoordinator: FakeSpeechCoordinator(),
-            diagnostics: diagnostics
-        )
-        manager.start()
-        defer { manager.stop() }
-
-        continuation.yield(envelope(provider: .claudeCode, rawPayload: "not json"))
-
-        await waitUntil(timeout: 0.5) {
-            diagnostics.snapshot().contains { $0.outcome == "dropped" && $0.detail.contains("adapter-rejected") }
-        }
-
-        let dropped = diagnostics.snapshot().first { $0.outcome == "dropped" }
-        XCTAssertNotNil(dropped)
-        XCTAssertEqual(dropped?.stage, "manager")
-        XCTAssertTrue(dropped?.detail.contains("adapter-rejected") ?? false)
-    }
 }
 
 // MARK: - Test doubles
 
-private enum TestError: Error {
-    case shouldNotBeCalled
-    case malformed
-}
-
-/// A `RelayIntegration` test double that records how many times it was asked to decode and
-/// returns a fixed result. Thread-safe because the manager's consumption loop calls `decode`
-/// off the MainActor.
-private final class SpyIntegration: RelayIntegration, @unchecked Sendable {
-    let provider: AgentProvider
-    private let result: Result<AgentResponseEvent, Error>
-    private let lock = NSLock()
-    private var _decodeCount = 0
-
-    init(provider: AgentProvider, result: Result<AgentResponseEvent, Error>) {
-        self.provider = provider
-        self.result = result
-    }
-
-    var decodeCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return _decodeCount
-    }
-
-    func decode(_ envelope: HookEnvelope) throws -> AgentResponseEvent {
-        lock.lock()
-        _decodeCount += 1
-        lock.unlock()
-        return try result.get()
-    }
-}
-
-/// Records `onResponse` invocations. Thread-safe because the manager calls `onResponse` after
-/// hopping back onto the MainActor from `recordActive`, but the closure type itself is
-/// `@Sendable`, so this stays consistent with `SpyIntegration`'s own lock-based approach above.
+/// Thread-safe: the manager calls `onPrompt` off the MainActor.
 private final class PromptRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var recorded: [AgentSessionID] = []
@@ -557,19 +304,10 @@ private final class PromptRecorder: @unchecked Sendable {
 
 private final class ResponseRecorder: @unchecked Sendable {
     private let lock = NSLock()
-    private var _events: [AgentResponseEvent] = []
+    private var recorded: [AgentResponseEvent] = []
 
-    func record(_ event: AgentResponseEvent) {
-        lock.lock()
-        _events.append(event)
-        lock.unlock()
-    }
-
-    var events: [AgentResponseEvent] {
-        lock.lock()
-        defer { lock.unlock() }
-        return _events
-    }
+    func record(_ event: AgentResponseEvent) { lock.withLock { recorded.append(event) } }
+    var events: [AgentResponseEvent] { lock.withLock { recorded } }
 }
 
 @MainActor
