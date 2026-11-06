@@ -95,6 +95,30 @@ reached; nodes it never reached stay grey, and a branch it did not take stays gr
 So the store holds, per run, a state per known step of that flow, not a free-growing list. The
 pill row for a run shows only the steps the run reached.
 
+## Architecture: lifecycle events (Darius's decision, 2026-11-06)
+
+"Each module / step announces when it starts, finishes and status updates, and the diagnostics
+just listens and renders."
+
+- **Event.** `PipelineEvent { runID, flow, step, phase, at }`. Phase is the step's lifecycle:
+  `started(detail)`, `updated(detail)`, `level(Float)`, `finished(detail)`, `stopped(reason)`,
+  `failed(reason)`. Details and reasons are short plain-language labels; never transcript or
+  reply text.
+- **Bus.** One `PipelineEventBus` in the runtime. `emit` is non-blocking and safe from any
+  thread or actor. Subscribers get an `AsyncStream`.
+- **Announcers.** The module that owns a step emits its lifecycle, through a small
+  `PipelineTracer` (run context + bus) that the run's owner creates and hands down:
+  - Dictation: `DictationCoordinator` owns the run (hotkey, clean up, insert);
+    `MicrophoneCapture` (recording, level); `AVAudioEngineSource` (mic open with the device
+    name, mic released through the release check); `STTRouter` (transcribe, fallback).
+  - Agent reply: `AgentAutoReadCoordinator` owns the run (received, session, auto-read, focus);
+    `SpeechCoordinator` (speak).
+  - Read aloud: `SpeechActions` owns the run (trigger, source); `SpeechCoordinator` (speak).
+  - The tracer travels with the call (`SpeechRequest` carries it for speech).
+- **Listener.** `PipelineRunStore` (`@MainActor @Observable`) subscribes at app start and folds
+  events into runs with a pure reducer. Diagnostics renders the store. It holds no pipeline
+  logic. The raw stream also feeds the "Raw events" lines.
+
 ## Data and live updates
 
 - One in-memory store of runs, observed by the view. Each run has a flow, a start time, and a
