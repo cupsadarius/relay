@@ -73,7 +73,7 @@ final class MicrophoneReleaseMonitorTests: XCTestCase {
         )
         XCTAssertEqual(
             DictationDiagnostic.microphoneFallback(missingName: "AirPods Pro").message,
-            "AirPods Pro is not connected. Using the system default microphone."
+            "Relay could not use AirPods Pro. Using the system default microphone."
         )
     }
 }

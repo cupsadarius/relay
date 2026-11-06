@@ -100,7 +100,7 @@ enum DictationDiagnostic: Equatable, Sendable {
             }
         case let .failed(stage): "Dictation failed during \(stage.message)"
         case let .microphoneStillOpen(path): "Microphone still open after dictation stopped (\(path.rawValue))"
-        case let .microphoneFallback(name): "\(name) is not connected. Using the system default microphone."
+        case let .microphoneFallback(name): "Relay could not use \(name). Using the system default microphone."
         }
     }
 }
