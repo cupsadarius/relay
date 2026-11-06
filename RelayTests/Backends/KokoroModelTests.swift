@@ -3,34 +3,46 @@ import XCTest
 
 @testable import Relay
 
-/// Exercises `FluidAudioKokoroEngine`'s own loading logic - single-flighting concurrent loads,
-/// caching a positive local presence check, retrying after a failure, and refusing to load
-/// without a download when the model is absent - through an injected `KokoroModelLoading` fake,
-/// since the real FluidAudio types can't be constructed without downloaded model weights. A
-/// separate regression test below exercises the real, hand-rolled presence check against a
-/// temporary directory to guard against `TtsModels.cacheDirectoryURL()`'s auto-created-directory
-/// trap.
-final class FluidAudioKokoroEngineTests: XCTestCase {
-    func testEngineRemovalReleasesSessionAndInvalidatesPresenceCache() async throws {
+/// Kokoro-specific model facts: the hand-rolled presence check against real temporary
+/// directories, file removal, and synthesis error mapping. Load rules live in
+/// `ModelSessionLoaderTests`; the backend path lives in `KokoroTTSBackendTests`.
+final class KokoroModelTests: XCTestCase {
+    func testRemoveDropsTheSessionAndRechecksPresence() async throws {
         let loader = FakeKokoroModelLoader()
         await loader.setPresent(true)
-        let engine = FluidAudioKokoroEngine(modelLoader: loader)
-        try await engine.load(allowDownload: false)
+        let model = KokoroModel.kokoro(loader: loader)
+        try await model.load()
 
-        try await engine.removeModels()
+        try await model.remove()
 
         do {
-            _ = try await engine.synthesize(phonemes: "hello", voice: "af_heart", speed: 1)
-            XCTFail("Expected released session")
-        } catch {
-            XCTAssertEqual(error as? KokoroEngineError, .synthesisFailed)
-        }
-        do {
-            try await engine.load(allowDownload: false)
+            try await model.load()
             XCTFail("Expected presence to be rechecked")
         } catch {
             XCTAssertEqual(error as? KokoroEngineError, .modelsNotDownloaded)
         }
+        let loadLocalCalls = await loader.loadLocalCallCount
+        XCTAssertEqual(loadLocalCalls, 1)
+    }
+
+    func testRemoveThrowsWhenFilesRemain() async throws {
+        let loader = FakeKokoroModelLoader()
+        await loader.setPresent(true)
+        await loader.setRemoveKeepsFiles(true)
+        let model = KokoroModel.kokoro(loader: loader)
+
+        do {
+            try await model.remove()
+            XCTFail("Expected loadFailed")
+        } catch {
+            XCTAssertEqual(error as? KokoroEngineError, .loadFailed)
+        }
+    }
+
+    func testSynthesisErrorMappingKeepsOnlyLengthFailuresAndCancellation() {
+        XCTAssertEqual(KokoroEngineError.synthesis(KokoroAneError.phonemeSequenceTooLong(600)) as? KokoroEngineError, .textTooLong)
+        XCTAssertEqual(KokoroEngineError.synthesis(FakeLoaderError.boom) as? KokoroEngineError, .synthesisFailed)
+        XCTAssertTrue(KokoroEngineError.synthesis(CancellationError()) is CancellationError)
     }
 
     func testRemoveModelsDeletesOnlyANEAndG2PDirectoriesAndIsIdempotent() async throws {
@@ -50,120 +62,6 @@ final class FluidAudioKokoroEngineTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: ane.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: g2p.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: unrelated.path))
-    }
-
-    func testLoadThrowsModelsNotDownloadedWhenNotPresentAndNeverDownloads() async {
-        let loader = FakeKokoroModelLoader()
-        await loader.setPresent(false)
-        let engine = FluidAudioKokoroEngine(modelLoader: loader)
-
-        do {
-            try await engine.load(allowDownload: false)
-            XCTFail("Expected modelsNotDownloaded")
-        } catch {
-            XCTAssertEqual(error as? KokoroEngineError, .modelsNotDownloaded)
-        }
-
-        let downloadCalls = await loader.downloadCallCount
-        XCTAssertEqual(downloadCalls, 0, "Must never call the loader's downloadAndLoad() without allowing a download")
-        let loadLocalCalls = await loader.loadLocalCallCount
-        XCTAssertEqual(loadLocalCalls, 0, "Must never call the loader's loadLocal() without local presence")
-    }
-
-    func testLoadWithPresentModelsLoadsLocallyAndSynthesizeUsesTheLoadedSession() async throws {
-        let loader = FakeKokoroModelLoader()
-        await loader.setPresent(true)
-        let engine = FluidAudioKokoroEngine(modelLoader: loader)
-
-        try await engine.load(allowDownload: false)
-        let pcm = try await engine.synthesize(phonemes: "hello", voice: "af_heart", speed: 1.0)
-
-        XCTAssertEqual(pcm.samples.count, 5)
-        let loadLocalCalls = await loader.loadLocalCallCount
-        XCTAssertEqual(loadLocalCalls, 1)
-        let downloadCalls = await loader.downloadCallCount
-        XCTAssertEqual(downloadCalls, 0)
-    }
-
-    func testSynthesizeForwardsPhonemesVoiceAndSpeedToTheLoadedSession() async throws {
-        let loader = FakeKokoroModelLoader()
-        await loader.setPresent(true)
-        let engine = FluidAudioKokoroEngine(modelLoader: loader)
-        try await engine.load(allowDownload: false)
-
-        _ = try await engine.synthesize(phonemes: "hello world", voice: "am_adam", speed: 1.5)
-
-        let received = await loader.lastSessionReceivedArgs()
-        XCTAssertEqual(received?.0, "hello world")
-        XCTAssertEqual(received?.1, "am_adam")
-        XCTAssertEqual(received?.2, 1.5)
-    }
-
-    func testSynthesizeBeforeLoadThrowsSynthesisFailed() async {
-        let loader = FakeKokoroModelLoader()
-        let engine = FluidAudioKokoroEngine(modelLoader: loader)
-
-        do {
-            _ = try await engine.synthesize(phonemes: "hi", voice: "af_heart", speed: 1.0)
-            XCTFail("Expected synthesisFailed")
-        } catch {
-            XCTAssertEqual(error as? KokoroEngineError, .synthesisFailed)
-        }
-    }
-
-    func testSynthesizeMapsPhonemeSequenceTooLongToTextTooLong() async throws {
-        let loader = FakeKokoroModelLoader()
-        await loader.setPresent(true)
-        let engine = FluidAudioKokoroEngine(modelLoader: loader)
-        try await engine.load(allowDownload: false)
-        await loader.setLastSessionSynthesizeError(KokoroAneError.phonemeSequenceTooLong(600))
-
-        do {
-            _ = try await engine.synthesize(phonemes: String(repeating: "a", count: 600), voice: "af_heart", speed: 1.0)
-            XCTFail("Expected textTooLong")
-        } catch {
-            XCTAssertEqual(error as? KokoroEngineError, .textTooLong)
-        }
-    }
-
-    func testModelsArePresentDelegatesToLoaderWithoutLoading() async {
-        let loader = FakeKokoroModelLoader()
-        await loader.setPresent(true)
-        let engine = FluidAudioKokoroEngine(modelLoader: loader)
-
-        let present = await engine.modelsArePresent()
-
-        XCTAssertTrue(present)
-        let loadLocalCalls = await loader.loadLocalCallCount
-        XCTAssertEqual(loadLocalCalls, 0, "modelsArePresent() must never trigger a load")
-    }
-
-    func testLoaderFailureMapsToLoadFailed() async {
-        let loader = FakeKokoroModelLoader()
-        await loader.setPresent(true)
-        await loader.setLoadError(FakeLoaderError.boom)
-        let engine = FluidAudioKokoroEngine(modelLoader: loader)
-
-        do {
-            try await engine.load(allowDownload: false)
-            XCTFail("Expected loadFailed")
-        } catch {
-            XCTAssertEqual(error as? KokoroEngineError, .loadFailed)
-        }
-    }
-
-    func testAllowDownloadTrueSkipsThePresenceCheckAndForwardsProgress() async throws {
-        let loader = FakeKokoroModelLoader()
-        let engine = FluidAudioKokoroEngine(modelLoader: loader)
-        let box = ProgressBox()
-
-        try await engine.load(allowDownload: true, progress: { box.values.append($0) })
-
-        let downloadCalls = await loader.downloadCallCount
-        XCTAssertEqual(downloadCalls, 1)
-        XCTAssertEqual(box.values, [1.0])
-        let presentCalls = await loader.modelsArePresentCallCount
-        XCTAssertEqual(presentCalls, 0, "allowDownload: true must skip the local presence check entirely")
     }
 
     /// Regression test for the "cache directory always exists" trap: `TtsModels.cacheDirectoryURL()`
@@ -297,97 +195,35 @@ final class FluidAudioKokoroEngineTests: XCTestCase {
             )
         }
     }
-
-    private func makeEngine(loader: FakeKokoroModelLoader) -> FluidAudioKokoroEngine {
-        FluidAudioKokoroEngine(modelLoader: loader)
-    }
 }
 
 private enum FakeLoaderError: Error, Equatable {
     case boom
 }
 
-private final class ProgressBox: @unchecked Sendable {
-    var values: [Double] = []
-}
-
-private actor FakeKokoroSession: KokoroModelSession {
-    let text: String
-    private(set) var received: (String, String, Float)?
-    private var synthesizeError: Error?
-
-    init(text: String) {
-        self.text = text
-    }
-
-    func setSynthesizeError(_ error: Error?) {
-        synthesizeError = error
-    }
-
+private struct FakeKokoroSession: KokoroModelSession {
     func phonemes(for text: String) async throws -> String { text }
-
     func synthesize(phonemes: String, voice: String, speed: Float) async throws -> KokoroPCM {
-        received = (phonemes, voice, speed)
-        if let synthesizeError {
-            throw synthesizeError
-        }
-        return KokoroPCM(samples: Array(repeating: 0, count: phonemes.count), sampleRate: 24_000)
+        KokoroPCM(samples: [], sampleRate: 24_000)
     }
 }
 
 private actor FakeKokoroModelLoader: KokoroModelLoading {
     private var present = false
-    private var loadError: Error?
-    private(set) var modelsArePresentCallCount = 0
+    private var removeKeepsFiles = false
     private(set) var loadLocalCallCount = 0
-    private(set) var downloadCallCount = 0
-    private var lastSession: FakeKokoroSession?
 
-    func setPresent(_ value: Bool) {
-        present = value
-    }
-
-    func setLoadError(_ error: Error?) {
-        loadError = error
-    }
-
-    func lastSessionReceivedArgs() async -> (String, String, Float)? {
-        await lastSession?.received
-    }
-
-    func setLastSessionSynthesizeError(_ error: Error?) async {
-        await lastSession?.setSynthesizeError(error)
-    }
-
-    func modelsArePresent() async -> Bool {
-        modelsArePresentCallCount += 1
-        return present
-    }
-
-    func removeModels() async throws { present = false }
+    func setPresent(_ value: Bool) { present = value }
+    func setRemoveKeepsFiles(_ value: Bool) { removeKeepsFiles = value }
+    func modelsArePresent() async -> Bool { present }
+    func removeModels() async throws { present = removeKeepsFiles }
 
     func loadLocal() async throws -> any KokoroModelSession {
         loadLocalCallCount += 1
-
-        if let loadError {
-            throw loadError
-        }
-
-        let session = FakeKokoroSession(text: "local-result")
-        lastSession = session
-        return session
+        return FakeKokoroSession()
     }
 
     func downloadAndLoad(progress: @escaping @Sendable (Double) -> Void) async throws -> any KokoroModelSession {
-        downloadCallCount += 1
-        progress(1.0)
-
-        if let loadError {
-            throw loadError
-        }
-
-        let session = FakeKokoroSession(text: "downloaded-result")
-        lastSession = session
-        return session
+        FakeKokoroSession()
     }
 }

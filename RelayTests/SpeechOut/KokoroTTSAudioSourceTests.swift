@@ -5,9 +5,9 @@ import XCTest
 
 final class KokoroTTSAudioSourceTests: XCTestCase {
     func testSegmentsSynthesizeSequentiallyAndPreserveOrder() async throws {
-        let engine = FakeLongFormKokoroEngine()
+        let session = FakeLongFormKokoroSession()
         let source = KokoroTTSAudioSource.make(
-            engine: engine,
+            session: session,
             chunks: ["one", "two", "three"],
             voice: "af_heart",
             speed: 1,
@@ -20,17 +20,17 @@ final class KokoroTTSAudioSourceTests: XCTestCase {
             samples.append(contentsOf: frame.samples)
         }
 
-        let calls = await engine.phonemeCalls
+        let calls = await session.phonemeCalls
         XCTAssertEqual(calls, ["one", "two", "three"])
         XCTAssertEqual(samples, [3, 3, 5])
-        let maxConcurrent = await engine.maxConcurrentSynthesis
+        let maxConcurrent = await session.maxConcurrentSynthesis
         XCTAssertEqual(maxConcurrent, 1)
     }
 
     func testAcousticOverflowSplitsOnlyTheOffendingChunkAndRetries() async throws {
-        let engine = FakeLongFormKokoroEngine(maxAcceptedLength: 4)
+        let session = FakeLongFormKokoroSession(maxAcceptedLength: 4)
         let source = KokoroTTSAudioSource.make(
-            engine: engine,
+            session: session,
             chunks: ["abcdefgh"],
             voice: "af_heart",
             speed: 1,
@@ -43,14 +43,14 @@ final class KokoroTTSAudioSourceTests: XCTestCase {
             produced.append(contentsOf: frame.samples)
         }
 
-        let calls = await engine.phonemeCalls
+        let calls = await session.phonemeCalls
         XCTAssertEqual(calls.first, "abcdefgh")
         XCTAssertTrue(calls.dropFirst().allSatisfy { $0.count <= 4 })
         XCTAssertEqual(calls.dropFirst().joined(), "abcdefgh")
         XCTAssertEqual(produced, [4, 4])
     }
 
-    /// 100 long-form runs against a fake engine (no CoreML). Alternating
+    /// 100 long-form runs against a fake session (no CoreML). Alternating
     /// full-drain and early-cancel runs prove every run terminates, the bounded pipe never leaves a
     /// blocked producer on teardown, synthesis stays strictly serial, and segment order is stable.
     /// A tight high/low watermark forces real producer backpressure on the drain runs.
@@ -59,9 +59,9 @@ final class KokoroTTSAudioSourceTests: XCTestCase {
         let expectedSamples: [Float] = chunks.map { Float($0.count) }
 
         for run in 0..<100 {
-            let engine = FakeLongFormKokoroEngine()
+            let session = FakeLongFormKokoroSession()
             let source = KokoroTTSAudioSource.make(
-                engine: engine,
+                session: session,
                 chunks: chunks,
                 voice: "af_heart",
                 speed: 1,
@@ -86,17 +86,17 @@ final class KokoroTTSAudioSourceTests: XCTestCase {
                     samples.append(contentsOf: frame.samples)
                 }
                 XCTAssertEqual(samples, expectedSamples, "sample order must stay stable on run \(run)")
-                let calls = await engine.phonemeCalls
+                let calls = await session.phonemeCalls
                 XCTAssertEqual(calls, chunks, "segment order must stay stable on run \(run)")
             }
 
-            let maxConcurrent = await engine.maxConcurrentSynthesis
+            let maxConcurrent = await session.maxConcurrentSynthesis
             XCTAssertLessThanOrEqual(maxConcurrent, 1, "synthesis must stay serial on run \(run)")
         }
     }
 }
 
-private actor FakeLongFormKokoroEngine: KokoroEngine {
+private actor FakeLongFormKokoroSession: KokoroModelSession {
     private let maxAcceptedLength: Int?
     private(set) var phonemeCalls: [String] = []
     private(set) var maxConcurrentSynthesis = 0
@@ -105,15 +105,6 @@ private actor FakeLongFormKokoroEngine: KokoroEngine {
     init(maxAcceptedLength: Int? = nil) {
         self.maxAcceptedLength = maxAcceptedLength
     }
-
-    func modelsArePresent() async -> Bool { true }
-
-    func load(
-        allowDownload: Bool,
-        progress: @escaping @Sendable (Double) -> Void
-    ) async throws {}
-
-    func removeModels() async throws {}
 
     func phonemes(for text: String) async throws -> String { text }
 

@@ -6,9 +6,9 @@ import XCTest
 @MainActor
 final class KokoroTTSBackendTests: XCTestCase {
     func testAvailabilityIsAvailableWhenModelsArePresent() async {
-        let engine = FakeKokoroEngine()
-        engine.modelsPresent = true
-        let backend = KokoroTTSBackend(engine: engine)
+        let fake = FakeKokoro()
+        fake.modelsPresent = true
+        let backend = KokoroTTSBackend(model: .kokoro(loader: fake))
 
         let availability = await backend.availability()
 
@@ -16,9 +16,9 @@ final class KokoroTTSBackendTests: XCTestCase {
     }
 
     func testAvailabilityIsModelNotDownloadedWhenModelsAreAbsent() async {
-        let engine = FakeKokoroEngine()
-        engine.modelsPresent = false
-        let backend = KokoroTTSBackend(engine: engine)
+        let fake = FakeKokoro()
+        fake.modelsPresent = false
+        let backend = KokoroTTSBackend(model: .kokoro(loader: fake))
 
         let availability = await backend.availability()
 
@@ -26,61 +26,62 @@ final class KokoroTTSBackendTests: XCTestCase {
     }
 
     func testAvailabilityNeverTriggersLoad() async {
-        let engine = FakeKokoroEngine()
-        engine.modelsPresent = true
-        let backend = KokoroTTSBackend(engine: engine)
+        let fake = FakeKokoro()
+        fake.modelsPresent = true
+        let backend = KokoroTTSBackend(model: .kokoro(loader: fake))
 
         _ = await backend.availability()
 
-        XCTAssertTrue(engine.loadCalls.isEmpty, "availability() must never load the engine")
+        XCTAssertEqual(fake.loadCalls, 0, "availability() must never load the model")
     }
 
     func testMakeAudioSourceLazilyLoadsWithoutAllowingDownload() async throws {
-        let engine = FakeKokoroEngine()
-        engine.modelsPresent = true
-        let backend = KokoroTTSBackend(engine: engine)
+        let fake = FakeKokoro()
+        fake.modelsPresent = true
+        let backend = KokoroTTSBackend(model: .kokoro(loader: fake))
 
         _ = try await backend.makeAudioSource(text: "hello", options: .init())
 
-        XCTAssertEqual(engine.loadCalls, [false])
+        XCTAssertEqual(fake.loadCalls, 1)
+        XCTAssertEqual(fake.downloadCalls, 0)
     }
 
     func testMakeAudioSourcePhonemizesTheFullText() async throws {
-        let engine = FakeKokoroEngine()
-        engine.modelsPresent = true
-        let backend = KokoroTTSBackend(engine: engine)
+        let fake = FakeKokoro()
+        fake.modelsPresent = true
+        let backend = KokoroTTSBackend(model: .kokoro(loader: fake))
 
         _ = try await backend.makeAudioSource(text: "hello", options: .init())
 
-        XCTAssertEqual(engine.phonemeTextCalls, ["hello"])
+        XCTAssertEqual(fake.phonemeTextCalls, ["hello"])
     }
 
     func testMakeAudioSourceUsesKokoroVoiceFromOptions() async throws {
-        let engine = FakeKokoroEngine()
-        engine.modelsPresent = true
-        let backend = KokoroTTSBackend(engine: engine)
+        let fake = FakeKokoro()
+        fake.modelsPresent = true
+        let backend = KokoroTTSBackend(model: .kokoro(loader: fake))
 
         let source = try await backend.makeAudioSource(text: "hello", options: .init(voiceByBackend: [.kokoro: "am_adam"]))
         try await drain(source)
 
-        XCTAssertEqual(engine.synthesizeCalls.last?.voice, "am_adam")
+        XCTAssertEqual(fake.synthesizeCalls.last?.voice, "am_adam")
     }
 
     func testMakeAudioSourceFallsBackToRecommendedVoiceWhenNoneConfigured() async throws {
-        let engine = FakeKokoroEngine()
-        engine.modelsPresent = true
-        let backend = KokoroTTSBackend(engine: engine)
+        let fake = FakeKokoro()
+        fake.modelsPresent = true
+        let backend = KokoroTTSBackend(model: .kokoro(loader: fake))
 
         let source = try await backend.makeAudioSource(text: "hello", options: .init())
         try await drain(source)
 
-        XCTAssertEqual(engine.synthesizeCalls.last?.voice, TtsConstants.recommendedVoice)
+        XCTAssertEqual(fake.synthesizeCalls.last?.voice, TtsConstants.recommendedVoice)
     }
 
     func testMakeAudioSourceIgnoresAppleVoiceIdentifier() async throws {
-        let engine = FakeKokoroEngine()
-        engine.modelsPresent = true
-        let backend = KokoroTTSBackend(engine: engine)
+        let fake = FakeKokoro()
+        fake.modelsPresent = true
+        let backend = KokoroTTSBackend(model: .kokoro(loader: fake))
 
         let source = try await backend.makeAudioSource(
             text: "hello",
@@ -88,32 +89,32 @@ final class KokoroTTSBackendTests: XCTestCase {
         )
         try await drain(source)
 
-        XCTAssertEqual(engine.synthesizeCalls.last?.voice, "af_bella")
+        XCTAssertEqual(fake.synthesizeCalls.last?.voice, "af_bella")
     }
 
     func testMakeAudioSourceMapsSharedRateDefaultToNormalKokoroSpeed() async throws {
-        let engine = FakeKokoroEngine()
-        engine.modelsPresent = true
-        let backend = KokoroTTSBackend(engine: engine)
+        let fake = FakeKokoro()
+        fake.modelsPresent = true
+        let backend = KokoroTTSBackend(model: .kokoro(loader: fake))
 
         let source = try await backend.makeAudioSource(text: "hello", options: .init(rate: 0.5))
         try await drain(source)
 
-        XCTAssertEqual(try XCTUnwrap(engine.synthesizeCalls.last?.speed), 1.0, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(fake.synthesizeCalls.last?.speed), 1.0, accuracy: 0.0001)
     }
 
     func testMakeAudioSourceMapsSlowestAndFastestSharedRatesProportionally() async throws {
-        let engine = FakeKokoroEngine()
-        engine.modelsPresent = true
-        let backend = KokoroTTSBackend(engine: engine)
+        let fake = FakeKokoro()
+        fake.modelsPresent = true
+        let backend = KokoroTTSBackend(model: .kokoro(loader: fake))
 
         let slow = try await backend.makeAudioSource(text: "hello", options: .init(rate: 0.1))
         try await drain(slow)
-        XCTAssertEqual(try XCTUnwrap(engine.synthesizeCalls.last?.speed), 0.2, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(fake.synthesizeCalls.last?.speed), 0.2, accuracy: 0.0001)
 
         let fast = try await backend.makeAudioSource(text: "hello", options: .init(rate: 1.0))
         try await drain(fast)
-        XCTAssertEqual(try XCTUnwrap(engine.synthesizeCalls.last?.speed), 2.0, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(fake.synthesizeCalls.last?.speed), 2.0, accuracy: 0.0001)
     }
 
     func testSpeedIsClampedToTheSupportedRange() {
@@ -125,20 +126,20 @@ final class KokoroTTSBackendTests: XCTestCase {
     }
 
     func testMakeAudioSourceWithEmptyTextDoesNotCrash() async throws {
-        let engine = FakeKokoroEngine()
-        engine.modelsPresent = true
-        let backend = KokoroTTSBackend(engine: engine)
+        let fake = FakeKokoro()
+        fake.modelsPresent = true
+        let backend = KokoroTTSBackend(model: .kokoro(loader: fake))
 
         let source = try await backend.makeAudioSource(text: "", options: .init())
         try await drain(source)
 
-        XCTAssertEqual(engine.phonemeTextCalls.last, "")
+        XCTAssertEqual(fake.phonemeTextCalls.last, "")
     }
 
     func testMakeAudioSourceMapsModelNotDownloadedToFallbackWorthyError() async {
-        let engine = FakeKokoroEngine()
-        engine.modelsPresent = false
-        let backend = KokoroTTSBackend(engine: engine)
+        let fake = FakeKokoro()
+        fake.modelsPresent = false
+        let backend = KokoroTTSBackend(model: .kokoro(loader: fake))
 
         do {
             _ = try await backend.makeAudioSource(text: "hello", options: .init())
@@ -151,10 +152,10 @@ final class KokoroTTSBackendTests: XCTestCase {
     }
 
     func testMakeAudioSourceMapsLoadFailureToFallbackWorthyError() async {
-        let engine = FakeKokoroEngine()
-        engine.modelsPresent = true
-        engine.loadError = KokoroEngineError.loadFailed
-        let backend = KokoroTTSBackend(engine: engine)
+        let fake = FakeKokoro()
+        fake.modelsPresent = true
+        fake.loadError = FakeKokoroError.boom
+        let backend = KokoroTTSBackend(model: .kokoro(loader: fake))
 
         do {
             _ = try await backend.makeAudioSource(text: "hello", options: .init())
@@ -167,10 +168,10 @@ final class KokoroTTSBackendTests: XCTestCase {
     }
 
     func testMakeAudioSourceMapsPhonemizationFailureToFallbackWorthyError() async {
-        let engine = FakeKokoroEngine()
-        engine.modelsPresent = true
-        engine.phonemesError = KokoroEngineError.synthesisFailed
-        let backend = KokoroTTSBackend(engine: engine)
+        let fake = FakeKokoro()
+        fake.modelsPresent = true
+        fake.phonemesError = KokoroEngineError.synthesisFailed
+        let backend = KokoroTTSBackend(model: .kokoro(loader: fake))
 
         do {
             _ = try await backend.makeAudioSource(text: "hello", options: .init())
@@ -183,10 +184,10 @@ final class KokoroTTSBackendTests: XCTestCase {
     }
 
     func testMakeAudioSourceRethrowsCancellationErrorFromLoadWithoutRemapping() async {
-        let engine = FakeKokoroEngine()
-        engine.modelsPresent = true
-        engine.loadError = CancellationError()
-        let backend = KokoroTTSBackend(engine: engine)
+        let fake = FakeKokoro()
+        fake.modelsPresent = true
+        fake.loadError = CancellationError()
+        let backend = KokoroTTSBackend(model: .kokoro(loader: fake))
 
         do {
             _ = try await backend.makeAudioSource(text: "hello", options: .init())
@@ -199,10 +200,10 @@ final class KokoroTTSBackendTests: XCTestCase {
     }
 
     func testMakeAudioSourceRethrowsCancellationErrorFromPhonemizationWithoutRemapping() async {
-        let engine = FakeKokoroEngine()
-        engine.modelsPresent = true
-        engine.phonemesError = CancellationError()
-        let backend = KokoroTTSBackend(engine: engine)
+        let fake = FakeKokoro()
+        fake.modelsPresent = true
+        fake.phonemesError = CancellationError()
+        let backend = KokoroTTSBackend(model: .kokoro(loader: fake))
 
         do {
             _ = try await backend.makeAudioSource(text: "hello", options: .init())
@@ -214,59 +215,57 @@ final class KokoroTTSBackendTests: XCTestCase {
         }
     }
 
-    func testSecondMakeAudioSourceDoesNotTriggerASecondEngineLoad() async throws {
-        let engine = FakeKokoroEngine()
-        engine.modelsPresent = true
-        let backend = KokoroTTSBackend(engine: engine)
+    func testSecondMakeAudioSourceDoesNotTriggerASecondModelLoad() async throws {
+        let fake = FakeKokoro()
+        fake.modelsPresent = true
+        let backend = KokoroTTSBackend(model: .kokoro(loader: fake))
 
         _ = try await backend.makeAudioSource(text: "hello", options: .init())
         _ = try await backend.makeAudioSource(text: "world", options: .init())
 
-        XCTAssertEqual(engine.loadCalls, [false], "A second makeAudioSource must not reload an already-loaded engine")
+        XCTAssertEqual(fake.loadCalls, 1, "A second makeAudioSource must not reload an already-loaded model")
     }
 
     // MARK: Helpers
 
     /// Pulls a source to completion so its producer runs every `synthesize(phonemes:voice:speed:)`
-    /// the backend wired up (voice/speed only reach the engine when the source is consumed).
+    /// the backend wired up (voice/speed only reach the session when the source is consumed).
     private func drain(_ source: any TTSAudioSource) async throws {
         while try await source.next() != nil {}
     }
 }
 
+private enum FakeKokoroError: Error {
+    case boom
+}
+
+/// Both the loader and the session it loads.
 @MainActor
-private final class FakeKokoroEngine: KokoroEngine {
+private final class FakeKokoro: KokoroModelLoading, KokoroModelSession {
     var modelsPresent = false
     var loadError: Error?
     /// Thrown from `phonemes(for:)`.
     var phonemesError: Error?
-    var progressToReport: [Double] = [0.5, 1.0]
-    private(set) var loadCalls: [Bool] = []
+    private(set) var loadCalls = 0
+    private(set) var downloadCalls = 0
     private(set) var phonemeTextCalls: [String] = []
     private(set) var synthesizeCalls: [(phonemes: String, voice: String, speed: Float)] = []
-    private var isLoaded = false
 
     func modelsArePresent() async -> Bool {
         modelsPresent
     }
 
-    func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws {
-        guard !isLoaded else { return }
-        loadCalls.append(allowDownload)
-        if allowDownload {
-            for fraction in progressToReport {
-                progress(fraction)
-            }
-        }
+    func loadLocal() async throws -> any KokoroModelSession {
+        loadCalls += 1
         if let loadError {
             throw loadError
         }
-        // Mirrors FluidAudioKokoroEngine's real contract: a local-only load refuses to proceed
-        // when the model isn't present, exactly like the production presence gate.
-        guard allowDownload || modelsPresent else {
-            throw KokoroEngineError.modelsNotDownloaded
-        }
-        isLoaded = true
+        return self
+    }
+
+    func downloadAndLoad(progress: @escaping @Sendable (Double) -> Void) async throws -> any KokoroModelSession {
+        downloadCalls += 1
+        return self
     }
 
     func removeModels() async throws {}

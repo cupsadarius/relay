@@ -6,7 +6,7 @@ enum KokoroTTSAudioSource {
     private static let maxAdaptiveSplitDepth = 8
 
     static func make(
-        engine: any KokoroEngine,
+        session: any KokoroModelSession,
         chunks: [String],
         voice: String,
         speed: Float,
@@ -20,7 +20,7 @@ enum KokoroTTSAudioSource {
                 try await Self.produce(
                     chunk: chunk,
                     depth: 0,
-                    engine: engine,
+                    session: session,
                     voice: voice,
                     speed: speed,
                     framer: framer,
@@ -33,14 +33,14 @@ enum KokoroTTSAudioSource {
     private static func produce(
         chunk: String,
         depth: Int,
-        engine: any KokoroEngine,
+        session: any KokoroModelSession,
         voice: String,
         speed: Float,
         framer: PCMFramer,
         sink: TTSAudioPipe.Sink
     ) async throws {
         do {
-            let pcm = try await engine.synthesize(phonemes: chunk, voice: voice, speed: speed)
+            let pcm = try await session.synthesize(phonemes: chunk, voice: voice, speed: speed)
             for frame in try framer.frames(samples: pcm.samples, sampleRate: pcm.sampleRate) {
                 try Task.checkCancellation()
                 try await sink.yield(frame)
@@ -60,7 +60,7 @@ enum KokoroTTSAudioSource {
                 try await produce(
                     chunk: part,
                     depth: depth + 1,
-                    engine: engine,
+                    session: session,
                     voice: voice,
                     speed: speed,
                     framer: framer,

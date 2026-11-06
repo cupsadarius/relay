@@ -18,9 +18,9 @@ struct SpeechBackendGraph {
         setParakeetSelection: @escaping ParakeetModelSelectionWriter
     ) -> SpeechBackendGraph {
         let appleTTS = AppleTTSBackend()
-        let kokoroEngine: any KokoroEngine = FluidAudioKokoroEngine()
-        let kokoroTTS = KokoroTTSBackend(engine: kokoroEngine)
-        let kokoroModelManager = SingleModelManager.kokoro(engine: kokoroEngine)
+        let kokoroModel: KokoroModel = .kokoro()
+        let kokoroTTS = KokoroTTSBackend(model: kokoroModel)
+        let kokoroModelManager = SingleModelManager.kokoro(model: kokoroModel)
         let pocketEngine: any PocketTTSEngine = FluidAudioPocketTTSEngine()
         let pocketTTS = PocketTTSBackend(engine: pocketEngine)
         let pocketModelManager = SingleModelManager.pocketTTS(engine: pocketEngine)

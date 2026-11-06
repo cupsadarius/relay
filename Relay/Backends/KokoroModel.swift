@@ -7,15 +7,17 @@ struct KokoroPCM: Sendable, Equatable {
     let sampleRate: Double
 }
 
-/// A loaded Kokoro model, ready to synthesize speech.
+/// A loaded Kokoro model, ready to synthesize speech. Throws `KokoroEngineError` (or
+/// `CancellationError`), never raw FluidAudio errors.
 protocol KokoroModelSession: Sendable {
+    /// Resolves exactly the phoneme stream Kokoro would synthesize for `text`.
     func phonemes(for text: String) async throws -> String
+    /// Synthesizes an already-resolved phoneme segment directly to raw PCM.
     func synthesize(phonemes: String, voice: String, speed: Float) async throws -> KokoroPCM
 }
 
-/// Wraps FluidAudio's `KokoroAneManager`/`KokoroAneResourceDownloader` static/instance calls
-/// behind a protocol so `FluidAudioKokoroEngine`'s single-flight, presence-check, and
-/// error-mapping logic can be exercised in tests without constructing real CoreML models.
+/// Wraps FluidAudio's `KokoroAneManager`/`KokoroAneResourceDownloader` calls so the Kokoro load
+/// path can be exercised in tests without constructing real CoreML models.
 protocol KokoroModelLoading: Sendable {
     /// Network-free: true only if a valid model is already on disk. FluidAudio's KokoroAne module
     /// exposes no models-exist API, so this must be hand-rolled against the filesystem.
@@ -31,17 +33,14 @@ protocol KokoroModelLoading: Sendable {
     func removeModels() async throws
 }
 
-/// Errors surfaced by a `KokoroEngine` implementation. `KokoroTTSBackend` maps these onto
-/// `SpeechBackendError` so the router can classify them the same way it classifies every other
-/// backend's failures. Deliberately carries no associated reason strings (unlike
-/// `ParakeetEngineError`): TTS failures must never end up logged or diagnosed with raw error
-/// text, per the privacy rule.
+/// Kokoro load and synthesis failures. `KokoroTTSBackend` maps these onto `SpeechBackendError`.
+/// Deliberately carries no reason strings: TTS failures must never end up logged or diagnosed
+/// with raw error text, per the privacy rule.
 enum KokoroEngineError: Error, Equatable, Sendable {
     /// The model was not present on disk and the caller did not allow a download.
     case modelsNotDownloaded
     /// Loading (or downloading) the model failed for a reason other than the model being absent.
     case loadFailed
-    /// Synthesis failed, including a call made before the engine ever finished a successful load.
     case synthesisFailed
     /// A phoneme segment exceeded KokoroAne's ~510-phoneme per-call limit. `KokoroTTSBackend`
     /// splits long-form text with `KokoroPhonemeChunker` (hard maximum
@@ -53,122 +52,45 @@ enum KokoroEngineError: Error, Equatable, Sendable {
     /// synthesis may split this specific size failure further; generic inference failures are
     /// never retried as though they were length failures.
     case acousticFramesTooLong
-}
 
-/// The seam between `KokoroTTSBackend` and the underlying Kokoro runtime (FluidAudio in
-/// production, a fake in tests). Kept narrow and provider-neutral so `KokoroTTSBackend` never
-/// touches FluidAudio types directly.
-protocol KokoroEngine: Sendable {
-    /// Whether the model files are already present on disk. Never triggers a download.
-    func modelsArePresent() async -> Bool
-    /// Loads the model, downloading it first when `allowDownload` is true. When `allowDownload`
-    /// is false and the model is absent, throws `KokoroEngineError.modelsNotDownloaded` without
-    /// touching the network. Idempotent once loaded: concurrent and repeated calls after a
-    /// successful load are no-ops. `progress` is called with a fraction in [0, 1] while a
-    /// download is in flight; it may be called from any queue.
-    func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws
-    func removeModels() async throws
-    /// Resolves exactly the phoneme stream Kokoro would synthesize for `text`.
-    func phonemes(for text: String) async throws -> String
-    /// Synthesizes an already-resolved phoneme segment directly to raw PCM.
-    func synthesize(phonemes: String, voice: String, speed: Float) async throws -> KokoroPCM
-}
-
-extension KokoroEngine {
-    /// Convenience overload for callers that don't need download progress.
-    func load(allowDownload: Bool) async throws {
-        try await load(allowDownload: allowDownload, progress: { _ in })
+    /// Maps a FluidAudio synthesis failure. `CancellationError` passes through unchanged.
+    static func synthesis(_ error: any Error) -> any Error {
+        switch error {
+        case is CancellationError: error
+        case KokoroAneError.phonemeSequenceTooLong: KokoroEngineError.textTooLong
+        case KokoroAneError.acousticFramesExceedCap: KokoroEngineError.acousticFramesTooLong
+        default: KokoroEngineError.synthesisFailed
+        }
     }
 }
 
-/// Production `KokoroEngine` backed by FluidAudio's `KokoroAneManager` (the ANE-resident,
-/// 7-stage Kokoro 82M CoreML chain). Loads and runs the model entirely on-device.
-///
-/// **There is no network-free load path in FluidAudio's KokoroAne API.** `KokoroAneManager`'s
-/// `initialize()` downloads any missing models before loading, and is a no-op download when
-/// files are already present. The hand-rolled `modelsArePresent()` presence gate on
-/// `load(allowDownload: false)` is therefore the primary protection against `initialize()`
-/// reaching the network when a caller asked for a local-only load. It must cover every asset
-/// `initialize()` can trigger a download for - not just the ANE chain itself but also the shared
-/// G2P CoreML assets `initialize()` separately hard-downloads into a different cache directory
-/// (see `FluidAudioKokoroModelLoader.modelsArePresent()`) - since a gate that only checks part of
-/// what `initialize()` might download would still let a local-only load reach the network on a
-/// partial cache. Only `load(allowDownload: true)` is meant to reach the network.
-///
-/// Relay performs long-form chunking above this engine: the full text is resolved through
-/// `phonemes(for:)`, safe phoneme segments are synthesized through
-/// `synthesize(phonemes:voice:speed:)`, and a bounded audio source feeds the shared player.
-/// Single-flight loading and the local-validation gate live in `ModelSessionLoader`.
-actor FluidAudioKokoroEngine: KokoroEngine {
-    private static let logger = Logger.relay("kokoro")
+typealias KokoroModel = LocalModel<any KokoroModelSession>
 
-    private let modelLoader: any KokoroModelLoading
-    private let sessionLoader: ModelSessionLoader<any KokoroModelSession>
-
-    init(
-        modelLoader: (any KokoroModelLoading)? = nil
-    ) {
-        let modelLoader = modelLoader ?? FluidAudioKokoroModelLoader(cacheDirectory: Self.defaultCacheDirectory())
-        self.modelLoader = modelLoader
-        let logger = Self.logger
-        sessionLoader = ModelSessionLoader(
-            modelsNotDownloaded: { KokoroEngineError.modelsNotDownloaded },
-            mapLoadFailure: { _ in
-                logger.debug("Kokoro model load failed")
-                return KokoroEngineError.loadFailed
-            },
-            validateLocal: { await modelLoader.modelsArePresent() },
-            loadLocal: { try await modelLoader.loadLocal() },
-            downloadAndLoad: { progress in try await modelLoader.downloadAndLoad(progress: progress) }
+extension LocalModel where Session == any KokoroModelSession {
+    /// The Kokoro 82M ANE model (FluidAudio's 7-stage CoreML chain), run entirely on-device.
+    ///
+    /// **There is no network-free load path in FluidAudio's KokoroAne API.** `KokoroAneManager`'s
+    /// `initialize()` downloads any missing models before loading. The hand-rolled
+    /// `modelsArePresent()` gate on a local-only load is therefore the primary protection against
+    /// reaching the network. It must cover every asset `initialize()` can download - the ANE chain
+    /// and the shared G2P assets (see `FluidAudioKokoroModelLoader.modelsArePresent()`).
+    static func kokoro(loader: (any KokoroModelLoading)? = nil) -> Self {
+        let loader = loader ?? FluidAudioKokoroModelLoader(cacheDirectory: kokoroCacheDirectory())
+        let logger = Logger.relay("kokoro")
+        return LocalModel(
+            isPresent: { await loader.modelsArePresent() },
+            loader: ModelSessionLoader(
+                modelsNotDownloaded: { KokoroEngineError.modelsNotDownloaded },
+                mapLoadFailure: { _ in
+                    logger.debug("Kokoro model load failed")
+                    return KokoroEngineError.loadFailed
+                },
+                validateLocal: { await loader.modelsArePresent() },
+                loadLocal: { try await loader.loadLocal() },
+                downloadAndLoad: { progress in try await loader.downloadAndLoad(progress: progress) }
+            ),
+            removal: Removal(deleteFiles: { try await loader.removeModels() }, filesRemain: KokoroEngineError.loadFailed)
         )
-    }
-
-    func modelsArePresent() async -> Bool {
-        await modelLoader.modelsArePresent()
-    }
-
-    func removeModels() async throws {
-        await sessionLoader.reset()
-        try await modelLoader.removeModels()
-        guard await !modelLoader.modelsArePresent() else {
-            throw KokoroEngineError.loadFailed
-        }
-    }
-
-    func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws {
-        try await sessionLoader.load(allowDownload: allowDownload, progress: progress)
-    }
-
-    func phonemes(for text: String) async throws -> String {
-        guard let session = await sessionLoader.session else {
-            throw KokoroEngineError.synthesisFailed
-        }
-
-        do {
-            return try await session.phonemes(for: text)
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            throw KokoroEngineError.synthesisFailed
-        }
-    }
-
-    func synthesize(phonemes: String, voice: String, speed: Float) async throws -> KokoroPCM {
-        guard let session = await sessionLoader.session else {
-            throw KokoroEngineError.synthesisFailed
-        }
-
-        do {
-            return try await session.synthesize(phonemes: phonemes, voice: voice, speed: speed)
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch KokoroAneError.phonemeSequenceTooLong {
-            throw KokoroEngineError.textTooLong
-        } catch KokoroAneError.acousticFramesExceedCap {
-            throw KokoroEngineError.acousticFramesTooLong
-        } catch {
-            throw KokoroEngineError.synthesisFailed
-        }
     }
 
     /// The directory `KokoroAneManager`/`KokoroAneResourceDownloader` treat as their "Models"
@@ -176,7 +98,7 @@ actor FluidAudioKokoroEngine: KokoroEngine {
     /// path segment appended by Relay. Mirrors `KokoroAneResourceDownloader`'s own default
     /// (`TtsCacheDirectory.ensure()/Models`) so a caller that doesn't override the loader gets
     /// the exact same on-disk location FluidAudio would pick on its own.
-    private static func defaultCacheDirectory() -> URL {
+    private static func kokoroCacheDirectory() -> URL {
         (try? TtsCacheDirectory.ensure().appendingPathComponent(KokoroAneResourceDownloader.modelsSubdirectory))
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".cache/fluidaudio/Models")
     }
@@ -204,7 +126,7 @@ struct FluidAudioKokoroModelLoader: KokoroModelLoading {
     /// The directory `KokoroAneManager` and `KokoroAneResourceDownloader.ensureModels` treat as
     /// their "Models" root when passed as `directory:` - NOT the same as the old FluidAudio API's
     /// cache root, which had a "Models" subdirectory appended internally. See
-    /// `FluidAudioKokoroEngine.defaultCacheDirectory()`.
+    /// `LocalModel.kokoroCacheDirectory()`.
     let cacheDirectory: URL
 
     private static let variant: KokoroAneVariant = .english
@@ -219,7 +141,7 @@ struct FluidAudioKokoroModelLoader: KokoroModelLoading {
     /// `kokoro-82m-coreml/ANE`, not nested under it. `KokoroAneManager.initialize()` actually
     /// fetches these via `ensureG2PAssets(directory: nil)`, which always resolves to FluidAudio's
     /// own default cache root rather than honoring a caller-supplied `directory:` - but that
-    /// default is exactly what `FluidAudioKokoroEngine.defaultCacheDirectory()` passes as
+    /// default is exactly what `LocalModel.kokoroCacheDirectory()` passes as
     /// `cacheDirectory` here, so this stays correct as long as nothing overrides that default.
     private var g2pDirectory: URL {
         cacheDirectory.appendingPathComponent(Repo.kokoro.folderName)
@@ -275,15 +197,19 @@ private struct KokoroAneManagerSession: KokoroModelSession {
     let manager: KokoroAneManager
 
     func phonemes(for text: String) async throws -> String {
-        try await manager.phonemes(for: text)
+        do {
+            return try await manager.phonemes(for: text)
+        } catch {
+            throw KokoroEngineError.synthesis(error)
+        }
     }
 
     func synthesize(phonemes: String, voice: String, speed: Float) async throws -> KokoroPCM {
-        let result = try await manager.synthesizeFromPhonemesDetailed(
-            phonemes,
-            voice: voice,
-            speed: speed
-        )
-        return KokoroPCM(samples: result.samples, sampleRate: Double(result.sampleRate))
+        do {
+            let result = try await manager.synthesizeFromPhonemesDetailed(phonemes, voice: voice, speed: speed)
+            return KokoroPCM(samples: result.samples, sampleRate: Double(result.sampleRate))
+        } catch {
+            throw KokoroEngineError.synthesis(error)
+        }
     }
 }

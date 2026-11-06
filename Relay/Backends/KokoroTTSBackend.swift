@@ -10,10 +10,10 @@ import Foundation
 final class KokoroTTSBackend: TextToSpeechBackend {
     let id = BackendID.kokoro
 
-    private let engine: any KokoroEngine
+    private let model: KokoroModel
 
-    init(engine: any KokoroEngine) {
-        self.engine = engine
+    init(model: KokoroModel) {
+        self.model = model
     }
 
     /// Kokoro `voiceSpeed` range Relay drives: the shared slider range
@@ -27,12 +27,13 @@ final class KokoroTTSBackend: TextToSpeechBackend {
     }
 
     func availability() async -> BackendAvailability {
-        await engine.modelsArePresent() ? .available : .modelNotDownloaded
+        await model.modelsArePresent() ? .available : .modelNotDownloaded
     }
 
     func makeAudioSource(text: String, options: TTSOptions) async throws -> any TTSAudioSource {
+        let session: any KokoroModelSession
         do {
-            try await engine.load(allowDownload: false)
+            session = try await model.load()
         } catch is CancellationError {
             throw CancellationError()
         } catch {
@@ -42,13 +43,13 @@ final class KokoroTTSBackend: TextToSpeechBackend {
         let voice = options.voiceByBackend[id] ?? TtsConstants.recommendedVoice
         let speed = Self.speed(forRate: options.rate)
         do {
-            let phonemes = try await engine.phonemes(for: text)
+            let phonemes = try await session.phonemes(for: text)
             let chunks = KokoroPhonemeChunker(
                 preferredTarget: 480,
                 hardMaximum: KokoroAneConstants.maxPhonemeLength
             ).chunks(from: phonemes)
             return KokoroTTSAudioSource.make(
-                engine: engine,
+                session: session,
                 chunks: chunks,
                 voice: voice,
                 speed: speed

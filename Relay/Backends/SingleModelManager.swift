@@ -41,14 +41,14 @@ struct SingleModelManager: SpeechModelManaging {
 
 extension SingleModelManager {
     /// Voice selection is separate from model selection.
-    static func kokoro(engine: any KokoroEngine) -> Self {
+    static func kokoro(model: KokoroModel) -> Self {
         SingleModelManager(
             backendID: .kokoro,
             descriptor: SpeechModelDescriptor(id: "kokoro-82m-ane-en", displayName: "Kokoro 82M ANE", detail: "English"),
             capabilities: [.download, .select, .remove],
-            isPresent: { await engine.modelsArePresent() },
-            download: { progress in try await engine.load(allowDownload: true, progress: progress) },
-            remove: { try await engine.removeModels() }
+            isPresent: { await model.modelsArePresent() },
+            download: { progress in try await model.load(allowDownload: true, progress: progress) },
+            remove: { try await model.remove() }
         )
     }
 
