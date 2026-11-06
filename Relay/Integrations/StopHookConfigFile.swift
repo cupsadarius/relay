@@ -1,6 +1,13 @@
 import Darwin
 import Foundation
 
+/// Installs, removes, and reports on one agent's Relay hook entries.
+protocol AgentHookInstalling {
+    func install() throws
+    func uninstall() throws
+    func status() throws -> IntegrationStatus
+}
+
 /// Errors surfaced while reading, validating, or writing an agent's hook config file
 /// (`settings.json` / `hooks.json`), or while respecting an agent's own opt-out of hooks. Never
 /// carries file contents or paths — only the structural reason.
@@ -37,8 +44,7 @@ struct StopHookConfigFile: Sendable {
     static let backupSuffix = ".relay-backup"
     /// Mode for a config file Relay creates from scratch.
     static let newFilePermissions = 0o644
-    /// `Stop` delivers replies; `UserPromptSubmit` tells Relay which session the user prompted.
-    static let hookEvents = ["Stop", "UserPromptSubmit"]
+    static let hookEvents = HookEvent.allCases.map(\.rawValue)
 
     let fileURL: URL
     let provider: AgentProvider
@@ -220,7 +226,7 @@ struct StopHookConfigFile: Sendable {
     func containsRelayEntry() throws -> Bool {
         guard let root = try read().root,
             let hooks = root["hooks"] as? [String: Any],
-            let stopGroups = hooks["Stop"] as? [[String: Any]]
+            let stopGroups = hooks[HookEvent.stop.rawValue] as? [[String: Any]]
         else {
             return false
         }

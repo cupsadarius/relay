@@ -9,7 +9,7 @@ import Foundation
 /// never edits that trust state and never passes `--dangerously-bypass-hook-trust`.
 ///
 /// Never logs hooks file or config.toml contents; only structural facts.
-struct CodexInstaller {
+struct CodexInstaller: AgentHookInstalling {
     /// Settings copy shown once install succeeds but Codex has not yet granted trust to the
     /// Relay hook command.
     static let trustRequiredMessage = "Run /hooks in Codex and trust the Relay hook."

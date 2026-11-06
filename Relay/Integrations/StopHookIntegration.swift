@@ -1,5 +1,13 @@
 import Foundation
 
+/// The agent hook events Relay installs and reads.
+enum HookEvent: String, CaseIterable {
+    /// Delivers the agent's reply.
+    case stop = "Stop"
+    /// Tells Relay which session the user prompted.
+    case userPromptSubmit = "UserPromptSubmit"
+}
+
 /// The fields Relay reads from a Claude Code or Codex `Stop` hook payload. Both agents use the
 /// same snake_case names; unknown fields are ignored. `turnID` is optional here and enforced per
 /// provider by `StopHookIntegration.requiresTurnID`.
@@ -45,7 +53,7 @@ struct PromptSubmitPayload: Decodable {
     /// The agent session a `UserPromptSubmit` envelope names, or `nil` for any other envelope.
     static func sessionID(in envelope: HookEnvelope) -> AgentSessionID? {
         guard let payload = try? JSONDecoder().decode(Self.self, from: Data(envelope.rawPayload.utf8)),
-            payload.hookEventName == "UserPromptSubmit"
+            payload.hookEventName == HookEvent.userPromptSubmit.rawValue
         else { return nil }
         return AgentSessionID(provider: envelope.provider, providerSessionID: payload.sessionID)
     }
@@ -88,7 +96,7 @@ struct StopHookIntegration: RelayIntegration {
         if requiresTurnID, payload.turnID == nil {
             throw StopHookIntegrationError.malformedPayload
         }
-        guard payload.hookEventName == "Stop" else {
+        guard payload.hookEventName == HookEvent.stop.rawValue else {
             throw StopHookIntegrationError.unsupportedHookEvent
         }
         guard let text = payload.lastAssistantMessage,

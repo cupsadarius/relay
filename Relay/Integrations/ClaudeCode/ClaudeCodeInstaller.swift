@@ -6,7 +6,7 @@ import Foundation
 /// the `.installedAwaitingFirstEvent` status.
 ///
 /// Never logs settings file contents; only structural facts.
-struct ClaudeCodeInstaller {
+struct ClaudeCodeInstaller: AgentHookInstalling {
     private let configFile: StopHookConfigFile
 
     /// - Parameters:

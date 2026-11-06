@@ -7,4 +7,11 @@ import Foundation
 enum AgentProvider: String, Codable, Sendable, CaseIterable {
     case claudeCode = "claude-code"
     case codex = "codex"
+
+    var displayName: String {
+        switch self {
+        case .claudeCode: "Claude Code"
+        case .codex: "Codex"
+        }
+    }
 }

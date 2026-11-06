@@ -23,12 +23,10 @@ struct IntegrationsSettingsView: View {
                 }
             }
 
-            Section("Claude Code") {
-                integrationRow(for: .claudeCode)
-            }
-
-            Section("Codex") {
-                integrationRow(for: .codex)
+            ForEach(AgentProvider.allCases, id: \.self) { provider in
+                Section(provider.displayName) {
+                    integrationRow(for: provider)
+                }
             }
 
             Section("Agent responses") {
@@ -56,7 +54,7 @@ struct IntegrationsSettingsView: View {
                     ForEach(agentSessions) { session in
                         VStack(alignment: .leading, spacing: 2) {
                             HStack {
-                                Text(Self.providerLabel(session.provider))
+                                Text(session.provider.displayName)
                                 Spacer()
                                 Text(session.lastActivityAt, style: .relative)
                                     .font(.caption)
@@ -77,13 +75,6 @@ struct IntegrationsSettingsView: View {
             model.integrationSetup.check(.claudeCode)
             model.integrationSetup.check(.codex)
             agentSessions = await model.integrationSetup.agentSessionSummaries()
-        }
-    }
-
-    private static func providerLabel(_ provider: AgentProvider) -> String {
-        switch provider {
-        case .claudeCode: "Claude Code"
-        case .codex: "Codex"
         }
     }
 

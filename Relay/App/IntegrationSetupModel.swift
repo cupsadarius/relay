@@ -99,10 +99,7 @@ final class IntegrationSetupModel {
     func install(_ provider: AgentProvider) {
         do {
             try installBundledHelperIfPresent()
-            switch provider {
-            case .claudeCode: try services.claudeCodeInstaller.install()
-            case .codex: try services.codexInstaller.install()
-            }
+            try installer(for: provider).install()
             check(provider)
         } catch {
             installerStatuses[provider] = Self.configurationErrorStatus(for: provider, error: error)
@@ -112,10 +109,7 @@ final class IntegrationSetupModel {
     /// Also clears the provider's runtime status so a stale `.active` can't outlive the uninstall.
     func uninstall(_ provider: AgentProvider) {
         do {
-            switch provider {
-            case .claudeCode: try services.claudeCodeInstaller.uninstall()
-            case .codex: try services.codexInstaller.uninstall()
-            }
+            try installer(for: provider).uninstall()
             services.integrationManager.clearRuntimeStatus(for: provider)
             check(provider)
         } catch {
@@ -125,10 +119,7 @@ final class IntegrationSetupModel {
 
     func check(_ provider: AgentProvider) {
         do {
-            switch provider {
-            case .claudeCode: installerStatuses[provider] = try services.claudeCodeInstaller.status()
-            case .codex: installerStatuses[provider] = try services.codexInstaller.status()
-            }
+            installerStatuses[provider] = try installer(for: provider).status()
         } catch {
             installerStatuses[provider] = Self.configurationErrorStatus(for: provider, error: error)
         }
@@ -142,6 +133,13 @@ final class IntegrationSetupModel {
     }
 
     // MARK: Private
+
+    private func installer(for provider: AgentProvider) -> any AgentHookInstalling {
+        switch provider {
+        case .claudeCode: services.claudeCodeInstaller
+        case .codex: services.codexInstaller
+        }
+    }
 
     /// Keeps the stable-path `RelayHook` copy in step with the helper bundled in THIS build, but
     /// only when at least one provider's config points hooks at it. Never throws: a failure is
@@ -162,10 +160,7 @@ final class IntegrationSetupModel {
         // An install from an older build gains the hook events added since; unchanged configs are not written.
         for provider in AgentProvider.allCases where Self.hooksInstalled(installerStatuses[provider]) {
             do {
-                switch provider {
-                case .claudeCode: try services.claudeCodeInstaller.install()
-                case .codex: try services.codexInstaller.install()
-                }
+                try installer(for: provider).install()
             } catch {
                 integrationDiagnosticsLog.append(stage: "installer", outcome: "upgrade-failed", detail: "provider=\(provider.rawValue)")
             }
@@ -225,9 +220,6 @@ final class IntegrationSetupModel {
         if provider == .codex, case IntegrationInstallerError.hooksDisabledInConfig = error {
             return .configurationError(CodexInstaller.hooksDisabledMessage)
         }
-        switch provider {
-        case .claudeCode: return .configurationError("Could not update the Claude Code integration.")
-        case .codex: return .configurationError("Could not update the Codex integration.")
-        }
+        return .configurationError("Could not update the \(provider.displayName) integration.")
     }
 }
