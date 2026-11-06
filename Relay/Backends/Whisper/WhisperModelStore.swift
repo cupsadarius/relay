@@ -140,9 +140,7 @@ struct WhisperModelStore: Sendable {
             let markerURL = stagingDirectory.appendingPathComponent(Self.verifiedMarkerName)
             try JSONEncoder().encode(manifest).write(to: markerURL)
 
-            let readyDirectory = modelDirectory(for: id)
-            try? FileManager.default.removeItem(at: readyDirectory)
-            try FileManager.default.moveItem(at: stagingDirectory, to: readyDirectory)
+            _ = try FileManager.default.replaceItemAt(modelDirectory(for: id), withItemAt: stagingDirectory)
         } catch {
             try? FileManager.default.removeItem(at: stagingDirectory)
             logger.debug("Whisper model download failed")
@@ -360,11 +358,15 @@ struct HuggingFaceWhisperDownloader: WhisperDownloader {
 
     /// `entry.path` is the full repo path (e.g. "openai_whisper-tiny.en/config.json"); this
     /// strips the `subfolder/` prefix so the result is relative to the model's own directory.
-    private static func relativePath(of path: String, under subfolder: String) -> String? {
+    /// `nil` for a path outside `subfolder`, an absolute remainder, or any `..` component, so a
+    /// tree response can never place a file outside the staging directory.
+    static func relativePath(of path: String, under subfolder: String) -> String? {
         let prefix = subfolder + "/"
-        guard path.hasPrefix(prefix) else {
-            return nil
-        }
-        return String(path.dropFirst(prefix.count))
+        guard path.hasPrefix(prefix) else { return nil }
+        let relative = path.dropFirst(prefix.count)
+        guard !relative.hasPrefix("/"),
+            !relative.split(separator: "/", omittingEmptySubsequences: false).contains("..")
+        else { return nil }
+        return String(relative)
     }
 }

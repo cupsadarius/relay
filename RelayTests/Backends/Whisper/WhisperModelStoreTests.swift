@@ -353,6 +353,21 @@ final class WhisperModelStoreTests: XCTestCase {
             "invalidating presence must not delete the rest of the files -- that is remove(_:)'s job"
         )
     }
+
+    func testRedownloadReplacesAnExistingModel() async throws {
+        let oldData = Data("{\"tokenizer\":\"old\"}".utf8)
+        downloader.filesToWrite = [.init(relativePath: "tokenizer.json", data: oldData, oid: TestOID.gitBlobSHA1(oldData))]
+        try await store.download(.tinyEn, progress: { _ in })
+
+        let newData = Data("{\"tokenizer\":\"new\"}".utf8)
+        downloader.filesToWrite = [.init(relativePath: "tokenizer.json", data: newData, oid: TestOID.gitBlobSHA1(newData))]
+        try await store.download(.tinyEn, progress: { _ in })
+
+        XCTAssertTrue(store.presence(of: .tinyEn))
+        let tokenizer = tempDirectory.appendingPathComponent(WhisperModelID.tinyEn.rawValue, isDirectory: true)
+            .appendingPathComponent("tokenizer.json")
+        XCTAssertEqual(try Data(contentsOf: tokenizer), newData)
+    }
 }
 
 /// `XCTAssertThrowsError` has no async overload in this SDK version; this small helper awaits the
@@ -368,5 +383,19 @@ func XCTAssertThrowsErrorAsync<T>(
         XCTFail("Expected error to be thrown", file: file, line: line)
     } catch {
         errorHandler(error)
+    }
+}
+
+final class HuggingFaceWhisperDownloaderPathTests: XCTestCase {
+    func testRelativePathKeepsFilesInsideTheArtifact() {
+        let path = HuggingFaceWhisperDownloader.relativePath(of: "m/AudioEncoder.mlmodelc/weights/weight.bin", under: "m")
+        XCTAssertEqual(path, "AudioEncoder.mlmodelc/weights/weight.bin")
+    }
+
+    func testRelativePathRejectsTraversalAndAbsolutePaths() {
+        XCTAssertNil(HuggingFaceWhisperDownloader.relativePath(of: "m/../../evil", under: "m"))
+        XCTAssertNil(HuggingFaceWhisperDownloader.relativePath(of: "m/a/../../evil", under: "m"))
+        XCTAssertNil(HuggingFaceWhisperDownloader.relativePath(of: "m//etc/passwd", under: "m"))
+        XCTAssertNil(HuggingFaceWhisperDownloader.relativePath(of: "other/file", under: "m"))
     }
 }
