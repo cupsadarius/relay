@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DictationSettingsView: View {
     @Bindable var model: AppModel
+    @State private var microphones: [AudioInputDevice] = []
 
     var body: some View {
         Form {
@@ -17,6 +18,7 @@ struct DictationSettingsView: View {
                         Text(mode == .holdToTalk ? "Hold to Talk" : "Toggle").tag(mode)
                     }
                 }
+                microphonePicker
             }
             SpeechBackendSettingsSection(
                 title: "Speech Recognition",
@@ -32,7 +34,39 @@ struct DictationSettingsView: View {
         }
         .formStyle(.grouped)
         .task {
+            microphones = await Task.detached { AudioInputDevices.connected() }.value
             await model.speechBackends.refresh(.dictation)
         }
+    }
+
+    @ViewBuilder private var microphonePicker: some View {
+        let saved = model.settings.selectedMicrophone
+        let missing = MicrophoneSelection.resolve(saved, connected: microphones).missing
+        Picker(
+            "Microphone",
+            selection: Binding(
+                get: { saved?.uid },
+                set: { uid in
+                    let device = microphones.first { $0.uid == uid }
+                    model.settingsController.setSelectedMicrophone(
+                        device.map { SelectedMicrophone(uid: $0.uid, name: $0.name) } ?? (uid == nil ? nil : saved)
+                    )
+                }
+            )
+        ) {
+            Text("System default").tag(String?.none)
+            ForEach(microphones) { device in
+                Text(device.name).tag(String?.some(device.uid))
+            }
+            if let missing {
+                Text("\(missing.name) (not connected)").tag(String?.some(missing.uid))
+            }
+        }
+        if let missing, !microphones.isEmpty {
+            Text("\(missing.name) is not connected. Relay uses the system default microphone.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        Text("Pick your Mac's built-in microphone to keep Bluetooth headphones in high-quality mode during calls.")
+            .font(.caption).foregroundStyle(.secondary)
     }
 }
