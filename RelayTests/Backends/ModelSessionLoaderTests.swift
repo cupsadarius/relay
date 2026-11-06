@@ -23,8 +23,9 @@ final class ModelSessionLoaderTests: XCTestCase {
         let probe = LoaderProbe()
         let loader = makeLoader(probe)
 
-        try await loader.load(allowDownload: false, progress: { _ in })
+        let returned = try await loader.load(allowDownload: false, progress: { _ in })
 
+        XCTAssertEqual(returned, "local-1")
         let session = await loader.session
         XCTAssertEqual(session, "local-1")
         let validateCalls = await probe.validateCalls
@@ -241,8 +242,9 @@ final class ModelSessionLoaderTests: XCTestCase {
 
         await probe.openLocalGate()
         try await local.value
-        try await download.value
+        let downloadResult = try await download.value
 
+        XCTAssertEqual(downloadResult, "local-1")
         let downloadCalls = await probe.downloadCalls
         XCTAssertEqual(downloadCalls, 0)
         let session = await loader.session
