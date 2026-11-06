@@ -93,7 +93,7 @@ final class UnixSocketServer: @unchecked Sendable {
     private var acceptSource: DispatchSourceRead?
     private var acceptSourceSuspended = false
     private var socketPath: String?
-    private var onLine: (@Sendable (String) -> Void)?
+    private var onLine: (@Sendable (Data) -> Void)?
     private var connections: [Int32: UnixSocketClientConnection] = [:]
     /// One receive buffer reused for every readable event (confined to `queue`), instead of a
     /// fresh 256 KiB allocation per event.
@@ -154,7 +154,7 @@ final class UnixSocketServer: @unchecked Sendable {
     ///   - onLine: invoked once per newline-delimited line received from a
     ///     client, on the server's private serial queue. Must be
     ///     `Sendable`-safe; it is never invoked concurrently with itself.
-    func start(path: String, onLine: @escaping @Sendable (String) -> Void) throws {
+    func start(path: String, onLine: @escaping @Sendable (Data) -> Void) throws {
         try queue.sync {
             guard listenDescriptor < 0 else {
                 throw UnixSocketServerError.alreadyStarted

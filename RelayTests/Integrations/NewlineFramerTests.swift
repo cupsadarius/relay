@@ -4,7 +4,7 @@ import XCTest
 
 final class NewlineFramerTests: XCTestCase {
     private struct Result {
-        var lines: [String] = []
+        var lines: [Data] = []
         var oversized = 0
         var closeRequests: [Bool] = []
     }
@@ -28,13 +28,13 @@ final class NewlineFramerTests: XCTestCase {
 
     func testLinesSplitAcrossReadsAreReassembledInOrder() {
         let result = feed([bytes("ab"), bytes("c\nde"), bytes("f\n\ng\n")])
-        XCTAssertEqual(result.lines, ["abc", "def", "", "g"])
+        XCTAssertEqual(result.lines, ["abc", "def", "", "g"].map { Data($0.utf8) })
         XCTAssertEqual(result.closeRequests, [false, false, false])
     }
 
     func testOversizedTerminatedLineIsReportedAndSkipped() {
         let result = feed([bytes(String(repeating: "x", count: 17) + "\nok\n")])
-        XCTAssertEqual(result.lines, ["ok"])
+        XCTAssertEqual(result.lines, [Data("ok".utf8)])
         XCTAssertEqual(result.oversized, 1)
     }
 
@@ -50,19 +50,19 @@ final class NewlineFramerTests: XCTestCase {
             ))
         XCTAssertEqual(unterminated, [5])
 
-        var lines: [String] = []
+        var lines: [Data] = []
         _ = framer.append(
             ArraySlice(bytes("1\n")),
             onLine: { lines.append($0) },
             onOversizedLine: { _ in XCTFail() },
             onOversizedUnterminated: { _ in XCTFail() }
         )
-        XCTAssertEqual(lines, ["1"])
+        XCTAssertEqual(lines, [Data("1".utf8)])
     }
 
     func testOversizedTerminatedLineReportsItsByteCountAndFollowingLinesStillArrive() {
         var framer = NewlineFramer(maxLineBytes: UnixSocketServer.maxLineBytes)
-        var lines: [String] = []
+        var lines: [Data] = []
         var oversizedByteCounts: [Int] = []
         var chunk = [UInt8](repeating: UInt8(ascii: "a"), count: UnixSocketServer.maxLineBytes + 1)
         chunk.append(UInt8(ascii: "\n"))
@@ -78,18 +78,18 @@ final class NewlineFramerTests: XCTestCase {
 
         XCTAssertFalse(shouldClose)
         XCTAssertEqual(oversizedByteCounts, [UnixSocketServer.maxLineBytes + 1])
-        XCTAssertEqual(lines, [#"{"ok":1}"#])
+        XCTAssertEqual(lines, [Data(#"{"ok":1}"#.utf8)])
     }
 
     func testLongLineArrivingInManySmallReadsIsDeliveredOnce() {
         let chunks = Array(repeating: bytes("abcd"), count: 512) + [bytes("\n")]
         let result = feed(chunks, maxLineBytes: 4_096)
         XCTAssertEqual(result.lines.count, 1)
-        XCTAssertEqual(result.lines.first?.utf8.count, 2_048)
+        XCTAssertEqual(result.lines.first?.count, 2_048)
     }
 
-    func testInvalidUTF8LineIsSkippedWithoutAffectingTheNextLine() {
+    func testInvalidUTF8LineIsDeliveredAsBytesWithoutAffectingTheNextLine() {
         let result = feed([[0xFF, 0x0A] + bytes("ok\n")])
-        XCTAssertEqual(result.lines, ["ok"])
+        XCTAssertEqual(result.lines, [Data([0xFF]), Data("ok".utf8)])
     }
 }

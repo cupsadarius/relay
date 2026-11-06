@@ -4,7 +4,6 @@ import os
 /// Why a line received on the hook socket was ignored. Never carries the
 /// line's content — only the structural reason.
 enum HookEnvelopeDropReason: Sendable {
-    case invalidUTF8
     case malformedJSON
     case unsupportedSchemaVersion
 
@@ -12,7 +11,6 @@ enum HookEnvelopeDropReason: Sendable {
     /// parser error text — only this fixed, privacy-safe case name.
     var diagnosticsLabel: String {
         switch self {
-        case .invalidUTF8: "invalid-utf8"
         case .malformedJSON: "malformed-json"
         case .unsupportedSchemaVersion: "unsupported-schema-version"
         }
@@ -79,25 +77,19 @@ final class HookEnvelopeReceiver: @unchecked Sendable {
         continuation.finish()
     }
 
-    private func handle(line: String) {
-        let byteCount = line.utf8.count
-        diagnostics.append(stage: "receiver", outcome: "line-received", detail: "\(byteCount) bytes")
-
-        guard let data = line.data(using: .utf8) else {
-            drop(.invalidUTF8, byteCount: byteCount)
-            return
-        }
+    private func handle(line: Data) {
+        diagnostics.append(stage: "receiver", outcome: "line-received", detail: "\(line.count) bytes")
 
         let envelope: HookEnvelope
         do {
-            envelope = try decoder.decode(HookEnvelope.self, from: data)
+            envelope = try decoder.decode(HookEnvelope.self, from: line)
         } catch {
-            drop(.malformedJSON, byteCount: data.count)
+            drop(.malformedJSON, byteCount: line.count)
             return
         }
 
         guard envelope.schemaVersion == 1 else {
-            drop(.unsupportedSchemaVersion, byteCount: data.count)
+            drop(.unsupportedSchemaVersion, byteCount: line.count)
             return
         }
 
@@ -113,8 +105,6 @@ final class HookEnvelopeReceiver: @unchecked Sendable {
 
     private func drop(_ reason: HookEnvelopeDropReason, byteCount: Int) {
         switch reason {
-        case .invalidUTF8:
-            logger.log("malformed hook line dropped: invalid UTF-8 (\(byteCount, privacy: .public) bytes)")
         case .malformedJSON:
             logger.log("malformed hook line dropped: JSON decode failed (\(byteCount, privacy: .public) bytes)")
         case .unsupportedSchemaVersion:

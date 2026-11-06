@@ -145,7 +145,7 @@ final class UnixSocketServerTests: XCTestCase {
         let received = expectation(description: "received")
         let server = UnixSocketServer()
         try server.start(path: path) { line in
-            XCTAssertTrue(line.contains("schemaVersion"))
+            XCTAssertTrue(String(decoding: line, as: UTF8.self).contains("schemaVersion"))
             received.fulfill()
         }
         defer { server.stop() }
@@ -242,7 +242,7 @@ final class UnixSocketServerTests: XCTestCase {
 
         let server = UnixSocketServer()
         try server.start(path: path) { line in
-            if line.utf8.count > UnixSocketServer.maxLineBytes {
+            if line.count > UnixSocketServer.maxLineBytes {
                 receivedOversizedLine.fulfill()
             } else {
                 receivedShortLine.fulfill()
@@ -290,7 +290,7 @@ final class UnixSocketServerTests: XCTestCase {
 
         let received = expectation(description: "line received once a slot freed under the cap")
         try server.start(path: path) { line in
-            XCTAssertTrue(line.contains("schemaVersion"))
+            XCTAssertTrue(String(decoding: line, as: UTF8.self).contains("schemaVersion"))
             received.fulfill()
         }
         defer { server.stop() }
@@ -359,7 +359,7 @@ final class UnixSocketServerTests: XCTestCase {
         let received = expectation(description: "received")
         let server = UnixSocketServer()
         try server.start(path: path) { line in
-            XCTAssertEqual(line, "not json at all")
+            XCTAssertEqual(line, Data("not json at all".utf8))
             received.fulfill()
         }
         defer { server.stop() }
@@ -382,7 +382,7 @@ final class UnixSocketServerTests: XCTestCase {
 
         let server = UnixSocketServer()
         try server.start(path: path) { line in
-            if line.contains("incomple") {
+            if String(decoding: line, as: UTF8.self).contains("incomple") {
                 receivedPartialLine.fulfill() // inverted guard: trips only if the partial is wrongly delivered
             } else {
                 receivedFollowUpLine.fulfill()
