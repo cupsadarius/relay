@@ -103,7 +103,7 @@ final class DictationCoordinator: DictationCoordinating {
         state = .starting(session)
         activity.begin(sessionID: session)
         stopSpeech()
-        // Must run before microphone.start(onLevel:); see MicrophoneSampleStreaming.
+        // Must run before microphone.start(onLevel:); see setSampleObserver.
         await beginStreamingTranscription(session: session)
         do {
             try await microphone.start(onLevel: { [weak self] level in
@@ -215,12 +215,10 @@ final class DictationCoordinator: DictationCoordinating {
     }
 
     /// Creates a fresh `StreamingTranscriber` for this session, wires it up as the
-    /// microphone's sample observer (if the concrete `microphone` supports the optional
-    /// `MicrophoneSampleStreaming` capability), and starts its periodic re-transcribe loop. Must
-    /// run before `microphone.start(onLevel:)` — see that protocol's doc comment.
+    /// microphone's sample observer, and starts its periodic re-transcribe loop. Must
+    /// run before `microphone.start(onLevel:)` — see `setSampleObserver`.
     private func beginStreamingTranscription(session: UUID) async {
         guard liveTranscriptionEnabled() else { return }
-        guard let streaming = microphone as? any MicrophoneSampleStreaming else { return }
 
         let transcriber = StreamingTranscriber(
             transcribe: { [sttRouter] audio in
@@ -242,7 +240,7 @@ final class DictationCoordinator: DictationCoordinating {
                 await transcriber.appendSamples(samples)
             }
         }
-        await streaming.setSampleObserver { samples in
+        await microphone.setSampleObserver { samples in
             sampleContinuation.yield(samples)
         }
         await transcriber.start()
@@ -255,9 +253,7 @@ final class DictationCoordinator: DictationCoordinating {
     private func stopStreamingTranscription() async {
         guard let transcriber = streamingTranscriber else { return }
         streamingTranscriber = nil
-        if let streaming = microphone as? any MicrophoneSampleStreaming {
-            await streaming.setSampleObserver(nil)
-        }
+        await microphone.setSampleObserver(nil)
         sampleAppendContinuation?.finish()
         sampleAppendContinuation = nil
         await sampleAppendTask?.value
@@ -270,9 +266,7 @@ final class DictationCoordinator: DictationCoordinating {
     private func abandonStreamingTranscription() {
         guard let transcriber = streamingTranscriber else { return }
         streamingTranscriber = nil
-        if let streaming = microphone as? any MicrophoneSampleStreaming {
-            Task { await streaming.setSampleObserver(nil) }
-        }
+        Task { [microphone] in await microphone.setSampleObserver(nil) }
         sampleAppendContinuation?.finish()
         sampleAppendContinuation = nil
         sampleAppendTask = nil

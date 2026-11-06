@@ -407,7 +407,7 @@ final class MicrophoneCaptureStateTests: XCTestCase {
     }
 }
 
-private actor FakeAudioSource: AudioCaptureSourcing, AudioInputFormatReporting {
+private actor FakeAudioSource: AudioCaptureSourcing {
     private var sink: (@Sendable ([Float]) -> Void)?
     private var terminalErrorSink: (@Sendable (Error) async -> Void)?
     private var startError: Error?

@@ -904,6 +904,7 @@ private actor DelayedFailingMicrophone: MicrophoneCapturing {
     }
     func stop() async throws -> AudioInput { AudioInput(samples: [0.1], sampleRate: 16_000) }
     func cancel() async {}
+    func setSampleObserver(_ observer: (@Sendable ([Float]) -> Void)?) async {}
     func didStart() -> Bool { didInvokeStart }
     func failStart() { started?.resume(); started = nil }
 }
@@ -913,6 +914,7 @@ private struct ThrowingMicrophone: MicrophoneCapturing {
     func start(onLevel: @escaping @Sendable (Float) -> Void) async throws { throw error }
     func stop() async throws -> AudioInput { throw error }
     func cancel() async {}
+    func setSampleObserver(_ observer: (@Sendable ([Float]) -> Void)?) async {}
 }
 
 /// A microphone whose `stop()` throws `SpeechBackendError.noUsableAudio` directly (as opposed to
@@ -921,6 +923,7 @@ private struct NoUsableAudioMicrophone: MicrophoneCapturing {
     func start(onLevel: @escaping @Sendable (Float) -> Void) async throws {}
     func stop() async throws -> AudioInput { throw SpeechBackendError.noUsableAudio }
     func cancel() async {}
+    func setSampleObserver(_ observer: (@Sendable ([Float]) -> Void)?) async {}
 }
 
 /// A `@MainActor` fake satisfying `MicrophoneCapturing`'s `Sendable` refinement through its
@@ -943,6 +946,7 @@ private final class CancellableFakeMicrophone: MicrophoneCapturing {
             await withCheckedContinuation { cancelWaiter = $0 }
         }
     }
+    func setSampleObserver(_ observer: (@Sendable ([Float]) -> Void)?) async {}
     func releaseCancel() {
         cancelWaiter?.resume()
         cancelWaiter = nil
@@ -957,6 +961,7 @@ private actor LevelCapturingMicrophone: MicrophoneCapturing {
     }
     func stop() async throws -> AudioInput { AudioInput(samples: [0.1], sampleRate: 16_000) }
     func cancel() async { onLevel = nil }
+    func setSampleObserver(_ observer: (@Sendable ([Float]) -> Void)?) async {}
     func emitLevel(_ level: Float) {
         onLevel?(level)
     }
@@ -1094,9 +1099,10 @@ private actor FakeMicrophone: MicrophoneCapturing {
     func start(onLevel: @escaping @Sendable (Float) -> Void) async throws { await events.append("microphone.start") }
     func stop() async throws -> AudioInput { await events.append("microphone.stop"); return AudioInput(samples: [0.1], sampleRate: 16_000) }
     func cancel() async { await events.append("microphone.cancel") }
+    func setSampleObserver(_ observer: (@Sendable ([Float]) -> Void)?) async {}
 }
 
-private actor SampleStreamingFakeMicrophone: MicrophoneCapturing, MicrophoneSampleStreaming {
+private actor SampleStreamingFakeMicrophone: MicrophoneCapturing {
     let events: EventLog
     private(set) var observerSetCount = 0
     private var sampleObserver: (@Sendable ([Float]) -> Void)?

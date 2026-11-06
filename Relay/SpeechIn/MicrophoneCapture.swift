@@ -10,14 +10,8 @@ protocol MicrophoneCapturing: Sendable {
     /// Abandons an in-progress start/recording without producing an `AudioInput`. Returns the
     /// actor to `idle` without throwing; a no-op while already idle.
     func cancel() async
-}
-
-/// Optional tap on the raw 16 kHz mono sample batches `MicrophoneCapture` accumulates, for live
-/// interim transcription. Callers probe for it with `as? any MicrophoneSampleStreaming`.
-protocol MicrophoneSampleStreaming: Sendable {
-    /// Replaces the current observer (if any). Must be called before `start(onLevel:)` for the
-    /// observer to see any samples from that recording session — samples are only ever forwarded
-    /// to whichever observer was set when that particular `start(onLevel:)` call began.
+    /// Taps the raw 16 kHz mono sample batches, for live interim transcription. Replaces the
+    /// current observer; only an observer set before `start(onLevel:)` sees that session's samples.
     func setSampleObserver(_ observer: (@Sendable ([Float]) -> Void)?) async
 }
 
@@ -28,10 +22,7 @@ protocol AudioCaptureSourcing: Sendable {
         onTerminalError: @escaping @Sendable (Error) async -> Void
     ) async throws
     func stop() async throws
-}
-
-/// Optional capability: the input device's sample rate (Hz) before resampling to 16 kHz.
-protocol AudioInputFormatReporting: Sendable {
+    /// The input device's sample rate (Hz) before resampling to 16 kHz.
     func currentInputSampleRate() -> Double
 }
 
@@ -59,7 +50,7 @@ enum MicrophoneCaptureError: Error, Equatable, Sendable, LocalizedError {
     }
 }
 
-actor MicrophoneCapture: MicrophoneCapturing, MicrophoneSampleStreaming {
+actor MicrophoneCapture: MicrophoneCapturing {
 
     private enum State {
         case idle
@@ -74,7 +65,7 @@ actor MicrophoneCapture: MicrophoneCapturing, MicrophoneSampleStreaming {
     private let source: any AudioCaptureSourcing
     private let accumulator = AudioSampleAccumulator()
     private var state: State = .idle
-    /// MicrophoneSampleStreaming: set by `setSampleObserver` before recording starts;
+    /// Set by `setSampleObserver` before recording starts;
     /// read once into a local at the top of `start(onLevel:)` and captured by that call's own
     /// sample-batch closure, so a later `setSampleObserver` call mid-recording never changes who
     /// an already-running session's samples are forwarded to.
@@ -136,7 +127,7 @@ actor MicrophoneCapture: MicrophoneCapturing, MicrophoneSampleStreaming {
             switch state {
             case .starting(session) where !startCancelRequested:
                 state = .recording(session)
-                lastInputSampleRate = (source as? any AudioInputFormatReporting)?.currentInputSampleRate() ?? 0
+                lastInputSampleRate = source.currentInputSampleRate()
             case let .failedStarting(failedSession, error) where failedSession == session:
                 transitionToIdle()
                 throw error
@@ -236,8 +227,6 @@ actor MicrophoneCapture: MicrophoneCapturing, MicrophoneSampleStreaming {
         for waiter in waiters { waiter.resume() }
     }
 
-    // MicrophoneSampleStreaming conformance: see sampleObserver doc comment for the
-    // ordering guarantee this relies on.
     func setSampleObserver(_ observer: (@Sendable ([Float]) -> Void)?) async {
         sampleObserver = observer
     }
@@ -309,7 +298,7 @@ private final class AudioSampleAccumulator: @unchecked Sendable {
 ///   on `engineQueue`, because removing a tap from inside its own callback can deadlock. A later
 ///   `start()`/`stop()` goes through the same queue, so that teardown always runs before a newer
 ///   capture installs its tap.
-private final class AVAudioEngineSource: AudioCaptureSourcing, AudioInputFormatReporting, @unchecked Sendable {
+private final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendable {
     private let engine = AVAudioEngine()
     private let gate = CaptureCallbackGate()
     private let engineQueue = DispatchQueue(label: "dev.relaymac.Relay.microphone-engine")
