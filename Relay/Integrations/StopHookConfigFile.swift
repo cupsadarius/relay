@@ -13,6 +13,8 @@ enum IntegrationInstallerError: Error, Equatable, Sendable {
     /// Codex's `config.toml` explicitly disables hooks. Callers surface
     /// `CodexInstaller.hooksDisabledMessage`.
     case hooksDisabledInConfig
+    /// Another process kept changing the config file while Relay merged it.
+    case configFileChangedDuringWrite
 }
 
 /// Owns the read -> merge -> write cycle for the Relay-owned command hook, one per event in
@@ -121,7 +123,11 @@ struct StopHookConfigFile: Sendable {
     ///   `command` is rewritten in place, other keys such as `timeout` preserved.
     /// - A Relay-owned entry already matching: nothing changes.
     func install() throws {
-        let original = try readIfExists()
+        try retryingOnConcurrentChange { try installOnce() }
+    }
+
+    private func installOnce() throws {
+        let (original, readBytes) = try read()
         var root = original ?? [:]
         var hooks = try Self.validatedHooks(from: root)
         let groupsByEvent = try Self.hookEvents.map { ($0, try Self.validatedGroups(for: $0, from: hooks)) }
@@ -129,7 +135,7 @@ struct StopHookConfigFile: Sendable {
             hooks[event] = installingEntry(in: groups)
         }
         root["hooks"] = hooks
-        try write(root, replacing: original)
+        try write(root, replacing: original, readBytes: readBytes)
     }
 
     private func installingEntry(in eventGroups: [[String: Any]]) -> [[String: Any]] {
@@ -185,7 +191,12 @@ struct StopHookConfigFile: Sendable {
     /// `hooks`) is dropped once empty; groups with other keys keep their remaining entries.
     /// Empty event/`hooks` containers are removed. A no-op (no write) when nothing matches.
     func uninstall() throws {
-        guard let original = try readIfExists() else { return }
+        try retryingOnConcurrentChange { try uninstallOnce() }
+    }
+
+    private func uninstallOnce() throws {
+        let (read, readBytes) = try read()
+        guard let original = read else { return }
         var root = original
         guard var hooks = root["hooks"] as? [String: Any] else { return }
 
@@ -210,12 +221,12 @@ struct StopHookConfigFile: Sendable {
         guard didRemoveAnyRelayEntry else { return }
 
         root["hooks"] = hooks.isEmpty ? nil : hooks
-        try write(root, replacing: original)
+        try write(root, replacing: original, readBytes: readBytes)
     }
 
     /// Whether any `Stop` group currently contains a Relay-owned command for `provider`.
     func containsRelayEntry() throws -> Bool {
-        guard let root = try readIfExists(),
+        guard let root = try read().root,
             let hooks = root["hooks"] as? [String: Any],
             let stopGroups = hooks["Stop"] as? [[String: Any]]
         else {
@@ -277,18 +288,37 @@ struct StopHookConfigFile: Sendable {
 
     // MARK: - File I/O
 
-    private func readIfExists() throws -> [String: Any]? {
-        guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
+    /// The parsed root (`nil` when the file is absent) and the exact bytes it came from.
+    private func read() throws -> (root: [String: Any]?, bytes: Data?) {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return (nil, nil) }
         let data = try Data(contentsOf: fileURL)
-        guard !data.isEmpty else { return [:] }
+        guard !data.isEmpty else { return ([:], data) }
         let object = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
         guard let dict = object as? [String: Any] else {
             throw IntegrationInstallerError.configFileNotObject
         }
-        return dict
+        return (dict, data)
     }
 
-    private func write(_ root: [String: Any], replacing original: [String: Any]?) throws {
+    /// The agent may write its config while Relay merges it; a lost edit is worse than a retry.
+    private func retryingOnConcurrentChange(_ body: () throws -> Void) throws {
+        for _ in 0..<2 {
+            do {
+                return try body()
+            } catch IntegrationInstallerError.configFileChangedDuringWrite {
+                continue
+            }
+        }
+        try body()
+    }
+
+    /// Throws `.configFileChangedDuringWrite` when `url` no longer holds `bytes` (`nil` = absent).
+    static func ensureUnchanged(_ url: URL, since bytes: Data?) throws {
+        let current = FileManager.default.fileExists(atPath: url.path) ? try Data(contentsOf: url) : nil
+        guard current == bytes else { throw IntegrationInstallerError.configFileChangedDuringWrite }
+    }
+
+    private func write(_ root: [String: Any], replacing original: [String: Any]?, readBytes: Data?) throws {
         if let original, NSDictionary(dictionary: original).isEqual(to: root) { return }
 
         let fileManager = FileManager.default
@@ -306,6 +336,7 @@ struct StopHookConfigFile: Sendable {
             withJSONObject: root,
             options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         )
+        try Self.ensureUnchanged(target, since: readBytes)
         try Self.atomicallyReplace(
             target,
             with: data,

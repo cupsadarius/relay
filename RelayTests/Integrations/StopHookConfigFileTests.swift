@@ -626,4 +626,19 @@ final class StopHookConfigFileTests: XCTestCase {
 
         XCTAssertEqual(try Data(contentsOf: fileURL), before, "no duplicate own entry, no write")
     }
+
+    func testEnsureUnchangedRejectsAFileThatChangedSinceItWasRead() throws {
+        let url = tempDirectory.appendingPathComponent("raced.json")
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        XCTAssertNoThrow(try StopHookConfigFile.ensureUnchanged(url, since: nil))
+
+        try Data("{}".utf8).write(to: url)
+        XCTAssertThrowsError(try StopHookConfigFile.ensureUnchanged(url, since: nil)) {
+            XCTAssertEqual($0 as? IntegrationInstallerError, .configFileChangedDuringWrite)
+        }
+        XCTAssertNoThrow(try StopHookConfigFile.ensureUnchanged(url, since: Data("{}".utf8)))
+
+        try Data("{\"a\":1}".utf8).write(to: url)
+        XCTAssertThrowsError(try StopHookConfigFile.ensureUnchanged(url, since: Data("{}".utf8)))
+    }
 }
