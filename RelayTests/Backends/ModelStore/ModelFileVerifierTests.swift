@@ -36,11 +36,4 @@ final class ModelFileVerifierTests: XCTestCase {
         let url = try write("hello\n")
         XCTAssertFalse(try ModelFileVerifier.verify(at: url, against: .sha256(String(repeating: "0", count: 64))))
     }
-
-    func testWhisperNamesStillResolve() throws {
-        let url = try write("hello\n")
-        let oid: WhisperFileOID = .gitBlobSHA1("ce013625030ba8dba906f756967f9e9ca394464a")
-        XCTAssertTrue(try WhisperModelStore.verifyFile(at: url, against: oid))
-        XCTAssertEqual(WhisperModelStore.verificationChunkSize, ModelFileVerifier.defaultChunkSize)
-    }
 }

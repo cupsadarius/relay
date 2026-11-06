@@ -129,8 +129,6 @@ final class STTRouter {
             .skip(.unavailable(reason))
         case .modelNotDownloaded:
             .skip(.modelNotDownloaded)
-        case .unsupportedOS:
-            .skip(.unsupportedOS)
         case .unsupportedHardware:
             .skip(.unsupportedHardware)
         case .failed(let reason):

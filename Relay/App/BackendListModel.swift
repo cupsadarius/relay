@@ -132,7 +132,7 @@ final class BackendListModel {
         switch availability {
         case .available: .ready
         case .modelNotDownloaded: .modelNotDownloaded
-        case .unsupportedOS, .unsupportedHardware: .unsupported
+        case .unsupportedHardware: .unsupported
         case .permissionDenied, .unavailable, .failed: .unavailable
         }
     }

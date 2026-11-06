@@ -237,7 +237,6 @@ final class DictationCoordinatorTests: XCTestCase {
             (SpeechBackendError.unavailable("offline"), "Dictation failed: Speech recognition is unavailable. Try again after it is ready."),
             (SpeechBackendError.modelNotDownloaded, "Dictation failed: Download the Fake model in Settings, then try again."),
             (SpeechBackendError.initializationFailed("x"), "Dictation failed: Speech recognition could not start. Try again."),
-            (SpeechBackendError.unsupportedOS, "Dictation failed: Fake requires a newer version of macOS."),
             (SpeechBackendError.unsupportedHardware, "Dictation failed: Fake is unavailable on this Mac."),
             (SpeechBackendError.inferenceFailed("x"), "Dictation failed: Speech recognition could not understand the audio. Try again."),
             (SpeechBackendError.resourceExhausted, "Dictation failed: Speech recognition is busy. Try again shortly."),

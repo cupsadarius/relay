@@ -3,20 +3,8 @@ import XCTest
 @testable import Relay
 
 final class AppleSpeechBackendTests: XCTestCase {
-    func testAvailabilityReturnsUnsupportedOSWhenMacOS26IsUnavailable() async {
-        let backend = AppleSpeechBackend(
-            isMacOS26OrLater: { false },
-            isSpeechTranscriberAvailable: { true }
-        )
-
-        let availability = await backend.availability()
-
-        XCTAssertEqual(availability, .unsupportedOS)
-    }
-
     func testAvailabilityReturnsUnsupportedHardwareWhenTranscriberIsUnavailable() async {
         let backend = AppleSpeechBackend(
-            isMacOS26OrLater: { true },
             isSpeechTranscriberAvailable: { false }
         )
 
@@ -28,7 +16,6 @@ final class AppleSpeechBackendTests: XCTestCase {
     func testTranscribePreparesAssetsForRequestedLocaleBeforeTranscribing() async throws {
         let recorder = SpeechOperationRecorder()
         let backend = AppleSpeechBackend(
-            isMacOS26OrLater: { true },
             isSpeechTranscriberAvailable: { true },
             prepareAssets: { locale in await recorder.recordPrepared(locale) },
             transcribeAudio: { _, locale in
@@ -50,7 +37,6 @@ final class AppleSpeechBackendTests: XCTestCase {
     func testAssetsArePreparedOncePerLocale() async throws {
         let recorder = SpeechOperationRecorder()
         let backend = AppleSpeechBackend(
-            isMacOS26OrLater: { true },
             isSpeechTranscriberAvailable: { true },
             prepareAssets: { locale in await recorder.recordPrepared(locale) },
             transcribeAudio: { _, locale in
@@ -77,7 +63,6 @@ final class AppleSpeechBackendTests: XCTestCase {
     func testFailedAssetPreparationIsRetriedOnTheNextCall() async throws {
         let attempts = PreparationAttempts()
         let backend = AppleSpeechBackend(
-            isMacOS26OrLater: { true },
             isSpeechTranscriberAvailable: { true },
             prepareAssets: { _ in
                 if await attempts.next() == 1 { throw TestFailure.failed }
@@ -97,7 +82,6 @@ final class AppleSpeechBackendTests: XCTestCase {
         let recorder = SpeechOperationRecorder()
         let failOnce = FailOnce()
         let backend = AppleSpeechBackend(
-            isMacOS26OrLater: { true },
             isSpeechTranscriberAvailable: { true },
             prepareAssets: { locale in await recorder.recordPrepared(locale) },
             transcribeAudio: { _, locale in
@@ -128,7 +112,6 @@ final class AppleSpeechBackendTests: XCTestCase {
 
     func testTranscribeMapsAssetPreparationFailureToInitializationFailure() async {
         let backend = AppleSpeechBackend(
-            isMacOS26OrLater: { true },
             isSpeechTranscriberAvailable: { true },
             prepareAssets: { _ in throw TestFailure.failed },
             transcribeAudio: { _, _ in "unused" }
@@ -142,7 +125,6 @@ final class AppleSpeechBackendTests: XCTestCase {
 
     func testTranscribeMapsAnalysisFailureToInferenceFailure() async {
         let backend = AppleSpeechBackend(
-            isMacOS26OrLater: { true },
             isSpeechTranscriberAvailable: { true },
             prepareAssets: { _ in },
             transcribeAudio: { _, _ in throw TestFailure.failed }
@@ -156,7 +138,6 @@ final class AppleSpeechBackendTests: XCTestCase {
 
     func testTranscribePreservesCancellationFromAnalysis() async {
         let backend = AppleSpeechBackend(
-            isMacOS26OrLater: { true },
             isSpeechTranscriberAvailable: { true },
             prepareAssets: { _ in },
             transcribeAudio: { _, _ in throw CancellationError() }
@@ -179,7 +160,6 @@ final class AppleSpeechBackendTests: XCTestCase {
         let gate = TranscriptionGate()
         let started = expectation(description: "transcription started")
         let backend = AppleSpeechBackend(
-            isMacOS26OrLater: { true },
             isSpeechTranscriberAvailable: { true },
             prepareAssets: { _ in },
             transcribeAudio: { _, _ in

@@ -5,7 +5,6 @@ enum BackendAvailability: Equatable, Sendable {
     case unavailable(String)
     case modelNotDownloaded
     case permissionDenied
-    case unsupportedOS
     case unsupportedHardware
     case failed(String)
 }

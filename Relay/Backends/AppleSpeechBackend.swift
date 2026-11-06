@@ -7,7 +7,6 @@ final class AppleSpeechBackend: SpeechToTextBackend {
     let id = BackendID.appleSpeech.rawValue
     let displayName = BackendID.appleSpeech.displayName
 
-    private let isMacOS26OrLater: @Sendable () -> Bool
     private let isSpeechTranscriberAvailable: @Sendable () async -> Bool
     private let prepareAssets: @Sendable (Locale) async throws -> Void
     private let transcribeAudio: @Sendable (AudioInput, Locale) async throws -> String
@@ -17,33 +16,22 @@ final class AppleSpeechBackend: SpeechToTextBackend {
     private let installedAssetLocales = Mutex<Set<String>>([])
 
     init(
-        isMacOS26OrLater: @escaping @Sendable () -> Bool = AppleSpeechBackend.defaultOSSupport,
         isSpeechTranscriberAvailable: @escaping @Sendable () async -> Bool = AppleSpeechBackend.defaultTranscriberAvailability,
         prepareAssets: @escaping @Sendable (Locale) async throws -> Void = AppleSpeechBackend.defaultAssetPreparation,
         transcribeAudio: @escaping @Sendable (AudioInput, Locale) async throws -> String = AppleSpeechBackend.defaultTranscription
     ) {
-        self.isMacOS26OrLater = isMacOS26OrLater
         self.isSpeechTranscriberAvailable = isSpeechTranscriberAvailable
         self.prepareAssets = prepareAssets
         self.transcribeAudio = transcribeAudio
     }
 
     func availability() async -> BackendAvailability {
-        guard isMacOS26OrLater() else {
-            return .unsupportedOS
-        }
-        return await isSpeechTranscriberAvailable() ? .available : .unsupportedHardware
+        await isSpeechTranscriberAvailable() ? .available : .unsupportedHardware
     }
 
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
-        guard isMacOS26OrLater() else {
-            throw SpeechBackendError.unsupportedOS
-        }
         guard await isSpeechTranscriberAvailable() else {
             throw SpeechBackendError.unsupportedHardware
-        }
-        guard #available(macOS 26.0, *) else {
-            throw SpeechBackendError.unsupportedOS
         }
 
         let locale = Locale(identifier: options.localeIdentifier)
@@ -83,40 +71,22 @@ final class AppleSpeechBackend: SpeechToTextBackend {
         installedAssetLocales.withLock { _ = $0.insert(locale.identifier) }
     }
 
-    private static func defaultOSSupport() -> Bool {
-        if #available(macOS 26.0, *) {
-            true
-        } else {
-            false
-        }
-    }
-
     private static func defaultTranscriberAvailability() async -> Bool {
-        guard #available(macOS 26.0, *) else {
-            return false
-        }
-        return AppleSpeechRuntime.isTranscriberAvailable
+        AppleSpeechRuntime.isTranscriberAvailable
     }
 
     private static func defaultAssetPreparation(locale: Locale) async throws {
-        guard #available(macOS 26.0, *) else {
-            throw SpeechBackendError.unsupportedOS
-        }
         try await AppleSpeechRuntime.prepare(locale: locale)
         try Task.checkCancellation()
     }
 
     private static func defaultTranscription(audio: AudioInput, locale: Locale) async throws -> String {
-        guard #available(macOS 26.0, *) else {
-            throw SpeechBackendError.unsupportedOS
-        }
         let text = try await AppleSpeechRuntime.transcribe(audio: audio, locale: locale)
         try Task.checkCancellation()
         return text
     }
 }
 
-@available(macOS 26.0, *)
 private enum AppleSpeechRuntime {
     static var isTranscriberAvailable: Bool {
         SpeechTranscriber.isAvailable

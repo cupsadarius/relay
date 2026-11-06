@@ -134,7 +134,6 @@ final class BackendListModelTests: XCTestCase {
         let cases: [(BackendAvailability, BackendStatus.State)] = [
             (.available, .ready),
             (.modelNotDownloaded, .modelNotDownloaded),
-            (.unsupportedOS, .unsupported),
             (.unsupportedHardware, .unsupported),
             (.permissionDenied, .unavailable),
             (.unavailable("reason"), .unavailable),

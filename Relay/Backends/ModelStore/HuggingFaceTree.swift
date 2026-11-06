@@ -23,7 +23,7 @@ enum HuggingFaceTree {
 
     /// Hugging Face paginates list endpoints with an RFC 5988-shaped `Link` header, e.g.
     /// `<https://huggingface.co/...&cursor=...>; rel="next"`. `nil` once there is no `rel="next"`,
-    /// or if the URL it points to is not `https://huggingface.co/...` (review fix 13) — the
+    /// or if the URL it points to is not `https://huggingface.co/...` — the
     /// downloader must never follow a server-supplied header to an arbitrary host.
     static func nextPageURL(from response: HTTPURLResponse) -> URL? {
         guard let linkHeader = response.value(forHTTPHeaderField: "Link") else { return nil }

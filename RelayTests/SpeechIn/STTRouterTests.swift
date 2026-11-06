@@ -80,7 +80,6 @@ final class STTRouterTests: XCTestCase {
         let cases: [(BackendAvailability, SpeechBackendError)] = [
             (.unavailable("offline"), .unavailable("offline")),
             (.modelNotDownloaded, .modelNotDownloaded),
-            (.unsupportedOS, .unsupportedOS),
             (.unsupportedHardware, .unsupportedHardware),
             (.failed("setup failed"), .initializationFailed("setup failed")),
         ]

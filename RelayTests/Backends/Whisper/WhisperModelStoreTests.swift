@@ -10,7 +10,7 @@ final class FakeWhisperDownloader: WhisperDownloader, @unchecked Sendable {
     struct PlannedFile {
         let relativePath: String
         let data: Data
-        let oid: WhisperFileOID
+        let oid: ModelFileOID
     }
 
     var filesToWrite: [PlannedFile] = []
@@ -62,11 +62,11 @@ enum FakeDownloaderError: Error {
 /// Helpers that compute the exact same digests `WhisperModelStore` verifies against, so tests can
 /// hand the fake downloader genuinely correct oids for the "everything verifies" cases.
 enum TestOID {
-    static func sha256(_ data: Data) -> WhisperFileOID {
+    static func sha256(_ data: Data) -> ModelFileOID {
         .sha256(SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined())
     }
 
-    static func gitBlobSHA1(_ data: Data) -> WhisperFileOID {
+    static func gitBlobSHA1(_ data: Data) -> ModelFileOID {
         var content = Data("blob \(data.count)\0".utf8)
         content.append(data)
         return .gitBlobSHA1(Insecure.SHA1.hash(data: content).map { String(format: "%02x", $0) }.joined())
@@ -107,9 +107,9 @@ final class WhisperModelStoreTests: XCTestCase {
         let fileURL = tempDirectory.appendingPathComponent("weights.bin")
         try data.write(to: fileURL)
 
-        XCTAssertTrue(try WhisperModelStore.verifyFile(at: fileURL, against: TestOID.sha256(data), chunkSize: 7))
-        XCTAssertTrue(try WhisperModelStore.verifyFile(at: fileURL, against: TestOID.gitBlobSHA1(data), chunkSize: 7))
-        XCTAssertTrue(try WhisperModelStore.verifyFile(at: fileURL, against: TestOID.sha256(data)))
+        XCTAssertTrue(try ModelFileVerifier.verify(at: fileURL, against: TestOID.sha256(data), chunkSize: 7))
+        XCTAssertTrue(try ModelFileVerifier.verify(at: fileURL, against: TestOID.gitBlobSHA1(data), chunkSize: 7))
+        XCTAssertTrue(try ModelFileVerifier.verify(at: fileURL, against: TestOID.sha256(data)))
     }
 
     func testChunkedVerificationRejectsWrongDigests() throws {
@@ -118,13 +118,13 @@ final class WhisperModelStoreTests: XCTestCase {
         try data.write(to: fileURL)
 
         XCTAssertFalse(
-            try WhisperModelStore.verifyFile(
+            try ModelFileVerifier.verify(
                 at: fileURL,
                 against: .sha256(String(repeating: "0", count: 64)),
                 chunkSize: 4
             ))
         XCTAssertFalse(
-            try WhisperModelStore.verifyFile(
+            try ModelFileVerifier.verify(
                 at: fileURL,
                 against: .gitBlobSHA1(String(repeating: "0", count: 40)),
                 chunkSize: 4
@@ -137,7 +137,7 @@ final class WhisperModelStoreTests: XCTestCase {
 
         // `git hash-object` of an empty file.
         XCTAssertTrue(
-            try WhisperModelStore.verifyFile(
+            try ModelFileVerifier.verify(
                 at: fileURL,
                 against: .gitBlobSHA1("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391")
             ))

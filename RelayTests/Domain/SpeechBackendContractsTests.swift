@@ -7,7 +7,6 @@ final class SpeechBackendContractsTests: XCTestCase {
         XCTAssertTrue(SpeechBackendError.unavailable("x").isFallbackWorthy)
         XCTAssertTrue(SpeechBackendError.modelNotDownloaded.isFallbackWorthy)
         XCTAssertTrue(SpeechBackendError.initializationFailed("x").isFallbackWorthy)
-        XCTAssertTrue(SpeechBackendError.unsupportedOS.isFallbackWorthy)
         XCTAssertTrue(SpeechBackendError.unsupportedHardware.isFallbackWorthy)
         XCTAssertTrue(SpeechBackendError.inferenceFailed("x").isFallbackWorthy)
         XCTAssertTrue(SpeechBackendError.resourceExhausted.isFallbackWorthy)

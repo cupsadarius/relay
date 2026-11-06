@@ -424,8 +424,6 @@ final class DictationCoordinator: DictationCoordinating {
                 ?? "Download a speech recognition model in Settings, then try again."
         case SpeechBackendError.initializationFailed:
             "Speech recognition could not start. Try again."
-        case SpeechBackendError.unsupportedOS:
-            "\(backendName ?? "This speech recognition backend") requires a newer version of macOS."
         case SpeechBackendError.unsupportedHardware:
             "\(backendName ?? "This speech recognition backend") is unavailable on this Mac."
         case SpeechBackendError.inferenceFailed:
