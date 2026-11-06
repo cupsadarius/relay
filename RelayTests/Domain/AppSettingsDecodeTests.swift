@@ -382,4 +382,39 @@ final class AppSettingsDecodeTests: XCTestCase {
 
         XCTAssertEqual(decoded, saved)
     }
+
+    func testSelectedMicrophoneRoundTrips() throws {
+        var saved = AppSettings.defaults
+        saved.selectedMicrophone = SelectedMicrophone(uid: "BuiltInMicrophoneDevice", name: "MacBook Pro Microphone")
+
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(saved))
+
+        XCTAssertEqual(decoded, saved)
+    }
+
+    func testMissingSelectedMicrophoneDecodesToNil() throws {
+        var saved = AppSettings.defaults
+        saved.dictationMode = .toggle
+        let encoded = try JSONEncoder().encode(saved)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "selectedMicrophone")
+
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
+
+        XCTAssertNil(decoded.selectedMicrophone)
+        XCTAssertEqual(decoded.dictationMode, .toggle)
+    }
+
+    func testMalformedSelectedMicrophoneDecodesToNil() throws {
+        var saved = AppSettings.defaults
+        saved.ttsRate = 0.8
+        let encoded = try JSONEncoder().encode(saved)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object["selectedMicrophone"] = 42
+
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
+
+        XCTAssertNil(decoded.selectedMicrophone)
+        XCTAssertEqual(decoded.ttsRate, 0.8, accuracy: 0.0001)
+    }
 }

@@ -26,6 +26,8 @@ struct AppSettings: Codable, Equatable, Sendable {
     /// The last model id selected per STT backend (e.g. `.whisper: "small.en"`). An absent
     /// entry means no selection yet; the backend's manager resolves unknown ids at read time.
     var selectedSpeechModelByBackend: [BackendID: String]
+    /// The dictation microphone. `nil` means the system default input.
+    var selectedMicrophone: SelectedMicrophone?
 
     /// The current on-disk schema version. Bump this (and add an explicit transform to
     /// `init(from:)`) only when a future change needs more than per-field fallback defaults,
@@ -42,6 +44,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         case ttsRate, autoReadEnabled, activityOverlayStyle, voiceByBackend
         case liveTranscriptionEnabled
         case selectedSpeechModelByBackend
+        case selectedMicrophone
     }
 
     /// Keys only schema < 2 wrote; read during migration, never encoded.
@@ -77,6 +80,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         }
         liveTranscriptionEnabled = field(.liveTranscriptionEnabled, default: fallback.liveTranscriptionEnabled)
         selectedSpeechModelByBackend = AppSettings.backendKeyed(field(.selectedSpeechModelByBackend, default: [:]))
+        selectedMicrophone = field(.selectedMicrophone, default: SelectedMicrophone?.none)
 
         // Drop unknown, wrong-direction and duplicate backend ids and clamp the rate. Known-but-missing
         // ids are not appended.
@@ -213,6 +217,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         voiceByBackend: [BackendID: String] = [:],
         liveTranscriptionEnabled: Bool = false,
         selectedSpeechModelByBackend: [BackendID: String] = [:],
+        selectedMicrophone: SelectedMicrophone? = nil,
         schemaVersion: Int = AppSettings.currentSchemaVersion
     ) {
         self.schemaVersion = schemaVersion
@@ -226,6 +231,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         self.voiceByBackend = voiceByBackend
         self.liveTranscriptionEnabled = liveTranscriptionEnabled
         self.selectedSpeechModelByBackend = selectedSpeechModelByBackend
+        self.selectedMicrophone = selectedMicrophone
     }
 
     static let defaults = AppSettings(

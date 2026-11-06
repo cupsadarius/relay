@@ -92,6 +92,7 @@ final class SettingsController {
     func setDictationMode(_ mode: DictationMode) { update { $0.dictationMode = mode } }
     func setActivityOverlayStyle(_ style: ActivityOverlayStyle) { update { $0.activityOverlayStyle = style } }
     func setLiveTranscriptionEnabled(_ enabled: Bool) { update { $0.liveTranscriptionEnabled = enabled } }
+    func setSelectedMicrophone(_ microphone: SelectedMicrophone?) { update { $0.selectedMicrophone = microphone } }
     func setSTTBackendOrder(_ order: [BackendID]) { update { $0.sttBackendOrder = order } }
     func setTTSBackendOrder(_ order: [BackendID]) { update { $0.ttsBackendOrder = order } }
     func setVoice(_ voice: String?, for backendID: BackendID) {
