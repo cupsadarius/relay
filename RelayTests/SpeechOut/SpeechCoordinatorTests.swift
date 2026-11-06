@@ -147,8 +147,6 @@ final class SpeechCoordinatorTests: XCTestCase {
         let first = backend.lastSessionID!
         backend.emit(.started(sessionID: first))
         try await coordinator.speak(request(text: "queued", mode: .automatic))
-        // The real player emits `.cancelled` synchronously from inside `stop()`.
-        backend.onStop = { backend.emit(.cancelled(sessionID: first)) }
 
         coordinator.stop(sessionID: first)
         await pumpMainActor()

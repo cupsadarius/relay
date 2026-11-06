@@ -356,10 +356,6 @@ final class FakePlayer: StreamingAudioPlaying {
     /// When true, `startPlayback` suspends until `stop()` resumes it, mirroring the real player's
     /// streaming completion continuation.
     var suspendUntilStopped = false
-    /// Invoked synchronously inside `stop()` (only when something is playing), before it returns -
-    /// lets tests simulate a player whose stop reentrantly emits a synchronous terminal event.
-    var onStop: (@MainActor () -> Void)?
-
     /// The session currently being played, cleared on a terminal event or an effective `stop()`.
     /// Modelled so `stop()` is a no-op (as on the real idle player) when nothing is playing.
     private var activeSessionID: UUID?
@@ -389,15 +385,16 @@ final class FakePlayer: StreamingAudioPlaying {
         }
     }
 
+    /// Like the real player, emits `.cancelled` synchronously before returning.
     func stop() {
-        guard activeSessionID != nil else { return }
+        guard let sessionID = activeSessionID else { return }
         activeSessionID = nil
         stopCount += 1
-        onStop?()
         if let stopContinuation {
             self.stopContinuation = nil
             stopContinuation.resume()
         }
+        onEvent?(.cancelled(sessionID: sessionID))
     }
 
     /// Fires a lifecycle event through the router's installed handler, updating the fake's own
@@ -465,11 +462,6 @@ final class FakeTTSBackend: TextToSpeechBackend {
     var duringSpeak: (@MainActor (UUID) -> Void)? {
         get { player.duringStart }
         set { player.duringStart = newValue }
-    }
-
-    var onStop: (@MainActor () -> Void)? {
-        get { player.onStop }
-        set { player.onStop = newValue }
     }
 
     var suspendUntilStopped: Bool {

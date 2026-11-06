@@ -127,10 +127,6 @@ final class SpeechCoordinatorWatchdogTests: XCTestCase {
         // drain fires exactly once even with a reentrant terminal in the mix.
         try await coordinator.speak(request(text: "queued", mode: .automatic))
 
-        // Simulate a synchronous-terminal backend: stop() reentrantly emits `.cancelled` for the
-        // session being stopped, before returning.
-        backend.onStop = { backend.emit(.cancelled(sessionID: wedged)) }
-
         // Wait for exactly one watchdog cycle: long enough for "wedged"'s timer to fire and the
         // queue to drain, but short of the freshly-dequeued "queued" session's OWN watchdog (it
         // never receives a terminal event here either, so it must not be allowed to also expire
