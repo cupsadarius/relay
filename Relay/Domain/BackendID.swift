@@ -1,8 +1,9 @@
 /// A speech backend's stable identifier. `rawValue` is persisted in `AppSettings` (backend
 /// orders, per-backend voice/model maps), so the case strings must never change. `displayName` is
 /// the single user-facing name for the backend everywhere (Settings rows, error messages,
-/// diagnostics).
-enum BackendID: String, CaseIterable, Codable, Sendable, CustomStringConvertible {
+/// diagnostics). `CodingKeyRepresentable` keeps a `[BackendID: _]` map on disk as a JSON object keyed
+/// by `rawValue`; without it Swift writes a flat `[key, value, ...]` array.
+enum BackendID: String, CaseIterable, Codable, CodingKeyRepresentable, Sendable, CustomStringConvertible {
     // Speech-to-text
     case appleSpeech = "apple-speech"
     case parakeet

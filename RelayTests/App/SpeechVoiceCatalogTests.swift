@@ -45,7 +45,7 @@ final class SpeechVoiceCatalogTests: XCTestCase {
             pocketVoice: "alba"
         )
         var settings = AppSettings.defaults
-        settings.voiceByBackend = ["apple-tts": "apple.saved", "kokoro": "af_heart", "pocket-tts": "alba"]
+        settings.voiceByBackend = [.appleTTS: "apple.saved", .kokoro: "af_heart", .pocketTTS: "alba"]
         settings.ttsRate = 0.75
 
         let options = catalog.options(for: "kokoro:am_adam", backendID: .kokoro, settings: settings)

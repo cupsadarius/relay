@@ -18,15 +18,15 @@ final class SpeechBackendsModel {
         self.voices = voices
         let dictation = BackendListModel(
             entries: BackendListEntry.entries(runtime.speechIn.sttRegistry),
-            order: { settings.current.sttBackendOrder.compactMap(BackendID.init(rawValue:)) },
-            setOrder: { settings.setSTTBackendOrder($0.map(\.rawValue)) },
+            order: { settings.current.sttBackendOrder },
+            setOrder: { settings.setSTTBackendOrder($0) },
             refusalMessage: "At least one speech recognition backend must stay enabled.",
             statusSink: runtime.status
         )
         let textToSpeech = BackendListModel(
             entries: BackendListEntry.entries(runtime.speechOut.ttsRegistry),
-            order: { settings.current.ttsBackendOrder.compactMap(BackendID.init(rawValue:)) },
-            setOrder: { settings.setTTSBackendOrder($0.map(\.rawValue)) },
+            order: { settings.current.ttsBackendOrder },
+            setOrder: { settings.setTTSBackendOrder($0) },
             refusalMessage: "At least one TTS backend must stay enabled.",
             statusSink: runtime.status
         )
@@ -84,7 +84,7 @@ final class SpeechBackendsModel {
 
     func selectVoice(backendID: BackendID, voiceID: String) {
         guard let value = voices.storedValue(for: voiceID, backendID: backendID) else { return }
-        settings.setVoice(value, for: backendID.rawValue)
+        settings.setVoice(value, for: backendID)
     }
 
     private static func modelManagers(

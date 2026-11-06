@@ -116,42 +116,42 @@ final class SpeechBackendsModelTests: XCTestCase {
 
     func testBackendListsPersistOrderThroughSettings() async {
         var settings = AppSettings.defaults
-        settings.sttBackendOrder = ["apple-speech"]
+        settings.sttBackendOrder = [.appleSpeech]
         let store = SpySettingsStore(settings: settings)
         let model = makeModel(store: store, sttRegistry: [.appleSpeech: StubSTTBackend(id: .appleSpeech), .parakeet: StubSTTBackend(id: .parakeet)])
         await model.refresh(.dictation)
 
         model.dictation.setEnabled(.parakeet, true)
 
-        XCTAssertEqual(store.saved.last?.sttBackendOrder, ["apple-speech", "parakeet"])
+        XCTAssertEqual(store.saved.last?.sttBackendOrder, [.appleSpeech, .parakeet])
     }
 
     /// TTS twin of `testBackendListsPersistOrderThroughSettings`: the TTS list must read and
     /// persist through `ttsBackendOrder`, not accidentally share the STT list's order.
     func testTTSBackendListPersistsOrderThroughSettings() async {
         var settings = AppSettings.defaults
-        settings.ttsBackendOrder = ["pocket-tts"]
+        settings.ttsBackendOrder = [.pocketTTS]
         let store = SpySettingsStore(settings: settings)
         let model = makeModel(store: store, ttsRegistry: [.pocketTTS: FakeTTSBackend(id: .pocketTTS), .appleTTS: FakeTTSBackend(id: .appleTTS)])
         await model.refresh(.textToSpeech)
 
         model.textToSpeech.setEnabled(.appleTTS, true)
 
-        XCTAssertEqual(store.saved.last?.ttsBackendOrder, ["pocket-tts", "apple-tts"])
+        XCTAssertEqual(store.saved.last?.ttsBackendOrder, [.pocketTTS, .appleTTS])
     }
 
     /// Pins the exact user-facing refusal strings `SpeechBackendsModel` wires per domain — a
     /// generic `BackendListModel` unit test can't catch these two swapping or drifting.
     func testRefusalMessagesUseTheExactProductionStringsPerDomain() async {
         var sttSettings = AppSettings.defaults
-        sttSettings.sttBackendOrder = ["apple-speech"]
+        sttSettings.sttBackendOrder = [.appleSpeech]
         let sttModel = makeModel(store: SpySettingsStore(settings: sttSettings), sttRegistry: [.appleSpeech: StubSTTBackend(id: .appleSpeech)])
         await sttModel.refresh(.dictation)
         sttModel.dictation.setEnabled(.appleSpeech, false)
         XCTAssertEqual(sttModel.dictation.message, "At least one speech recognition backend must stay enabled.")
 
         var ttsSettings = AppSettings.defaults
-        ttsSettings.ttsBackendOrder = ["pocket-tts"]
+        ttsSettings.ttsBackendOrder = [.pocketTTS]
         let ttsModel = makeModel(store: SpySettingsStore(settings: ttsSettings), ttsRegistry: [.pocketTTS: FakeTTSBackend(id: .pocketTTS)])
         await ttsModel.refresh(.textToSpeech)
         ttsModel.textToSpeech.setEnabled(.pocketTTS, false)
@@ -166,7 +166,7 @@ final class SpeechBackendsModelTests: XCTestCase {
 
         // The default option maps to "no stored voice" — and it is still a persisted write.
         XCTAssertEqual(store.saved.count, 1)
-        XCTAssertNil(store.saved.last?.voiceByBackend[BackendID.appleTTS.rawValue])
+        XCTAssertNil(store.saved.last?.voiceByBackend[.appleTTS])
     }
 }
 

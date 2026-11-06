@@ -160,7 +160,7 @@ final class SettingsControllerTests: XCTestCase {
 
     func testWhisperSelectionIsSeededFromPersistedSettings() {
         var saved = AppSettings.defaults
-        saved.selectedSpeechModelByBackend["whisper"] = "base.en"
+        saved.selectedSpeechModelByBackend[.whisper] = "base.en"
         let controller = makeController(store: SpySettingsStore(settings: saved))
 
         let read: WhisperModelSelection = controller.modelSelection(for: .whisper)
@@ -175,14 +175,14 @@ final class SettingsControllerTests: XCTestCase {
 
         write(.smallEn)
 
-        XCTAssertEqual(controller.current.selectedSpeechModelByBackend["whisper"], "small.en")
-        XCTAssertEqual(store.saved.last?.selectedSpeechModelByBackend["whisper"], "small.en")
+        XCTAssertEqual(controller.current.selectedSpeechModelByBackend[.whisper], "small.en")
+        XCTAssertEqual(store.saved.last?.selectedSpeechModelByBackend[.whisper], "small.en")
         let seenOffMain = await Task.detached { read() }.value
         XCTAssertEqual(seenOffMain, .smallEn)
 
         write(nil)
 
-        XCTAssertNil(controller.current.selectedSpeechModelByBackend["whisper"])
+        XCTAssertNil(controller.current.selectedSpeechModelByBackend[.whisper])
         XCTAssertNil(read())
     }
 
@@ -194,13 +194,13 @@ final class SettingsControllerTests: XCTestCase {
 
         write(.v2)
 
-        XCTAssertEqual(controller.current.selectedSpeechModelByBackend["parakeet"], "parakeet-v2")
+        XCTAssertEqual(controller.current.selectedSpeechModelByBackend[.parakeet], "parakeet-v2")
         XCTAssertEqual(read(), .v2)
     }
 
     func testUnknownPersistedWhisperIDReadsAsNoSelection() {
         var saved = AppSettings.defaults
-        saved.selectedSpeechModelByBackend["whisper"] = "not-a-model"
+        saved.selectedSpeechModelByBackend[.whisper] = "not-a-model"
         let controller = makeController(store: SpySettingsStore(settings: saved))
 
         let read: WhisperModelSelection = controller.modelSelection(for: .whisper)
@@ -211,10 +211,10 @@ final class SettingsControllerTests: XCTestCase {
         let store = SpySettingsStore()
         let controller = makeController(store: store)
 
-        controller.setVoice("am_adam", for: BackendID.kokoro.rawValue)
-        XCTAssertEqual(controller.current.voiceByBackend, ["kokoro": "am_adam"])
+        controller.setVoice("am_adam", for: .kokoro)
+        XCTAssertEqual(controller.current.voiceByBackend, [.kokoro: "am_adam"])
 
-        controller.setVoice(nil, for: BackendID.kokoro.rawValue)
+        controller.setVoice(nil, for: .kokoro)
         XCTAssertTrue(controller.current.voiceByBackend.isEmpty)
         XCTAssertEqual(store.saved.count, 2)
     }
@@ -222,7 +222,7 @@ final class SettingsControllerTests: XCTestCase {
     func testTTSOptionsMapTheVoiceMapOntoBackendFields() {
         var settings = AppSettings.defaults
         settings.ttsRate = 0.7
-        settings.voiceByBackend = ["apple-tts": "com.apple.voice.x", "kokoro": "am_adam", "pocket-tts": "alba"]
+        settings.voiceByBackend = [.appleTTS: "com.apple.voice.x", .kokoro: "am_adam", .pocketTTS: "alba"]
 
         let options = TTSOptions(settings: settings)
 

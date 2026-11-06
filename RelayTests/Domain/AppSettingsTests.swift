@@ -40,7 +40,7 @@ final class AppSettingsTests: XCTestCase {
     func testDecodingPreOverlaySettingsAddsInteractiveWithoutResettingOtherFields() throws {
         var saved = AppSettings.defaults
         saved.dictationMode = .toggle
-        saved.voiceByBackend["apple-tts"] = "voice.test"
+        saved.voiceByBackend[.appleTTS] = "voice.test"
         saved.ttsRate = 0.7
         saved.autoReadEnabled = false
         let encoded = try JSONEncoder().encode(saved)
@@ -54,7 +54,7 @@ final class AppSettingsTests: XCTestCase {
 
         XCTAssertEqual(decoded.activityOverlayStyle, .interactive)
         XCTAssertEqual(decoded.dictationMode, .toggle)
-        XCTAssertEqual(decoded.voiceByBackend["apple-tts"], "voice.test")
+        XCTAssertEqual(decoded.voiceByBackend[.appleTTS], "voice.test")
         XCTAssertEqual(decoded.ttsRate, 0.7, accuracy: 0.0001)
         XCTAssertFalse(decoded.autoReadEnabled)
     }
@@ -66,7 +66,7 @@ final class AppSettingsTests: XCTestCase {
 
     func testVoiceMapRoundTrips() throws {
         var value = AppSettings.defaults
-        value.voiceByBackend = ["kokoro": "am_adam", "pocket-tts": "alba", "apple-tts": "com.apple.voice.x"]
+        value.voiceByBackend = [.kokoro: "am_adam", .pocketTTS: "alba", .appleTTS: "com.apple.voice.x"]
 
         let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(value))
 
@@ -86,9 +86,9 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(
             decoded.voiceByBackend,
             [
-                "apple-tts": "com.apple.voice.x",
-                "kokoro": "am_adam",
-                "pocket-tts": "alba",
+                .appleTTS: "com.apple.voice.x",
+                .kokoro: "am_adam",
+                .pocketTTS: "alba",
             ])
         XCTAssertEqual(decoded.dictationMode, .toggle)
         XCTAssertEqual(decoded.schemaVersion, AppSettings.currentSchemaVersion)
@@ -128,7 +128,7 @@ final class AppSettingsTests: XCTestCase {
 
         let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
 
-        XCTAssertEqual(decoded.voiceByBackend, ["kokoro": "af_heart"])
+        XCTAssertEqual(decoded.voiceByBackend, [.kokoro: "af_heart"])
     }
 
     /// Current defaults re-shaped as a schema-1 blob (no `voiceByBackend`).
@@ -171,8 +171,8 @@ final class AppSettingsTests: XCTestCase {
                 .replayLast: .chord(keyCode: 15, modifiers: [.option, .shift]),
                 .toggleAutoRead: .chord(keyCode: 0, modifiers: [.option, .shift]),
             ])
-        XCTAssertEqual(AppSettings.defaults.sttBackendOrder, ["apple-speech"])
-        XCTAssertEqual(AppSettings.defaults.ttsBackendOrder, ["pocket-tts", "apple-tts", "kokoro"])
+        XCTAssertEqual(AppSettings.defaults.sttBackendOrder, [.appleSpeech])
+        XCTAssertEqual(AppSettings.defaults.ttsBackendOrder, [.pocketTTS, .appleTTS, .kokoro])
         XCTAssertTrue(AppSettings.defaults.voiceByBackend.isEmpty)
         XCTAssertEqual(AppSettings.defaults.ttsRate, 0.5)
         XCTAssertTrue(AppSettings.defaults.autoReadEnabled)
@@ -181,13 +181,13 @@ final class AppSettingsTests: XCTestCase {
     /// Now that the minimum macOS is 26, Apple Speech is a zero-download baseline and must
     /// remain the sole default STT backend.
     func testDefaultSTTOrderIsAppleSpeech() {
-        XCTAssertEqual(AppSettings.defaults.sttBackendOrder, ["apple-speech"])
+        XCTAssertEqual(AppSettings.defaults.sttBackendOrder, [.appleSpeech])
     }
 
     /// Apple TTS must stay present in the default order as a reliable fallback, regardless of
     /// its exact position.
     func testDefaultTTSOrderContainsAppleTTSFallback() {
-        XCTAssertTrue(AppSettings.defaults.ttsBackendOrder.contains("apple-tts"))
+        XCTAssertTrue(AppSettings.defaults.ttsBackendOrder.contains(.appleTTS))
     }
 
     func testSelectedSpeechModelByBackendDefaultsEmpty() {
@@ -196,7 +196,7 @@ final class AppSettingsTests: XCTestCase {
 
     func testSelectedSpeechModelByBackendRoundTrips() throws {
         var value = AppSettings.defaults
-        value.selectedSpeechModelByBackend = ["whisper": "small.en", "parakeet": "parakeet-v2"]
+        value.selectedSpeechModelByBackend = [.whisper: "small.en", .parakeet: "parakeet-v2"]
 
         let data = try JSONEncoder().encode(value)
 
@@ -231,12 +231,12 @@ final class AppSettingsTests: XCTestCase {
     /// the default order.
     func testWhisperIdSurvivesBackendOrderDecode() throws {
         var saved = AppSettings.defaults
-        saved.sttBackendOrder = ["apple-speech", "whisper"]
+        saved.sttBackendOrder = [.appleSpeech, .whisper]
         let encoded = try JSONEncoder().encode(saved)
 
         let decoded = try JSONDecoder().decode(AppSettings.self, from: encoded)
 
-        XCTAssertEqual(decoded.sttBackendOrder, ["apple-speech", "whisper"])
+        XCTAssertEqual(decoded.sttBackendOrder, [.appleSpeech, .whisper])
     }
 
     @MainActor

@@ -76,7 +76,7 @@ struct SpeechVoiceCatalog {
     func activeVoiceID(for backendID: BackendID, settings: AppSettings) -> String? {
         let options = voices(for: backendID)
         guard let defaultOption = options.first(where: { $0.storedValue == nil }) else { return nil }
-        guard let value = settings.voiceByBackend[backendID.rawValue], value != recommendedValue(for: backendID) else {
+        guard let value = settings.voiceByBackend[backendID], value != recommendedValue(for: backendID) else {
             return defaultOption.id
         }
         return options.first(where: { $0.storedValue == value })?.id
@@ -91,7 +91,7 @@ struct SpeechVoiceCatalog {
             let mapped = storedValue(for: voiceID, backendID: backendID)
         else { return nil }
         var previewSettings = settings
-        previewSettings.voiceByBackend[backendID.rawValue] = mapped
+        previewSettings.voiceByBackend[backendID] = mapped
         return TTSOptions(settings: previewSettings)
     }
 

@@ -92,13 +92,13 @@ final class SettingsController {
     func setDictationMode(_ mode: DictationMode) { update { $0.dictationMode = mode } }
     func setActivityOverlayStyle(_ style: ActivityOverlayStyle) { update { $0.activityOverlayStyle = style } }
     func setLiveTranscriptionEnabled(_ enabled: Bool) { update { $0.liveTranscriptionEnabled = enabled } }
-    func setSTTBackendOrder(_ order: [String]) { update { $0.sttBackendOrder = order } }
-    func setTTSBackendOrder(_ order: [String]) { update { $0.ttsBackendOrder = order } }
-    func setVoice(_ voice: String?, for backendID: String) {
+    func setSTTBackendOrder(_ order: [BackendID]) { update { $0.sttBackendOrder = order } }
+    func setTTSBackendOrder(_ order: [BackendID]) { update { $0.ttsBackendOrder = order } }
+    func setVoice(_ voice: String?, for backendID: BackendID) {
         update { $0.voiceByBackend[backendID] = voice }
     }
 
-    func setSelectedSpeechModel(backendID: String, modelID: String?) {
+    func setSelectedSpeechModel(backendID: BackendID, modelID: String?) {
         update { $0.selectedSpeechModelByBackend[backendID] = modelID }
     }
 
@@ -138,14 +138,14 @@ final class SettingsController {
     func modelSelection<ID: RawRepresentable & Sendable>(for backend: BackendID) -> @Sendable () -> ID?
     where ID.RawValue == String {
         let snapshot = snapshot
-        return { snapshot.value.selectedSpeechModelByBackend[backend.rawValue].flatMap(ID.init(rawValue:)) }
+        return { snapshot.value.selectedSpeechModelByBackend[backend].flatMap(ID.init(rawValue:)) }
     }
 
     /// Persists `backend`'s selected model through this controller like every other setting.
     func modelSelectionWriter<ID: RawRepresentable>(for backend: BackendID) -> @MainActor @Sendable (ID?) -> Void
     where ID.RawValue == String {
         { [weak self] modelID in
-            self?.setSelectedSpeechModel(backendID: backend.rawValue, modelID: modelID?.rawValue)
+            self?.setSelectedSpeechModel(backendID: backend, modelID: modelID?.rawValue)
         }
     }
 

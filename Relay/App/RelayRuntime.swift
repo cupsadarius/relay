@@ -127,7 +127,7 @@ final class RelayRuntime {
         let ttsPlayer = StreamingAudioPlayer()
         let router = TTSRouter(
             backends: ttsRegistry,
-            backendOrder: { settings.value.ttsBackendOrder.compactMap(BackendID.init(rawValue:)) },
+            backendOrder: { settings.value.ttsBackendOrder },
             player: ttsPlayer
         )
         let coordinator = SpeechCoordinator(
@@ -182,7 +182,7 @@ final class RelayRuntime {
             }),
             sttRouter: STTRouter(
                 backends: sttRegistry,
-                backendOrder: { settings.value.sttBackendOrder.compactMap(BackendID.init(rawValue:)) }
+                backendOrder: { settings.value.sttBackendOrder }
             ),
             processor: RulesTranscriptProcessor(),
             textInserter: TextInsertionService(gate: clipboardGate),

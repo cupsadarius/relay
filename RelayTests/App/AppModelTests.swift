@@ -185,7 +185,7 @@ final class AppModelTests: XCTestCase {
 
         model.speechBackends.selectVoice(backendID: .kokoro, voiceID: "kokoro:am_adam")
 
-        XCTAssertEqual(model.settings.voiceByBackend["kokoro"], "am_adam")
+        XCTAssertEqual(model.settings.voiceByBackend[.kokoro], "am_adam")
     }
 
     func testChangingASettingPersistsAndReregistersImmediately() {
@@ -342,8 +342,8 @@ final class AppModelTests: XCTestCase {
         kokoro.availabilityValue = kokoroAvailability
         let apple = FakeTTSBackend(id: .appleTTS)
         var settings = AppSettings.defaults
-        settings.ttsBackendOrder = ["pocket-tts", "kokoro", "apple-tts"]
-        settings.voiceByBackend = ["kokoro": "af_bella", "pocket-tts": "alba"]
+        settings.ttsBackendOrder = [.pocketTTS, .kokoro, .appleTTS]
+        settings.voiceByBackend = [.kokoro: "af_bella", .pocketTTS: "alba"]
         let store = SpySettingsStore(settings: settings)
         let overlay = ActivityOverlayModel()
         let player = FakePlayer()
@@ -352,7 +352,7 @@ final class AppModelTests: XCTestCase {
         apple.player = player
         let router = TTSRouter(
             backends: [.pocketTTS: pocket, .kokoro: kokoro, .appleTTS: apple],
-            backendOrder: { settings.ttsBackendOrder.compactMap(BackendID.init(rawValue:)) },
+            backendOrder: { settings.ttsBackendOrder },
             player: player
         )
         let coordinator = SpeechCoordinator(

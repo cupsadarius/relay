@@ -13,7 +13,7 @@ final class AppModelHotkeySideEffectTests: XCTestCase {
         let model = makeModel(hotkeys: hotkeys)
         XCTAssertEqual(hotkeys.updates.count, 1, "initial construction pushes definitions once")
 
-        model.settingsController.setVoice("com.apple.voice.some-voice", for: BackendID.appleTTS.rawValue)
+        model.settingsController.setVoice("com.apple.voice.some-voice", for: .appleTTS)
 
         XCTAssertEqual(
             hotkeys.updates.count, 1,
@@ -51,7 +51,7 @@ final class AppModelHotkeySideEffectTests: XCTestCase {
         let model = makeModel(hotkeys: realHotkeyManager)
         XCTAssertEqual(tapSpy.callCount, 1, "initial registration creates the tap once")
 
-        model.settingsController.setVoice("com.apple.voice.some-voice", for: BackendID.appleTTS.rawValue)
+        model.settingsController.setVoice("com.apple.voice.some-voice", for: .appleTTS)
         model.settingsController.setHotkey(.chord(keyCode: 49, modifiers: [.command]), for: .readSelection)
         model.settingsController.setSpeechRate(0.75)
 

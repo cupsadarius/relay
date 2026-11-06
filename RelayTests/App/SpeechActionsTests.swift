@@ -99,7 +99,7 @@ final class SpeechActionsTests: XCTestCase {
 
     func testPreviewVoiceUsesClickedProviderAndCurrentRateWithoutPersisting() async {
         var settings = AppSettings.defaults
-        settings.voiceByBackend["kokoro"] = "af_heart"
+        settings.voiceByBackend[.kokoro] = "af_heart"
         settings.ttsRate = 0.75
         let store = SpySettingsStore(settings: settings)
         let speech = SpySpeechCoordinator()
@@ -112,7 +112,7 @@ final class SpeechActionsTests: XCTestCase {
         XCTAssertEqual(speech.previews.first?.options.kokoroVoice, "am_adam")
         XCTAssertEqual(speech.previews.first?.options.rate, 0.75)
         XCTAssertEqual(speech.previews.first?.text, SpeechActions.previewSampleText)
-        XCTAssertEqual(runtime.settingsController.current.voiceByBackend["kokoro"], "af_heart")
+        XCTAssertEqual(runtime.settingsController.current.voiceByBackend[.kokoro], "af_heart")
         XCTAssertTrue(store.saved.isEmpty)
     }
 

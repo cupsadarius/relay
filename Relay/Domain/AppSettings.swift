@@ -14,18 +14,18 @@ struct AppSettings: Codable, Equatable, Sendable {
     var schemaVersion: Int
     var dictationMode: DictationMode
     var hotkeys: [HotkeyAction: HotkeyDefinition]
-    var sttBackendOrder: [String]
-    var ttsBackendOrder: [String]
+    var sttBackendOrder: [BackendID]
+    var ttsBackendOrder: [BackendID]
     var ttsRate: Float
     var autoReadEnabled: Bool
     var activityOverlayStyle: ActivityOverlayStyle
-    /// The selected voice per TTS backend id (`BackendID.rawValue` → backend-specific voice id).
+    /// The selected voice per TTS backend (backend-specific voice id).
     /// A missing entry means that backend's default voice.
-    var voiceByBackend: [String: String]
+    var voiceByBackend: [BackendID: String]
     var liveTranscriptionEnabled: Bool
-    /// The last model id selected per STT backend id (e.g. `"whisper": "small.en"`). An absent
+    /// The last model id selected per STT backend (e.g. `.whisper: "small.en"`). An absent
     /// entry means no selection yet; the backend's manager resolves unknown ids at read time.
-    var selectedSpeechModelByBackend: [String: String]
+    var selectedSpeechModelByBackend: [BackendID: String]
 
     /// The current on-disk schema version. Bump this (and add an explicit transform to
     /// `init(from:)`) only when a future change needs more than per-field fallback defaults,
@@ -65,8 +65,8 @@ struct AppSettings: Codable, Equatable, Sendable {
 
         dictationMode = field(.dictationMode, default: fallback.dictationMode)
         hotkeys = AppSettings.decodeHotkeys(from: values) ?? fallback.hotkeys
-        let decodedSTTOrder = field(.sttBackendOrder, default: fallback.sttBackendOrder)
-        let decodedTTSOrder = field(.ttsBackendOrder, default: fallback.ttsBackendOrder)
+        let decodedSTTOrder = field(.sttBackendOrder, default: [String]())
+        let decodedTTSOrder = field(.ttsBackendOrder, default: [String]())
         let decodedRate = field(.ttsRate, default: fallback.ttsRate)
         autoReadEnabled = field(.autoReadEnabled, default: fallback.autoReadEnabled)
         activityOverlayStyle = field(.activityOverlayStyle, default: fallback.activityOverlayStyle)
@@ -77,24 +77,21 @@ struct AppSettings: Codable, Equatable, Sendable {
             voiceByBackend = AppSettings.migrateLegacyVoices(from: decoder)
         } else {
             // Per-entry decode: one malformed voice drops only that backend's entry.
-            voiceByBackend = AppSettings.decodeVoiceByBackend(from: values) ?? fallback.voiceByBackend
+            voiceByBackend = AppSettings.decodeVoiceByBackend(from: values).map(AppSettings.backendKeyed) ?? fallback.voiceByBackend
         }
         liveTranscriptionEnabled = field(.liveTranscriptionEnabled, default: fallback.liveTranscriptionEnabled)
-        selectedSpeechModelByBackend = field(
-            .selectedSpeechModelByBackend,
-            default: fallback.selectedSpeechModelByBackend
-        )
+        selectedSpeechModelByBackend = AppSettings.backendKeyed(field(.selectedSpeechModelByBackend, default: [:]))
 
-        // Drop unknown and duplicate backend ids and clamp the rate. Known-but-missing ids are
-        // not appended, matching `BackendListModel.knownOrder()`.
+        // Drop unknown, wrong-direction and duplicate backend ids and clamp the rate. Known-but-missing
+        // ids are not appended.
         sttBackendOrder = AppSettings.normalizedBackendOrder(
             decodedSTTOrder,
-            knownIDs: AppSettings.knownSTTBackendIDs,
+            allowed: BackendID.allSpeechToText,
             fallback: fallback.sttBackendOrder
         )
         ttsBackendOrder = AppSettings.normalizedBackendOrder(
             decodedTTSOrder,
-            knownIDs: AppSettings.knownTTSBackendIDs,
+            allowed: BackendID.allTextToSpeech,
             fallback: fallback.ttsBackendOrder
         )
         ttsRate = min(max(decodedRate, AppSettings.validTTSRateRange.lowerBound), AppSettings.validTTSRateRange.upperBound)
@@ -172,30 +169,38 @@ struct AppSettings: Codable, Equatable, Sendable {
         return (!object.allKeys.isEmpty && result.isEmpty) ? nil : result
     }
 
-    /// Filters `order` down to ids in `knownIDs`, preserving their relative order and collapsing
-    /// duplicates to their first occurrence. Falls back to `fallback` entirely if nothing known
-    /// remains (equivalent to treating the field as absent) so a settings value never ends up
-    /// with zero enabled backends.
-    private static func normalizedBackendOrder(_ order: [String], knownIDs: Set<String>, fallback: [String]) -> [String] {
-        var seen = Set<String>()
-        var normalized: [String] = []
-        for id in order where knownIDs.contains(id) && seen.insert(id).inserted {
+    /// Parses `order` into ids of the `allowed` direction, preserving their relative order and
+    /// collapsing duplicates to their first occurrence. Falls back to `fallback` entirely if nothing
+    /// usable remains (equivalent to treating the field as absent) so a settings value never ends
+    /// up with zero enabled backends.
+    private static func normalizedBackendOrder(_ order: [String], allowed: [BackendID], fallback: [BackendID]) -> [BackendID] {
+        var normalized: [BackendID] = []
+        for id in order.compactMap(BackendID.init(rawValue:)) where allowed.contains(id) && !normalized.contains(id) {
             normalized.append(id)
         }
         return normalized.isEmpty ? fallback : normalized
     }
 
-    private static func migrateLegacyVoices(from decoder: Decoder) -> [String: String] {
+    /// Drops entries whose key is not a known backend id.
+    private static func backendKeyed(_ map: [String: String]) -> [BackendID: String] {
+        var result: [BackendID: String] = [:]
+        for (key, value) in map {
+            if let id = BackendID(rawValue: key) { result[id] = value }
+        }
+        return result
+    }
+
+    private static func migrateLegacyVoices(from decoder: Decoder) -> [BackendID: String] {
         guard let legacy = try? decoder.container(keyedBy: LegacyCodingKeys.self) else { return [:] }
         let pairs: [(LegacyCodingKeys, BackendID)] = [
             (.ttsVoiceIdentifier, .appleTTS),
             (.kokoroVoice, .kokoro),
             (.pocketVoice, .pocketTTS),
         ]
-        var voices: [String: String] = [:]
+        var voices: [BackendID: String] = [:]
         for (key, backend) in pairs {
             if let voice = try? legacy.decode(String.self, forKey: key) {
-                voices[backend.rawValue] = voice
+                voices[backend] = voice
             }
         }
         return voices
@@ -204,14 +209,14 @@ struct AppSettings: Codable, Equatable, Sendable {
     init(
         dictationMode: DictationMode,
         hotkeys: [HotkeyAction: HotkeyDefinition],
-        sttBackendOrder: [String],
-        ttsBackendOrder: [String],
+        sttBackendOrder: [BackendID],
+        ttsBackendOrder: [BackendID],
         ttsRate: Float,
         autoReadEnabled: Bool,
         activityOverlayStyle: ActivityOverlayStyle,
-        voiceByBackend: [String: String] = [:],
+        voiceByBackend: [BackendID: String] = [:],
         liveTranscriptionEnabled: Bool = false,
-        selectedSpeechModelByBackend: [String: String] = [:],
+        selectedSpeechModelByBackend: [BackendID: String] = [:],
         schemaVersion: Int = AppSettings.currentSchemaVersion
     ) {
         self.schemaVersion = schemaVersion
@@ -236,8 +241,8 @@ struct AppSettings: Codable, Equatable, Sendable {
             .replayLast: .chord(keyCode: 15, modifiers: [.option, .shift]),
             .toggleAutoRead: .chord(keyCode: 0, modifiers: [.option, .shift]),
         ],
-        sttBackendOrder: [BackendID.appleSpeech.rawValue],
-        ttsBackendOrder: BackendID.allTextToSpeech.map(\.rawValue),
+        sttBackendOrder: [.appleSpeech],
+        ttsBackendOrder: BackendID.allTextToSpeech,
         ttsRate: 0.5,
         autoReadEnabled: true,
         activityOverlayStyle: .interactive,
@@ -249,10 +254,10 @@ extension TTSOptions {
     /// The single mapping from persisted settings to per-utterance options.
     init(settings: AppSettings) {
         self.init(
-            voiceIdentifier: settings.voiceByBackend[BackendID.appleTTS.rawValue],
+            voiceIdentifier: settings.voiceByBackend[.appleTTS],
             rate: settings.ttsRate,
-            kokoroVoice: settings.voiceByBackend[BackendID.kokoro.rawValue],
-            pocketVoice: settings.voiceByBackend[BackendID.pocketTTS.rawValue]
+            kokoroVoice: settings.voiceByBackend[.kokoro],
+            pocketVoice: settings.voiceByBackend[.pocketTTS]
         )
     }
 }

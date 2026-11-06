@@ -8,7 +8,7 @@ final class AppSettingsDecodeTests: XCTestCase {
     func testMissingOneRequiredFieldKeepsOthers() throws {
         var saved = AppSettings.defaults
         saved.hotkeys[.readSelection] = .chord(keyCode: 15, modifiers: [.option, .command])
-        saved.sttBackendOrder = ["parakeet", "apple-speech"]
+        saved.sttBackendOrder = [.parakeet, .appleSpeech]
         let encoded = try JSONEncoder().encode(saved)
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         object.removeValue(forKey: "ttsRate")
@@ -26,7 +26,7 @@ final class AppSettingsDecodeTests: XCTestCase {
     func testInvalidOneFieldDoesNotResetUnrelated() throws {
         var saved = AppSettings.defaults
         saved.dictationMode = .toggle
-        saved.voiceByBackend["apple-tts"] = "voice.test"
+        saved.voiceByBackend[.appleTTS] = "voice.test"
         let encoded = try JSONEncoder().encode(saved)
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         object["autoReadEnabled"] = "not-a-bool"
@@ -37,33 +37,35 @@ final class AppSettingsDecodeTests: XCTestCase {
         )
 
         XCTAssertEqual(decoded.dictationMode, .toggle)
-        XCTAssertEqual(decoded.voiceByBackend["apple-tts"], "voice.test")
+        XCTAssertEqual(decoded.voiceByBackend[.appleTTS], "voice.test")
         XCTAssertEqual(decoded.autoReadEnabled, AppSettings.defaults.autoReadEnabled)
     }
 
     func testUnknownBackendIDsAreNormalized() throws {
-        var saved = AppSettings.defaults
-        saved.sttBackendOrder = ["totally-unknown", "apple-speech", "parakeet", "apple-speech"]
-        saved.ttsBackendOrder = ["mystery-tts", "kokoro", "apple-tts"]
-        let data = try JSONEncoder().encode(saved)
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(AppSettings.defaults)) as? [String: Any]
+        )
+        object["sttBackendOrder"] = ["totally-unknown", "apple-speech", "parakeet", "apple-speech"]
+        object["ttsBackendOrder"] = ["mystery-tts", "kokoro", "apple-tts"]
 
-        let decoded = try JSONDecoder().decode(AppSettings.self, from: data)
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
 
         // Unknown ids are dropped and duplicates collapsed to their first occurrence, but the
         // relative order of the known ids that remain is preserved exactly.
-        XCTAssertEqual(decoded.sttBackendOrder, ["apple-speech", "parakeet"])
-        XCTAssertEqual(decoded.ttsBackendOrder, ["kokoro", "apple-tts"])
+        XCTAssertEqual(decoded.sttBackendOrder, [.appleSpeech, .parakeet])
+        XCTAssertEqual(decoded.ttsBackendOrder, [.kokoro, .appleTTS])
     }
 
     /// If normalization would leave an order completely empty (every id unknown), that is
     /// treated as if the field were absent: fall back to the shipped default order rather than
     /// leave a settings value where no backend at all is enabled.
     func testUnknownBackendIDsFallBackToDefaultsWhenOrderBecomesEmpty() throws {
-        var saved = AppSettings.defaults
-        saved.sttBackendOrder = ["only-unknown-id"]
-        let data = try JSONEncoder().encode(saved)
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(AppSettings.defaults)) as? [String: Any]
+        )
+        object["sttBackendOrder"] = ["only-unknown-id"]
 
-        let decoded = try JSONDecoder().decode(AppSettings.self, from: data)
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
 
         XCTAssertEqual(decoded.sttBackendOrder, AppSettings.defaults.sttBackendOrder)
     }
@@ -90,8 +92,8 @@ final class AppSettingsDecodeTests: XCTestCase {
     func testOldSchemaVersionMigrates() throws {
         var saved = AppSettings.defaults
         saved.dictationMode = .toggle
-        saved.sttBackendOrder = ["apple-speech"]
-        saved.ttsBackendOrder = ["apple-tts"]
+        saved.sttBackendOrder = [.appleSpeech]
+        saved.ttsBackendOrder = [.appleTTS]
         saved.ttsRate = 0.75
         saved.autoReadEnabled = false
         let encoded = try JSONEncoder().encode(saved)
@@ -108,8 +110,8 @@ final class AppSettingsDecodeTests: XCTestCase {
         )
 
         XCTAssertEqual(decoded.dictationMode, .toggle)
-        XCTAssertEqual(decoded.sttBackendOrder, ["apple-speech"])
-        XCTAssertEqual(decoded.ttsBackendOrder, ["apple-tts"])
+        XCTAssertEqual(decoded.sttBackendOrder, [.appleSpeech])
+        XCTAssertEqual(decoded.ttsBackendOrder, [.appleTTS])
         XCTAssertEqual(decoded.ttsRate, 0.75, accuracy: 0.0001)
         XCTAssertFalse(decoded.autoReadEnabled)
         XCTAssertEqual(decoded.activityOverlayStyle, .interactive)
@@ -124,9 +126,9 @@ final class AppSettingsDecodeTests: XCTestCase {
         var value = AppSettings.defaults
         value.dictationMode = .toggle
         value.hotkeys[.readSelection] = .chord(keyCode: 15, modifiers: [.option])
-        value.sttBackendOrder = ["parakeet", "apple-speech"]
-        value.ttsBackendOrder = ["apple-tts", "kokoro", "pocket-tts"]
-        value.voiceByBackend = ["apple-tts": "voice.test", "kokoro": "af_heart", "pocket-tts": "alba"]
+        value.sttBackendOrder = [.parakeet, .appleSpeech]
+        value.ttsBackendOrder = [.appleTTS, .kokoro, .pocketTTS]
+        value.voiceByBackend = [.appleTTS: "voice.test", .kokoro: "af_heart", .pocketTTS: "alba"]
         value.ttsRate = 0.65
         value.autoReadEnabled = false
         value.activityOverlayStyle = .minimal
@@ -156,7 +158,7 @@ final class AppSettingsDecodeTests: XCTestCase {
 
         let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
 
-        XCTAssertEqual(decoded.voiceByBackend, ["kokoro": "am_adam"])
+        XCTAssertEqual(decoded.voiceByBackend, [.kokoro: "am_adam"])
         XCTAssertEqual(decoded.dictationMode, .toggle)
         XCTAssertEqual(decoded.ttsRate, 0.8, accuracy: 0.0001)
         XCTAssertEqual(decoded.liveTranscriptionEnabled, AppSettings.defaults.liveTranscriptionEnabled)
@@ -181,7 +183,7 @@ final class AppSettingsDecodeTests: XCTestCase {
     func testMalformedVoiceValueDropsOnlyThatEntry() throws {
         var saved = AppSettings.defaults
         saved.dictationMode = .toggle
-        saved.voiceByBackend = ["kokoro": "af_heart", "apple-tts": "voice.test"]
+        saved.voiceByBackend = [.kokoro: "af_heart", .appleTTS: "voice.test"]
         var object = try XCTUnwrap(
             JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as? [String: Any]
         )
@@ -189,7 +191,7 @@ final class AppSettingsDecodeTests: XCTestCase {
 
         let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
 
-        XCTAssertEqual(decoded.voiceByBackend, ["apple-tts": "voice.test"])
+        XCTAssertEqual(decoded.voiceByBackend, [.appleTTS: "voice.test"])
         XCTAssertEqual(decoded.dictationMode, .toggle)
     }
 
@@ -240,8 +242,8 @@ final class AppSettingsDecodeTests: XCTestCase {
         XCTAssertEqual(decoded.dictationMode, .toggle)
         XCTAssertEqual(encoded["sttBackendOrder"] as? [String], ["parakeet"])
         XCTAssertEqual(encoded["ttsBackendOrder"] as? [String], ["kokoro"])
-        XCTAssertEqual((encoded["voiceByBackend"] as? [String: String])?["kokoro"], "am_adam")
-        XCTAssertEqual((encoded["selectedSpeechModelByBackend"] as? [String: String])?["whisper"], "small.en")
+        XCTAssertEqual(encoded["voiceByBackend"] as? [String: String], ["kokoro": "am_adam"])
+        XCTAssertEqual(encoded["selectedSpeechModelByBackend"] as? [String: String], ["whisper": "small.en"])
     }
 
     func testUnknownActivityOverlayStyleFallsBackToDefault() throws {
