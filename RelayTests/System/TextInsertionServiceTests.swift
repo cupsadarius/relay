@@ -70,7 +70,7 @@ final class TextInsertionServiceTests: XCTestCase {
         let clipboard = FakeInsertionClipboard()
         let paste = FakePasteCommand()
         let gate = ClipboardGate()
-        gate.markBusy(until: Task {})
+        _ = gate.hold()
         let service = TextInsertionService(
             accessibility: accessibility,
             clipboard: clipboard,
@@ -628,7 +628,7 @@ private final class FakeInsertionClipboard: ClipboardPasteboard {
 }
 
 @MainActor
-private final class FakePasteCommand: PasteCommandSending {
+private final class FakePasteCommand: KeyCommandSending {
     let error: Error?
     let events: InsertionEvents?
     private(set) var sendCount = 0
@@ -638,7 +638,7 @@ private final class FakePasteCommand: PasteCommandSending {
         self.events = events
     }
 
-    func sendPaste() throws {
+    func send() throws {
         events?.values.append("paste")
         sendCount += 1
         if let error { throw error }

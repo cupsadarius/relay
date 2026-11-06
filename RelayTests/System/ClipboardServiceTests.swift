@@ -150,8 +150,7 @@ final class ClipboardServiceTests: XCTestCase {
     /// than read or restore the pasteboard out from under it.
     func testCopyWaitsForTheSharedGateBeforeTouchingThePasteboard() async throws {
         let gate = ClipboardGate()
-        let (busySignal, busyContinuation) = AsyncStream<Void>.makeStream()
-        gate.markBusy(until: Task { for await _ in busySignal {} })
+        let release = gate.hold()
 
         let original = ClipboardSnapshot(items: [])
         let pasteboard = FakeClipboardPasteboard(changeCount: 1, snapshot: original, copiedString: "selected")
@@ -163,7 +162,7 @@ final class ClipboardServiceTests: XCTestCase {
         for _ in 0..<3 { await Task.yield() }
         XCTAssertEqual(copyCommand.callCount, 0, "must not send ⌘C while the shared gate is busy")
 
-        busyContinuation.finish()
+        release()
         let result = try await task.value
 
         XCTAssertEqual(result, "selected")
@@ -207,7 +206,7 @@ private final class FakeClipboardPasteboard: ClipboardPasteboard {
 }
 
 @MainActor
-private final class FakeCopyCommand: CopyCommandSending {
+private final class FakeCopyCommand: KeyCommandSending {
     var error: Error?
     private(set) var callCount = 0
 
@@ -215,7 +214,7 @@ private final class FakeCopyCommand: CopyCommandSending {
         self.error = error
     }
 
-    func sendCopy() throws {
+    func send() throws {
         callCount += 1
         if let error { throw error }
     }

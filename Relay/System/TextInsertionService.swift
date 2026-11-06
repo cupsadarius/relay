@@ -100,7 +100,7 @@ final class TextInsertionService: TextInserting {
 
     private let accessibility: any AccessibilityTextInserting
     private let clipboard: any ClipboardPasteboard
-    private let pasteCommand: any PasteCommandSending
+    private let pasteCommand: any KeyCommandSending
     private let scheduler: any ClipboardRestoreScheduling
     private let canPostEvents: () -> Bool
     private let gate: ClipboardGate
@@ -111,7 +111,7 @@ final class TextInsertionService: TextInserting {
     init(
         accessibility: any AccessibilityTextInserting = SystemAccessibilityTextInserter(),
         clipboard: any ClipboardPasteboard = GeneralClipboardPasteboard(),
-        pasteCommand: any PasteCommandSending = SystemKeyCommand.paste,
+        pasteCommand: any KeyCommandSending = SystemKeyCommand.paste,
         scheduler: any ClipboardRestoreScheduling = TaskClipboardRestoreScheduler(),
         canPostEvents: @escaping () -> Bool = { CGPreflightPostEventAccess() },
         gate: ClipboardGate = ClipboardGate()
@@ -164,7 +164,7 @@ final class TextInsertionService: TextInserting {
         }
 
         do {
-            try pasteCommand.sendPaste()
+            try pasteCommand.send()
         } catch {
             clipboard.restore(originalClipboard, ifOwnedBy: ownershipToken)
             throw error
@@ -173,21 +173,14 @@ final class TextInsertionService: TextInserting {
         // Hold the shared gate until the restore below fires, so a copy starting in the
         // meantime (it can await, unlike us) waits for this paste-fallback to finish instead of
         // reading or restoring the pasteboard while our temporary content is still on it.
-        // Captured directly (not via `self`) so the gate is always released even if this
-        // service happens to be deallocated before the scheduled restore fires.
-        let gate = self.gate
-        let (busySignal, busyContinuation) = AsyncStream<Void>.makeStream()
-        gate.markBusy(until: Task { for await _ in busySignal {} })
+        let releaseGate = gate.hold()
 
         // Restoring synchronously here (via a nested run loop) would let other event
         // handlers reenter while `insert` is still on the stack. Instead we return
         // immediately and let the target app read the pasteboard before restoring it;
         // `flushPendingRestore` above keeps a later overlapping insertion safe.
         let restore: @MainActor () -> Void = { [weak self] in
-            defer {
-                busyContinuation.finish()
-                gate.release()
-            }
+            defer { releaseGate() }
             guard let self else { return }
             self.clipboard.restore(originalClipboard, ifOwnedBy: ownershipToken)
             self.pendingRestore = nil

@@ -53,13 +53,8 @@ protocol ClipboardPasteboard: AnyObject {
 }
 
 @MainActor
-protocol CopyCommandSending {
-    func sendCopy() throws
-}
-
-@MainActor
-protocol PasteCommandSending {
-    func sendPaste() throws
+protocol KeyCommandSending {
+    func send() throws
 }
 
 @MainActor
@@ -106,24 +101,22 @@ final class ClipboardGate {
         }
     }
 
-    /// Marks the clipboard busy until `task` completes. Synchronous, so a caller that cannot
-    /// itself `await` (like a synchronous paste-fallback write) can still register its own busy
-    /// window and release it later from wherever its work actually finishes.
-    func markBusy(until task: Task<Void, Never>) {
-        releaseTask = task
-    }
-
-    /// Clears the busy marker. Callers must call this once their own held window ends (whether or
-    /// not `task` from `markBusy` has itself finished yet).
-    func release() {
-        releaseTask = nil
+    /// Marks the clipboard busy until the returned closure runs. Synchronous, so a caller that
+    /// cannot `await` can still hold the gate and release it wherever its work finishes.
+    func hold() -> @MainActor () -> Void {
+        let (signal, continuation) = AsyncStream<Void>.makeStream()
+        releaseTask = Task { for await _ in signal {} }
+        return {
+            continuation.finish()
+            self.releaseTask = nil
+        }
     }
 }
 
 @MainActor
 final class ClipboardService: ClipboardReading {
     private let pasteboard: any ClipboardPasteboard
-    private let copyCommand: any CopyCommandSending
+    private let copyCommand: any KeyCommandSending
     private let waiter: any ClipboardWaiting
     private let gate: ClipboardGate
     /// The copy currently under way, if any. A second call arriving while one is in flight joins
@@ -133,7 +126,7 @@ final class ClipboardService: ClipboardReading {
 
     init(
         pasteboard: any ClipboardPasteboard = GeneralClipboardPasteboard(),
-        copyCommand: any CopyCommandSending = SystemKeyCommand.copy,
+        copyCommand: any KeyCommandSending = SystemKeyCommand.copy,
         waiter: any ClipboardWaiting = SleepingClipboardWaiter(),
         gate: ClipboardGate = ClipboardGate()
     ) {
@@ -178,16 +171,12 @@ final class ClipboardService: ClipboardReading {
         // Wait for the gate (e.g. a paste-fallback insertion mid-restore), then hold it for our
         // own duration so a copy in flight is visible to anyone else consulting the gate.
         await gate.acquire()
-        let (busySignal, busyContinuation) = AsyncStream<Void>.makeStream()
-        gate.markBusy(until: Task { for await _ in busySignal {} })
-        defer {
-            busyContinuation.finish()
-            gate.release()
-        }
+        let release = gate.hold()
+        defer { release() }
 
         let original = pasteboard.snapshot()
         let originalChangeCount = pasteboard.changeCount
-        try copyCommand.sendCopy()
+        try copyCommand.send()
 
         for _ in 0..<10 {
             await waiter.wait(milliseconds: 20)
@@ -279,16 +268,13 @@ enum KeyCommandError: Error {
 /// Posts ⌘+`virtualKey` as genuine-looking user input. The combined session source attributes
 /// these synthetic events like real keystrokes, so target apps accept them.
 @MainActor
-struct SystemKeyCommand: CopyCommandSending, PasteCommandSending {
+struct SystemKeyCommand: KeyCommandSending {
     static let copy = SystemKeyCommand(virtualKey: 8) // kVK_ANSI_C
     static let paste = SystemKeyCommand(virtualKey: 9) // kVK_ANSI_V
 
     let virtualKey: CGKeyCode
 
-    func sendCopy() throws { try post() }
-    func sendPaste() throws { try post() }
-
-    private func post() throws {
+    func send() throws {
         guard let source = CGEventSource(stateID: .combinedSessionState),
             let keyDown = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: true),
             let keyUp = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: false)
