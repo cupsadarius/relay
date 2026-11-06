@@ -174,11 +174,7 @@ final class AppModelTests: XCTestCase {
                     sessionID: nil
                 )
             ])
-        // The success path no longer sets a "Speaking…" `statusText`: the overlay's live state
-        // drives `activityStatusText` while speech is in flight, and a stale imperative string
-        // here is exactly what would survive after the overlay hides once speech ends (e.g. via
-        // the pill's Stop button). With no overlay transition driven by this fake, `statusText`
-        // should remain at its clean default.
+        // The overlay drives the in-flight status, so `statusText` keeps its default here.
         XCTAssertEqual(model.statusText, "Ready")
         XCTAssertEqual(model.activityStatusText, "Ready")
         XCTAssertEqual(model.diagnosticsEntries.first?.event, .ttsSubmitted)
@@ -332,9 +328,8 @@ final class AppModelTests: XCTestCase {
     /// `SpySpeechCoordinator` the other tests in this file use) wired exactly like the
     /// production convenience `init()` wires PocketTTS, Apple, and Kokoro: `backendOrder` and the
     /// `TTSOptions.kokoroVoice`/`pocketVoice` fields all read from the same settings snapshot.
-    /// This exercises the one-line options-closure edit the plan calls out as the easiest step to
-    /// miss - if `kokoroVoice`/`pocketVoice` stopped reaching `TTSOptions`, the routing tests
-    /// above would fail.
+    /// If `kokoroVoice`/`pocketVoice` stopped reaching `TTSOptions`, the routing tests above
+    /// would fail.
     private func makeTTSRoutingModel(
         pocketAvailability: BackendAvailability,
         kokoroAvailability: BackendAvailability

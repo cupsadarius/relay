@@ -23,11 +23,8 @@ struct AppSettings: Codable, Equatable, Sendable {
     /// A missing entry means that backend's default voice.
     var voiceByBackend: [String: String]
     var liveTranscriptionEnabled: Bool
-    /// The last model id selected per STT backend id (e.g. `"whisper": "small.en"`), so a
-    /// multi-model backend like Whisper remembers the user's choice across launches. Absent
-    /// entries mean no selection has been made yet for that backend; resolving an id no longer
-    /// present in a backend's catalog is that backend's manager's problem at read time, not
-    /// AppSettings'.
+    /// The last model id selected per STT backend id (e.g. `"whisper": "small.en"`). An absent
+    /// entry means no selection yet; the backend's manager resolves unknown ids at read time.
     var selectedSpeechModelByBackend: [String: String]
 
     /// The current on-disk schema version. Bump this (and add an explicit transform to
@@ -36,18 +33,11 @@ struct AppSettings: Codable, Equatable, Sendable {
     /// 2: per-backend voice keys folded into voiceByBackend.
     static let currentSchemaVersion = 2
 
-    /// Backend ids `sttBackendOrder` recognizes as valid, mirroring the STT backends
-    /// `RelayRuntime.makeProduction()` actually registers (`Relay/App/RelayRuntime.swift`).
-    /// Update this alongside that registry when a new STT backend is added.
     static let knownSTTBackendIDs: Set<String> = Set(BackendID.allSpeechToText.map(\.rawValue))
 
-    /// Backend ids `ttsBackendOrder` recognizes as valid, mirroring the TTS backends
-    /// `RelayRuntime.makeProduction()` actually registers (`Relay/App/RelayRuntime.swift`).
-    /// Update this alongside that registry when a new TTS backend is added.
     static let knownTTSBackendIDs: Set<String> = Set(BackendID.allTextToSpeech.map(\.rawValue))
 
-    /// `ttsRate`'s valid range, matching `TTSSettingsView`'s slider bounds — the only place a
-    /// user can actually set this value today.
+    /// `ttsRate`'s valid range; `TTSSettingsView`'s slider uses the same bounds.
     static let validTTSRateRange: ClosedRange<Float> = 0.1...1.0
 
     private enum CodingKeys: String, CodingKey {
@@ -67,13 +57,8 @@ struct AppSettings: Codable, Equatable, Sendable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         let fallback = AppSettings.defaults
 
-        // Per-field resilient decode: `try?` collapses BOTH "key missing" and "key present with
-        // the wrong type/an invalid value" into the same fallback-to-default outcome, so one
-        // malformed or absent field can never throw and reset every other field along with it.
-        // Every field goes through this one helper, including optionals (`Value == String?`,
-        // where a JSON `null` still decodes to `nil`). For an optional field, a missing key also
-        // takes `defaultValue` (rather than `nil`) — harmless today since every optional field's
-        // default is itself `nil`.
+        // A missing or malformed field falls back to its default, so one bad field never
+        // resets the others.
         func field<Value: Decodable>(_ key: CodingKeys, default defaultValue: Value) -> Value {
             (try? values.decode(Value.self, forKey: key)) ?? defaultValue
         }
@@ -85,15 +70,13 @@ struct AppSettings: Codable, Equatable, Sendable {
         let decodedRate = field(.ttsRate, default: fallback.ttsRate)
         autoReadEnabled = field(.autoReadEnabled, default: fallback.autoReadEnabled)
         activityOverlayStyle = field(.activityOverlayStyle, default: fallback.activityOverlayStyle)
-        // The first reshaped field: schema < 2 stored one optional voice per TTS backend under
-        // its own key. A blob with no/invalid `schemaVersion` reads as 0 and migrates too.
+        // Schema < 2 stored one voice per TTS backend under its own key. A blob with no or an
+        // invalid `schemaVersion` reads as 0 and migrates too.
         let savedSchemaVersion = field(.schemaVersion, default: 0)
         if savedSchemaVersion < 2 {
             voiceByBackend = AppSettings.migrateLegacyVoices(from: decoder)
         } else {
-            // Current, or newer than this build knows: decode per-entry, same as `hotkeys` above,
-            // so one malformed voice value drops only that backend's entry rather than the whole
-            // map via `try?`'s all-or-nothing collapse.
+            // Per-entry decode: one malformed voice drops only that backend's entry.
             voiceByBackend = AppSettings.decodeVoiceByBackend(from: values) ?? fallback.voiceByBackend
         }
         liveTranscriptionEnabled = field(.liveTranscriptionEnabled, default: fallback.liveTranscriptionEnabled)
@@ -102,12 +85,8 @@ struct AppSettings: Codable, Equatable, Sendable {
             default: fallback.selectedSpeechModelByBackend
         )
 
-        // Normalize AFTER every field has its per-field fallback value: drop unknown/duplicate
-        // backend ids (keeping the first occurrence of each known id, in order) and clamp the
-        // rate into its valid range. Deliberately does NOT append known-but-missing backend ids
-        // to the order — that would invent new behavior; `BackendListModel.knownOrder()` (the
-        // equivalent runtime-side filter in `Relay/App/BackendListModel.swift`) only ever filters
-        // too, never appends, so this matches existing semantics.
+        // Drop unknown and duplicate backend ids and clamp the rate. Known-but-missing ids are
+        // not appended, matching `BackendListModel.knownOrder()`.
         sttBackendOrder = AppSettings.normalizedBackendOrder(
             decodedSTTOrder,
             knownIDs: AppSettings.knownSTTBackendIDs,

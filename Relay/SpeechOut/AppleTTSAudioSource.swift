@@ -77,8 +77,7 @@ struct AVAudioPCMBufferConverter: AppleSpeechBufferConverting {
 /// dedicated synthesizer, so a cancelled attempt's late callbacks cannot leak into a later
 /// session.
 ///
-/// Apple's write callback is synchronous and push-driven, and it must never block (see the
-/// cleanup-4 spike). Each buffer is converted in the callback (a deep copy: Apple may reuse the
+/// Apple's write callback is synchronous and push-driven, and it must never block. Each buffer is converted in the callback (a deep copy: Apple may reuse the
 /// buffer once the callback returns) and yielded into an unbounded `AsyncStream`. A producer
 /// inside `PipedTTSAudioSource` is that stream's single consumer (`AsyncStream` supports exactly
 /// one) and moves frames into the bounded, duration-based `TTSAudioPipe` the player pulls from.
@@ -204,7 +203,7 @@ final class AppleTTSAudioSource: TTSAudioSource, @unchecked Sendable {
             if let voiceIdentifier, let voice = AVSpeechSynthesisVoice(identifier: voiceIdentifier) {
                 utterance.voice = voice
             }
-            // Explicitly `@Sendable`: Apple may call this off the main thread (Task 8 spike), and
+            // Explicitly `@Sendable`: Apple may call this off the main thread and
             // a closure inferred as main-actor isolated would trap there.
             synthesizer.write(utterance) { @Sendable buffer in
                 guard let pcm = buffer as? AVAudioPCMBuffer else { return }

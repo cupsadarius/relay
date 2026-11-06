@@ -127,8 +127,7 @@ struct IntegrationsSettingsView: View {
         }
     }
 
-    /// Extra guidance shown under the status label. For Codex trust-required and
-    /// config-disabled states this is the exact copy the plan specifies.
+    /// Extra guidance shown under the status label.
     private static func statusDetail(_ status: IntegrationStatus) -> String? {
         switch status {
         case .installedTrustRequired:

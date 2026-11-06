@@ -2,11 +2,7 @@ import Foundation
 
 /// The canonical Whisper model identifiers WhisperKit publishes CoreML artifacts for.
 ///
-/// This intentionally excludes `large-v1`: WhisperKit's CoreML mirror
-/// (`argmaxinc/whisperkit-coreml`) does not publish a `large-v1` folder at all (confirmed by
-/// direct Hugging Face tree API query -- see
-/// docs/superpowers/spikes/2026-09-18-openai-whisper-models-feasibility-results.md section 2).
-/// `large-v1` exists only on whisper.cpp's ggml mirror, which Relay does not use.
+/// No `large-v1`: `argmaxinc/whisperkit-coreml` does not publish it.
 enum WhisperModelID: String, CaseIterable, Identifiable, Sendable {
     case tinyEn = "tiny.en"
     case tiny = "tiny"
@@ -23,11 +19,8 @@ enum WhisperModelID: String, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
 }
 
-/// Static metadata describing one Whisper model's identity and expected footprint.
-///
-/// There is deliberately **no** per-model checksum here: identity metadata only.
-/// Per-file checksum verification against Hugging Face's LFS/blob `oid`s happens later, at
-/// download time, in `WhisperModelStore` -- not as a static value baked into the catalog.
+/// Static metadata describing one Whisper model. `WhisperModelStore` verifies file checksums
+/// at download time.
 struct WhisperModelDescriptor: Identifiable, Equatable, Sendable {
     let id: WhisperModelID
     /// Human-readable name suitable for UI (e.g. a model picker).
@@ -37,16 +30,8 @@ struct WhisperModelDescriptor: Identifiable, Equatable, Sendable {
     let runtimeArtifact: String
     /// Whether this checkpoint was trained English-only (the `.en` variants).
     let englishOnly: Bool
-    /// The `openai/whisper-*` Hugging Face repo WhisperKit's own
-    /// `ModelUtilities.tokenizerNameForVariant` resolves a loaded model of this id to -- i.e. the
-    /// repo `WhisperModelStore` must fetch `tokenizer.json`/`tokenizer_config.json` from so they
-    /// land in the model's own folder (`WhisperKitEngine.load`'s `tokenizerFolder: modelFolder`
-    /// then lets WhisperKit's local-first tokenizer search find them there, with no live Hub
-    /// fetch). Verified against argmax-oss-swift 1.1.0's
-    /// `Sources/WhisperKit/Utilities/ModelUtilities.swift` (`tokenizerNameForVariant`), not
-    /// guessed from `runtimeArtifact` -- see
-    /// `WhisperModelCatalogTests.testTokenizerRepoMatchesVerifiedWhisperKitMapping` for why
-    /// `turbo` maps to `openai/whisper-large-v3` rather than a `-turbo`-named repo.
+    /// The `openai/whisper-*` repo the tokenizer files come from. Must match WhisperKit's
+    /// `ModelUtilities.tokenizerNameForVariant`, which maps `turbo` to `whisper-large-v3`.
     let tokenizerRepo: String
 }
 

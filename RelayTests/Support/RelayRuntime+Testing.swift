@@ -8,14 +8,8 @@ extension RelayRuntime {
     /// touches `UserDefaults.standard`, the CGEvent tap, the real socket, `~/.claude`, `~/.codex`
     /// or `~/Library/Application Support`. Focus resolution defaults to a service over the SAME
     /// `sessionRegistry`/`frontmostApps` passed here — never a second registry.
-    // NOTE (deviation from the plan text): the plan's version of this signature default-
-    // constructs several `@MainActor`-isolated types (`SpySettingsStore()`, `StatusSink()`, ...)
-    // directly as parameter default values. That fails to compile under this project's Swift 6.0
-    // language mode ("call to main actor-isolated initializer ... in a synchronous nonisolated
-    // context") — default-argument expressions are not treated as isolated to the enclosing
-    // (extension) member's global actor here. Every such default is instead `nil` and
-    // constructed inside the (MainActor-isolated) function body via `??`, exactly like the
-    // plan's own `hookEnvelopeReceiver`/`claudeCodeInstaller`/etc. parameters already do.
+    // Default arguments cannot call `@MainActor` initializers, so such defaults are `nil` and
+    // built in the body with `??`.
     static func testing(
         settingsStore: (any SettingsStoring)? = nil,
         selectionReader: (any SelectionReading)? = nil,

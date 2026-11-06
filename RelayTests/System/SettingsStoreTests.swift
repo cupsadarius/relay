@@ -2,12 +2,8 @@ import XCTest
 
 @testable import Relay
 
-/// Task 6 (Reliability Wave 3): `SettingsStore.load()` used to swallow ANY decode failure
-/// (`try?`) and silently return `.defaults`, discarding the saved blob entirely with no trace it
-/// ever happened. These tests cover the "total failure" path that per-field resilience in
-/// `AppSettings.init(from:)` can't reach on its own — bytes that aren't even a JSON object — and
-/// confirm that path preserves the raw blob for later recovery and records a diagnostic that
-/// never contains the blob's contents.
+/// Bytes that are not a JSON object reset to defaults, but the raw blob is kept for recovery and
+/// the diagnostic never contains its contents.
 @MainActor
 final class SettingsStoreTests: XCTestCase {
     func testFullyCorruptJSONPreservesBlobAndRecordsDiagnostic() throws {

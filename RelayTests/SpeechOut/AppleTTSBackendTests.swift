@@ -21,7 +21,7 @@ final class AppleTTSBackendTests: XCTestCase {
     }
 
     /// A stale saved voice id (e.g. a voice the user deleted) must fall back to the default voice.
-    /// Throwing `.invalidInput` there is not fallback-worthy, so it used to stop all TTS.
+    /// `.invalidInput` is not fallback-worthy, so throwing it would stop all TTS.
     func testMakeAudioSourceFallsBackToTheDefaultVoiceForAnUnknownVoiceIdentifier() async throws {
         let synthesizerCount = SynthesizerCounter()
         let backend = makeBackend(synthesizerCount: synthesizerCount)

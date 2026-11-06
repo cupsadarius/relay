@@ -286,10 +286,7 @@ final class IntegrationManagerTests: XCTestCase {
 
     // MARK: - onResponse callback
 
-    /// Phase 3 moves the auto-read decision out of this manager entirely: it now only publishes
-    /// every successfully-decoded event through `onResponse`, and never submits speech on this
-    /// path itself. Focus-gated auto-read semantics are covered separately by
-    /// `AgentAutoReadCoordinatorTests`.
+    /// The manager publishes every decoded event through `onResponse` and never speaks itself.
     func testOnResponseInvokedOnceForAValidClaudeEvent() async {
         let claudeEvent = event(provider: .claudeCode, providerSessionID: "claude-onresponse-1", text: "**Done.** All set.")
         let claude = SpyIntegration(provider: .claudeCode, result: .success(claudeEvent))

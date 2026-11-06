@@ -118,7 +118,7 @@ final class SpeechActionsTests: XCTestCase {
         XCTAssertEqual(runtime.diagnostics.entries.last?.event, .ttsFailed)
     }
 
-    /// Plan 1: a cancelled speak (Stop, or a newer press) is intentional, not a failure.
+    /// A cancelled speak (Stop, or a newer press) is intentional, not a failure.
     func testCancelledReplayIsNotReportedAsFailure() async {
         let (actions, runtime) = makeActions(speech: SpySpeechCoordinator(replayError: CancellationError()))
 

@@ -296,7 +296,7 @@ private struct StateDot: View {
 
 /// The shared 7-bar waveform, rendered differently per `ActivityOverlayPresentation.Kind`:
 /// Listening scales with live mic level, Speaking replays a synthetic per-bar phase animation,
-/// Processing breathes uniformly in place of the old spinner, and Error sits static and dimmed.
+/// Processing breathes uniformly, and Error sits static and dimmed.
 private struct WaveformView: View {
     let presentation: ActivityOverlayPresentation
 

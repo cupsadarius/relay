@@ -2,13 +2,8 @@ import XCTest
 
 @testable import Relay
 
-/// Task 6 (Reliability Wave 3): `AppSettings.init(from:)` used to decode six fields
-/// (`dictationMode`, `hotkeys`, `sttBackendOrder`, `ttsBackendOrder`, `ttsRate`,
-/// `autoReadEnabled`) as REQUIRED — any single missing or malformed field threw, and
-/// `SettingsStore.load()` swallowed that throw into a full reset to `.defaults`, silently
-/// discarding every other saved field (all keybinds included). These tests pin the fix: every
-/// field now falls back to its own default independently, backend-order lists are normalized,
-/// and a legacy (pre-schema-version) blob migrates instead of resetting.
+/// Every field falls back to its own default, backend-order lists are normalized, and a legacy
+/// blob migrates instead of resetting.
 final class AppSettingsDecodeTests: XCTestCase {
     func testMissingOneRequiredFieldKeepsOthers() throws {
         var saved = AppSettings.defaults

@@ -4,12 +4,6 @@ import XCTest
 
 @MainActor
 final class SettingsControllerTests: XCTestCase {
-    // NOTE (deviation from the plan text): as with `RelayRuntime+Testing.swift`'s `.testing(...)`
-    // factory (Task 1/2), default-constructing `@MainActor`-isolated types (`SpySettingsStore()`,
-    // `StatusSink()`) directly as parameter default values fails to compile under this project's
-    // Swift 6.0 language mode ("call to main actor-isolated initializer ... in a synchronous
-    // nonisolated context"). Both defaults are `nil` instead, constructed inside this
-    // (MainActor-isolated) function body via `??`.
     private func makeController(
         store: SpySettingsStore? = nil,
         statusSink: StatusSink? = nil,
@@ -162,7 +156,7 @@ final class SettingsControllerTests: XCTestCase {
         XCTAssertEqual(store.saved.last?.dictationMode, .toggle)
     }
 
-    // MARK: Whisper selection seam (previously untested)
+    // MARK: Whisper selection seam
 
     func testWhisperSelectionIsSeededFromPersistedSettings() {
         var saved = AppSettings.defaults

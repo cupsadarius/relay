@@ -10,7 +10,7 @@ final class ProjectSmokeTests: XCTestCase {
     }
 
     /// `RelayRuntime` owns every service's lifetime, so whoever holds the `AppModel` must keep
-    /// the runtime alive — `RelayAppDelegate` used to build the runtime inline and drop it.
+    /// the runtime alive.
     func testAppModelRetainsItsRuntime() {
         weak var weakRuntime: RelayRuntime?
         let model: AppModel

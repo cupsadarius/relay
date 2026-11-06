@@ -166,7 +166,6 @@ final class SpeechModelControllerTests: XCTestCase {
         XCTAssertEqual(controller.messages[.textToSpeech], "Kokoro model removal failed. Try again.")
     }
 
-    /// Regression: TTS model downloads used to log "Speech recognition model download started".
     func testTextToSpeechDownloadDiagnosticsNameTheTTSBackend() async {
         let key = SpeechModelBackendKey(domain: .textToSpeech, backendID: "kokoro")
         let diagnostics = DiagnosticsRecorder()

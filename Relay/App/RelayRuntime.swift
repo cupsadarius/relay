@@ -12,9 +12,8 @@ struct SessionServices {
     let focusResolution: any SessionFocusResolving
 }
 
-/// Speech-output services: the TTS backend registry/router pair, post-Whisper model managers for
-/// model-backed TTS providers, the shared `SpeechCoordinator`, and the activity overlay
-/// model/presenter pair the coordinator drives.
+/// Speech-output services: the TTS backend registry, model managers for model-backed TTS
+/// providers, the shared `SpeechCoordinator`, and the activity overlay it drives.
 struct SpeechOutputServices {
     let ttsRegistry: [String: any TextToSpeechBackend]
     let ttsModelManagers: [String: any SpeechModelManaging]
@@ -140,15 +139,9 @@ final class RelayRuntime {
             overlay: overlayModel
         )
 
-        // Phase 3 session-intelligence dependency graph. Every subsystem that needs frontmost-app
-        // evidence shares these SAME instances rather than constructing its own, so they all
-        // observe one consistent view of focus state. Resolver order is fixed: Herdr -> Rex ->
-        // tmux -> generic terminal (see `SessionServices`). tmux support is entirely optional: when no tmux executable
-        // is found, `TmuxFocusResolver` is simply never added to the list.
+        // Every subsystem that needs focus evidence shares these instances, so they all see one
+        // view of focus state.
         let sessionRegistry = AgentSessionRegistry()
-        // One shared, in-memory diagnostics log for the integration pipeline, independent of
-        // `os_log`. Passed into the receiver, manager, and auto-read coordinator below so their
-        // entries interleave in a single timeline, readable from the Diagnostics window.
         let integrationDiagnosticsLog = IntegrationDiagnosticsLog()
         let processInspector = ProcessInspector()
         let frontmostApps = FrontmostAppMonitor()

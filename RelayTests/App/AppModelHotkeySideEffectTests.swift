@@ -4,14 +4,8 @@ import XCTest
 
 @testable import Relay
 
-/// Locks in the fix for the "narrow hotkey side effects" reliability item: `AppModel
-/// .updateSettings` used to call `registerHotkeys()` unconditionally, which rebuilt
-/// `GlobalHotkeyManager`'s `HotkeyMatcher` (discarding any in-flight chord/double-tap gesture
-/// state) on every settings write, including ones with nothing to do with hotkeys (voice, rate,
-/// backend order, ...). Only a change to the hotkey *definitions* should rebuild the matcher;
-/// `GlobalHotkeyManager.register`'s `eventTap != nil` guard now lives in `ensureTap()`, and the
-/// matcher is rebuilt by `update(definitions:)` only when definitions change — the event tap
-/// itself is untouched by this fix and must never be re-created.
+/// Rebuilding the hotkey matcher discards an in-flight chord or double-tap, so only a change to
+/// the hotkey definitions may rebuild it. The event tap is never re-created.
 @MainActor
 final class AppModelHotkeySideEffectTests: XCTestCase {
     func testChangingVoiceDoesNotRebuildMatcher() {

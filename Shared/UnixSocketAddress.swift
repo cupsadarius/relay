@@ -6,8 +6,7 @@ enum UnixSocketAddressError: Error, Equatable {
 }
 
 /// `sockaddr_un` construction and bounded, non-blocking `connect` for local `AF_UNIX` stream
-/// sockets — the single copy of code that used to be duplicated four times across
-/// `UnixSocketServer`, `HookTransportClient`, and `UnixLineRequest`.
+/// sockets.
 ///
 /// Compiled into BOTH the `Relay` app target and the `RelayHook` helper target. Darwin/Foundation
 /// only.

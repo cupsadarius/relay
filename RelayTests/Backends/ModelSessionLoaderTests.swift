@@ -2,9 +2,7 @@ import XCTest
 
 @testable import Relay
 
-/// Pins the single-flight load rules every FluidAudio engine shares. These are the same semantics
-/// `FluidAudioParakeetEngineTests`/`FluidAudioKokoroEngineTests`/`FluidAudioPocketTTSEngineTests`
-/// used to pin once per engine.
+/// Pins the single-flight load rules every FluidAudio engine shares.
 final class ModelSessionLoaderTests: XCTestCase {
     func testLocalLoadThatFailsValidationThrowsModelsNotDownloadedWithoutLoading() async {
         let probe = LoaderProbe()

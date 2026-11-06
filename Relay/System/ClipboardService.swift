@@ -76,9 +76,7 @@ protocol ClipboardRestoreHandle {
     func cancel()
 }
 
-/// Schedules a one-shot operation to run later without blocking the calling actor turn
-/// (unlike `ClipboardWaiting`, which pumps a nested run loop and would let other handlers
-/// reenter while the caller is still on the stack).
+/// Schedules a one-shot operation to run later, so the caller returns without waiting.
 @MainActor
 protocol ClipboardRestoreScheduling {
     func schedule(

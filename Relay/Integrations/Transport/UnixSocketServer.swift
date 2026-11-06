@@ -276,14 +276,8 @@ final class UnixSocketServer: @unchecked Sendable {
             guard clientFD >= 0 else {
                 let capturedErrno = errno
                 if capturedErrno == EMFILE || capturedErrno == ENFILE {
-                    // Transient fd exhaustion. The listen socket is still
-                    // readable, so if we just returned, the dispatch source
-                    // would re-fire immediately and re-fail `accept` in a
-                    // tight CPU spin. Suspend the source and re-arm it after
-                    // a brief backoff instead, giving fds elsewhere a chance
-                    // to free up. (Hard to exercise deterministically in a
-                    // unit test — this path is exercised manually/by review
-                    // rather than by an automated fd-exhaustion test.)
+                    // The listen socket stays readable during fd exhaustion, so
+                    // back off before re-arming or `accept` fails in a tight spin.
                     if !acceptSourceSuspended, let source = acceptSource {
                         acceptSourceSuspended = true
                         source.suspend()

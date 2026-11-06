@@ -1,8 +1,7 @@
 import SwiftUI
 
 /// User-visible chrome that differs between the Release and Debug builds, so the two
-/// side-by-side apps are distinguishable at a glance. Release values match the app as it
-/// shipped before flavors existed. The activity overlay deliberately does not use this.
+/// side-by-side apps are distinguishable at a glance. The activity overlay does not use this.
 struct BuildFlavorPresentation: Equatable, Sendable {
     let menuBarTitle: String
     let menuBarSystemImage: String

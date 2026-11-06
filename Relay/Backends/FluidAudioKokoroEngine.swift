@@ -2,15 +2,12 @@ import FluidAudio
 import Foundation
 import os
 
-/// A loaded Kokoro model, ready to synthesize speech. `FluidAudioKokoroModelLoader` wraps
-/// FluidAudio's `KokoroAneManager` (a `public actor`, already `Sendable` on its own) behind this
-/// protocol purely as a test seam, so `FluidAudioKokoroEngine`'s loading logic can be exercised
-/// against a fake without constructing real CoreML models.
 struct KokoroPCM: Sendable, Equatable {
     let samples: [Float]
     let sampleRate: Double
 }
 
+/// A loaded Kokoro model, ready to synthesize speech.
 protocol KokoroModelSession: Sendable {
     func phonemes(for text: String) async throws -> String
     func synthesize(phonemes: String, voice: String, speed: Float) async throws -> KokoroPCM

@@ -59,8 +59,6 @@ private func parseProvider(from arguments: [String]) -> AgentProvider? {
     return nil
 }
 
-// MARK: - stdin
-
 // MARK: - main
 
 func runRelayHook() {

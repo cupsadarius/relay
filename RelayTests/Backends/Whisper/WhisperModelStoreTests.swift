@@ -195,10 +195,8 @@ final class WhisperModelStoreTests: XCTestCase {
                 atPath: modelDirectory.appendingPathComponent("AudioEncoder.mlmodelc/weights/weight.bin").path
             )
         )
-        // The whole point of this task: `tokenizer.json` must land directly at the model
-        // directory's top level, where `WhisperKitEngine.load`'s `tokenizerFolder: modelFolder`
-        // makes WhisperKit's local-first tokenizer search (`ModelUtilities.loadTokenizer`) find it
-        // without ever falling back to a live Hub fetch.
+        // `tokenizer.json` must sit at the model folder's top level, or WhisperKit fetches it
+        // from the network.
         XCTAssertTrue(
             FileManager.default.fileExists(atPath: modelDirectory.appendingPathComponent("tokenizer.json").path)
         )
@@ -231,11 +229,8 @@ final class WhisperModelStoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: modelDirectory.path))
     }
 
-    /// `presence(of:)` is deliberately generic over the manifest's contents (it just re-checks
-    /// every listed path still exists), but this pins down the specific scenario this task cares
-    /// about: a model whose `.mlmodelc` bundle is intact but whose tokenizer is gone (or was never
-    /// part of the manifest) must never report as downloaded, because WhisperKit's local tokenizer
-    /// search would then miss and fall back to a live fetch.
+    /// A model whose tokenizer is gone must never report as downloaded, because WhisperKit would
+    /// then fetch it from the network.
     func testPresenceFalseWhenModelPresentButTokenizerMissing() throws {
         let modelDirectory = tempDirectory.appendingPathComponent(WhisperModelID.tinyEn.rawValue, isDirectory: true)
         try FileManager.default.createDirectory(at: modelDirectory, withIntermediateDirectories: true)

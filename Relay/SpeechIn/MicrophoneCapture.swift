@@ -12,12 +12,8 @@ protocol MicrophoneCapturing: Sendable {
     func cancel() async
 }
 
-/// An optional extra capability a `MicrophoneCapturing` implementation can provide — a tap
-/// on the same raw 16 kHz mono sample batches `MicrophoneCapture` already accumulates internally,
-/// for best-effort live features (e.g. interim transcription) layered on top of dictation without
-/// disturbing the existing accumulate+level path. Deliberately separate from `MicrophoneCapturing`
-/// itself so existing fakes/tests aren't required to implement it; callers that want it probe for
-/// it with `as? any MicrophoneSampleStreaming`.
+/// Optional tap on the raw 16 kHz mono sample batches `MicrophoneCapture` accumulates, for live
+/// interim transcription. Callers probe for it with `as? any MicrophoneSampleStreaming`.
 protocol MicrophoneSampleStreaming: Sendable {
     /// Replaces the current observer (if any). Must be called before `start(onLevel:)` for the
     /// observer to see any samples from that recording session — samples are only ever forwarded
@@ -34,10 +30,7 @@ protocol AudioCaptureSourcing: Sendable {
     func stop() async throws
 }
 
-/// Optional extra capability an `AudioCaptureSourcing` implementation can provide: the real input
-/// device's sample rate (Hz), captured before any resampling to the fixed 16 kHz pipeline rate.
-/// Deliberately separate from `AudioCaptureSourcing` itself so existing fakes/tests aren't
-/// required to implement it; `MicrophoneCapture` probes for it with `as? any AudioInputFormatReporting`.
+/// Optional capability: the input device's sample rate (Hz) before resampling to 16 kHz.
 protocol AudioInputFormatReporting: Sendable {
     func currentInputSampleRate() -> Double
 }
@@ -95,16 +88,11 @@ actor MicrophoneCapture: MicrophoneCapturing, MicrophoneSampleStreaming {
     /// Resumed once the actor reaches `idle`; lets `cancel()` wait out an in-flight
     /// `start()`/`stop()` instead of returning while the real source is still winding down.
     private var idleWaiters: [CheckedContinuation<Void, Never>] = []
-    /// Reports privacy-safe capture diagnostics once per `stop()` call. `@MainActor` closures
-    /// (like the production one `AppModel` builds to forward into `DiagnosticsRecorder`) convert
-    /// implicitly to this plain `@Sendable async` type — the hop happens at the call site (see
-    /// `AppModel`'s own `autoReadEnabled` closure for the same pattern).
+    /// Reports privacy-safe capture diagnostics once per `stop()` call.
     private let onCaptureDiagnostics: (@Sendable (MicrophoneCaptureDiagnostics) async -> Void)?
     private let now: @Sendable () -> Date
-    /// The real input device's sample rate for the in-progress/most recent recording, captured
-    /// from `source` (via the optional `AudioInputFormatReporting` capability) once `start()`
-    /// actually begins recording. Stays `0` when `source` doesn't implement that capability (e.g.
-    /// every existing test fake that doesn't opt in), so `stop()` simply reports `0` in that case.
+    /// The input device's sample rate for the current or last recording; `0` when `source` does
+    /// not report it.
     private var lastInputSampleRate: Double = 0
 
     init(

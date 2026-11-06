@@ -9,7 +9,7 @@ struct ActivityOverlayPresentation: Equatable {
         case error
     }
 
-    /// Drives the Minimal state dot's color. Text/border chrome no longer varies by accent.
+    /// Drives the Minimal state dot's color.
     enum Accent: Equatable {
         case red
         case amber
@@ -197,12 +197,8 @@ struct ActivityOverlayPresentation: Equatable {
     /// mic level. Reflects level regardless of Reduce Motion: this isn't decorative animation, it's
     /// a live value.
     ///
-    /// The shape lives in `waveformRestHeights` alone: since the view renders each bar as
-    /// `restHeight × scale`, a single uniform multiplier here means level 1 reproduces the rest
-    /// heights exactly and level 0 dims every bar to the same 0.34 proportion. Baking the rest-height
-    /// shape into this multiplier too (as an earlier version did) would apply it twice — once here,
-    /// once more in the view's multiplication — squaring the falloff and leaving short bars almost
-    /// motionless across the whole level range.
+    /// The view renders each bar as `restHeight × scale`, so the shape lives in
+    /// `waveformRestHeights` alone and this multiplier stays uniform.
     func listeningWaveformBars() -> [CGFloat] {
         guard case let .listening(level) = kind else { return [] }
         return Array(repeating: Self.uniformMultiplier(for: level), count: Self.waveformRestHeights.count)

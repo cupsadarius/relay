@@ -503,10 +503,8 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(overlay.events, eventsAfterCancel)
     }
 
-    /// Regression test: `finish()` used to clear `processingTask` unconditionally once its own
-    /// task finished, even if that task belonged to an already-cancelled, older session. If a
-    /// newer session's `finish()` had since replaced `processingTask`, the older session's
-    /// completion would wipe out the reference the newer session's `cancel(sessionID:)` needs.
+    /// An older, cancelled session's completion must not clear the newer session's
+    /// `processingTask`, which its `cancel(sessionID:)` needs.
     func testCancelledFinishDoesNotClobberNextSessionsProcessingTask() async {
         let backend = BlockingBackend()
         let sttRouter = STTRouter(backends: [backend.id: backend], backendOrder: { [backend.id] })

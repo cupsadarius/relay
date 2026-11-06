@@ -50,11 +50,10 @@ final class KokoroTTSAudioSourceTests: XCTestCase {
         XCTAssertEqual(produced, [4, 4])
     }
 
-    /// Task 14 regression: 100 long-form runs against a fake engine (no CoreML). Alternating
+    /// 100 long-form runs against a fake engine (no CoreML). Alternating
     /// full-drain and early-cancel runs prove every run terminates, the bounded pipe never leaves a
     /// blocked producer on teardown, synthesis stays strictly serial, and segment order is stable.
-    /// A tight high/low watermark forces real producer backpressure on the drain runs. Real-model
-    /// memory behavior is the owner-Mac acceptance step; this covers the source's own lifecycle.
+    /// A tight high/low watermark forces real producer backpressure on the drain runs.
     func testHundredLongFormRunsTerminateWithStableOrderAndSerialSynthesis() async throws {
         let chunks = ["alpha", "beta", "gamma", "delta", "epsilon"]
         let expectedSamples: [Float] = chunks.map { Float($0.count) }

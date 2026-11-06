@@ -539,7 +539,7 @@ final class IntegrationSetupModelTests: XCTestCase {
         }
     }
 
-    // MARK: - Phase 3 Task 9: `onResponse` wiring reaches `AgentAutoReadCoordinator`
+    // MARK: - `onResponse` wiring reaches `AgentAutoReadCoordinator`
     //
     // These build the SAME shape of graph `RelayRuntime.makeProduction()` wires
     // (an `IntegrationManager` whose `onResponse` forwards to an `AgentAutoReadCoordinator`), but
@@ -606,10 +606,8 @@ final class IntegrationSetupModelTests: XCTestCase {
         await waitUntil { model.latestResponseAvailable }
 
         XCTAssertTrue(harness.speech.requests.isEmpty)
-        // `latestAgentResponseAvailable` flips the moment `IntegrationManager.consume()` calls
-        // `store.set(event)`, strictly BEFORE it awaits `onResponse` (the coordinator), so the
-        // registry upsert can still be in flight here (now one snapshot-fetch await further out
-        // than before Task 11's shared-snapshot rework) — poll instead of reading once.
+        // `latestAgentResponseAvailable` flips before `onResponse` runs, so the registry upsert
+        // can still be in flight here: poll instead of reading once.
         var sessions = await harness.registry.sessions()
         let deadline = Date().addingTimeInterval(2)
         while sessions.isEmpty, Date() < deadline {

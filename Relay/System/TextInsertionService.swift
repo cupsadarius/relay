@@ -211,28 +211,8 @@ final class TextInsertionService: TextInserting {
         restore?()
     }
 
-    /// Attempts the Accessibility write and verifies it actually replaced the selection with the
-    /// inserted text, by comparing `kAXSelectedTextRangeAttribute` before and after rather than
-    /// the full text value: `AXUIElementSetAttributeValue` returning `.success` is not
-    /// sufficient evidence on its own, since some apps report success without moving the
-    /// selection.
-    ///
-    /// We accept exactly two post-write shapes, both consistent with "the text was inserted":
-    ///  - the caret advanced past the inserted text (`location == original + text.count`, `length == 0`)
-    ///  - the inserted text was left selected in place (`location == original`, `length == text.count`)
-    /// Any other shape is treated as a failed write and falls back to paste.
-    ///
-    /// This verification is a heuristic, not a proof, and its two failure directions are not
-    /// symmetric: rejecting a write that actually succeeded (a false negative) causes a second,
-    /// redundant insertion via the paste fallback — visible, and easy for the user to notice and
-    /// undo. Accepting a write that silently did nothing (a false positive that happens to match
-    /// one of the shapes above) causes a dropped insertion — silent, and easy to miss. We accept
-    /// only these two specific shapes, and nothing looser, to keep that false-positive risk as
-    /// small as possible while still covering both mechanisms apps commonly use to reflect an
-    /// inserted selection.
-    ///
-    /// When the element does not report the range as settable and readable, we deliberately skip
-    /// AX and use the paste fallback instead, rather than risk a silent no-op or a duplicate paste.
+    /// Some apps report AX write success without inserting, so the selection range must show
+    /// either the caret after the text or the text selected in place; anything else pastes.
     private func insertViaAccessibility(_ text: String) -> Bool {
         guard let focusedElement = SystemAccessibility.element(from: accessibility.focusedElementValue()) else {
             return false

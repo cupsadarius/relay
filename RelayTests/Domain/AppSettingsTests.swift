@@ -228,7 +228,7 @@ final class AppSettingsTests: XCTestCase {
 
     /// `whisper` must be registered in `AppSettings.knownSTTBackendIDs` so it survives
     /// `normalizedBackendOrder`'s known-id filter during decode, even though it is not part of
-    /// the default order (Task 11 registers the backend itself in the composition root).
+    /// the default order.
     func testWhisperIdSurvivesBackendOrderDecode() throws {
         var saved = AppSettings.defaults
         saved.sttBackendOrder = ["apple-speech", "whisper"]

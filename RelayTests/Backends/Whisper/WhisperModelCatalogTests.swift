@@ -42,9 +42,7 @@ final class WhisperModelCatalogTests: XCTestCase {
     /// `turbo` case at all. `ModelUtilities.detectVariant(logitsDim:encoderDim:)` classifies any
     /// loaded model purely from its decoder's actual logits/encoder dimensions, and `turbo`
     /// reports `logitsDim == 51866` -- identical to `large-v3` (turbo reuses large-v3's audio
-    /// encoder and vocabulary byte-for-byte; see
-    /// docs/superpowers/spikes/2026-09-18-openai-whisper-models-feasibility-results.md section 2,
-    /// data quality note 2) -- so `detectVariant` always classifies turbo as `.largev3`, and
+    /// encoder and vocabulary byte-for-byte) -- so `detectVariant` always classifies turbo as `.largev3`, and
     /// `tokenizerNameForVariant(.largev3)` resolves to `"openai/whisper-large-v3"`. WhisperKit
     /// will never request a `"openai/whisper-large-v3-turbo"`-named repo for this model, even
     /// though that repo does independently exist on Hugging Face.

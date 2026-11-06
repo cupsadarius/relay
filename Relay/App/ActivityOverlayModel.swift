@@ -196,8 +196,6 @@ final class ActivityOverlayModel {
     }
 }
 
-/// No behavior change: `ActivityOverlayModel` already implements every method
-/// `DictationActivityPublishing` requires with matching signatures.
 extension ActivityOverlayModel: DictationActivityPublishing {}
 
 extension ActivityOverlayState {

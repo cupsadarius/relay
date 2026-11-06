@@ -138,8 +138,7 @@ final class MicrophoneCaptureStateTests: XCTestCase {
         try await capture.start(onLevel: { _ in })
     }
 
-    /// Regression test: a stale, already-cancelled session's `start()` frame used to tear down
-    /// whatever session the actor had moved on to by the time it finally resumed. Here session 1
+    /// A stale, cancelled session's `start()` frame must not tear down a newer session. Session 1
     /// fails and is cancelled (an immediate, non-waiting path) while its own `source.start()`
     /// call is still parked; session 2 is then admitted and starts recording before session 1's
     /// stale frame is released. Session 2 must survive untouched.

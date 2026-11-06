@@ -66,20 +66,13 @@ final class DictationCoordinator: DictationCoordinating {
     /// teardown: cancel/start's failure path) or `abandonStreamingTranscription()` (non-joining
     /// teardown: `finish()`, which must never wait on it).
     private var streamingTranscriber: StreamingTranscriber?
-    /// Read once per `start()` to decide whether to spin up a `StreamingTranscriber` at all.
-    /// Defaults to always-on so every existing test and call site that doesn't care about the
-    /// setting keeps behaving exactly as before.
+    /// Read once per `start()` to decide whether to start a `StreamingTranscriber`.
     private let liveTranscriptionEnabled: () -> Bool
     /// Drains `sampleAppendStream` one batch at a time, in arrival order, into
     /// `streamingTranscriber`. Created fresh per session in `beginStreamingTranscription`, torn
     /// down in `stopStreamingTranscription` or `abandonStreamingTranscription` (see those methods).
     private var sampleAppendTask: Task<Void, Never>?
-    /// Lets the microphone's (non-async, arbitrary-context) sample callback enqueue a batch
-    /// without racing other batches: `yield` is synchronous and thread-safe, so every batch lands
-    /// in the stream in the exact order the microphone produced it, and `sampleAppendTask`'s
-    /// single `for await` loop appends them to the actor one at a time in that same order -
-    /// unlike spawning a new unstructured `Task` per batch, whose relative scheduling order the
-    /// runtime does not guarantee.
+    /// Keeps sample batches in microphone order; a `Task` per batch would not.
     private var sampleAppendContinuation: AsyncStream<[Float]>.Continuation?
 
     init(
@@ -110,10 +103,7 @@ final class DictationCoordinator: DictationCoordinating {
         state = .starting(session)
         activity.begin(sessionID: session)
         stopSpeech()
-        // Must be wired up before microphone.start(onLevel:) below - see
-        // MicrophoneSampleStreaming doc comment for why. Best-effort: if microphone does not
-        // implement the (optional) sample-streaming capability, dictation proceeds exactly as
-        // before, just without a live interim transcript.
+        // Must run before microphone.start(onLevel:); see MicrophoneSampleStreaming.
         await beginStreamingTranscription(session: session)
         do {
             try await microphone.start(onLevel: { [weak self] level in
@@ -166,11 +156,7 @@ final class DictationCoordinator: DictationCoordinating {
         guard case let .recording(session) = state else { return }
         state = .finishing(session)
         activity.process(sessionID: session)
-        // NON-JOINING on purpose: the final transcript below must never wait on disposable interim
-        // work. See `abandonStreamingTranscription()`'s doc comment for why this is safe -- the
-        // audio the final transcript is built from comes from `microphone.stop()`'s own,
-        // independent accumulator, not from anything `stopStreamingTranscription()` would have
-        // flushed.
+        // Non-joining: the final transcript must never wait on interim work.
         abandonStreamingTranscription()
 
         let task = Task { [weak self] in
@@ -232,12 +218,7 @@ final class DictationCoordinator: DictationCoordinating {
     /// `MicrophoneSampleStreaming` capability), and starts its periodic re-transcribe loop. Must
     /// run before `microphone.start(onLevel:)` — see that protocol's doc comment.
     private func beginStreamingTranscription(session: UUID) async {
-        // Settings-gated: when live transcription is off this is a full no-op below - no timer,
-        // no interim transcribes, no sample observer - so dictation behaves exactly as before.
         guard liveTranscriptionEnabled() else { return }
-        // No point starting an interim session when there is no way to feed it samples. This also
-        // keeps every test fake that does not implement MicrophoneSampleStreaming (i.e. all of
-        // them, deliberately) from ever touching sttRouter for anything beyond the final batch call.
         guard let streaming = microphone as? any MicrophoneSampleStreaming else { return }
 
         let transcriber = StreamingTranscriber(
@@ -269,12 +250,7 @@ final class DictationCoordinator: DictationCoordinating {
     /// Tears down this session's `StreamingTranscriber` (if any) and detaches it from the
     /// microphone's sample observer, so a stale observer never forwards a later session's samples
     /// to an actor nobody is reading interim text from anymore.
-    ///
-    /// JOINING: awaits both the sample-drain task and `transcriber.stop()`, so this can block on
-    /// an in-flight interim `transcribe(...)` call (see `StreamingTranscriber.stop()`'s doc
-    /// comment). That's acceptable for callers doing a clean, non-time-critical teardown (`cancel`
-    /// and `start()`'s own failure path), but `finish()` must NOT use this -- see
-    /// `abandonStreamingTranscription()` below.
+    /// Joining: can wait on an in-flight interim call, so `finish()` must not use it.
     private func stopStreamingTranscription() async {
         guard let transcriber = streamingTranscriber else { return }
         streamingTranscriber = nil
@@ -288,31 +264,8 @@ final class DictationCoordinator: DictationCoordinating {
         await transcriber.stop()
     }
 
-    /// `finish()`'s non-joining counterpart to `stopStreamingTranscription()` above. Detaches
-    /// this session's `StreamingTranscriber` from the coordinator and lets it tear itself down in
-    /// the background, WITHOUT awaiting any of it -- so this method itself never suspends, and
-    /// `finish()` can proceed straight to building the final-transcription pipeline immediately.
-    ///
-    /// Safe to do because the final transcript never depends on anything this would otherwise
-    /// await: the sample-drain task only ever feeds `streamingTranscriber`'s own interim buffer
-    /// (capped to the rolling `maxWindowSamples` window), never the audio the final transcript is
-    /// built from -- that comes from `microphone.stop()`'s separate, full, uncapped accumulator in
-    /// `runProcessingPipeline`. So nothing here needs to finish before the final pipeline starts;
-    /// detaching the sample observer just stops feeding a transcriber that's about to be abandoned,
-    /// and it's fire-and-forget for the same reason nothing downstream needs to observe it landing.
-    ///
-    /// The interim actor's in-flight `transcribe(...)` call (if any) is left running to completion
-    /// in the background by `StreamingTranscriber.abandon()` -- seeing it through, rather than
-    /// somehow force-killing it, is what keeps the shared FluidAudio Parakeet actor consistent for
-    /// the final transcribe that follows. If that shared actor can only run one call at a time,
-    /// the final transcribe may still have to wait for the actor to become AVAILABLE again, but it
-    /// never waits on the abandoned call's RESULT: `abandon()`'s cancellation makes
-    /// `StreamingTranscriber.tick()` discard that result once it does arrive (see its
-    /// `Task.isCancelled` check), and independently, this session's `onInterimText` closure is
-    /// itself guarded on `isRecording(session)` in `beginStreamingTranscription` -- by the time
-    /// any stale interim result could arrive, `state` has already moved past `.recording`, so it's
-    /// dropped there too. Either guard alone is enough for a late interim result to never reach
-    /// the overlay, let alone overwrite the authoritative final text.
+    /// Non-joining teardown for `finish()`. The final transcript uses the microphone's own full
+    /// buffer, and a late interim result is dropped by both `tick()` and the recording guard.
     private func abandonStreamingTranscription() {
         guard let transcriber = streamingTranscriber else { return }
         streamingTranscriber = nil

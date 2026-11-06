@@ -22,12 +22,7 @@ actor AgentAutoReadCoordinator {
     private let registry: AgentSessionRegistry
     private let focus: any SessionFocusResolving
     private let preprocess: @Sendable (String) -> String
-    /// `any SpeechSubmitting & Sendable`, not bare `any SpeechSubmitting`: this actor calls
-    /// `speech.speak(_:)` — a `@MainActor`-isolated method — from its own isolation domain, which
-    /// requires the receiver to be `Sendable` for the crossing to type-check. `SpeechCoordinator`
-    /// satisfies this via its `@unchecked Sendable` conformance (all of its mutable state is only
-    /// ever touched from `@MainActor`), so the protocol declaration itself stays exactly as
-    /// specified — only the storage type here is widened to require the marker conformance too.
+    /// `Sendable` because this actor calls the `@MainActor` `speak(_:)` across isolation.
     private let speech: any SpeechSubmitting & Sendable
     private let autoReadEnabled: @Sendable () async -> Bool
     private let diagnostics: IntegrationDiagnosticsLog

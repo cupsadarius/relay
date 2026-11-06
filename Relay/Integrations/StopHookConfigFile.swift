@@ -35,8 +35,7 @@ enum IntegrationInstallerError: Error, Equatable, Sendable {
 /// Never logs file contents; only structural facts.
 struct StopHookConfigFile: Sendable {
     static let backupSuffix = ".relay-backup"
-    /// Mode for a config file Relay creates from scratch (what `Data.write` produced before under
-    /// the default umask).
+    /// Mode for a config file Relay creates from scratch.
     static let newFilePermissions = 0o644
     /// `Stop` delivers replies; `UserPromptSubmit` tells Relay which session the user prompted.
     static let hookEvents = ["Stop", "UserPromptSubmit"]

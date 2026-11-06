@@ -195,11 +195,8 @@ final class GlobalHotkeyManager: HotkeyManaging {
     private var matcher = HotkeyMatcher(definitions: [:])
     private var definitions: [HotkeyAction: HotkeyDefinition] = [:]
     private var handler: (@MainActor (HotkeyAction, HotkeyPhase) -> Void)?
-    /// Creates the underlying Mach port `register()` treats as "the event tap". Defaults to the
-    /// real `CGEvent.tapCreate` call. Injectable only so tests can verify `register()`'s
-    /// `eventTap != nil` guard (never recreating the tap on subsequent calls) with a factory that
-    /// succeeds deterministically, instead of depending on this machine's Accessibility
-    /// permission at test time.
+    /// Creates the event tap's Mach port; `CGEvent.tapCreate` in production. Tests inject a
+    /// factory so they do not depend on this machine's Accessibility permission.
     private let tapFactory: @MainActor (CGEventMask, UnsafeMutableRawPointer) -> CFMachPort?
 
     init(

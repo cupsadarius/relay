@@ -40,16 +40,11 @@ final class SpeechCoordinator: SpeechCoordinating {
     /// terminal event (or an explicit `stop`) retires that session, so it never fires after a
     /// legitimate finish; replaced (not merely cancelled) whenever a new session starts.
     private var watchdogTask: Task<Void, Never>?
-    /// Set to a session ID only for the duration of `handleWatchdogExpiry(sessionID:)`'s call to
-    /// `router.stop()`, and `nil` otherwise. The shared `StreamingAudioPlayer` emits its terminal
-    /// `.cancelled` SYNCHRONOUSLY and reentrantly from inside `stop()`, before it returns;
-    /// `handle(_:backend:)` ignores any event for this session while it's set, so that reentrant
-    /// terminal can't race the watchdog's own `.failed` overlay update or double-drain the queue.
+    /// Set only while the watchdog calls `router.stop()`. The player emits `.cancelled`
+    /// reentrantly from `stop()`, and `handle(_:backend:)` ignores it while this is set.
     private var watchdogRetiringSessionID: UUID?
-    /// Automatic-mode sessions that have not yet been shown in the overlay.
-    /// Showing them only once playback actually starts (or fails) avoids
-    /// hiding the capsule for whatever is still speaking when an automatic
-    /// request is merely queued behind it.
+    /// Automatic sessions not yet shown in the overlay. They show only once playback starts or
+    /// fails, so a queued request never hides the capsule of what is still speaking.
     private var pendingAutomaticSessions: Set<UUID> = []
     /// `true` from the moment a request is actually handed to the router until a terminal
     /// playback event (`.finished`/`.cancelled`/`.failed`) is observed for it. While `true`, a
@@ -165,10 +160,7 @@ final class SpeechCoordinator: SpeechCoordinating {
     }
 
     /// Starts (replacing any previous) watchdog timer for `sessionID`. The first deadline starts
-    /// when the session is accepted, so a backend that never begins playback is still recovered.
-    /// Once playback is active, `recordPlaybackProgress(sessionID:)` rearms this timer on every
-    /// progress event. If the current session produces neither progress nor a terminal event for
-    /// `watchdogTimeout`, it is treated as abandoned - see `handleWatchdogExpiry(sessionID:)`.
+    /// at acceptance, so a backend that never begins playback is still recovered.
     private func startWatchdog(for sessionID: UUID) {
         watchdogTask?.cancel()
         let timeout = max(watchdogTimeout, 0)
@@ -194,19 +186,8 @@ final class SpeechCoordinator: SpeechCoordinating {
         startWatchdog(for: sessionID)
     }
 
-    /// Fires when a session's watchdog timer elapses with no terminal event observed. Guards that
-    /// `sessionID` is still the in-flight session - a terminal may have raced in and already
-    /// retired it (which also cancels this timer, but cancellation and expiry can still land in
-    /// the same MainActor turn) - before treating it as abandoned.
-    ///
-    /// Retires this session's own tracking BEFORE calling `router.stop()`, rather than going
-    /// through `finishInFlightSession(_:)` afterwards: the shared `StreamingAudioPlayer` emits
-    /// `.cancelled` reentrantly from inside `stop()`, and `watchdogRetiringSessionID` makes
-    /// `handle(_:backend:)` ignore it for that call's duration. Without both of these, that
-    /// reentrant `.cancelled` would race ahead of this method's own `.failed` report — clearing
-    /// the overlay's `activeSessionID` (so the subsequent `overlay.fail(...)` below silently
-    /// no-ops) and dequeuing the next request itself (so the drain at the end here would double
-    /// it). Retiring first and suppressing the reentrant event makes both of those impossible.
+    /// Retires the session before `router.stop()`, whose reentrant `.cancelled` would otherwise
+    /// clear the overlay before `.failed` shows and drain the queue twice.
     private func handleWatchdogExpiry(sessionID: UUID) {
         guard sessionID == currentSessionID else { return }
         cancelWatchdog()

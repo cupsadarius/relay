@@ -170,8 +170,6 @@ final class HotkeyControllerTests: XCTestCase {
         withExtendedLifetime(controller) {}
     }
 
-    // Plan 1 Task 8's single-action tests, moved from AppModelTests.
-
     func testTwoQuickReadSelectionPressesSpeakOnlyOnce() async {
         let hotkeys = SpyHotkeyManager()
         let speech = SpySpeechCoordinator()

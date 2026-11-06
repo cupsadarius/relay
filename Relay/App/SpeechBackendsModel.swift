@@ -76,10 +76,7 @@ final class SpeechBackendsModel {
         await list(for: domain)?.refresh()
     }
 
-    /// Launch-time refresh. Sequential on purpose: dictation, then TTS. The old code
-    /// ran the two domains as two concurrent tasks; on the main actor they interleaved anyway, and
-    /// one ordered task is simpler to await in tests. Worst case the TTS rows appear after the
-    /// dictation probes finish (a few hundred ms at launch, before Settings is usually open).
+    /// Launch-time refresh: dictation, then TTS.
     func refreshAll() async {
         await refresh(.dictation)
         await refresh(.textToSpeech)
