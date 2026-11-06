@@ -21,9 +21,9 @@ struct SpeechBackendGraph {
         let kokoroModel: KokoroModel = .kokoro()
         let kokoroTTS = KokoroTTSBackend(model: kokoroModel)
         let kokoroModelManager = SingleModelManager.kokoro(model: kokoroModel)
-        let pocketEngine: any PocketTTSEngine = FluidAudioPocketTTSEngine()
-        let pocketTTS = PocketTTSBackend(engine: pocketEngine)
-        let pocketModelManager = SingleModelManager.pocketTTS(engine: pocketEngine)
+        let pocketModel: PocketTTSModel = .pocketTTS()
+        let pocketTTS = PocketTTSBackend(model: pocketModel)
+        let pocketModelManager = SingleModelManager.pocketTTS(model: pocketModel)
 
         let appleSpeech = AppleSpeechBackend()
         let appleSpeechModelManager = SingleModelManager.appleSpeech

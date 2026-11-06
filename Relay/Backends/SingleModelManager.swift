@@ -52,14 +52,14 @@ extension SingleModelManager {
         )
     }
 
-    static func pocketTTS(engine: any PocketTTSEngine) -> Self {
+    static func pocketTTS(model: PocketTTSModel) -> Self {
         SingleModelManager(
             backendID: .pocketTTS,
             descriptor: SpeechModelDescriptor(id: "pocket-tts-v2.1-en", displayName: "PocketTTS v2.1", detail: "English"),
             capabilities: [.download, .select, .remove],
-            isPresent: { await engine.modelsArePresent() },
-            download: { progress in try await engine.load(allowDownload: true, progress: progress) },
-            remove: { try await engine.removeModels() }
+            isPresent: { await model.modelsArePresent() },
+            download: { progress in try await model.load(allowDownload: true, progress: progress) },
+            remove: { try await model.remove() }
         )
     }
 

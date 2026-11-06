@@ -6,9 +6,9 @@ import XCTest
 @MainActor
 final class PocketTTSBackendTests: XCTestCase {
     func testAvailabilityIsAvailableWhenModelsArePresent() async {
-        let engine = FakePocketTTSEngine()
-        engine.modelsPresent = true
-        let backend = PocketTTSBackend(engine: engine)
+        let fake = FakePocketTTS()
+        fake.modelsPresent = true
+        let backend = PocketTTSBackend(model: .pocketTTS(loader: fake))
 
         let availability = await backend.availability()
 
@@ -16,9 +16,9 @@ final class PocketTTSBackendTests: XCTestCase {
     }
 
     func testAvailabilityIsModelNotDownloadedWhenModelsAreAbsent() async {
-        let engine = FakePocketTTSEngine()
-        engine.modelsPresent = false
-        let backend = PocketTTSBackend(engine: engine)
+        let fake = FakePocketTTS()
+        fake.modelsPresent = false
+        let backend = PocketTTSBackend(model: .pocketTTS(loader: fake))
 
         let availability = await backend.availability()
 
@@ -26,49 +26,50 @@ final class PocketTTSBackendTests: XCTestCase {
     }
 
     func testAvailabilityNeverTriggersLoad() async {
-        let engine = FakePocketTTSEngine()
-        engine.modelsPresent = true
-        let backend = PocketTTSBackend(engine: engine)
+        let fake = FakePocketTTS()
+        fake.modelsPresent = true
+        let backend = PocketTTSBackend(model: .pocketTTS(loader: fake))
 
         _ = await backend.availability()
 
-        XCTAssertTrue(engine.loadCalls.isEmpty, "availability() must never load the engine")
+        XCTAssertEqual(fake.loadCalls, 0, "availability() must never load the model")
     }
 
     func testMakeAudioSourceLazilyLoadsWithoutAllowingDownload() async throws {
-        let engine = FakePocketTTSEngine()
-        engine.modelsPresent = true
-        let backend = PocketTTSBackend(engine: engine)
+        let fake = FakePocketTTS()
+        fake.modelsPresent = true
+        let backend = PocketTTSBackend(model: .pocketTTS(loader: fake))
 
         _ = try await backend.makeAudioSource(text: "hello", options: .init())
 
-        XCTAssertEqual(engine.loadCalls, [false])
+        XCTAssertEqual(fake.loadCalls, 1)
+        XCTAssertEqual(fake.downloadCalls, 0)
     }
 
     func testMakeAudioSourceUsesPocketVoiceFromOptions() async throws {
-        let engine = FakePocketTTSEngine()
-        engine.modelsPresent = true
-        let backend = PocketTTSBackend(engine: engine)
+        let fake = FakePocketTTS()
+        fake.modelsPresent = true
+        let backend = PocketTTSBackend(model: .pocketTTS(loader: fake))
 
         _ = try await backend.makeAudioSource(text: "hello", options: .init(voiceByBackend: [.pocketTTS: "alba"]))
 
-        XCTAssertEqual(engine.synthesizeCalls.last?.voice, "alba")
+        XCTAssertEqual(fake.synthesizeCalls.last?.voice, "alba")
     }
 
     func testMakeAudioSourceFallsBackToDefaultVoiceWhenNoneConfigured() async throws {
-        let engine = FakePocketTTSEngine()
-        engine.modelsPresent = true
-        let backend = PocketTTSBackend(engine: engine)
+        let fake = FakePocketTTS()
+        fake.modelsPresent = true
+        let backend = PocketTTSBackend(model: .pocketTTS(loader: fake))
 
         _ = try await backend.makeAudioSource(text: "hello", options: .init())
 
-        XCTAssertEqual(engine.synthesizeCalls.last?.voice, PocketTtsConstants.defaultVoice)
+        XCTAssertEqual(fake.synthesizeCalls.last?.voice, PocketTtsConstants.defaultVoice)
     }
 
     func testMakeAudioSourceIgnoresAppleAndKokoroVoiceIdentifiers() async throws {
-        let engine = FakePocketTTSEngine()
-        engine.modelsPresent = true
-        let backend = PocketTTSBackend(engine: engine)
+        let fake = FakePocketTTS()
+        fake.modelsPresent = true
+        let backend = PocketTTSBackend(model: .pocketTTS(loader: fake))
 
         _ = try await backend.makeAudioSource(
             text: "hello",
@@ -81,25 +82,25 @@ final class PocketTTSBackendTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(engine.synthesizeCalls.last?.voice, "alba")
+        XCTAssertEqual(fake.synthesizeCalls.last?.voice, "alba")
     }
 
     func testMakeAudioSourceIgnoresTheSharedRateSlider() async throws {
-        let engine = FakePocketTTSEngine()
-        engine.modelsPresent = true
-        let backend = PocketTTSBackend(engine: engine)
+        let fake = FakePocketTTS()
+        fake.modelsPresent = true
+        let backend = PocketTTSBackend(model: .pocketTTS(loader: fake))
 
         _ = try await backend.makeAudioSource(text: "hello", options: .init(rate: 0.1))
         _ = try await backend.makeAudioSource(text: "hello", options: .init(rate: 1.0))
 
-        XCTAssertEqual(engine.synthesizeCalls.map(\.text), ["hello", "hello"])
+        XCTAssertEqual(fake.synthesizeCalls.map(\.text), ["hello", "hello"])
     }
 
-    func testMakeAudioSourceProducesTheEngineStreamFramesAtThePocketSampleRate() async throws {
-        let engine = FakePocketTTSEngine()
-        engine.modelsPresent = true
-        engine.synthesizeStreamFrames = [[1, 2, 3], [4, 5, 6]]
-        let backend = PocketTTSBackend(engine: engine)
+    func testMakeAudioSourceProducesTheSessionStreamFramesAtThePocketSampleRate() async throws {
+        let fake = FakePocketTTS()
+        fake.modelsPresent = true
+        fake.synthesizeStreamFrames = [[1, 2, 3], [4, 5, 6]]
+        let backend = PocketTTSBackend(model: .pocketTTS(loader: fake))
 
         let source = try await backend.makeAudioSource(text: "hello", options: .init())
         var frames: [TTSAudioFrame] = []
@@ -113,19 +114,19 @@ final class PocketTTSBackendTests: XCTestCase {
     }
 
     func testMakeAudioSourceWithEmptyTextDoesNotCrash() async throws {
-        let engine = FakePocketTTSEngine()
-        engine.modelsPresent = true
-        let backend = PocketTTSBackend(engine: engine)
+        let fake = FakePocketTTS()
+        fake.modelsPresent = true
+        let backend = PocketTTSBackend(model: .pocketTTS(loader: fake))
 
         _ = try await backend.makeAudioSource(text: "", options: .init())
 
-        XCTAssertEqual(engine.synthesizeCalls.last?.text, "")
+        XCTAssertEqual(fake.synthesizeCalls.last?.text, "")
     }
 
     func testMakeAudioSourceMapsModelNotDownloadedToFallbackWorthyError() async {
-        let engine = FakePocketTTSEngine()
-        engine.modelsPresent = false
-        let backend = PocketTTSBackend(engine: engine)
+        let fake = FakePocketTTS()
+        fake.modelsPresent = false
+        let backend = PocketTTSBackend(model: .pocketTTS(loader: fake))
 
         do {
             _ = try await backend.makeAudioSource(text: "hello", options: .init())
@@ -138,10 +139,10 @@ final class PocketTTSBackendTests: XCTestCase {
     }
 
     func testMakeAudioSourceMapsLoadFailureToFallbackWorthyError() async {
-        let engine = FakePocketTTSEngine()
-        engine.modelsPresent = true
-        engine.loadError = PocketTTSEngineError.loadFailed
-        let backend = PocketTTSBackend(engine: engine)
+        let fake = FakePocketTTS()
+        fake.modelsPresent = true
+        fake.loadError = FakePocketTTSError.boom
+        let backend = PocketTTSBackend(model: .pocketTTS(loader: fake))
 
         do {
             _ = try await backend.makeAudioSource(text: "hello", options: .init())
@@ -154,10 +155,10 @@ final class PocketTTSBackendTests: XCTestCase {
     }
 
     func testMakeAudioSourceMapsSynthesisFailureToFallbackWorthyError() async {
-        let engine = FakePocketTTSEngine()
-        engine.modelsPresent = true
-        engine.synthesizeError = PocketTTSEngineError.synthesisFailed
-        let backend = PocketTTSBackend(engine: engine)
+        let fake = FakePocketTTS()
+        fake.modelsPresent = true
+        fake.synthesizeError = FakePocketTTSError.boom
+        let backend = PocketTTSBackend(model: .pocketTTS(loader: fake))
 
         do {
             _ = try await backend.makeAudioSource(text: "hello", options: .init())
@@ -170,10 +171,10 @@ final class PocketTTSBackendTests: XCTestCase {
     }
 
     func testMakeAudioSourceRethrowsCancellationErrorFromLoadWithoutRemapping() async {
-        let engine = FakePocketTTSEngine()
-        engine.modelsPresent = true
-        engine.loadError = CancellationError()
-        let backend = PocketTTSBackend(engine: engine)
+        let fake = FakePocketTTS()
+        fake.modelsPresent = true
+        fake.loadError = CancellationError()
+        let backend = PocketTTSBackend(model: .pocketTTS(loader: fake))
 
         do {
             _ = try await backend.makeAudioSource(text: "hello", options: .init())
@@ -186,10 +187,10 @@ final class PocketTTSBackendTests: XCTestCase {
     }
 
     func testMakeAudioSourceRethrowsCancellationErrorFromSynthesisWithoutRemapping() async {
-        let engine = FakePocketTTSEngine()
-        engine.modelsPresent = true
-        engine.synthesizeError = CancellationError()
-        let backend = PocketTTSBackend(engine: engine)
+        let fake = FakePocketTTS()
+        fake.modelsPresent = true
+        fake.synthesizeError = CancellationError()
+        let backend = PocketTTSBackend(model: .pocketTTS(loader: fake))
 
         do {
             _ = try await backend.makeAudioSource(text: "hello", options: .init())
@@ -201,53 +202,50 @@ final class PocketTTSBackendTests: XCTestCase {
         }
     }
 
-    func testSecondMakeAudioSourceDoesNotTriggerASecondEngineLoad() async throws {
-        let engine = FakePocketTTSEngine()
-        engine.modelsPresent = true
-        let backend = PocketTTSBackend(engine: engine)
+    func testSecondMakeAudioSourceDoesNotTriggerASecondModelLoad() async throws {
+        let fake = FakePocketTTS()
+        fake.modelsPresent = true
+        let backend = PocketTTSBackend(model: .pocketTTS(loader: fake))
 
         _ = try await backend.makeAudioSource(text: "hello", options: .init())
         _ = try await backend.makeAudioSource(text: "world", options: .init())
 
-        XCTAssertEqual(engine.loadCalls, [false], "A second makeAudioSource must not reload an already-loaded engine")
+        XCTAssertEqual(fake.loadCalls, 1, "A second makeAudioSource must not reload an already-loaded model")
     }
 }
 
+private enum FakePocketTTSError: Error {
+    case boom
+}
+
+/// Both the loader and the session it loads.
 @MainActor
-private final class FakePocketTTSEngine: PocketTTSEngine {
+private final class FakePocketTTS: PocketTTSModelLoading, PocketTTSModelSession {
     var modelsPresent = false
     var loadError: Error?
-    /// Thrown synchronously from `synthesizeStream` itself (mirroring the real engine's "not
-    /// loaded" guard, or a mapped session failure) - never from inside the returned stream.
+    /// Thrown from `synthesizeStream` itself, never from inside the returned stream.
     var synthesizeError: Error?
     /// Canned frames the returned stream yields, in order, before finishing.
     var synthesizeStreamFrames: [[Float]] = []
-    var progressToReport: [Double] = [0.5, 1.0]
-    private(set) var loadCalls: [Bool] = []
+    private(set) var loadCalls = 0
+    private(set) var downloadCalls = 0
     private(set) var synthesizeCalls: [(text: String, voice: String)] = []
-    private var isLoaded = false
 
     func modelsArePresent() async -> Bool {
         modelsPresent
     }
 
-    func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws {
-        guard !isLoaded else { return }
-        loadCalls.append(allowDownload)
-        if allowDownload {
-            for fraction in progressToReport {
-                progress(fraction)
-            }
-        }
+    func loadLocal() async throws -> any PocketTTSModelSession {
+        loadCalls += 1
         if let loadError {
             throw loadError
         }
-        // Mirrors FluidAudioPocketTTSEngine's real contract: a local-only load refuses to
-        // proceed when the model isn't present, exactly like the production presence gate.
-        guard allowDownload || modelsPresent else {
-            throw PocketTTSEngineError.modelsNotDownloaded
-        }
-        isLoaded = true
+        return self
+    }
+
+    func downloadAndLoad(progress: @escaping @Sendable (Double) -> Void) async throws -> any PocketTTSModelSession {
+        downloadCalls += 1
+        return self
     }
 
     func removeModels() async throws {}

@@ -3,7 +3,7 @@ import Foundation
 
 /// On-device text-to-speech backend built on FluidAudio's PocketTTS flow-matching model. Fully
 /// offline once its model is downloaded. It is a pure audio producer: `makeAudioSource` starts the
-/// engine's native Float32 stream and wraps it in a `PocketTTSAudioSource`. `TTSRouter` drives the
+/// session's native Float32 stream and wraps it in a `PocketTTSAudioSource`. `TTSRouter` drives the
 /// shared `StreamingAudioPlayer` with that source, so playback starts within a fraction of a second
 /// of the first frame. Unlike Kokoro, PocketTTS has no speed parameter, so the shared rate slider
 /// (`options.rate`) is ignored here.
@@ -11,19 +11,20 @@ import Foundation
 final class PocketTTSBackend: TextToSpeechBackend {
     let id = BackendID.pocketTTS
 
-    private let engine: any PocketTTSEngine
+    private let model: PocketTTSModel
 
-    init(engine: any PocketTTSEngine) {
-        self.engine = engine
+    init(model: PocketTTSModel) {
+        self.model = model
     }
 
     func availability() async -> BackendAvailability {
-        await engine.modelsArePresent() ? .available : .modelNotDownloaded
+        await model.modelsArePresent() ? .available : .modelNotDownloaded
     }
 
     func makeAudioSource(text: String, options: TTSOptions) async throws -> any TTSAudioSource {
+        let session: any PocketTTSModelSession
         do {
-            try await engine.load(allowDownload: false)
+            session = try await model.load()
         } catch is CancellationError {
             throw CancellationError()
         } catch {
@@ -32,7 +33,7 @@ final class PocketTTSBackend: TextToSpeechBackend {
 
         let voice = options.voiceByBackend[id] ?? PocketTtsConstants.defaultVoice
         do {
-            let stream = try await engine.synthesizeStream(text: text, voice: voice)
+            let stream = try await session.synthesizeStream(text: text, voice: voice)
             return PocketTTSAudioSource.make(
                 stream: stream,
                 sampleRate: Double(PocketTtsConstants.audioSampleRate)
