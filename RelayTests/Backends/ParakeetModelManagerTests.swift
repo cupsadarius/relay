@@ -2,24 +2,31 @@ import XCTest
 
 @testable import Relay
 
-/// A fake `ParakeetEngine` -- the same seam `ParakeetBackend` and `FluidAudioParakeetEngineTests`
-/// use -- so `ParakeetModelManager` can be exercised without constructing FluidAudio/CoreML
-/// types. Kept local to this file (mirrors `ParakeetBackendTests`' own `FakeParakeetEngine`,
-/// which is `private` there too) since the two fakes' needs have already diverged slightly.
-private final class FakeParakeetModelEngine: ParakeetEngine, @unchecked Sendable {
+/// Both the loader and the session it loads, so `ParakeetModelManager` runs without FluidAudio.
+private final class FakeParakeetLoader: ParakeetModelLoading, ParakeetModelSession, @unchecked Sendable {
+    let trailingSilenceSampleCount = 0
     var modelsPresent = false
     var progressToReport: [Double] = [0.5, 1.0]
-    private(set) var loadCalls: [Bool] = []
+    private(set) var downloadCalls = 0
 
     func modelsArePresent() async -> Bool {
         modelsPresent
     }
 
-    func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws {
-        loadCalls.append(allowDownload)
+    func isModelValid() async throws -> Bool {
+        modelsPresent
+    }
+
+    func load() async throws -> any ParakeetModelSession {
+        self
+    }
+
+    func downloadAndLoad(progress: @escaping @Sendable (Double) -> Void) async throws -> any ParakeetModelSession {
+        downloadCalls += 1
         for fraction in progressToReport {
             progress(fraction)
         }
+        return self
     }
 
     func transcribe(samples: [Float]) async throws -> String {
@@ -33,12 +40,12 @@ final class ParakeetModelManagerTests: XCTestCase {
     }
 
     private func makeManager(
-        unified: FakeParakeetModelEngine = FakeParakeetModelEngine(),
-        v2: FakeParakeetModelEngine = FakeParakeetModelEngine(),
+        unified: FakeParakeetLoader = FakeParakeetLoader(),
+        v2: FakeParakeetLoader = FakeParakeetLoader(),
         selection: SelectionBox = SelectionBox()
     ) -> ParakeetModelManager {
         ParakeetModelManager(
-            engines: ParakeetEngines(unifiedEnglish: unified, v2: v2),
+            models: ParakeetModels(unifiedEnglish: .parakeet(loader: unified), v2: .parakeet(loader: v2)),
             selectedModel: { selection.value },
             setSelectedModel: { selection.value = $0 }
         )
@@ -65,35 +72,35 @@ final class ParakeetModelManagerTests: XCTestCase {
     }
 
     func testInstallStateReflectsEachModelsOwnPresence() async {
-        let unified = FakeParakeetModelEngine()
+        let unified = FakeParakeetLoader()
         unified.modelsPresent = true
         let models = await makeManager(unified: unified).models()
 
         XCTAssertEqual(models.map(\.installState), [.downloaded, .notDownloaded])
     }
 
-    func testDownloadUsesTheNamedModelsEngineWithProgress() async throws {
-        let unified = FakeParakeetModelEngine()
-        let v2 = FakeParakeetModelEngine()
+    func testDownloadUsesTheNamedModelWithProgress() async throws {
+        let unified = FakeParakeetLoader()
+        let v2 = FakeParakeetLoader()
         let manager = makeManager(unified: unified, v2: v2)
         var reportedProgress: [Double] = []
 
         try await manager.downloadModel("parakeet-v2", progress: { reportedProgress.append($0) })
 
-        XCTAssertEqual(v2.loadCalls, [true])
-        XCTAssertTrue(unified.loadCalls.isEmpty)
+        XCTAssertEqual(v2.downloadCalls, 1)
+        XCTAssertEqual(unified.downloadCalls, 0)
         XCTAssertEqual(reportedProgress, [0.5, 1.0])
     }
 
     func testSelectModelCallsTheWriterAndNeverDownloads() async throws {
-        let unified = FakeParakeetModelEngine()
-        let v2 = FakeParakeetModelEngine()
+        let unified = FakeParakeetLoader()
+        let v2 = FakeParakeetLoader()
         let selection = SelectionBox()
 
         try await makeManager(unified: unified, v2: v2, selection: selection).selectModel("parakeet-v2")
 
         XCTAssertEqual(selection.value, .v2)
-        XCTAssertFalse(v2.loadCalls.contains(true), "selectModel must never download")
+        XCTAssertEqual(v2.downloadCalls, 0, "selectModel must never download")
     }
 
     func testUnknownModelIdThrows() async {

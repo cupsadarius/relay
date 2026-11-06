@@ -27,14 +27,14 @@ struct SpeechBackendGraph {
 
         let appleSpeech = AppleSpeechBackend()
         let appleSpeechModelManager = SingleModelManager.appleSpeech
-        // razor: both engines may stay resident (~600 MB each); unload on switch if memory matters
-        let parakeetEngines = ParakeetEngines(
-            unifiedEnglish: FluidAudioParakeetEngine(model: .unifiedEnglish),
-            v2: FluidAudioParakeetEngine(model: .v2)
+        // razor: both models may stay resident (~600 MB each); unload on switch if memory matters
+        let parakeetModels = ParakeetModels(
+            unifiedEnglish: .parakeet(loader: ParakeetUnifiedModelLoader()),
+            v2: .parakeet(loader: ParakeetV2ModelLoader())
         )
-        let parakeetBackend = ParakeetBackend(engines: parakeetEngines, selectedModel: parakeetSelection)
+        let parakeetBackend = ParakeetBackend(models: parakeetModels, selectedModel: parakeetSelection)
         let parakeetModelManager = ParakeetModelManager(
-            engines: parakeetEngines,
+            models: parakeetModels,
             selectedModel: parakeetSelection,
             setSelectedModel: setParakeetSelection
         )

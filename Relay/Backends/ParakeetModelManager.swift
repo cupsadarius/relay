@@ -11,22 +11,21 @@ extension ParakeetModelID {
     }
 }
 
-/// The two-model `SpeechModelManaging` implementation for Relay's Parakeet backend. Wraps the
-/// same `ParakeetEngine` seam `ParakeetBackend` uses, one engine per model, so tests fake the
-/// engines and never construct FluidAudio/CoreML types.
+/// The two-model `SpeechModelManaging` implementation for Relay's Parakeet backend. Uses the same
+/// `ParakeetModels` as `ParakeetBackend`.
 struct ParakeetModelManager: SpeechModelManaging {
     let backendID = BackendID.parakeet
 
-    private let engines: ParakeetEngines
+    private let models: ParakeetModels
     private let selectedModel: ParakeetModelSelection
     private let setSelectedModel: ParakeetModelSelectionWriter
 
     init(
-        engines: ParakeetEngines,
+        models: ParakeetModels,
         selectedModel: @escaping ParakeetModelSelection,
         setSelectedModel: @escaping ParakeetModelSelectionWriter
     ) {
-        self.engines = engines
+        self.models = models
         self.selectedModel = selectedModel
         self.setSelectedModel = setSelectedModel
     }
@@ -39,7 +38,7 @@ struct ParakeetModelManager: SpeechModelManaging {
                 SpeechModelStatus(
                     descriptor: model.descriptor,
                     capabilities: [.download, .select],
-                    installState: await engines[model].modelsArePresent() ? .downloaded : .notDownloaded,
+                    installState: await models[model].modelsArePresent() ? .downloaded : .notDownloaded,
                     isSelected: model == selected
                 ))
         }
@@ -49,27 +48,25 @@ struct ParakeetModelManager: SpeechModelManaging {
     /// Downloads and loads the named model. Never selects it.
     func downloadModel(_ id: String, progress: @escaping @Sendable (Double) -> Void) async throws {
         let model = try Self.model(for: id)
-        try await engines[model].load(allowDownload: true, progress: progress)
+        try await models[model].load(allowDownload: true, progress: progress)
     }
 
     /// Persists the selection, then warms the model in the background when it is on disk.
     func selectModel(_ id: String) async throws {
         let model = try Self.model(for: id)
         await setSelectedModel(model)
-        let engine = engines[model]
-        Task { await engine.prewarmIfPresent() }
+        let localModel = models[model]
+        Task { await localModel.prewarmIfPresent() }
     }
 
-    /// Parakeet has no remove path: `ParakeetEngine` exposes no delete. Validates `id` first, so
-    /// an unknown id still reports `unknownModel`.
+    /// Validates `id` first, so an unknown id still reports `unknownModel`.
     func removeModel(_ id: String) async throws {
-        _ = try Self.model(for: id)
-        throw SpeechModelManagerError.removeNotSupported
+        try await models[Self.model(for: id)].remove()
     }
 
     /// Loads the selected model at launch when it is on disk. Never downloads.
     func prewarmSelected() async {
-        await engines[selectedModel() ?? .default].prewarmIfPresent()
+        await models[selectedModel() ?? .default].prewarmIfPresent()
     }
 
     private static func model(for id: String) throws -> ParakeetModelID {

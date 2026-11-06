@@ -4,23 +4,23 @@ import XCTest
 
 @MainActor
 final class ParakeetBackendTests: XCTestCase {
-    private func makeBackend(_ engine: FakeParakeetEngine) -> ParakeetBackend {
-        ParakeetBackend(
-            engines: ParakeetEngines(unifiedEnglish: engine, v2: engine),
-            selectedModel: { nil }
-        )
+    private func makeBackend(_ fake: FakeParakeet) -> ParakeetBackend {
+        let model = ParakeetModel.parakeet(loader: fake)
+        return ParakeetBackend(models: ParakeetModels(unifiedEnglish: model, v2: model), selectedModel: { nil })
     }
 
-    func testTranscribesWithTheEngineOfTheSelectedModel() async throws {
-        let unified = FakeParakeetEngine()
+    func testTranscribesWithTheModelOfTheSelectedId() async throws {
+        let unified = FakeParakeet()
+        unified.modelsPresent = true
         unified.transcriptionResult = "unified"
-        let v2 = FakeParakeetEngine()
+        let v2 = FakeParakeet()
+        v2.modelsPresent = true
         v2.transcriptionResult = "v2"
         let audio = AudioInput(samples: [0.1], sampleRate: 16_000)
 
         func transcript(selected: ParakeetModelID?) async throws -> String {
             let backend = ParakeetBackend(
-                engines: ParakeetEngines(unifiedEnglish: unified, v2: v2),
+                models: ParakeetModels(unifiedEnglish: .parakeet(loader: unified), v2: .parakeet(loader: v2)),
                 selectedModel: { selected }
             )
             return try await backend.transcribe(audio: audio, options: .init()).text
@@ -35,11 +35,11 @@ final class ParakeetBackendTests: XCTestCase {
     }
 
     func testAvailabilityReflectsTheSelectedModel() async {
-        let unified = FakeParakeetEngine()
+        let unified = FakeParakeet()
         unified.modelsPresent = true
-        let v2 = FakeParakeetEngine()
+        let v2 = FakeParakeet()
         let backend = ParakeetBackend(
-            engines: ParakeetEngines(unifiedEnglish: unified, v2: v2),
+            models: ParakeetModels(unifiedEnglish: .parakeet(loader: unified), v2: .parakeet(loader: v2)),
             selectedModel: { .v2 }
         )
 
@@ -49,9 +49,9 @@ final class ParakeetBackendTests: XCTestCase {
     }
 
     func testAvailabilityIsModelNotDownloadedWhenModelsAreAbsent() async {
-        let engine = FakeParakeetEngine()
-        engine.modelsPresent = false
-        let backend = makeBackend(engine)
+        let fake = FakeParakeet()
+        fake.modelsPresent = false
+        let backend = makeBackend(fake)
 
         let availability = await backend.availability()
 
@@ -59,9 +59,9 @@ final class ParakeetBackendTests: XCTestCase {
     }
 
     func testAvailabilityIsAvailableWhenModelsArePresent() async {
-        let engine = FakeParakeetEngine()
-        engine.modelsPresent = true
-        let backend = makeBackend(engine)
+        let fake = FakeParakeet()
+        fake.modelsPresent = true
+        let backend = makeBackend(fake)
 
         let availability = await backend.availability()
 
@@ -69,20 +69,21 @@ final class ParakeetBackendTests: XCTestCase {
     }
 
     func testAvailabilityNeverTriggersLoad() async {
-        let engine = FakeParakeetEngine()
-        engine.modelsPresent = true
-        let backend = makeBackend(engine)
+        let fake = FakeParakeet()
+        fake.modelsPresent = true
+        let backend = makeBackend(fake)
 
         _ = await backend.availability()
 
-        XCTAssertTrue(engine.loadCalls.isEmpty, "availability() must never load the engine")
+        XCTAssertEqual(fake.loadCalls, 0, "availability() must never load the model")
+        XCTAssertEqual(fake.validateCalls, 0, "availability() must never validate the model files")
     }
 
-    func testTranscribeForwardsSamplesUnchangedAndWrapsResultInTranscript() async throws {
-        let engine = FakeParakeetEngine()
-        engine.modelsPresent = true
-        engine.transcriptionResult = "hello world"
-        let backend = makeBackend(engine)
+    func testTranscribeForwardsSamplesAndWrapsResultInTranscript() async throws {
+        let fake = FakeParakeet()
+        fake.modelsPresent = true
+        fake.transcriptionResult = "hello world"
+        let backend = makeBackend(fake)
         let samples: [Float] = [0.1, -0.2, 0.3]
 
         let transcript = try await backend.transcribe(
@@ -91,13 +92,13 @@ final class ParakeetBackendTests: XCTestCase {
         )
 
         XCTAssertEqual(transcript, Transcript(text: "hello world", backendID: .parakeet))
-        XCTAssertEqual(engine.receivedSamples, samples)
+        XCTAssertEqual(Array(fake.receivedSamples.prefix(3)), samples)
     }
 
     func testTranscribeThrowsNoUsableAudioForEmptySamples() async {
-        let engine = FakeParakeetEngine()
-        engine.modelsPresent = true
-        let backend = makeBackend(engine)
+        let fake = FakeParakeet()
+        fake.modelsPresent = true
+        let backend = makeBackend(fake)
 
         do {
             _ = try await backend.transcribe(
@@ -108,13 +109,13 @@ final class ParakeetBackendTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? SpeechBackendError, .noUsableAudio)
         }
-        XCTAssertTrue(engine.loadCalls.isEmpty, "Should not attempt to load the engine for unusable audio")
+        XCTAssertEqual(fake.loadCalls, 0, "Should not attempt to load the model for unusable audio")
     }
 
     func testTranscribeThrowsInvalidInputForWrongSampleRate() async {
-        let engine = FakeParakeetEngine()
-        engine.modelsPresent = true
-        let backend = makeBackend(engine)
+        let fake = FakeParakeet()
+        fake.modelsPresent = true
+        let backend = makeBackend(fake)
 
         do {
             _ = try await backend.transcribe(
@@ -125,40 +126,40 @@ final class ParakeetBackendTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? SpeechBackendError, .invalidInput)
         }
-        XCTAssertTrue(engine.loadCalls.isEmpty, "Should not attempt to load the engine for the wrong sample rate")
+        XCTAssertEqual(fake.loadCalls, 0, "Should not attempt to load the model for the wrong sample rate")
     }
 
     func testTranscribeLazilyLoadsWhenNotYetPrepared() async throws {
-        let engine = FakeParakeetEngine()
-        engine.modelsPresent = true
-        engine.transcriptionResult = "lazy"
-        let backend = makeBackend(engine)
+        let fake = FakeParakeet()
+        fake.modelsPresent = true
+        fake.transcriptionResult = "lazy"
+        let backend = makeBackend(fake)
 
         _ = try await backend.transcribe(
             audio: AudioInput(samples: [0.1], sampleRate: 16_000),
             options: .init()
         )
 
-        XCTAssertEqual(engine.loadCalls, [false])
+        XCTAssertEqual(fake.loadCalls, 1)
+        XCTAssertEqual(fake.downloadCalls, 0)
     }
 
-    func testSecondTranscribeDoesNotTriggerASecondEngineLoad() async throws {
-        let engine = FakeParakeetEngine()
-        engine.modelsPresent = true
-        engine.transcriptionResult = "hi"
-        let backend = makeBackend(engine)
+    func testSecondTranscribeDoesNotTriggerASecondModelLoad() async throws {
+        let fake = FakeParakeet()
+        fake.modelsPresent = true
+        fake.transcriptionResult = "hi"
+        let backend = makeBackend(fake)
 
         _ = try await backend.transcribe(audio: AudioInput(samples: [0.1], sampleRate: 16_000), options: .init())
         _ = try await backend.transcribe(audio: AudioInput(samples: [0.1], sampleRate: 16_000), options: .init())
 
-        XCTAssertEqual(engine.loadCalls, [false], "A second transcribe must not reload an already-loaded engine")
+        XCTAssertEqual(fake.loadCalls, 1, "A second transcribe must not reload an already-loaded model")
     }
 
     func testTranscribeMapsModelsNotDownloadedLoadFailureToModelNotDownloaded() async {
-        let engine = FakeParakeetEngine()
-        engine.modelsPresent = true
-        engine.loadError = ParakeetEngineError.modelsNotDownloaded
-        let backend = makeBackend(engine)
+        let fake = FakeParakeet()
+        fake.modelsValid = false
+        let backend = makeBackend(fake)
 
         do {
             _ = try await backend.transcribe(
@@ -172,10 +173,10 @@ final class ParakeetBackendTests: XCTestCase {
     }
 
     func testTranscribeMapsLoadFailedToInitializationFailed() async {
-        let engine = FakeParakeetEngine()
-        engine.modelsPresent = true
-        engine.loadError = ParakeetEngineError.loadFailed("boom")
-        let backend = makeBackend(engine)
+        let fake = FakeParakeet()
+        fake.modelsPresent = true
+        fake.loadError = FakeParakeetError.boom
+        let backend = makeBackend(fake)
 
         do {
             _ = try await backend.transcribe(
@@ -184,39 +185,55 @@ final class ParakeetBackendTests: XCTestCase {
             )
             XCTFail("Expected initializationFailed")
         } catch {
-            XCTAssertEqual(error as? SpeechBackendError, .initializationFailed("boom"))
+            XCTAssertEqual(error as? SpeechBackendError, .initializationFailed("Parakeet model load failed"))
+        }
+    }
+
+    func testTranscribeMapsValidationFailureToInitializationFailed() async {
+        let fake = FakeParakeet()
+        fake.validationError = FakeParakeetError.boom
+        let backend = makeBackend(fake)
+
+        do {
+            _ = try await backend.transcribe(
+                audio: AudioInput(samples: [0.1], sampleRate: 16_000),
+                options: .init()
+            )
+            XCTFail("Expected initializationFailed")
+        } catch {
+            XCTAssertEqual(error as? SpeechBackendError, .initializationFailed("Parakeet model validation failed"))
         }
     }
 
     func testTranscribeSucceedsAfterAPreviousLoadFailure() async throws {
-        let engine = FakeParakeetEngine()
-        engine.modelsPresent = true
-        engine.loadError = ParakeetEngineError.loadFailed("boom")
-        let backend = makeBackend(engine)
+        let fake = FakeParakeet()
+        fake.modelsPresent = true
+        fake.loadError = FakeParakeetError.boom
+        let backend = makeBackend(fake)
 
         do {
             _ = try await backend.transcribe(audio: AudioInput(samples: [0.1], sampleRate: 16_000), options: .init())
             XCTFail("Expected initializationFailed")
         } catch {
-            XCTAssertEqual(error as? SpeechBackendError, .initializationFailed("boom"))
+            XCTAssertEqual(error as? SpeechBackendError, .initializationFailed("Parakeet model load failed"))
         }
 
-        engine.loadError = nil
-        engine.transcriptionResult = "recovered"
+        fake.loadError = nil
+        fake.transcriptionResult = "recovered"
         let transcript = try await backend.transcribe(
             audio: AudioInput(samples: [0.1], sampleRate: 16_000),
             options: .init()
         )
 
         XCTAssertEqual(transcript, Transcript(text: "recovered", backendID: .parakeet))
-        XCTAssertEqual(engine.loadCalls, [false, false], "A failed load must not block a later retry")
+        XCTAssertEqual(fake.loadCalls, 2, "A failed load must not block a later retry")
     }
 
-    func testTranscribeMapsEngineTranscriptionFailureToInferenceFailed() async {
-        let engine = FakeParakeetEngine()
-        engine.modelsPresent = true
-        engine.transcribeError = ParakeetEngineError.transcriptionFailed("bad audio")
-        let backend = makeBackend(engine)
+    func testTranscribeMapsSessionTranscriptionFailureToInferenceFailed() async {
+        let fake = FakeParakeet()
+        fake.modelsPresent = true
+        fake.transcribeError = FakeParakeetError.boom
+        let backend = makeBackend(fake)
 
         do {
             _ = try await backend.transcribe(
@@ -225,32 +242,15 @@ final class ParakeetBackendTests: XCTestCase {
             )
             XCTFail("Expected inferenceFailed")
         } catch {
-            XCTAssertEqual(error as? SpeechBackendError, .inferenceFailed("bad audio"))
+            XCTAssertEqual(error as? SpeechBackendError, .inferenceFailed("Parakeet transcription failed"))
         }
     }
 
-    func testTranscribeMapsNotLoadedToInitializationFailed() async {
-        let engine = FakeParakeetEngine()
-        engine.modelsPresent = true
-        engine.transcribeError = ParakeetEngineError.notLoaded
-        let backend = makeBackend(engine)
-
-        do {
-            _ = try await backend.transcribe(
-                audio: AudioInput(samples: [0.1], sampleRate: 16_000),
-                options: .init()
-            )
-            XCTFail("Expected initializationFailed")
-        } catch {
-            XCTAssertEqual(error as? SpeechBackendError, .initializationFailed("Parakeet model is not loaded"))
-        }
-    }
-
-    func testTranscribePreservesCancellationFromEngineTranscription() async {
-        let engine = FakeParakeetEngine()
-        engine.modelsPresent = true
-        engine.transcribeError = CancellationError()
-        let backend = makeBackend(engine)
+    func testTranscribePreservesCancellationFromSessionTranscription() async {
+        let fake = FakeParakeet()
+        fake.modelsPresent = true
+        fake.transcribeError = CancellationError()
+        let backend = makeBackend(fake)
 
         do {
             _ = try await backend.transcribe(
@@ -266,10 +266,10 @@ final class ParakeetBackendTests: XCTestCase {
     }
 
     func testTranscribePreservesCancellationFromLoad() async {
-        let engine = FakeParakeetEngine()
-        engine.modelsPresent = true
-        engine.loadError = CancellationError()
-        let backend = makeBackend(engine)
+        let fake = FakeParakeet()
+        fake.modelsPresent = true
+        fake.loadError = CancellationError()
+        let backend = makeBackend(fake)
 
         do {
             _ = try await backend.transcribe(
@@ -286,32 +286,48 @@ final class ParakeetBackendTests: XCTestCase {
 
 }
 
-/// Mirrors the real `ParakeetEngine` contract's idempotency guarantee ("Idempotent once loaded"):
-/// once a `load` call succeeds, later calls no longer append to `loadCalls`. A load that throws
-/// leaves the engine unloaded so the next call retries for real - this is what lets
-/// `testTranscribeSucceedsAfterAPreviousLoadFailure` and `testSecondTranscribeDoesNotTrigger...`
-/// exercise both halves of that contract from `ParakeetBackend`'s side.
+private enum FakeParakeetError: Error {
+    case boom
+}
+
+/// Both the loader and the session it loads.
 @MainActor
-private final class FakeParakeetEngine: ParakeetEngine {
+private final class FakeParakeet: ParakeetModelLoading, ParakeetModelSession {
+    nonisolated let trailingSilenceSampleCount = 0
     var modelsPresent = false
+    var modelsValid = true
+    var validationError: Error?
     var transcriptionResult = ""
     var loadError: Error?
     var transcribeError: Error?
-    private(set) var loadCalls: [Bool] = []
+    private(set) var validateCalls = 0
+    private(set) var loadCalls = 0
+    private(set) var downloadCalls = 0
     private(set) var receivedSamples: [Float] = []
-    private var isLoaded = false
 
     func modelsArePresent() async -> Bool {
         modelsPresent
     }
 
-    func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws {
-        guard !isLoaded else { return }
-        loadCalls.append(allowDownload)
+    func isModelValid() async throws -> Bool {
+        validateCalls += 1
+        if let validationError {
+            throw validationError
+        }
+        return modelsValid
+    }
+
+    func load() async throws -> any ParakeetModelSession {
+        loadCalls += 1
         if let loadError {
             throw loadError
         }
-        isLoaded = true
+        return self
+    }
+
+    func downloadAndLoad(progress: @escaping @Sendable (Double) -> Void) async throws -> any ParakeetModelSession {
+        downloadCalls += 1
+        return self
     }
 
     func transcribe(samples: [Float]) async throws -> String {

@@ -14,12 +14,12 @@ enum ParakeetModelID: String, CaseIterable, Sendable {
 typealias ParakeetModelSelection = @Sendable () -> ParakeetModelID?
 typealias ParakeetModelSelectionWriter = @MainActor @Sendable (ParakeetModelID?) -> Void
 
-/// One engine per model. A struct with a field per case, so every model always has an engine.
-struct ParakeetEngines: Sendable {
-    let unifiedEnglish: any ParakeetEngine
-    let v2: any ParakeetEngine
+/// One model per Parakeet id. A struct with a field per case, so every id always has a model.
+struct ParakeetModels: Sendable {
+    let unifiedEnglish: ParakeetModel
+    let v2: ParakeetModel
 
-    subscript(model: ParakeetModelID) -> any ParakeetEngine {
+    subscript(model: ParakeetModelID) -> ParakeetModel {
         switch model {
         case .unifiedEnglish: unifiedEnglish
         case .v2: v2
@@ -27,49 +27,22 @@ struct ParakeetEngines: Sendable {
     }
 }
 
-/// Errors surfaced by a `ParakeetEngine` implementation. `ParakeetBackend` maps these onto
-/// `SpeechBackendError` so the router can classify them the same way it classifies every other
-/// backend's failures.
+/// Parakeet load failures. `ParakeetBackend` maps these onto `SpeechBackendError` so the router
+/// can classify them the same way it classifies every other backend's failures.
 enum ParakeetEngineError: Error, Equatable, Sendable {
     /// The model was not present (or not verifiably intact) on disk and the caller did not allow
     /// a download.
     case modelsNotDownloaded
-    /// `transcribe` was called before the engine ever finished a successful `load`.
-    case notLoaded
     /// Loading (or downloading) the model failed for a reason other than the model being absent.
     case loadFailed(String)
-    /// Inference itself failed once the model was loaded.
-    case transcriptionFailed(String)
 }
 
-/// The seam between `ParakeetBackend` and the underlying Parakeet runtime (FluidAudio in
-/// production, a fake in tests). Kept narrow and provider-neutral so `ParakeetBackend` never
-/// touches FluidAudio types directly.
-protocol ParakeetEngine: Sendable {
-    /// Whether the model files are already present on disk. Never triggers a download.
-    func modelsArePresent() async -> Bool
-    /// Loads the model, downloading it first when `allowDownload` is true. When `allowDownload`
-    /// is false and the model is absent (or fails local validation), throws
-    /// `ParakeetEngineError.modelsNotDownloaded` without touching the network. Idempotent once
-    /// loaded: concurrent and repeated calls after a successful load are no-ops. `progress` is
-    /// called with a fraction in [0, 1] while a download is in flight; it may be called from any
-    /// queue.
-    func load(allowDownload: Bool, progress: @escaping @Sendable (Double) -> Void) async throws
-    /// Transcribes mono 16 kHz samples. The engine must already be loaded.
-    func transcribe(samples: [Float]) async throws -> String
-}
-
-extension ParakeetEngine {
-    /// Convenience overload for callers that don't need download progress.
-    func load(allowDownload: Bool) async throws {
-        try await load(allowDownload: allowDownload, progress: { _ in })
-    }
-
-    /// Loads the model in the background-friendly way: never downloads, swallows errors.
+extension LocalModel where Session == any ParakeetModelSession {
+    /// Loads the model when it is on disk. Never downloads; swallows errors.
     func prewarmIfPresent() async {
         guard await modelsArePresent() else { return }
         do {
-            try await load(allowDownload: false)
+            try await load()
         } catch {
             Logger.relay("parakeet")
                 .debug("Parakeet prewarm failed: \(error.localizedDescription, privacy: .private)")
@@ -82,49 +55,41 @@ extension ParakeetEngine {
 final class ParakeetBackend: SpeechToTextBackend {
     let id = BackendID.parakeet
 
-    private let engines: ParakeetEngines
+    private let models: ParakeetModels
     private let selectedModel: ParakeetModelSelection
 
-    private var engine: any ParakeetEngine { engines[selectedModel() ?? .default] }
+    private var model: ParakeetModel { models[selectedModel() ?? .default] }
 
-    init(engines: ParakeetEngines, selectedModel: @escaping ParakeetModelSelection) {
-        self.engines = engines
+    init(models: ParakeetModels, selectedModel: @escaping ParakeetModelSelection) {
+        self.models = models
         self.selectedModel = selectedModel
     }
 
     func availability() async -> BackendAvailability {
-        await engine.modelsArePresent() ? .available : .modelNotDownloaded
+        await model.modelsArePresent() ? .available : .modelNotDownloaded
     }
 
     func transcribe(audio: AudioInput, options: STTOptions) async throws -> Transcript {
         try audio.requireSTTFormat()
 
-        let engine = engine
-        try await ensureLoaded(engine)
-
+        let session: any ParakeetModelSession
         do {
-            let text = try await engine.transcribe(samples: audio.samples)
-            return Transcript(text: text, backendID: id)
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch let error as SpeechBackendError {
-            throw error
-        } catch ParakeetEngineError.transcriptionFailed(let reason) {
-            throw SpeechBackendError.inferenceFailed(reason)
-        } catch ParakeetEngineError.notLoaded {
-            throw SpeechBackendError.initializationFailed("Parakeet model is not loaded")
-        } catch {
-            throw SpeechBackendError.inferenceFailed("Parakeet transcription failed")
-        }
-    }
-
-    private func ensureLoaded(_ engine: any ParakeetEngine) async throws {
-        do {
-            try await engine.load(allowDownload: false)
+            session = try await model.load()
         } catch is CancellationError {
             throw CancellationError()
         } catch {
             throw Self.mapLoadError(error)
+        }
+
+        do {
+            let text = try await session.transcribe(samples: audio.samples)
+            return Transcript(text: text, backendID: id)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            Logger.relay("parakeet")
+                .debug("Parakeet transcription failed: \(error.localizedDescription, privacy: .private)")
+            throw SpeechBackendError.inferenceFailed("Parakeet transcription failed")
         }
     }
 
@@ -134,8 +99,6 @@ final class ParakeetBackend: SpeechToTextBackend {
             error
         case ParakeetEngineError.modelsNotDownloaded:
             .modelNotDownloaded
-        case ParakeetEngineError.notLoaded:
-            .initializationFailed("Parakeet model is not loaded")
         case ParakeetEngineError.loadFailed(let reason):
             .initializationFailed(reason)
         default:
