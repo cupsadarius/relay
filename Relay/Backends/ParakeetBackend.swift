@@ -34,7 +34,9 @@ enum ParakeetEngineError: Error, Equatable, Sendable {
     /// a download.
     case modelsNotDownloaded
     /// Loading (or downloading) the model failed for a reason other than the model being absent.
-    case loadFailed(String)
+    case loadFailed
+    /// Checking the local model files failed.
+    case validationFailed
 }
 
 extension LocalModel where Session == any ParakeetModelSession {
@@ -95,12 +97,10 @@ final class ParakeetBackend: SpeechToTextBackend {
 
     private static func mapLoadError(_ error: Error) -> SpeechBackendError {
         switch error {
-        case let error as SpeechBackendError:
-            error
         case ParakeetEngineError.modelsNotDownloaded:
             .modelNotDownloaded
-        case ParakeetEngineError.loadFailed(let reason):
-            .initializationFailed(reason)
+        case ParakeetEngineError.validationFailed:
+            .initializationFailed("Parakeet model validation failed")
         default:
             .initializationFailed("Parakeet model load failed")
         }

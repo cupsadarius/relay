@@ -11,12 +11,8 @@ typealias WhisperModelSelection = @Sendable () -> WhisperModelID?
 /// anywhere. Mirrors `ParakeetBackend`'s shape: presence delegates to `WhisperModelStore`,
 /// load/transcribe delegate to `WhisperRuntime`, and every underlying error is mapped onto
 /// `SpeechBackendError` with the same fallback-worthiness the router expects from every backend.
-///
-/// An `actor` because `WhisperRuntime` (the thing that actually does the loading and inference)
-/// is itself an actor holding mutable state; `WhisperBackend` adds no additional isolated state of
-/// its own beyond forwarding to it.
-actor WhisperBackend: SpeechToTextBackend {
-    nonisolated let id = BackendID.whisper
+final class WhisperBackend: SpeechToTextBackend {
+    let id = BackendID.whisper
 
     private let store: WhisperModelStore
     private let runtime: WhisperRuntime

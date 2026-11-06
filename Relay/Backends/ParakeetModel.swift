@@ -41,7 +41,7 @@ extension LocalModel where Session == any ParakeetModelSession {
                 modelsNotDownloaded: { ParakeetEngineError.modelsNotDownloaded },
                 mapLoadFailure: { error in
                     logger.debug("Parakeet model load failed: \(error.localizedDescription, privacy: .private)")
-                    return ParakeetEngineError.loadFailed("Parakeet model load failed")
+                    return ParakeetEngineError.loadFailed
                 },
                 validateLocal: {
                     do {
@@ -51,7 +51,7 @@ extension LocalModel where Session == any ParakeetModelSession {
                     } catch {
                         logger.debug(
                             "Parakeet model validation failed: \(error.localizedDescription, privacy: .private)")
-                        throw ParakeetEngineError.loadFailed("Parakeet model validation failed")
+                        throw ParakeetEngineError.validationFailed
                     }
                 },
                 loadLocal: {

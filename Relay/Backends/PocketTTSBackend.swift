@@ -47,14 +47,8 @@ final class PocketTTSBackend: TextToSpeechBackend {
 
     private static func mapEngineError(_ error: Error) -> SpeechBackendError {
         switch error {
-        case let error as SpeechBackendError:
-            error
         case PocketTTSEngineError.modelsNotDownloaded:
             .modelNotDownloaded
-        case PocketTTSEngineError.loadFailed:
-            .initializationFailed("PocketTTS model load failed")
-        case PocketTTSEngineError.synthesisFailed:
-            .inferenceFailed("PocketTTS synthesis failed")
         default:
             .initializationFailed("PocketTTS model load failed")
         }

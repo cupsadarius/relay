@@ -35,7 +35,6 @@ enum PocketTTSEngineError: Error, Equatable, Sendable {
     case modelsNotDownloaded
     /// Loading (or downloading) the model failed for a reason other than the model being absent.
     case loadFailed
-    case synthesisFailed
 }
 
 typealias PocketTTSModel = LocalModel<any PocketTTSModelSession>

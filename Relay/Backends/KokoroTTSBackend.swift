@@ -63,12 +63,8 @@ final class KokoroTTSBackend: TextToSpeechBackend {
 
     private static func mapEngineError(_ error: Error) -> SpeechBackendError {
         switch error {
-        case let error as SpeechBackendError:
-            error
         case KokoroEngineError.modelsNotDownloaded:
             .modelNotDownloaded
-        case KokoroEngineError.loadFailed:
-            .initializationFailed("Kokoro model load failed")
         case KokoroEngineError.synthesisFailed,
             KokoroEngineError.textTooLong,
             KokoroEngineError.acousticFramesTooLong:
