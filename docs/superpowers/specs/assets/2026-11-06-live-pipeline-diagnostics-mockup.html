@@ -1,0 +1,81 @@
+<style>
+  .w{background:#1e1e1e;color:#ddd;border-radius:10px;padding:14px;font:13px -apple-system,system-ui,sans-serif}
+  .bar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+  .chip{padding:4px 10px;border-radius:999px;border:1px solid #444;font-size:12px}
+  .chip.on{background:#2d4a7a;border-color:#4a7bd0;color:#fff}
+  .ok{color:#5fd37a}.status{margin-left:auto;font-size:12px}
+  .card{background:#262626;border:1px solid #333;border-radius:8px;padding:8px 10px;margin-bottom:8px}
+  .card.sel{border-color:#4a7bd0}
+  .card h4{margin:0 0 6px;font-size:12px;display:flex;gap:8px}
+  .t{margin-left:auto;font-size:11px;color:#888}
+  .pills{display:flex;gap:4px;flex-wrap:wrap}
+  .pill{font-size:11px;padding:3px 8px;border-radius:5px;background:#2f3a2f;color:#9fe0a8}
+  .pill.r{background:#22344f;color:#9cc4ff}.pill.x{background:#4a2626;color:#ffb0b0}.pill.s{background:#333;color:#999}
+  .graph{background:#181818;border:1px solid #333;border-radius:8px;padding:12px;margin-bottom:12px}
+  .graph .lbl{font-size:11px;color:#888;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(106,168,255,.7)}50%{box-shadow:0 0 0 6px rgba(106,168,255,0)}}
+  svg text{font:11px -apple-system,system-ui,sans-serif}
+  .mini{display:flex;align-items:center;gap:4px;font-size:11px;margin:4px 0;flex-wrap:wrap}
+  .n{padding:3px 7px;border-radius:5px;background:#2b2b2b;border:1px solid #3a3a3a;color:#999}
+  .n.d{background:#2f3a2f;border-color:#3f6a47;color:#9fe0a8}
+  .n.a{background:#22344f;border-color:#4a7bd0;color:#cfe1ff;animation:pulse 1.4s infinite}
+  .n.x{background:#4a2626;border-color:#8a3a3a;color:#ffb0b0}
+  .arr{color:#555}
+  .flowname{width:110px;color:#bbb}
+</style>
+
+<h2>B + a pipeline graph: which graph?</h2>
+<p class="subtitle">Rows from B stay below. The graph shows where the live run is right now (pulsing node), what is done (green), and where it stopped (red). Click one.</p>
+
+<div class="options">
+
+<div class="option" data-choice="g1" onclick="toggleSelect(this)">
+<div class="letter">1</div>
+<div class="content">
+<h3>One full graph for the selected run, with branches</h3>
+<p>Big graph of the selected run's flow (the live one by default; click a row to show an older run). Shows the branches too: backend fallback, and why a reply was or was not spoken.</p>
+<div class="w">
+  <div class="bar"><span class="chip on">Dictation</span><span class="chip on">Agent replies</span><span class="chip on">Read selection</span><span class="status ok">● All permissions OK</span></div>
+  <div class="graph"><div class="lbl">Dictation · 13:52:04 · live</div>
+  <svg viewBox="0 0 760 150" width="100%">
+    <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0L10,5L0,10z" fill="#666"/></marker></defs>
+    <g stroke="#555" stroke-width="1.5" fill="none" marker-end="url(#ah)">
+      <line x1="80" y1="40" x2="108" y2="40"/><line x1="200" y1="40" x2="228" y2="40"/><line x1="320" y1="40" x2="348" y2="40"/>
+      <path d="M440,40 C460,40 460,110 478,110"/><line x1="440" y1="40" x2="478" y2="40"/>
+      <line x1="570" y1="40" x2="598" y2="40"/><path d="M570,110 C585,110 585,40 598,40" stroke-dasharray="4 3"/>
+      <line x1="690" y1="40" x2="700" y2="40"/>
+    </g>
+    <g>
+      <rect x="10" y="22" width="70" height="36" rx="6" fill="#2f3a2f" stroke="#3f6a47"/><text x="45" y="44" fill="#9fe0a8" text-anchor="middle">Hotkey</text>
+      <rect x="110" y="22" width="90" height="36" rx="6" fill="#2f3a2f" stroke="#3f6a47"/><text x="155" y="38" fill="#9fe0a8" text-anchor="middle">Mic open</text><text x="155" y="51" fill="#7fb98a" text-anchor="middle">built-in</text>
+      <rect x="230" y="22" width="90" height="36" rx="6" fill="#2f3a2f" stroke="#3f6a47"/><text x="275" y="38" fill="#9fe0a8" text-anchor="middle">Recorded</text><text x="275" y="51" fill="#7fb98a" text-anchor="middle">3.2 s</text>
+      <rect x="350" y="22" width="90" height="36" rx="6" fill="#22344f" stroke="#6aa8ff" stroke-width="2"><animate attributeName="stroke-opacity" values="1;.3;1" dur="1.4s" repeatCount="indefinite"/></rect><text x="395" y="38" fill="#cfe1ff" text-anchor="middle">Transcribe</text><text x="395" y="51" fill="#9cc4ff" text-anchor="middle">Parakeet…</text>
+      <rect x="480" y="22" width="90" height="36" rx="6" fill="#2b2b2b" stroke="#3a3a3a"/><text x="525" y="44" fill="#999" text-anchor="middle">Clean up</text>
+      <rect x="480" y="92" width="90" height="36" rx="6" fill="#2b2b2b" stroke="#3a3a3a" stroke-dasharray="4 3"/><text x="525" y="108" fill="#777" text-anchor="middle">fallback:</text><text x="525" y="121" fill="#777" text-anchor="middle">Whisper</text>
+      <rect x="600" y="22" width="90" height="36" rx="6" fill="#2b2b2b" stroke="#3a3a3a"/><text x="645" y="44" fill="#999" text-anchor="middle">Insert</text>
+      <rect x="700" y="22" width="56" height="36" rx="6" fill="#2b2b2b" stroke="#3a3a3a"/><text x="728" y="38" fill="#999" text-anchor="middle">Mic</text><text x="728" y="51" fill="#999" text-anchor="middle">released</text>
+    </g>
+  </svg></div>
+  <div class="card sel"><h4>Dictation <span class="t">13:52:04 · live</span></h4><div class="pills"><span class="pill">Hotkey</span><span class="pill">Mic open · built-in</span><span class="pill">Recorded 3.2 s</span><span class="pill r">Transcribing…</span><span class="pill s">Clean up</span><span class="pill s">Insert</span><span class="pill s">Mic released</span></div></div>
+  <div class="card"><h4>Agent reply · Claude Code <span class="t">13:48:23</span></h4><div class="pills"><span class="pill">Received</span><span class="pill">Session: Rex</span><span class="pill x">Auto-read off → not spoken</span></div></div>
+</div>
+</div></div>
+
+<div class="option" data-choice="g2" onclick="toggleSelect(this)">
+<div class="letter">2</div>
+<div class="content">
+<h3>A strip graph per flow, always visible</h3>
+<p>One compact node chain per enabled flow, stacked. Each shows that flow's latest run, so you see all live positions at once. Less detail, no branches.</p>
+<div class="w">
+  <div class="bar"><span class="chip on">Dictation</span><span class="chip on">Agent replies</span><span class="chip on">Read selection</span><span class="status ok">● All permissions OK</span></div>
+  <div class="graph"><div class="lbl">Where each flow is now</div>
+    <div class="mini"><span class="flowname">Dictation</span><span class="n d">Hotkey</span><span class="arr">→</span><span class="n d">Mic open</span><span class="arr">→</span><span class="n d">Recorded</span><span class="arr">→</span><span class="n a">Transcribe</span><span class="arr">→</span><span class="n">Clean up</span><span class="arr">→</span><span class="n">Insert</span><span class="arr">→</span><span class="n">Mic released</span></div>
+    <div class="mini"><span class="flowname">Agent replies</span><span class="n d">Received</span><span class="arr">→</span><span class="n d">Session</span><span class="arr">→</span><span class="n x">Auto-read off</span><span class="arr">→</span><span class="n">Speak</span></div>
+    <div class="mini"><span class="flowname">Read selection</span><span class="n d">Hotkey</span><span class="arr">→</span><span class="n d">Selection</span><span class="arr">→</span><span class="n d">Voice</span><span class="arr">→</span><span class="n d">Spoke 0:12</span></div>
+  </div>
+  <div class="card"><h4>Dictation <span class="t">13:52:04 · live</span></h4><div class="pills"><span class="pill">Hotkey</span><span class="pill">Mic open · built-in</span><span class="pill">Recorded 3.2 s</span><span class="pill r">Transcribing…</span><span class="pill s">Clean up</span><span class="pill s">Insert</span><span class="pill s">Mic released</span></div></div>
+  <div class="card"><h4>Agent reply · Claude Code <span class="t">13:48:23</span></h4><div class="pills"><span class="pill">Received</span><span class="pill">Session: Rex</span><span class="pill x">Auto-read off → not spoken</span></div></div>
+</div>
+</div></div>
+
+</div>
