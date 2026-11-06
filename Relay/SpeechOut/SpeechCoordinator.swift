@@ -30,26 +30,28 @@ final class SpeechCoordinator: SpeechCoordinating {
     /// Longest gap with no playback progress before the watchdog retires a session.
     static let defaultWatchdogTimeout: TimeInterval = 300
 
+    private struct ActiveSession {
+        let id: UUID
+        /// Automatic sessions show in the overlay only once playback starts or fails, so a queued
+        /// request never hides the capsule of what is still speaking.
+        var shownInOverlay: Bool
+        var watchdog: Task<Void, Never>
+    }
+
+    private enum InFlight {
+        case idle
+        case active(ActiveSession)
+    }
+
     private let router: TTSRouter
     private let options: () -> TTSOptions
     private let overlay: ActivityOverlayModel
     private let watchdogTimeout: TimeInterval
     private var lastRequest: SpeechRequest?
-    private var currentSessionID: UUID?
-    /// The watchdog `Task` for the currently in-flight session, if any. Cancelled the moment a
-    /// terminal event (or an explicit `stop`) retires that session, so it never fires after a
-    /// legitimate finish; replaced (not merely cancelled) whenever a new session starts.
-    private var watchdogTask: Task<Void, Never>?
-    /// Set only while the watchdog calls `router.stop()`. The player emits `.cancelled`
-    /// reentrantly from `stop()`, and `handle(_:backend:)` ignores it while this is set.
-    private var watchdogRetiringSessionID: UUID?
-    /// Automatic sessions not yet shown in the overlay. They show only once playback starts or
-    /// fails, so a queued request never hides the capsule of what is still speaking.
-    private var pendingAutomaticSessions: Set<UUID> = []
-    /// `true` from the moment a request is actually handed to the router until a terminal
-    /// playback event (`.finished`/`.cancelled`/`.failed`) is observed for it. While `true`, a
-    /// new `.automatic` request is enqueued rather than overlapping the one in flight.
-    private var isSpeaking = false
+    /// While `.active`, a new `.automatic` request is enqueued rather than overlapping it. Events
+    /// for any other session are ignored, including the `.cancelled` the player emits reentrantly
+    /// from `router.stop()` after a session has been retired.
+    private var inFlight: InFlight = .idle
     /// FIFO backlog of `.automatic` requests waiting for the current one to finish. Never holds
     /// `.userRequested` requests — those interrupt immediately instead of queueing. Capped at
     /// `queueCap`, dropping the oldest entry first.
@@ -73,11 +75,10 @@ final class SpeechCoordinator: SpeechCoordinating {
     func speak(_ request: SpeechRequest) async throws {
         switch request.mode {
         case .userRequested:
-            pendingAutomaticQueue.removeAll()
-            router.stop()
+            interrupt()
             try await start(request)
         case .automatic:
-            if isSpeaking {
+            if case .active = inFlight {
                 enqueue(request)
                 return
             }
@@ -87,29 +88,19 @@ final class SpeechCoordinator: SpeechCoordinating {
 
     func stop() {
         pendingAutomaticQueue.removeAll()
+        let retired = retire()
         router.stop()
-        if let currentSessionID {
-            overlay.cancel(sessionID: currentSessionID)
+        if let retired {
+            overlay.cancel(sessionID: retired.id)
         }
-        if let overlaySessionID = overlay.state.sessionID, overlaySessionID != currentSessionID {
+        if let overlaySessionID = overlay.state.sessionID {
             overlay.cancel(sessionID: overlaySessionID)
         }
-        cancelWatchdog()
-        currentSessionID = nil
-        pendingAutomaticSessions.removeAll()
-        isSpeaking = false
     }
 
     func previewVoice(text: String, backendID: BackendID, options: TTSOptions) async throws {
-        pendingAutomaticQueue.removeAll()
-        router.stop()
-        cancelWatchdog()
-        let sessionID = UUID()
-        currentSessionID = sessionID
-        isSpeaking = true
-        startWatchdog(for: sessionID)
-        overlay.begin(sessionID: sessionID)
-        overlay.prepareSpeaking(sessionID: sessionID)
+        interrupt()
+        let sessionID = begin(showInOverlay: true)
         try await router.speak(
             text: text,
             options: options,
@@ -123,31 +114,58 @@ final class SpeechCoordinator: SpeechCoordinating {
     /// automatic backlog.
     func stop(sessionID: UUID) {
         guard router.owns(sessionID) else { return }
-        // Clear first: the player emits `.cancelled` synchronously, and that drains the queue.
         pendingAutomaticQueue.removeAll()
+        if case let .active(session) = inFlight, session.id == sessionID {
+            retire()
+        }
         router.stop(sessionID: sessionID)
         overlay.cancel(sessionID: sessionID)
-        if currentSessionID == sessionID {
-            cancelWatchdog()
-            currentSessionID = nil
-        }
-        pendingAutomaticSessions.remove(sessionID)
-        isSpeaking = false
     }
 
     func replayLast() async throws {
         guard let lastRequest else { return }
-
-        pendingAutomaticQueue.removeAll()
-        router.stop()
-        let sessionID = UUID()
-        currentSessionID = sessionID
-        isSpeaking = true
-        startWatchdog(for: sessionID)
-        overlay.begin(sessionID: sessionID)
-        overlay.prepareSpeaking(sessionID: sessionID)
-
+        interrupt()
+        let sessionID = begin(showInOverlay: true)
         try await router.speak(text: lastRequest.text, options: options(), sessionID: sessionID)
+    }
+
+    /// Hands `request` to the router right now. Only ever called when nothing else is in flight
+    /// (either because nothing was playing, or because the caller just interrupted whatever was).
+    private func start(_ request: SpeechRequest) async throws {
+        let sessionID = begin(showInOverlay: request.mode == .userRequested)
+        try await router.speak(text: request.text, options: options(), sessionID: sessionID)
+        lastRequest = request
+    }
+
+    /// Clears the backlog and stops whatever is in flight; the caller's `begin` replaces the overlay.
+    private func interrupt() {
+        pendingAutomaticQueue.removeAll()
+        retire()
+        router.stop()
+    }
+
+    /// The first watchdog deadline starts at acceptance, so a backend that never begins playback
+    /// is still recovered.
+    private func begin(showInOverlay: Bool) -> UUID {
+        let sessionID = UUID()
+        inFlight = .active(
+            ActiveSession(id: sessionID, shownInOverlay: showInOverlay, watchdog: makeWatchdog(for: sessionID))
+        )
+        if showInOverlay {
+            overlay.begin(sessionID: sessionID)
+            overlay.prepareSpeaking(sessionID: sessionID)
+        }
+        return sessionID
+    }
+
+    /// Returns to `.idle` and cancels the watchdog, so a retired session never fires it and a
+    /// second terminal event for it is ignored instead of dequeuing twice.
+    @discardableResult
+    private func retire() -> ActiveSession? {
+        guard case let .active(session) = inFlight else { return nil }
+        session.watchdog.cancel()
+        inFlight = .idle
+        return session
     }
 
     /// Appends `request` to the automatic backlog, dropping the oldest entry first if that would
@@ -159,91 +177,32 @@ final class SpeechCoordinator: SpeechCoordinating {
         }
     }
 
-    /// Starts (replacing any previous) watchdog timer for `sessionID`. The first deadline starts
-    /// at acceptance, so a backend that never begins playback is still recovered.
-    private func startWatchdog(for sessionID: UUID) {
-        watchdogTask?.cancel()
+    private func makeWatchdog(for sessionID: UUID) -> Task<Void, Never> {
         let timeout = max(watchdogTimeout, 0)
-        watchdogTask = Task { [weak self] in
+        return Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
             guard !Task.isCancelled else { return }
             self?.handleWatchdogExpiry(sessionID: sessionID)
         }
     }
 
-    /// Cancels the in-flight session's watchdog timer, if any. Called whenever that session is
-    /// retired through any path (a terminal event, an explicit `stop`, or a new session starting)
-    /// so the watchdog never fires after a legitimate finish.
-    private func cancelWatchdog() {
-        watchdogTask?.cancel()
-        watchdogTask = nil
+    private func rearmWatchdog(_ session: inout ActiveSession) {
+        session.watchdog.cancel()
+        session.watchdog = makeWatchdog(for: session.id)
     }
 
-    /// Rearms the watchdog only for the current session. A stale player's delayed `.started` or
-    /// `.level` event must never extend the replacement session's deadline.
-    private func recordPlaybackProgress(sessionID: UUID) {
-        guard sessionID == currentSessionID else { return }
-        startWatchdog(for: sessionID)
-    }
-
-    /// Retires the session before `router.stop()`, whose reentrant `.cancelled` would otherwise
-    /// clear the overlay before `.failed` shows and drain the queue twice.
     private func handleWatchdogExpiry(sessionID: UUID) {
-        guard sessionID == currentSessionID else { return }
-        cancelWatchdog()
-        currentSessionID = nil
-        isSpeaking = false
-
-        watchdogRetiringSessionID = sessionID
+        guard case let .active(session) = inFlight, session.id == sessionID else { return }
+        retire()
         router.stop()
-        watchdogRetiringSessionID = nil
-
-        if pendingAutomaticSessions.remove(sessionID) != nil {
+        if !session.shownInOverlay {
             overlay.begin(sessionID: sessionID)
         }
         overlay.fail(sessionID: sessionID, category: .speechPlayback, message: "Speech playback failed.")
         drainQueueIfNeeded()
     }
 
-    /// Hands `request` to the router right now. Only ever called when nothing else is in flight
-    /// (either because nothing was playing, or because the caller just force-stopped whatever
-    /// was).
-    private func start(_ request: SpeechRequest) async throws {
-        let sessionID = UUID()
-        currentSessionID = sessionID
-        isSpeaking = true
-        startWatchdog(for: sessionID)
-
-        switch request.mode {
-        case .userRequested:
-            overlay.begin(sessionID: sessionID)
-            overlay.prepareSpeaking(sessionID: sessionID)
-        case .automatic:
-            pendingAutomaticSessions.insert(sessionID)
-        }
-
-        try await router.speak(text: request.text, options: options(), sessionID: sessionID)
-        lastRequest = request
-    }
-
-    /// Called for every terminal playback event belonging to the session currently in flight.
-    /// Clears the busy flag and, if anything is queued, starts the next automatic request.
-    ///
-    /// Clears `currentSessionID` (not just `isSpeaking`) so a second terminal event for the same
-    /// session — a duplicate `.finished`, or `.cancelled` followed by a late `.finished` — finds
-    /// `sessionID == currentSessionID` false and is a no-op, instead of dequeuing and starting a
-    /// second automatic request on top of the one the first terminal event already started.
-    private func finishInFlightSession(_ sessionID: UUID) {
-        guard sessionID == currentSessionID else { return }
-        cancelWatchdog()
-        currentSessionID = nil
-        isSpeaking = false
-        drainQueueIfNeeded()
-    }
-
-    /// Starts the next queued automatic request, if any. Shared by `finishInFlightSession(_:)`
-    /// (the normal terminal-event path) and `handleWatchdogExpiry(sessionID:)` (which retires its
-    /// session itself and so calls this directly, rather than through `finishInFlightSession(_:)`).
+    /// Starts the next queued automatic request, if any.
     private func drainQueueIfNeeded() {
         guard !pendingAutomaticQueue.isEmpty else { return }
         let next = pendingAutomaticQueue.removeFirst()
@@ -253,41 +212,43 @@ final class SpeechCoordinator: SpeechCoordinating {
     }
 
     private func handle(_ event: TTSPlaybackEvent, backend: (any TextToSpeechBackend)?) {
-        // A watchdog-driven `router.stop()` is in progress for this exact session: ignore
-        // whatever it synchronously, reentrantly emits. See `watchdogRetiringSessionID`'s doc
-        // comment.
-        guard event.sessionID != watchdogRetiringSessionID else { return }
+        guard case var .active(session) = inFlight, session.id == event.sessionID else { return }
+        let sessionID = session.id
         switch event {
-        case let .started(sessionID):
-            recordPlaybackProgress(sessionID: sessionID)
-            if pendingAutomaticSessions.remove(sessionID) != nil {
+        case .started:
+            rearmWatchdog(&session)
+            if !session.shownInOverlay {
+                session.shownInOverlay = true
                 overlay.begin(sessionID: sessionID)
             }
+            inFlight = .active(session)
             overlay.speak(sessionID: sessionID)
             if let backend {
                 overlay.setBackendName(backend.id.displayName, sessionID: sessionID)
             }
-        case let .level(sessionID, level):
-            recordPlaybackProgress(sessionID: sessionID)
+        case let .level(_, level):
+            rearmWatchdog(&session)
+            inFlight = .active(session)
             overlay.updateSpeakingLevel(level, sessionID: sessionID)
-        case let .finished(sessionID):
-            // A pending automatic session that never started was never
-            // shown in the overlay; nothing to complete.
-            if pendingAutomaticSessions.remove(sessionID) == nil {
+        case .finished:
+            if session.shownInOverlay {
                 overlay.complete(sessionID: sessionID)
             }
-            finishInFlightSession(sessionID)
-        case let .cancelled(sessionID):
-            if pendingAutomaticSessions.remove(sessionID) == nil {
+            retire()
+            drainQueueIfNeeded()
+        case .cancelled:
+            if session.shownInOverlay {
                 overlay.cancel(sessionID: sessionID)
             }
-            finishInFlightSession(sessionID)
-        case let .failed(sessionID):
-            if pendingAutomaticSessions.remove(sessionID) != nil {
+            retire()
+            drainQueueIfNeeded()
+        case .failed:
+            if !session.shownInOverlay {
                 overlay.begin(sessionID: sessionID)
             }
             overlay.fail(sessionID: sessionID, category: .speechPlayback, message: "Speech playback failed.")
-            finishInFlightSession(sessionID)
+            retire()
+            drainQueueIfNeeded()
         }
     }
 }
