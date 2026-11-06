@@ -67,6 +67,10 @@ final class RelayRuntime {
     let hotkeyManager: any HotkeyManaging
     let selectionReader: any SelectionReading
     let preprocessor: RulesSpeechPreprocessor
+    /// Every module announces its step lifecycle here; `pipelineRuns` listens for Diagnostics.
+    let pipeline: PipelineEventBus
+    let pipelineRuns = PipelineRunStore()
+    private var pipelineListener: Task<Void, Never>?
 
     init(
         status: StatusSink,
@@ -83,8 +87,10 @@ final class RelayRuntime {
         integrations: IntegrationServices,
         hotkeyManager: any HotkeyManaging,
         selectionReader: any SelectionReading,
-        preprocessor: RulesSpeechPreprocessor
+        preprocessor: RulesSpeechPreprocessor,
+        pipeline: PipelineEventBus = PipelineEventBus()
     ) {
+        self.pipeline = pipeline
         self.status = status
         self.settingsController = settingsController
         self.diagnostics = diagnostics
@@ -100,6 +106,7 @@ final class RelayRuntime {
         self.hotkeyManager = hotkeyManager
         self.selectionReader = selectionReader
         self.preprocessor = preprocessor
+        pipelineListener = pipelineRuns.listen(to: pipeline)
     }
 
     /// Builds Relay's real production dependency graph. Touches UserDefaults, the CGEvent tap and
@@ -113,6 +120,7 @@ final class RelayRuntime {
         )
         let settings = settingsController.snapshot
         let overlayModel = ActivityOverlayModel()
+        let pipeline = PipelineEventBus()
         let graph = SpeechBackendGraph.make(
             whisperSelection: settingsController.modelSelection(for: .whisper),
             setWhisperSelection: settingsController.modelSelectionWriter(for: .whisper),
@@ -169,7 +177,8 @@ final class RelayRuntime {
             speech: coordinator,
             autoReadEnabled: { settings.value.autoReadEnabled },
             diagnostics: integrationDiagnosticsLog,
-            processInspector: processInspector
+            processInspector: processInspector,
+            pipeline: pipeline
         )
 
         // Shared so ClipboardService's copy cycle and TextInsertionService's paste-fallback
@@ -201,6 +210,7 @@ final class RelayRuntime {
             status: { status.post($0) },
             activity: overlayModel,
             diagnostics: diagnostics,
+            pipeline: pipeline,
             liveTranscriptionEnabled: { settings.value.liveTranscriptionEnabled }
         )
         let hookEnvelopeReceiver = HookEnvelopeReceiver(diagnostics: integrationDiagnosticsLog)
@@ -264,7 +274,8 @@ final class RelayRuntime {
                 accessibility: AccessibilityService(),
                 clipboard: ClipboardService(gate: clipboardGate)
             ),
-            preprocessor: preprocessor
+            preprocessor: preprocessor,
+            pipeline: pipeline
         )
     }
 }

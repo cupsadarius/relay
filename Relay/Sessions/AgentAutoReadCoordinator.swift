@@ -29,6 +29,7 @@ actor AgentAutoReadCoordinator {
     /// Takes the ONE process-table snapshot per `handle(_:)` that ancestry capture, pruning, and
     /// every focus resolver share.
     private let processInspector: ProcessInspector
+    private let pipeline: PipelineEventBus?
     /// The most-recently-active agent session: the last one found confidently focused, or the
     /// last one actually auto-spoken, or the last one prompted (whichever happened most recently).
     /// `nil` until the first time any of those occurs.
@@ -42,8 +43,10 @@ actor AgentAutoReadCoordinator {
         speech: any SpeechSubmitting & Sendable,
         autoReadEnabled: @escaping @Sendable () async -> Bool,
         diagnostics: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog(),
-        processInspector: ProcessInspector = ProcessInspector()
+        processInspector: ProcessInspector = ProcessInspector(),
+        pipeline: PipelineEventBus? = nil
     ) {
+        self.pipeline = pipeline
         self.registry = registry
         self.focus = focus
         self.preprocess = preprocess
@@ -61,6 +64,8 @@ actor AgentAutoReadCoordinator {
     }
 
     func handle(_ event: AgentResponseEvent) async {
+        let tracer = pipeline.map { PipelineTracer(flow: .agentReply, bus: $0) }
+        tracer?.finish(.received, "\(event.provider.displayName) · \(Self.size(of: event.text))")
         // One snapshot per event, shared by ancestry capture, pruning, and every focus resolver.
         let snapshot = try? await processInspector.snapshot()
         let session = await registry.upsert(
@@ -72,11 +77,15 @@ actor AgentAutoReadCoordinator {
             outcome: "session-upserted",
             detail: "provider=\(event.provider.rawValue) ancestry=\(event.processAncestry?.isEmpty == false ? "envelope" : "snapshot")"
         )
+        tracer?.finish(.session, Self.terminalLabel(for: event))
 
         guard await autoReadEnabled() else {
             diagnostics.append(stage: "coordinator", outcome: "silent", detail: "auto-read-disabled")
+            tracer?.stop(.autoRead, "Not spoken: auto-read is off")
             return
         }
+        tracer?.finish(.autoRead, "On")
+        tracer?.start(.focus, "Checking focus")
 
         // Prune before every focus decision so a dead agent's session (or one past the TTL)
         // never keeps generic-terminal focus ambiguous.
@@ -98,14 +107,19 @@ actor AgentAutoReadCoordinator {
 
         if let focused, focused.id == session.id {
             lastActiveSessionID = session.id
-            await speak(session: session, event: event, reason: "focused")
+            tracer?.finish(.focus, "Focused")
+            await speak(session: session, event: event, reason: "focused", tracer: tracer)
             return
         }
 
         if focused == nil, lastActiveSessionID == session.id {
-            await speak(session: session, event: event, reason: "last-active")
+            tracer?.finish(.focus, "Last active session")
+            await speak(session: session, event: event, reason: "last-active", tracer: tracer)
             return
         }
+        tracer?.stop(
+            .focus, focused == nil ? "Not spoken: this session is not the last active one" : "Not spoken: another session has focus"
+        )
 
         if let focused {
             // A different session now owns focus; the handoff means subsequent background
@@ -115,9 +129,9 @@ actor AgentAutoReadCoordinator {
         diagnostics.append(stage: "coordinator", outcome: "silent", detail: "reason=not-focused-not-last-active")
     }
 
-    private func speak(session: AgentSession, event: AgentResponseEvent, reason: String) async {
+    private func speak(session: AgentSession, event: AgentResponseEvent, reason: String, tracer: PipelineTracer?) async {
         diagnostics.append(stage: "coordinator", outcome: "spoke", detail: "provider=\(event.provider.rawValue) reason=\(reason)")
-        let request = event.speechRequest(text: preprocess(event.text), mode: .automatic)
+        let request = event.speechRequest(text: preprocess(event.text), mode: .automatic, tracer: tracer)
         do {
             try await speech.speak(request)
         } catch is CancellationError {
@@ -149,6 +163,20 @@ actor AgentAutoReadCoordinator {
             return ancestry
         }
         return snapshot?.ancestry(from: event.parentPID).map(\.pid) ?? []
+    }
+
+    /// A size label only: never the reply text.
+    private static func size(of text: String) -> String {
+        let bytes = text.utf8.count
+        return bytes < 1_024 ? "\(bytes) B" : String(format: "%.1f KB", Double(bytes) / 1_024)
+    }
+
+    private static func terminalLabel(for event: AgentResponseEvent) -> String {
+        let terminal = TerminalContext(event: event)
+        if terminal.rexBlockID != nil { return "Rex" }
+        if terminal.herdrPaneID != nil { return "herdr" }
+        if terminal.tmuxPaneID != nil { return "tmux" }
+        return "Terminal"
     }
 
     private static func label(_ id: AgentSessionID) -> String {

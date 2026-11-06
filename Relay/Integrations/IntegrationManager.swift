@@ -102,17 +102,17 @@ final class IntegrationManager {
 
     /// Preprocesses `event` and speaks it as a user-requested request. Shared by `speakLatest()`
     /// and the focused-session replay, so both build the request the same way.
-    func speakResponse(_ event: AgentResponseEvent) async throws {
+    func speakResponse(_ event: AgentResponseEvent, tracer: PipelineTracer? = nil) async throws {
         let prepared = preprocessor.prepare(text: event.text)
-        try await speechCoordinator.speak(event.speechRequest(text: prepared, mode: .userRequested))
+        try await speechCoordinator.speak(event.speechRequest(text: prepared, mode: .userRequested, tracer: tracer))
     }
 
     /// Speaks the latest response as a user-requested request. Returns `false` when there is
     /// nothing to speak, so a caller can fall back.
     @discardableResult
-    func speakLatest() async throws -> Bool {
+    func speakLatest(tracer: PipelineTracer? = nil) async throws -> Bool {
         guard let event = latestResponse else { return false }
-        try await speakResponse(event)
+        try await speakResponse(event, tracer: tracer)
         return true
     }
 }

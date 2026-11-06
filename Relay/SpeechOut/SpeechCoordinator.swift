@@ -7,6 +7,12 @@ protocol SpeechCoordinating: AnyObject {
     func stop()
     func stop(sessionID: UUID)
     func replayLast() async throws
+    /// Replays the last request, announcing its speak step into `tracer`.
+    func replayLast(tracer: PipelineTracer?) async throws
+}
+
+extension SpeechCoordinating {
+    func replayLast(tracer: PipelineTracer?) async throws { try await replayLast() }
 }
 
 /// A narrow submission-only view of `SpeechCoordinating`, used by callers (like
@@ -36,6 +42,9 @@ final class SpeechCoordinator: SpeechCoordinating {
         /// request never hides the capsule of what is still speaking.
         var shownInOverlay: Bool
         var watchdog: Task<Void, Never>
+        /// Announces this session's speak step.
+        let tracer: PipelineTracer?
+        var backendName: String?
     }
 
     private enum InFlight {
@@ -79,6 +88,7 @@ final class SpeechCoordinator: SpeechCoordinating {
             try await start(request)
         case .automatic:
             if case .active = inFlight {
+                request.tracer?.start(.speak, "Queued behind other speech")
                 enqueue(request)
                 return
             }
@@ -87,8 +97,9 @@ final class SpeechCoordinator: SpeechCoordinating {
     }
 
     func stop() {
-        pendingAutomaticQueue.removeAll()
+        dropQueue("Stopped")
         let retired = retire()
+        retired?.tracer?.stop(.speak, "Stopped")
         router.stop()
         if let retired {
             overlay.cancel(sessionID: retired.id)
@@ -100,7 +111,7 @@ final class SpeechCoordinator: SpeechCoordinating {
 
     func previewVoice(text: String, backendID: BackendID, options: TTSOptions) async throws {
         interrupt()
-        let sessionID = begin(showInOverlay: true)
+        let sessionID = begin(showInOverlay: true, tracer: nil)
         try await router.speak(
             text: text,
             options: options,
@@ -114,42 +125,76 @@ final class SpeechCoordinator: SpeechCoordinating {
     /// automatic backlog.
     func stop(sessionID: UUID) {
         guard router.owns(sessionID) else { return }
-        pendingAutomaticQueue.removeAll()
+        dropQueue("Stopped")
         if case let .active(session) = inFlight, session.id == sessionID {
             retire()
+            session.tracer?.stop(.speak, "Stopped")
         }
         router.stop(sessionID: sessionID)
         overlay.cancel(sessionID: sessionID)
     }
 
     func replayLast() async throws {
-        guard let lastRequest else { return }
+        try await replayLast(tracer: nil)
+    }
+
+    func replayLast(tracer: PipelineTracer?) async throws {
+        guard let lastRequest else {
+            tracer?.stop(.speak, "Nothing to replay")
+            return
+        }
         interrupt()
-        let sessionID = begin(showInOverlay: true)
-        try await router.speak(text: lastRequest.text, options: options(), sessionID: sessionID)
+        let sessionID = begin(showInOverlay: true, tracer: tracer)
+        try await announcing(tracer) {
+            try await router.speak(text: lastRequest.text, options: options(), sessionID: sessionID)
+        }
     }
 
     /// Hands `request` to the router right now. Only ever called when nothing else is in flight
     /// (either because nothing was playing, or because the caller just interrupted whatever was).
     private func start(_ request: SpeechRequest) async throws {
-        let sessionID = begin(showInOverlay: request.mode == .userRequested)
-        try await router.speak(text: request.text, options: options(), sessionID: sessionID)
+        let sessionID = begin(showInOverlay: request.mode == .userRequested, tracer: request.tracer)
+        try await announcing(request.tracer) {
+            try await router.speak(text: request.text, options: options(), sessionID: sessionID)
+        }
         lastRequest = request
+    }
+
+    /// Announces the speak step's start, and its end when the router cannot start playback.
+    private func announcing(_ tracer: PipelineTracer?, _ body: () async throws -> Void) async throws {
+        tracer?.start(.speak, "Preparing speech")
+        do {
+            try await body()
+        } catch is CancellationError {
+            tracer?.stop(.speak, "Stopped")
+            throw CancellationError()
+        } catch {
+            tracer?.fail(.speak, "Could not start speech")
+            throw error
+        }
+    }
+
+    /// Clears the automatic backlog and tells each dropped request's run why.
+    private func dropQueue(_ reason: String) {
+        for request in pendingAutomaticQueue { request.tracer?.stop(.speak, reason) }
+        pendingAutomaticQueue.removeAll()
     }
 
     /// Clears the backlog and stops whatever is in flight; the caller's `begin` replaces the overlay.
     private func interrupt() {
-        pendingAutomaticQueue.removeAll()
-        retire()
+        dropQueue("Interrupted")
+        retire()?.tracer?.stop(.speak, "Interrupted")
         router.stop()
     }
 
     /// The first watchdog deadline starts at acceptance, so a backend that never begins playback
     /// is still recovered.
-    private func begin(showInOverlay: Bool) -> UUID {
+    private func begin(showInOverlay: Bool, tracer: PipelineTracer?) -> UUID {
         let sessionID = UUID()
         inFlight = .active(
-            ActiveSession(id: sessionID, shownInOverlay: showInOverlay, watchdog: makeWatchdog(for: sessionID))
+            ActiveSession(
+                id: sessionID, shownInOverlay: showInOverlay, watchdog: makeWatchdog(for: sessionID), tracer: tracer
+            )
         )
         if showInOverlay {
             overlay.begin(sessionID: sessionID)
@@ -173,7 +218,9 @@ final class SpeechCoordinator: SpeechCoordinating {
     private func enqueue(_ request: SpeechRequest) {
         pendingAutomaticQueue.append(request)
         if pendingAutomaticQueue.count > Self.queueCap {
-            pendingAutomaticQueue.removeFirst(pendingAutomaticQueue.count - Self.queueCap)
+            let overflow = pendingAutomaticQueue.count - Self.queueCap
+            for dropped in pendingAutomaticQueue.prefix(overflow) { dropped.tracer?.stop(.speak, "Dropped: speech queue full") }
+            pendingAutomaticQueue.removeFirst(overflow)
         }
     }
 
@@ -194,6 +241,7 @@ final class SpeechCoordinator: SpeechCoordinating {
     private func handleWatchdogExpiry(sessionID: UUID) {
         guard case let .active(session) = inFlight, session.id == sessionID else { return }
         retire()
+        session.tracer?.fail(.speak, "Playback timed out")
         router.stop()
         if !session.shownInOverlay {
             overlay.begin(sessionID: sessionID)
@@ -221,6 +269,10 @@ final class SpeechCoordinator: SpeechCoordinating {
                 session.shownInOverlay = true
                 overlay.begin(sessionID: sessionID)
             }
+            if let backend {
+                session.backendName = backend.id.displayName
+                session.tracer?.update(.speak, "Speaking with \(backend.id.displayName)")
+            }
             inFlight = .active(session)
             overlay.speak(sessionID: sessionID)
             if let backend {
@@ -231,18 +283,21 @@ final class SpeechCoordinator: SpeechCoordinating {
             inFlight = .active(session)
             overlay.updateSpeakingLevel(level, sessionID: sessionID)
         case .finished:
+            session.tracer?.finish(.speak, session.backendName ?? "Done")
             if session.shownInOverlay {
                 overlay.complete(sessionID: sessionID)
             }
             retire()
             drainQueueIfNeeded()
         case .cancelled:
+            session.tracer?.stop(.speak, "Stopped")
             if session.shownInOverlay {
                 overlay.cancel(sessionID: sessionID)
             }
             retire()
             drainQueueIfNeeded()
         case .failed:
+            session.tracer?.fail(.speak, "Playback failed")
             if !session.shownInOverlay {
                 overlay.begin(sessionID: sessionID)
             }

@@ -45,4 +45,11 @@ struct SpeechRequest: Sendable, Equatable {
     let source: SpeechSource
     let mode: SpeechMode
     let sessionID: String?
+    /// The run this speech belongs to; speech playback announces the speak step into it.
+    /// Not part of equality: two requests that speak the same thing are equal.
+    var tracer: PipelineTracer? = nil
+
+    static func == (lhs: SpeechRequest, rhs: SpeechRequest) -> Bool {
+        lhs.text == rhs.text && lhs.source == rhs.source && lhs.mode == rhs.mode && lhs.sessionID == rhs.sessionID
+    }
 }

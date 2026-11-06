@@ -153,12 +153,17 @@ final class SpySettingsStore: SettingsStoring {
 @MainActor
 final class SpySelectionReader: SelectionReading {
     let text: String
+    let error: SelectionReadingError?
     private(set) var readCount = 0
 
-    init(text: String = "selected") { self.text = text }
+    init(text: String = "selected", error: SelectionReadingError? = nil) {
+        self.text = text
+        self.error = error
+    }
 
     func readSelection() async throws -> SelectionResult {
         readCount += 1
+        if let error { throw error }
         return .init(text: text, source: .accessibility)
     }
 }

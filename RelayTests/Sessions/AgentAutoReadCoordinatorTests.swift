@@ -17,6 +17,31 @@ final class AgentAutoReadCoordinatorTests: XCTestCase {
         XCTAssertEqual(speech.requests[0].sessionID, "claude-code:a")
     }
 
+    func testAutoReadOffIsAnnouncedAsTheReasonNothingWasSpoken() async throws {
+        let recorder = PipelineEventRecorder()
+        let coordinator = makeCoordinator(focus: MutableStubFocusResolver(), speech: RecordingSpeechSink(), autoRead: false, pipeline: recorder.bus)
+
+        await coordinator.handle(makeAutoReadEvent(text: "Done."))
+
+        let steps = await recorder.steps()
+        XCTAssertEqual(steps.map(\.step), [.received, .session, .autoRead])
+        XCTAssertEqual(steps.last?.phase, .stopped("Not spoken: auto-read is off"))
+    }
+
+    func testFocusedReplyHandsItsRunToSpeech() async throws {
+        let recorder = PipelineEventRecorder()
+        let speech = RecordingSpeechSink()
+        let focus = MutableStubFocusResolver()
+        focus.focusedSessionID = .init(provider: .claudeCode, providerSessionID: "a")
+        let coordinator = makeCoordinator(focus: focus, speech: speech, autoRead: true, pipeline: recorder.bus)
+
+        await coordinator.handle(makeAutoReadEvent(providerSessionID: "a", text: "Done."))
+
+        let steps = await recorder.steps()
+        XCTAssertTrue(steps.contains(.init(step: .focus, phase: .finished("Focused"))))
+        XCTAssertEqual(speech.requests.first?.tracer?.flow, .agentReply)
+    }
+
     func testBackgroundResponseStaysSilentButRegistryKeepsIt() async throws {
         let speech = RecordingSpeechSink()
         let focus = MutableStubFocusResolver()
@@ -381,7 +406,8 @@ private func makeCoordinatorHarness(
     speech: RecordingSpeechSink,
     autoRead: Bool,
     diagnostics: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog(),
-    processInspector: ProcessInspector = ProcessInspector(runner: AlwaysAliveProcessRunner())
+    processInspector: ProcessInspector = ProcessInspector(runner: AlwaysAliveProcessRunner()),
+    pipeline: PipelineEventBus? = nil
 ) -> AutoReadHarness {
     let registry = AgentSessionRegistry()
     let coordinator = AgentAutoReadCoordinator(
@@ -391,7 +417,8 @@ private func makeCoordinatorHarness(
         speech: speech,
         autoReadEnabled: { autoRead },
         diagnostics: diagnostics,
-        processInspector: processInspector
+        processInspector: processInspector,
+        pipeline: pipeline
     )
     return .init(coordinator: coordinator, registry: registry)
 }
@@ -402,9 +429,13 @@ private func makeCoordinator(
     speech: RecordingSpeechSink,
     autoRead: Bool,
     diagnostics: IntegrationDiagnosticsLog = IntegrationDiagnosticsLog(),
-    processInspector: ProcessInspector = ProcessInspector(runner: AlwaysAliveProcessRunner())
+    processInspector: ProcessInspector = ProcessInspector(runner: AlwaysAliveProcessRunner()),
+    pipeline: PipelineEventBus? = nil
 ) -> AgentAutoReadCoordinator {
-    makeCoordinatorHarness(focus: focus, speech: speech, autoRead: autoRead, diagnostics: diagnostics, processInspector: processInspector).coordinator
+    makeCoordinatorHarness(
+        focus: focus, speech: speech, autoRead: autoRead, diagnostics: diagnostics, processInspector: processInspector,
+        pipeline: pipeline
+    ).coordinator
 }
 
 private func makeAutoReadEvent(

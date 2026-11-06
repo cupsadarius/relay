@@ -31,6 +31,30 @@ final class SpeechActionsTests: XCTestCase {
         return (SpeechActions(runtime: runtime, voiceCatalog: catalog), runtime)
     }
 
+    func testReadSelectionWithNothingSelectedStopsAtTheTextStep() async {
+        let (actions, runtime) = makeActions(selection: SpySelectionReader(error: .noUsableSelection))
+        let events = runtime.pipeline.events()
+
+        await actions.readSelection()
+        runtime.pipeline.finish()
+
+        var steps: [(PipelineStep, PipelinePhase)] = []
+        for await event in events { steps.append((event.step, event.phase)) }
+        XCTAssertEqual(steps.first?.0, .trigger)
+        XCTAssertEqual(steps.first?.1, .finished("Read selection"))
+        XCTAssertEqual(steps.last?.0, .source)
+        XCTAssertEqual(steps.last?.1, .stopped("Nothing selected"))
+    }
+
+    func testReadSelectionHandsItsRunToSpeech() async {
+        let speech = SpySpeechCoordinator()
+        let (actions, _) = makeActions(speech: speech, selection: SpySelectionReader(text: "hello there"))
+
+        await actions.readSelection()
+
+        XCTAssertEqual(speech.requests.first?.tracer?.flow, .readAloud)
+    }
+
     func testGlobalLatestReplaySpeaksTheLatestAgentResponse() async {
         let registry = AgentSessionRegistry()
         _ = await registry.upsert(response: .fixture(providerSessionID: "session-a"), processAncestry: [4242])

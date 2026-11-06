@@ -19,6 +19,7 @@ final class SpeechActions {
     private let settings: SettingsController
     private let diagnostics: DiagnosticsRecorder
     private let statusSink: StatusSink
+    private let pipeline: PipelineEventBus
 
     init(runtime: RelayRuntime, voiceCatalog: SpeechVoiceCatalog) {
         selectionReader = runtime.selectionReader
@@ -36,25 +37,44 @@ final class SpeechActions {
         settings = runtime.settingsController
         diagnostics = runtime.diagnostics
         statusSink = runtime.status
+        pipeline = runtime.pipeline
+    }
+
+    /// Starts a read-aloud run; `trigger` names the action that started it.
+    private func beginRun(_ trigger: String) -> PipelineTracer {
+        let tracer = PipelineTracer(flow: .readAloud, bus: pipeline)
+        tracer.finish(.trigger, trigger)
+        return tracer
     }
 
     func readSelection() async {
+        let tracer = beginRun("Read selection")
+        tracer.start(.source, "Reading selection")
         do {
             let selection = try await selectionReader.readSelection()
             diagnostics.record(selection.source == .accessibility ? .selectionAccessibility : .selectionClipboard)
+            tracer.finish(
+                .source,
+                "\(selection.text.count) characters · \(selection.source == .accessibility ? "Accessibility" : "Clipboard")"
+            )
             let request = SpeechRequest(
                 text: preprocessor.prepare(text: selection.text),
                 source: .selection,
                 mode: .userRequested,
-                sessionID: nil
+                sessionID: nil,
+                tracer: tracer
             )
             guard !Task.isCancelled else { return }
             try await speechCoordinator.speak(request)
             diagnostics.record(.ttsSubmitted)
         } catch is CancellationError {
             // Stopped or superseded on purpose: not a failure.
+        } catch let error as SelectionReadingError {
+            tracer.stop(.source, error == .noUsableSelection ? "Nothing selected" : "Accessibility permission needed")
+            diagnostics.record(.selectionUnavailable)
+            statusSink.post(error.localizedDescription)
         } catch {
-            diagnostics.record(error is SelectionReadingError ? .selectionUnavailable : .ttsFailed)
+            diagnostics.record(.ttsFailed)
             statusSink.post(error.localizedDescription)
         }
     }
@@ -62,17 +82,22 @@ final class SpeechActions {
     /// Session-aware Replay Last; tiers documented on `ReplayTarget`. Always `.userRequested`.
     func replayLast() async {
         let manager = integrationManager
+        let tracer = beginRun("Replay last")
         let target = await replayResolver.resolve(globalLatestAvailable: { manager.latestResponse != nil })
         guard !Task.isCancelled else { return }
         switch target {
         case let .focusedSession(session):
-            await speakFocusedSessionReply(session)
+            tracer.finish(.source, "Reply from the focused session")
+            await speakFocusedSessionReply(session, tracer: tracer)
         case .globalLatest:
-            if await speakGlobalLatestReply() { return }
+            tracer.finish(.source, "Latest agent reply")
+            if await speakGlobalLatestReply(tracer: tracer) { return }
             guard !Task.isCancelled else { return }
-            await speakLastSpokenText()
+            tracer.finish(.source, "Last spoken text")
+            await speakLastSpokenText(tracer: tracer)
         case .lastSpoken:
-            await speakLastSpokenText()
+            tracer.finish(.source, "Last spoken text")
+            await speakLastSpokenText(tracer: tracer)
         }
     }
 
@@ -95,8 +120,11 @@ final class SpeechActions {
     }
 
     func speakLatestAgentResponse() async {
+        let tracer = beginRun("Speak latest reply")
         do {
-            guard try await integrationManager.speakLatest() else {
+            if integrationManager.latestResponse != nil { tracer.finish(.source, "Latest agent reply") }
+            guard try await integrationManager.speakLatest(tracer: tracer) else {
+                tracer.stop(.source, "No agent reply yet")
                 statusSink.post("No agent response to speak yet.")
                 return
             }
@@ -109,9 +137,9 @@ final class SpeechActions {
         }
     }
 
-    private func speakFocusedSessionReply(_ session: AgentSession) async {
+    private func speakFocusedSessionReply(_ session: AgentSession, tracer: PipelineTracer) async {
         do {
-            try await integrationManager.speakResponse(session.latestResponse)
+            try await integrationManager.speakResponse(session.latestResponse, tracer: tracer)
             diagnostics.record(.ttsSubmitted)
             integrationDiagnosticsLog.append(
                 stage: "replay-last",
@@ -128,9 +156,9 @@ final class SpeechActions {
 
     /// `true` when tier 2 handled the request (spoke, was cancelled, or failed loudly); `false`
     /// when the store had nothing, so the caller falls through to tier 3.
-    private func speakGlobalLatestReply() async -> Bool {
+    private func speakGlobalLatestReply(tracer: PipelineTracer) async -> Bool {
         do {
-            guard try await integrationManager.speakLatest() else { return false }
+            guard try await integrationManager.speakLatest(tracer: tracer) else { return false }
             diagnostics.record(.ttsSubmitted)
             integrationDiagnosticsLog.append(stage: "replay-last", outcome: "global-latest", detail: "")
             return true
@@ -143,9 +171,9 @@ final class SpeechActions {
         }
     }
 
-    private func speakLastSpokenText() async {
+    private func speakLastSpokenText(tracer: PipelineTracer) async {
         do {
-            try await speechCoordinator.replayLast()
+            try await speechCoordinator.replayLast(tracer: tracer)
             diagnostics.record(.ttsReplayed)
             integrationDiagnosticsLog.append(stage: "replay-last", outcome: "last-spoken", detail: "")
         } catch is CancellationError {

@@ -275,6 +275,42 @@ final class SpeechCoordinatorTests: XCTestCase {
         guard case .speaking = overlay.state else { return XCTFail("Expected speaking") }
     }
 
+    func testSpeakAnnouncesTheSpeakLifecycleOnTheRequestTracer() async throws {
+        let backend = FakeTTSBackend(id: .appleTTS)
+        let coordinator = makeCoordinator(backend: backend)
+        let recorder = PipelineEventRecorder()
+        var traced = request(text: "hello", mode: .userRequested)
+        traced.tracer = recorder.tracer(.readAloud)
+
+        try await coordinator.speak(traced)
+        backend.emitStarted()
+        backend.emit(.finished(sessionID: backend.lastSessionID!))
+
+        let name = BackendID.appleTTS.displayName
+        let steps = await recorder.steps()
+        XCTAssertEqual(
+            steps,
+            [
+                .init(step: .speak, phase: .started("Preparing speech")),
+                .init(step: .speak, phase: .updated("Speaking with \(name)")),
+                .init(step: .speak, phase: .finished(name)),
+            ])
+    }
+
+    func testInterruptedSpeechIsAnnouncedAsStopped() async throws {
+        let backend = FakeTTSBackend(id: .appleTTS)
+        let coordinator = makeCoordinator(backend: backend)
+        let recorder = PipelineEventRecorder()
+        var first = request(text: "one", mode: .userRequested)
+        first.tracer = recorder.tracer(.readAloud)
+
+        try await coordinator.speak(first)
+        coordinator.stop()
+
+        let steps = await recorder.steps()
+        XCTAssertEqual(steps.last, .init(step: .speak, phase: .stopped("Stopped")))
+    }
+
     func testStartedEventSetsOverlayBackendNameFromBackend() async throws {
         let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())

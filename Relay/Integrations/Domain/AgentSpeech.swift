@@ -17,7 +17,7 @@ extension AgentResponseEvent {
 
     /// The single place an agent response becomes a `SpeechRequest`: source from the provider,
     /// session ID from `AgentSessionID.qualifiedName`. `text` is the already-preprocessed text.
-    func speechRequest(text: String, mode: SpeechMode) -> SpeechRequest {
-        SpeechRequest(text: text, source: provider.speechSource, mode: mode, sessionID: sessionID.qualifiedName)
+    func speechRequest(text: String, mode: SpeechMode, tracer: PipelineTracer? = nil) -> SpeechRequest {
+        SpeechRequest(text: text, source: provider.speechSource, mode: mode, sessionID: sessionID.qualifiedName, tracer: tracer)
     }
 }
