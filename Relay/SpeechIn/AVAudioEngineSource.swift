@@ -2,7 +2,9 @@ import AVFoundation
 import Foundation
 import os
 
-/// Live microphone source. Threading rules:
+/// Live microphone source. Every capture builds a fresh `AVAudioEngine` and drops it on every
+/// teardown path, so no engine outlives its capture and keeps the input device open.
+/// Threading rules:
 /// - The tap callback only takes the gate briefly and delivers samples with no lock held.
 /// - Every engine mutation (installTap, start, removeTap, stop) runs on `engineQueue`, which the
 ///   tap never runs on, so teardown there can wait for an in-flight callback without deadlocking.
@@ -11,10 +13,12 @@ import os
 ///   `start()`/`stop()` goes through the same queue, so that teardown always runs before a newer
 ///   capture installs its tap.
 final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendable {
-    private let engine = AVAudioEngine()
     private let gate = CaptureCallbackGate()
     private let engineQueue = DispatchQueue(label: "dev.relaymac.Relay.microphone-engine")
     private let notificationCenter: NotificationCenter
+    private let preferredMicrophone: @Sendable () -> SelectedMicrophone?
+    private let releaseMonitor: MicrophoneReleaseMonitor?
+    private let onFallback: @Sendable (String) -> Void
 
     private let stateLock = NSLock()
     /// The real input device rate captured in `start()`, before resampling to 16 kHz. Metadata
@@ -26,11 +30,20 @@ final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendable {
     private var configurationObserver: AudioEngineConfigurationObserver?
     private let logger = Logger.relay("microphone")
 
-    /// Only touched on `engineQueue`.
-    private var tapInstalled = false
+    /// The current capture's engine; `nil` while idle. Only touched on `engineQueue`.
+    private var engine: AVAudioEngine?
 
-    init(notificationCenter: NotificationCenter = .default) {
+    /// `onFallback` receives the name of a chosen microphone that Relay could not use.
+    init(
+        notificationCenter: NotificationCenter = .default,
+        preferredMicrophone: @escaping @Sendable () -> SelectedMicrophone? = { nil },
+        releaseMonitor: MicrophoneReleaseMonitor? = nil,
+        onFallback: @escaping @Sendable (String) -> Void = { _ in }
+    ) {
         self.notificationCenter = notificationCenter
+        self.preferredMicrophone = preferredMicrophone
+        self.releaseMonitor = releaseMonitor
+        self.onFallback = onFallback
     }
 
     func currentInputSampleRate() -> Double {
@@ -41,9 +54,13 @@ final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendable {
         onSamples: @escaping @Sendable ([Float]) -> Void,
         onTerminalError: @escaping @Sendable (Error) async -> Void
     ) async throws {
-        try engineQueue.sync {
-            guard !tapInstalled else { throw MicrophoneCaptureError.alreadyRecording }
+        let engine: AVAudioEngine = try engineQueue.sync {
+            guard self.engine == nil else { throw MicrophoneCaptureError.alreadyRecording }
+            releaseMonitor?.captureStarted()
+            let engine = AVAudioEngine()
+            self.engine = engine
             let input = engine.inputNode
+            selectInputDevice(on: input)
             let inputFormat = input.inputFormat(forBus: 0)
             guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0,
                 let outputFormat = AVAudioFormat(
@@ -54,6 +71,7 @@ final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendable {
                 ),
                 let converter = AVAudioConverter(from: inputFormat, to: outputFormat)
             else {
+                tearDownEngine(path: .failure)
                 throw MicrophoneCaptureError.unavailable("The current input format is unsupported.")
             }
 
@@ -66,19 +84,20 @@ final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendable {
             input.installTap(onBus: 0, bufferSize: 4_096, format: inputFormat) { [weak self] buffer, _ in
                 self?.handleTap(buffer, converter: converter, outputFormat: outputFormat, onSamples: onSamples)
             }
-            tapInstalled = true
 
             do {
                 try engine.start()
             } catch {
                 _ = gate.close()
-                tearDownEngine()
+                tearDownEngine(path: .failure)
                 throw MicrophoneCaptureError.unavailable(error.localizedDescription)
             }
+            return engine
         }
 
-        let observer = AudioEngineConfigurationObserver(engine: engine, center: notificationCenter) { [weak self] in
-            guard let self else { return }
+        let observer = AudioEngineConfigurationObserver(engine: engine, center: notificationCenter) {
+            [weak self, weak engine] in
+            guard let self, let engine else { return }
             // Bracket with the same gate the tap uses: if the gate is already closed (a `stop()`
             // in flight, or a previous failure already reported), this notification is stale for
             // the current -- or a since-superseded -- session and must not fail it.
@@ -90,11 +109,11 @@ final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendable {
             // (above): the gate is only open while a capture is actually running, and `stop()`
             // closes it and waits out any in-flight callback before tearing the engine down, so
             // this read cannot race a `tearDownEngine()` that has already started.
-            let current = self.engine.inputNode.inputFormat(forBus: 0)
+            let current = engine.inputNode.inputFormat(forBus: 0)
             let installed = self.stateLock.withLock { (self.inputSampleRate, self.installedInputChannelCount) }
             guard
                 AudioEngineRouteChangeDecision.isDisruptive(
-                    isEngineRunning: self.engine.isRunning,
+                    isEngineRunning: engine.isRunning,
                     installedSampleRate: installed.0,
                     installedChannelCount: installed.1,
                     currentSampleRate: current.sampleRate,
@@ -118,7 +137,7 @@ final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendable {
     /// `removeTap`/`engine.stop()`. Both are bounded and short. That is acceptable on the
     /// `MicrophoneCapture` actor's executor, and it is what upholds the `AudioCaptureSourcing.stop`
     /// contract that no samples arrive after it returns.
-    func stop() async throws {
+    func stop(path: MicrophoneStopPath) async throws {
         let error = gate.close()
         let observer: AudioEngineConfigurationObserver? = stateLock.withLock {
             defer {
@@ -128,16 +147,41 @@ final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendable {
             return configurationObserver
         }
         withExtendedLifetime(observer) {} // released here, outside the lock
-        engineQueue.sync { tearDownEngine() }
+        engineQueue.sync { tearDownEngine(path: path) }
         if let error { throw error }
     }
 
-    /// `engineQueue` only.
-    private func tearDownEngine() {
-        guard tapInstalled else { return }
+    /// `engineQueue` only. A no-op when the capture is already torn down.
+    private func tearDownEngine(path: MicrophoneStopPath) {
+        guard let engine else { return }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
-        tapInstalled = false
+        self.engine = nil
+        releaseMonitor?.captureReleased(path)
+    }
+
+    /// `engineQueue` only. Must run before the input format is read. Falls back to the system
+    /// default input, never fails the capture.
+    private func selectInputDevice(on input: AVAudioInputNode) {
+        let resolution = MicrophoneSelection.resolve(preferredMicrophone(), connected: AudioInputDevices.connected())
+        if let missing = resolution.missing {
+            onFallback(missing.name)
+        }
+        guard let device = resolution.device else { return }
+        var deviceID = device.id
+        let status: OSStatus =
+            if let unit = input.audioUnit {
+                AudioUnitSetProperty(
+                    unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
+                    &deviceID, UInt32(MemoryLayout<AudioDeviceID>.size)
+                )
+            } else {
+                kAudioUnitErr_Uninitialized
+            }
+        if status != noErr {
+            logger.error("Could not select the chosen microphone (status \(status)); using the system default")
+            onFallback(device.name)
+        }
     }
 
     /// Tap thread.
@@ -194,7 +238,7 @@ final class AVAudioEngineSource: AudioCaptureSourcing, @unchecked Sendable {
             return (terminalErrorHandler, configurationObserver)
         }
         withExtendedLifetime(observer) {} // released here, outside the lock -- matches stop()
-        engineQueue.async { [weak self] in self?.tearDownEngine() }
+        engineQueue.async { [weak self] in self?.tearDownEngine(path: .failure) }
         if let handler {
             Task { await handler(error) }
         }

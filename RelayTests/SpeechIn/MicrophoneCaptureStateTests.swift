@@ -45,6 +45,17 @@ final class MicrophoneCaptureStateTests: XCTestCase {
         try await capture.start(onLevel: { _ in })
     }
 
+    func testCancelPassesCancelPath() async throws {
+        let source = FakeAudioSource()
+        let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: source)
+        try await capture.start(onLevel: { _ in })
+
+        await capture.cancel()
+
+        let paths = await source.stopPaths
+        XCTAssertEqual(paths, [.cancel])
+    }
+
     func testCancelWhileIdleIsANoOp() async {
         let capture = MicrophoneCapture(permission: FakeMicrophonePermission(granted: true), source: FakeAudioSource())
 
@@ -425,6 +436,7 @@ private actor FakeAudioSource: AudioCaptureSourcing {
     private var hasEnteredStop = false
     private var startInvocationCount = 0
     private(set) var stopInvocationCount = 0
+    private(set) var stopPaths: [MicrophoneStopPath] = []
 
     init(
         startError: Error? = nil,
@@ -467,8 +479,9 @@ private actor FakeAudioSource: AudioCaptureSourcing {
         }
     }
 
-    func stop() async throws {
+    func stop(path: MicrophoneStopPath) async throws {
         stopInvocationCount += 1
+        stopPaths.append(path)
         if blockStop {
             hasEnteredStop = true
             stopEnteredWaiter?.resume()

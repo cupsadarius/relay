@@ -20,9 +20,14 @@ protocol AudioCaptureSourcing: Sendable {
         onSamples: @escaping @Sendable ([Float]) -> Void,
         onTerminalError: @escaping @Sendable (Error) async -> Void
     ) async throws
-    func stop() async throws
+    /// `path` says why the capture ends, for the release check.
+    func stop(path: MicrophoneStopPath) async throws
     /// The input device's sample rate (Hz) before resampling to 16 kHz.
     func currentInputSampleRate() -> Double
+}
+
+extension AudioCaptureSourcing {
+    func stop() async throws { try await stop(path: .stop) }
 }
 
 /// Privacy-safe metadata about one microphone capture attempt: counts, rate, and a timestamp
@@ -130,7 +135,7 @@ actor MicrophoneCapture: MicrophoneCapturing {
                 // Cancel was requested and the actor is still `.starting` — nobody
                 // else has progressed past this frame, so it still owns the source and must
                 // tear it down. `source.start()` has now definitely returned, so this is safe.
-                try? await source.stop()
+                try? await source.stop(path: .cancel)
                 accumulator.reset()
                 transitionToIdle()
                 return
@@ -197,7 +202,7 @@ actor MicrophoneCapture: MicrophoneCapturing {
             await withCheckedContinuation { idleWaiters.append($0) }
         case let .recording(session):
             state = .stopping(session)
-            try? await source.stop()
+            try? await source.stop(path: .cancel)
             accumulator.reset()
             transitionToIdle()
         case .stopping:

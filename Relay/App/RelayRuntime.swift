@@ -177,9 +177,20 @@ final class RelayRuntime {
         let clipboardGate = ClipboardGate()
 
         let dictation = DictationCoordinator(
-            microphone: MicrophoneCapture(onCaptureDiagnostics: { @MainActor (diagnosticsRecord: MicrophoneCaptureDiagnostics) in
-                diagnostics.recordMicrophoneCapture(diagnosticsRecord)
-            }),
+            microphone: MicrophoneCapture(
+                source: AVAudioEngineSource(
+                    preferredMicrophone: { settings.value.selectedMicrophone },
+                    releaseMonitor: MicrophoneReleaseMonitor(probe: CoreAudioProcessInputProbe()) { path in
+                        Task { @MainActor in diagnostics.record(.dictation(.microphoneStillOpen(path))) }
+                    },
+                    onFallback: { name in
+                        Task { @MainActor in diagnostics.record(.dictation(.microphoneFallback(missingName: name))) }
+                    }
+                ),
+                onCaptureDiagnostics: { @MainActor (diagnosticsRecord: MicrophoneCaptureDiagnostics) in
+                    diagnostics.recordMicrophoneCapture(diagnosticsRecord)
+                }
+            ),
             sttRouter: STTRouter(
                 backends: sttRegistry,
                 backendOrder: { settings.value.sttBackendOrder }
