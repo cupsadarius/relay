@@ -10,11 +10,7 @@ final class SpeechBackendsModelTests: XCTestCase {
         sttRegistry: [String: any SpeechToTextBackend] = [:],
         ttsRegistry: [String: any TextToSpeechBackend] = [:],
         speechModelManagers: [String: any SpeechModelManaging] = [:],
-        ttsModelManagers: [String: any SpeechModelManaging] = [:],
-        cleanupModelManagers: [String: any SpeechModelManaging] = [:],
-        transcriptCleanup: (any TranscriptCleaning)? = nil,
-        cleanupTester: DictationCleanupTester? = nil,
-        cleanupRuntime: (any MLXCleanupRuntimeServing)? = nil
+        ttsModelManagers: [String: any SpeechModelManaging] = [:]
     ) -> SpeechBackendsModel {
         let store = store ?? SpySettingsStore()
         let speech = speech ?? SpySpeechCoordinator()
@@ -25,11 +21,7 @@ final class SpeechBackendsModelTests: XCTestCase {
                 sttRegistry: sttRegistry,
                 speechModelManagers: speechModelManagers,
                 ttsRegistry: ttsRegistry,
-                ttsModelManagers: ttsModelManagers,
-                cleanupModelManagers: cleanupModelManagers,
-                transcriptCleanup: transcriptCleanup,
-                cleanupTester: cleanupTester,
-                cleanupRuntime: cleanupRuntime
+                ttsModelManagers: ttsModelManagers
             ))
     }
 
@@ -173,130 +165,6 @@ final class SpeechBackendsModelTests: XCTestCase {
         // The default option maps to "no stored voice" — and it is still a persisted write.
         XCTAssertEqual(store.saved.count, 1)
         XCTAssertNil(store.saved.last?.voiceByBackend[BackendID.appleTTS.rawValue])
-    }
-
-    func testCleanupManagersAreWiredToTheCleanupDomain() {
-        let model = makeModel(cleanupModelManagers: ["mlx-cleanup": StubModelManager(backendID: "mlx-cleanup", modelIDs: [])])
-        XCTAssertEqual(model.models.backendKeys, [SpeechModelBackendKey(domain: .dictationCleanup, backendID: "mlx-cleanup")])
-    }
-
-    func testCleanupDomainHasNoBackendList() {
-        XCTAssertNil(makeModel().list(for: .dictationCleanup))
-    }
-
-    func testRefreshAllIncludesCleanup() async {
-        let model = makeModel(cleanupModelManagers: ["mlx-cleanup": StubModelManager(backendID: "mlx-cleanup", modelIDs: ["q"])])
-
-        await model.refreshAll()
-
-        XCTAssertEqual(model.models.models[SpeechModelBackendKey(domain: .dictationCleanup, backendID: "mlx-cleanup")]?.map(\.id), ["q"])
-    }
-
-    func testSelectingACleanupModelPrewarms() async {
-        let cleaner = SpyTranscriptCleaner()
-        let model = makeModel(
-            cleanupModelManagers: ["mlx-cleanup": StubModelManager(backendID: "mlx-cleanup", modelIDs: ["q"])], transcriptCleanup: cleaner
-        )
-
-        await model.models.select("q", in: SpeechModelBackendKey(domain: .dictationCleanup, backendID: "mlx-cleanup"))
-
-        XCTAssertEqual(cleaner.prewarmCount, 1)
-    }
-
-    func testRemovingACleanupModelCancelsTheTestAndRetiresTheGeneration() async {
-        let operation = ManualOperation(cooperative: false)
-        let runtime = FakeMLXRuntime(handler: { _, _ in try await operation.run() })
-        let tester = DictationCleanupTester(apple: FakeAppleCleanup(), mlx: runtime, sleep: TestSleeper().sleepFunction)
-        let model = makeModel(
-            cleanupModelManagers: ["mlx-cleanup": StubModelManager(backendID: "mlx-cleanup", modelIDs: [CleanupModelID.qwen3_0_6b.rawValue])],
-            cleanupTester: tester, cleanupRuntime: runtime
-        )
-        tester.run(model: .qwen3_0_6b)
-        await eventually { operation.startCount == 1 }
-
-        await model.models.remove(
-            CleanupModelID.qwen3_0_6b.rawValue, in: SpeechModelBackendKey(domain: .dictationCleanup, backendID: "mlx-cleanup")
-        )
-
-        await eventually { tester.phase == .cancelledModelRemoved }
-        let retired = await runtime.retireCount
-        XCTAssertEqual(retired, 1)
-        // Review fix 11: the specific model id being removed is passed through to the runtime,
-        // not a blanket retire.
-        let retiredInvolving = await runtime.retiredInvolving
-        XCTAssertEqual(retiredInvolving, [.qwen3_0_6b])
-        operation.finish(.success("late"))
-    }
-
-    func testTurningCleanupOnPersistsAndPrewarms() {
-        let store = SpySettingsStore()
-        let cleaner = SpyTranscriptCleaner()
-        let model = makeModel(store: store, transcriptCleanup: cleaner)
-
-        model.setCleanupEnabled(true)
-        XCTAssertEqual(store.saved.last?.dictationCleanupEnabled, true)
-        XCTAssertEqual(cleaner.prewarmCount, 1)
-
-        model.setCleanupEnabled(false)
-        XCTAssertEqual(store.saved.last?.dictationCleanupEnabled, false)
-        XCTAssertEqual(cleaner.prewarmCount, 1)
-    }
-
-    func testLaunchRefreshPrewarmsOnceAtTheEnd() async {
-        let cleaner = SpyTranscriptCleaner()
-        let model = makeModel(transcriptCleanup: cleaner)
-
-        await model.refreshAll()
-
-        XCTAssertEqual(cleaner.prewarmCount, 1)
-    }
-
-    func testCleanupBackendsAreAppleThenQwenInThatOrder() async {
-        let model = makeModel(cleanupModelManagers: [
-            "mlx-cleanup": StubModelManager(backendID: "mlx-cleanup", modelIDs: ["mlx.qwen3-1.7b-4bit", "mlx.qwen3-0.6b-4bit"]),
-            "apple-foundation-cleanup": StubModelManager(backendID: "apple-foundation-cleanup", modelIDs: ["apple.system-language-model"]),
-        ])
-
-        await model.refresh(.dictationCleanup)
-
-        XCTAssertEqual(model.cleanupBackends.map(\.id), ["apple-foundation-cleanup", "mlx-cleanup"])
-        XCTAssertEqual(model.cleanupBackends.map(\.displayName), ["Apple Intelligence", "Qwen (MLX)"])
-        // StubModelManager always reports its models downloaded and usable.
-        XCTAssertEqual(model.cleanupBackends.map(\.state), [.ready, .ready])
-    }
-
-    func testCleanupProviderStateIsReadyWhenAUsableDownloadedModelExists() {
-        let rows = [
-            speechModelStatus(id: "a", installState: .notDownloaded),
-            speechModelStatus(id: "b", installState: .downloaded, usability: .usable),
-        ]
-        XCTAssertEqual(SpeechBackendsModel.cleanupProviderState(for: rows), .ready)
-    }
-
-    func testCleanupProviderStateIsModelNotDownloadedWhenNothingIsDownloadedOrUnusable() {
-        let rows = [speechModelStatus(id: "a", installState: .notDownloaded), speechModelStatus(id: "b", installState: .downloading(progress: 0.5))]
-        XCTAssertEqual(SpeechBackendsModel.cleanupProviderState(for: rows), .modelNotDownloaded)
-        XCTAssertEqual(SpeechBackendsModel.cleanupProviderState(for: []), .modelNotDownloaded)
-    }
-
-    func testCleanupProviderStateIsUnsupportedForADeviceNotEligibleReason() {
-        let rows = [speechModelStatus(id: "a", installState: .downloaded, usability: .unusable(reason: AppleUnavailability.deviceNotEligible.rowText))]
-        XCTAssertEqual(SpeechBackendsModel.cleanupProviderState(for: rows), .unsupported)
-    }
-
-    func testCleanupProviderStateIsUnavailableForAnyOtherUnusableReason() {
-        let reason = AppleUnavailability.appleIntelligenceNotEnabled.rowText
-        let rows = [speechModelStatus(id: "a", installState: .downloaded, usability: .unusable(reason: reason))]
-        XCTAssertEqual(SpeechBackendsModel.cleanupProviderState(for: rows), .unavailable)
-    }
-
-    private func speechModelStatus(
-        id: String, installState: SpeechModelInstallState, usability: SpeechModelUsability = .usable
-    ) -> SpeechModelStatus {
-        SpeechModelStatus(
-            descriptor: .init(id: id, displayName: id, detail: nil), capabilities: [.select], installState: installState, isSelected: false,
-            usability: usability
-        )
     }
 }
 

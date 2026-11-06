@@ -102,11 +102,6 @@ final class SettingsController {
         update { $0.selectedSpeechModelByBackend[backendID] = modelID }
     }
 
-    func setDictationCleanupEnabled(_ enabled: Bool) { update { $0.dictationCleanupEnabled = enabled } }
-    func setSelectedCleanupModel(_ id: CleanupModelID?) { update { $0.selectedCleanupModelID = id?.rawValue } }
-    /// `nil` resets to the default prompt (spec §10 addendum).
-    func setCleanupPromptOverride(_ override: CleanupPromptOverride?) { update { $0.cleanupPromptOverride = override } }
-
     /// No-op when unchanged, so re-toggling the same control doesn't spam the status line.
     func setAutoReadEnabled(_ enabled: Bool) {
         guard enabled != current.autoReadEnabled else { return }
@@ -153,35 +148,6 @@ final class SettingsController {
         { [weak self] modelID in
             self?.setSelectedSpeechModel(backendID: BackendID.whisper.rawValue, modelID: modelID?.rawValue)
         }
-    }
-
-    // MARK: Dictation cleanup seam
-
-    /// Synchronous, actor-agnostic read of the cleanup selection. Stale ids, and models no longer
-    /// offered (`MLXCleanupCatalog.offered`), read as `nil`.
-    var cleanupSelection: CleanupModelSelection {
-        let snapshot = snapshot
-        return {
-            snapshot.value.selectedCleanupModelID.flatMap(CleanupModelID.init(rawValue:))
-                .flatMap { !$0.isMLX || MLXCleanupCatalog.offered.contains($0) ? $0 : nil }
-        }
-    }
-
-    var cleanupSelectionWriter: CleanupModelSelectionWriter {
-        { [weak self] in self?.setSelectedCleanupModel($0) }
-    }
-
-    var cleanupEnabled: @Sendable () -> Bool {
-        let snapshot = snapshot
-        return { snapshot.value.dictationCleanupEnabled }
-    }
-
-    /// Synchronous, actor-agnostic read of the saved prompt override (`nil` means the default).
-    /// User-authored text: callers must never log it (spec §18). Production and the Test tool pass
-    /// this to `CleanupPrompt.effective(_:)` for each request.
-    var cleanupPromptOverride: @Sendable () -> CleanupPromptOverride? {
-        let snapshot = snapshot
-        return { snapshot.value.cleanupPromptOverride }
     }
 
     // MARK: Private

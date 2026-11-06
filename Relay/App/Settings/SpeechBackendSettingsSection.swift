@@ -8,14 +8,7 @@ struct SpeechBackendSettingsSection<LeadingContent: View, ExpandedContent: View>
     let message: String?
     let setEnabled: (String, Bool) -> Void
     let move: (String, Bool) -> Void
-    /// `false` hides the per-provider enable toggle and the up/down order arrows — for domains
-    /// with no per-provider enable and no priority order (dictation cleanup). STT and TTS keep
-    /// the default and are unchanged.
-    let showsProviderControls: Bool
     let hasExpandedContent: (String) -> Bool
-    /// An optional trailing action for a model row beyond Download/Select/Remove, e.g. cleanup's
-    /// "Test". `nil` for a row with nothing extra to offer.
-    let rowExtraAction: (SpeechModelStatus) -> (title: String, enabled: Bool, help: String?, action: () -> Void)?
     let leadingContent: () -> LeadingContent
     let expandedContent: (String) -> ExpandedContent
     @State private var expandedBackendIDs: Set<String> = []
@@ -28,9 +21,7 @@ struct SpeechBackendSettingsSection<LeadingContent: View, ExpandedContent: View>
         message: String?,
         setEnabled: @escaping (String, Bool) -> Void,
         move: @escaping (String, Bool) -> Void,
-        showsProviderControls: Bool = true,
         hasExpandedContent: @escaping (String) -> Bool = { _ in false },
-        rowExtraAction: @escaping (SpeechModelStatus) -> (title: String, enabled: Bool, help: String?, action: () -> Void)? = { _ in nil },
         @ViewBuilder leadingContent: @escaping () -> LeadingContent = { EmptyView() },
         @ViewBuilder expandedContent: @escaping (String) -> ExpandedContent
     ) {
@@ -41,9 +32,7 @@ struct SpeechBackendSettingsSection<LeadingContent: View, ExpandedContent: View>
         self.message = message
         self.setEnabled = setEnabled
         self.move = move
-        self.showsProviderControls = showsProviderControls
         self.hasExpandedContent = hasExpandedContent
-        self.rowExtraAction = rowExtraAction
         self.leadingContent = leadingContent
         self.expandedContent = expandedContent
     }
@@ -60,8 +49,7 @@ struct SpeechBackendSettingsSection<LeadingContent: View, ExpandedContent: View>
                 if expandable, expanded {
                     ForEach(rows) { status in
                         SpeechModelRow(
-                            status: status, backend: key, backendReady: backend.state == .ready, controller: controller,
-                            extraAction: rowExtraAction(status)
+                            status: status, backend: key, backendReady: backend.state == .ready, controller: controller
                         )
                     }
                     expandedContent(backend.id)
@@ -85,22 +73,20 @@ struct SpeechBackendSettingsSection<LeadingContent: View, ExpandedContent: View>
                 Text(subtitle(backend, rows: rows, expanded: expanded)).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            if showsProviderControls {
-                Toggle("", isOn: Binding(get: { backend.isEnabled }, set: { setEnabled(backend.id, $0) })).labelsHidden()
-                if backend.isEnabled {
-                    VStack(spacing: 2) {
-                        Button {
-                            move(backend.id, true)
-                        } label: {
-                            Image(systemName: "chevron.up")
-                        }.disabled(backend.position == 0)
-                        Button {
-                            move(backend.id, false)
-                        } label: {
-                            Image(systemName: "chevron.down")
-                        }.disabled(backend.position == enabledCount - 1)
-                    }.buttonStyle(.borderless)
-                }
+            Toggle("", isOn: Binding(get: { backend.isEnabled }, set: { setEnabled(backend.id, $0) })).labelsHidden()
+            if backend.isEnabled {
+                VStack(spacing: 2) {
+                    Button {
+                        move(backend.id, true)
+                    } label: {
+                        Image(systemName: "chevron.up")
+                    }.disabled(backend.position == 0)
+                    Button {
+                        move(backend.id, false)
+                    } label: {
+                        Image(systemName: "chevron.down")
+                    }.disabled(backend.position == enabledCount - 1)
+                }.buttonStyle(.borderless)
             }
         }
     }

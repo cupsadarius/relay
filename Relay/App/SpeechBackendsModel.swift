@@ -9,10 +9,8 @@ final class SpeechBackendsModel {
     let textToSpeech: BackendListModel
     let models: SpeechModelController
     let voices: SpeechVoiceCatalog
-    let cleanupTester: DictationCleanupTester?
 
     private let settings: SettingsController
-    private let cleanup: any TranscriptCleaning
 
     init(runtime: RelayRuntime, voices: SpeechVoiceCatalog = SpeechVoiceCatalog()) {
         let settings = runtime.settingsController
@@ -33,26 +31,18 @@ final class SpeechBackendsModel {
             statusSink: runtime.status
         )
         let speechCoordinator = runtime.speechOut.speechCoordinator
-        let cleanup = runtime.speechIn.transcriptCleanup
-        let cleanupTester = runtime.speechIn.cleanupTester
-        let cleanupRuntime = runtime.speechIn.cleanupRuntime
         self.dictation = dictation
         self.textToSpeech = textToSpeech
-        self.cleanup = cleanup
-        self.cleanupTester = cleanupTester
         models = SpeechModelController(
             managers: Self.modelManagers(
                 dictation: runtime.speechIn.speechModelManagers,
-                textToSpeech: runtime.speechOut.ttsModelManagers,
-                dictationCleanup: runtime.speechIn.cleanupModelManagers
+                textToSpeech: runtime.speechOut.ttsModelManagers
             ),
             diagnostics: runtime.diagnostics,
             refreshBackends: { domain in
                 switch domain {
                 case .dictation: await dictation.refresh()
                 case .textToSpeech: await textToSpeech.refresh()
-                // No readiness list; a selection or download change is when prewarm is re-evaluated.
-                case .dictationCleanup: cleanup.prewarm()
                 }
             },
             beforeRemoval: { key, modelID in
@@ -60,14 +50,6 @@ final class SpeechBackendsModel {
                 case .textToSpeech:
                     // Never delete a TTS model out from under an utterance that is streaming from it.
                     speechCoordinator.stop()
-                case .dictationCleanup:
-                    // Stop a Test and retire a long generation so unload(ifInvolving:) can drain.
-                    // Review fix 11: only when the model being removed is the one loaded — removing
-                    // a different cleanup model must not disturb an unrelated running generation.
-                    cleanupTester?.cancelRunningTest(reason: .modelRemoved)
-                    if let id = CleanupModelID(rawValue: modelID) {
-                        await cleanupRuntime?.retireGeneration(ifInvolving: id)
-                    }
                 case .dictation:
                     break
                 }
@@ -75,34 +57,10 @@ final class SpeechBackendsModel {
         )
     }
 
-    /// One `BackendStatus` per cleanup provider, Apple Intelligence then Qwen (MLX) — the two
-    /// entries `SpeechBackendSettingsSection` renders as provider rows. State is derived from
-    /// each provider's own models: `.ready` when a usable, downloaded one exists among them,
-    /// `.modelNotDownloaded` when none is downloaded yet, else `.unsupported` or `.unavailable`
-    /// from the first unusable reason.
-    var cleanupBackends: [BackendStatus] {
-        [BackendID.appleFoundationCleanup, .mlxCleanup].enumerated().map { index, backendID in
-            let rows = models.models[SpeechModelBackendKey(domain: .dictationCleanup, backendID: backendID.rawValue)] ?? []
-            return BackendStatus(
-                id: backendID.rawValue, displayName: backendID.displayName,
-                state: Self.cleanupProviderState(for: rows), isEnabled: true, position: index
-            )
-        }
-    }
-
-    static func cleanupProviderState(for rows: [SpeechModelStatus]) -> BackendStatus.State {
-        if rows.contains(where: { $0.installState == .downloaded && $0.usability == .usable }) { return .ready }
-        if let reason = rows.compactMap(\.usability.unusableReason).first {
-            return reason == AppleUnavailability.deviceNotEligible.rowText ? .unsupported : .unavailable
-        }
-        return .modelNotDownloaded
-    }
-
     func list(for domain: SpeechModelDomain) -> BackendListModel? {
         switch domain {
         case .dictation: dictation
         case .textToSpeech: textToSpeech
-        case .dictationCleanup: nil
         }
     }
 
@@ -118,23 +76,13 @@ final class SpeechBackendsModel {
         await list(for: domain)?.refresh()
     }
 
-    /// Launch-time refresh. Sequential on purpose: dictation, then TTS, then cleanup. The old code
+    /// Launch-time refresh. Sequential on purpose: dictation, then TTS. The old code
     /// ran the two domains as two concurrent tasks; on the main actor they interleaved anyway, and
     /// one ordered task is simpler to await in tests. Worst case the TTS rows appear after the
     /// dictation probes finish (a few hundred ms at launch, before Settings is usually open).
-    /// Ends with the launch-time cleanup prewarm (spec §9.1).
     func refreshAll() async {
         await refresh(.dictation)
         await refresh(.textToSpeech)
-        await refresh(.dictationCleanup)
-        cleanup.prewarm()
-    }
-
-    /// The Settings toggle. Turning cleanup on prewarms the selected model; it never downloads or
-    /// selects anything (spec §16).
-    func setCleanupEnabled(_ enabled: Bool) {
-        settings.setDictationCleanupEnabled(enabled)
-        if enabled { cleanup.prewarm() }
     }
 
     func selectVoice(backendID: String, voiceID: String) {
@@ -144,8 +92,7 @@ final class SpeechBackendsModel {
 
     private static func modelManagers(
         dictation: [String: any SpeechModelManaging],
-        textToSpeech: [String: any SpeechModelManaging],
-        dictationCleanup: [String: any SpeechModelManaging]
+        textToSpeech: [String: any SpeechModelManaging]
     ) -> SpeechModelController.Managers {
         var result: SpeechModelController.Managers = [:]
         for (backendID, manager) in dictation {
@@ -153,9 +100,6 @@ final class SpeechBackendsModel {
         }
         for (backendID, manager) in textToSpeech {
             result[SpeechModelBackendKey(domain: .textToSpeech, backendID: backendID)] = manager
-        }
-        for (backendID, manager) in dictationCleanup {
-            result[SpeechModelBackendKey(domain: .dictationCleanup, backendID: backendID)] = manager
         }
         return result
     }

@@ -143,50 +143,6 @@ final class AppSettingsDecodeTests: XCTestCase {
         XCTAssertEqual(decoded, value)
     }
 
-    /// A missing `cleanupPromptOverride` key decodes to `nil` (the default) without disturbing
-    /// any other field.
-    func testMissingCleanupPromptOverrideKeepsOthers() throws {
-        var saved = AppSettings.defaults
-        saved.dictationCleanupEnabled = true
-        let encoded = try JSONEncoder().encode(saved)
-        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-        object.removeValue(forKey: "cleanupPromptOverride")
-
-        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
-
-        XCTAssertNil(decoded.cleanupPromptOverride)
-        XCTAssertTrue(decoded.dictationCleanupEnabled)
-    }
-
-    /// A malformed `cleanupPromptOverride` (wrong shape) falls back to `nil` without resetting any
-    /// other field — the same per-field lossy decode every other optional field already gets.
-    func testMalformedCleanupPromptOverrideFallsBackToNilKeepingOthers() throws {
-        var saved = AppSettings.defaults
-        saved.dictationMode = .toggle
-        let encoded = try JSONEncoder().encode(saved)
-        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-        object["cleanupPromptOverride"] = "not-an-object"
-
-        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
-
-        XCTAssertNil(decoded.cleanupPromptOverride)
-        XCTAssertEqual(decoded.dictationMode, .toggle)
-    }
-
-    /// A saved override round-trips exactly, examples included.
-    func testCleanupPromptOverrideRoundTrips() throws {
-        var saved = AppSettings.defaults
-        saved.cleanupPromptOverride = CleanupPromptOverride(
-            instructions: "Custom instructions.",
-            examples: [CleanupExample(input: "hi", output: "Hi."), CleanupExample(input: "no wait yes", output: "Yes.")]
-        )
-
-        let data = try JSONEncoder().encode(saved)
-        let decoded = try JSONDecoder().decode(AppSettings.self, from: data)
-
-        XCTAssertEqual(decoded.cleanupPromptOverride, saved.cleanupPromptOverride)
-    }
-
     /// A v1 blob with wrong-typed legacy voice values migrates the valid ones and drops only
     /// the bad ones; no other field is reset.
     func testWrongTypedLegacyVoiceKeysMigrateWithoutResettingOthers() throws {
@@ -364,50 +320,18 @@ final class AppSettingsDecodeTests: XCTestCase {
         XCTAssertEqual(decoded.hotkeys, [:])
     }
 
-    func testMissingCleanupKeysDecodeToDefaults() throws {
-        let encoded = try JSONEncoder().encode(AppSettings.defaults)
-        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-        object.removeValue(forKey: "dictationCleanupEnabled")
-        object.removeValue(forKey: "selectedCleanupModelID")
-
-        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
-
-        XCTAssertFalse(decoded.dictationCleanupEnabled)
-        XCTAssertNil(decoded.selectedCleanupModelID)
-        XCTAssertEqual(decoded.schemaVersion, 2)
-    }
-
-    func testWrongTypedCleanupKeyFallsBackWithoutResettingOthers() throws {
+    /// Settings saved while dictation cleanup existed still load; the removed keys are ignored.
+    func testRemovedCleanupKeysAreIgnored() throws {
         var saved = AppSettings.defaults
         saved.ttsRate = 0.8
-        saved.selectedCleanupModelID = CleanupModelID.qwen3_0_6b.rawValue
         let encoded = try JSONEncoder().encode(saved)
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-        object["dictationCleanupEnabled"] = "yes"
+        object["dictationCleanupEnabled"] = true
+        object["selectedCleanupModelID"] = "mlx.qwen3-1.7b-4bit"
+        object["cleanupPromptOverride"] = ["instructions": "Custom.", "examples": []]
 
         let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
 
-        XCTAssertFalse(decoded.dictationCleanupEnabled)
-        XCTAssertEqual(decoded.ttsRate, 0.8, accuracy: 0.0001)
-        XCTAssertEqual(decoded.selectedCleanupModelID, "mlx.qwen3-0.6b-4bit")
-    }
-
-    func testCleanupFieldsRoundTrip() throws {
-        var saved = AppSettings.defaults
-        saved.dictationCleanupEnabled = true
-        saved.selectedCleanupModelID = CleanupModelID.qwen3_1_7b.rawValue
-
-        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(saved))
-
         XCTAssertEqual(decoded, saved)
-    }
-
-    func testStaleCleanupModelIDIsKeptAsAString() throws {
-        var saved = AppSettings.defaults
-        saved.selectedCleanupModelID = "mlx.retired-model"
-
-        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(saved))
-
-        XCTAssertEqual(decoded.selectedCleanupModelID, "mlx.retired-model")
     }
 }

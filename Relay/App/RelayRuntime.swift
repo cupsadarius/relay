@@ -29,12 +29,6 @@ struct SpeechInputServices {
     let sttRegistry: [String: any SpeechToTextBackend]
     let speechModelManagers: [String: any SpeechModelManaging]
     let dictationCoordinator: (any DictationCoordinating)?
-    /// Dictation-cleanup model managers, keyed by backend id. Never part of `sttRegistry`.
-    let cleanupModelManagers: [String: any SpeechModelManaging]
-    let transcriptCleanup: any TranscriptCleaning
-    let cleanupTester: DictationCleanupTester?
-    /// So model removal can retire an in-flight generation (spec §14.3).
-    let cleanupRuntime: (any MLXCleanupRuntimeServing)?
 }
 
 /// Agent-integration services: the fixed-path Unix-socket receiver, the manager that decodes and
@@ -126,27 +120,8 @@ final class RelayRuntime {
         let overlayModel = ActivityOverlayModel()
         let graph = SpeechBackendGraph.make(
             whisperSelection: settingsController.whisperSelection,
-            setWhisperSelection: settingsController.whisperSelectionWriter,
-            cleanupSelection: settingsController.cleanupSelection,
-            setCleanupSelection: settingsController.cleanupSelectionWriter
+            setWhisperSelection: settingsController.whisperSelectionWriter
         )
-        let transcriptCleanup = TranscriptCleanupService(
-            isEnabled: settingsController.cleanupEnabled,
-            selection: settingsController.cleanupSelection,
-            apple: graph.appleCleanup,
-            mlx: graph.mlxCleanupRuntime,
-            promptOverride: settingsController.cleanupPromptOverride,
-            memoryPressure: DispatchMemoryPressureMonitor(),
-            diagnostics: diagnostics
-        )
-        let cleanupTester = DictationCleanupTester(
-            apple: graph.appleCleanup, mlx: graph.mlxCleanupRuntime, promptOverride: settingsController.cleanupPromptOverride
-        )
-        // Launch sweep of retired cleanup models (Qwen3 0.6B), off the main actor. Production only:
-        // `RelayRuntime.testing` never touches the real models folder.
-        if let mlxCleanup = graph.cleanupModelManagers[BackendID.mlxCleanup.rawValue] as? MLXCleanupModelManager {
-            Task.detached(priority: .utility) { await mlxCleanup.sweepUnofferedModels() }
-        }
         let ttsRegistry = graph.ttsRegistry
         let sttRegistry = graph.sttRegistry
 
@@ -226,8 +201,7 @@ final class RelayRuntime {
             status: { status.post($0) },
             activity: overlayModel,
             diagnostics: diagnostics,
-            liveTranscriptionEnabled: { settings.value.liveTranscriptionEnabled },
-            cleanup: transcriptCleanup
+            liveTranscriptionEnabled: { settings.value.liveTranscriptionEnabled }
         )
         let hookEnvelopeReceiver = HookEnvelopeReceiver(diagnostics: integrationDiagnosticsLog)
 
@@ -273,11 +247,7 @@ final class RelayRuntime {
             speechIn: SpeechInputServices(
                 sttRegistry: sttRegistry,
                 speechModelManagers: graph.speechModelManagers,
-                dictationCoordinator: dictation,
-                cleanupModelManagers: graph.cleanupModelManagers,
-                transcriptCleanup: transcriptCleanup,
-                cleanupTester: cleanupTester,
-                cleanupRuntime: graph.mlxCleanupRuntime
+                dictationCoordinator: dictation
             ),
             integrations: IntegrationServices(
                 socketPath: IntegrationServices.productionSocketPath,
