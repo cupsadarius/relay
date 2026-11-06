@@ -1,12 +1,5 @@
 import Foundation
 
-/// Errors `ParakeetModelManager` throws. `unknownModel` covers any id that is not a
-/// `ParakeetModelID`; `removeNotSupported` is returned by `removeModel`.
-enum ParakeetModelManagerError: Error, Equatable, Sendable {
-    case unknownModel(String)
-    case removeNotSupported
-}
-
 extension ParakeetModelID {
     fileprivate var descriptor: SpeechModelDescriptor {
         switch self {
@@ -71,7 +64,7 @@ struct ParakeetModelManager: SpeechModelManaging {
     /// an unknown id still reports `unknownModel`.
     func removeModel(_ id: String) async throws {
         _ = try Self.model(for: id)
-        throw ParakeetModelManagerError.removeNotSupported
+        throw SpeechModelManagerError.removeNotSupported
     }
 
     /// Loads the selected model at launch when it is on disk. Never downloads.
@@ -81,7 +74,7 @@ struct ParakeetModelManager: SpeechModelManaging {
 
     private static func model(for id: String) throws -> ParakeetModelID {
         guard let model = ParakeetModelID(rawValue: id) else {
-            throw ParakeetModelManagerError.unknownModel(id)
+            throw SpeechModelManagerError.unknownModel(id)
         }
         return model
     }

@@ -4,10 +4,6 @@ import Foundation
 /// `SettingsController`, Relay's single settings writer.
 typealias WhisperModelSelectionWriter = @MainActor @Sendable (WhisperModelID?) -> Void
 
-enum WhisperModelManagerError: Error, Equatable, Sendable {
-    case unknownModel(String)
-}
-
 /// `SpeechModelManaging` for the Whisper backend: catalog metadata, on-disk presence through
 /// `WhisperModelStore`, and unloading through `WhisperRuntime` before a removal or switch.
 struct WhisperModelManager: SpeechModelManaging {
@@ -85,7 +81,7 @@ struct WhisperModelManager: SpeechModelManaging {
 
     private static func modelID(for rawValue: String) throws -> WhisperModelID {
         guard let id = WhisperModelID(rawValue: rawValue) else {
-            throw WhisperModelManagerError.unknownModel(rawValue)
+            throw SpeechModelManagerError.unknownModel(rawValue)
         }
         return id
     }

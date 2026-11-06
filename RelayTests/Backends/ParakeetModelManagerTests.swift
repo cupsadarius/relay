@@ -102,19 +102,19 @@ final class ParakeetModelManagerTests: XCTestCase {
         do {
             try await manager.downloadModel("whisper-large", progress: { _ in })
             XCTFail("Expected unknownModel")
-        } catch let error as ParakeetModelManagerError {
+        } catch let error as SpeechModelManagerError {
             XCTAssertEqual(error, .unknownModel("whisper-large"))
         } catch {
-            XCTFail("expected ParakeetModelManagerError, got \(error)")
+            XCTFail("expected SpeechModelManagerError, got \(error)")
         }
 
         do {
             try await manager.selectModel("whisper-large")
             XCTFail("Expected unknownModel")
-        } catch let error as ParakeetModelManagerError {
+        } catch let error as SpeechModelManagerError {
             XCTAssertEqual(error, .unknownModel("whisper-large"))
         } catch {
-            XCTFail("expected ParakeetModelManagerError, got \(error)")
+            XCTFail("expected SpeechModelManagerError, got \(error)")
         }
     }
 
@@ -122,10 +122,10 @@ final class ParakeetModelManagerTests: XCTestCase {
         do {
             try await makeManager().removeModel("parakeet-v2")
             XCTFail("Expected removeNotSupported")
-        } catch let error as ParakeetModelManagerError {
+        } catch let error as SpeechModelManagerError {
             XCTAssertEqual(error, .removeNotSupported)
         } catch {
-            XCTFail("expected ParakeetModelManagerError, got \(error)")
+            XCTFail("expected SpeechModelManagerError, got \(error)")
         }
     }
 }

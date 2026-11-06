@@ -19,7 +19,7 @@ final class SpeechBackendGraphTests: XCTestCase {
         XCTAssertTrue(graph.sttRegistry["apple-speech"] is AppleSpeechBackend)
         XCTAssertTrue(graph.sttRegistry["parakeet"] is ParakeetBackend)
         XCTAssertTrue(graph.sttRegistry["whisper"] is WhisperBackend)
-        XCTAssertTrue(graph.speechModelManagers["apple-speech"] is AppleSpeechModelManager)
+        XCTAssertEqual((graph.speechModelManagers["apple-speech"] as? SingleModelManager)?.backendID, "apple-speech")
         XCTAssertTrue(graph.speechModelManagers["parakeet"] is ParakeetModelManager)
         XCTAssertTrue(graph.speechModelManagers["whisper"] is WhisperModelManager)
     }
@@ -30,8 +30,8 @@ final class SpeechBackendGraphTests: XCTestCase {
         XCTAssertTrue(graph.ttsRegistry["pocket-tts"] is PocketTTSBackend)
         XCTAssertTrue(graph.ttsRegistry["kokoro"] is KokoroTTSBackend)
         XCTAssertTrue(graph.ttsRegistry["apple-tts"] is AppleTTSBackend)
-        XCTAssertTrue(graph.ttsModelManagers["pocket-tts"] is PocketTTSModelManager)
-        XCTAssertTrue(graph.ttsModelManagers["kokoro"] is KokoroModelManager)
+        XCTAssertEqual((graph.ttsModelManagers["pocket-tts"] as? SingleModelManager)?.backendID, "pocket-tts")
+        XCTAssertEqual((graph.ttsModelManagers["kokoro"] as? SingleModelManager)?.backendID, "kokoro")
         XCTAssertNil(graph.ttsModelManagers["apple-tts"])
     }
 

@@ -29,6 +29,11 @@ struct SpeechModelStatus: Identifiable, Equatable, Sendable {
     var id: String { descriptor.id }
 }
 
+enum SpeechModelManagerError: Error, Equatable, Sendable {
+    case unknownModel(String)
+    case removeNotSupported
+}
+
 protocol SpeechModelManaging: Sendable {
     var backendID: String { get }
     func models() async -> [SpeechModelStatus]

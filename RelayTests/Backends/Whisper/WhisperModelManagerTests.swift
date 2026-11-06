@@ -272,28 +272,28 @@ final class WhisperModelManagerTests: XCTestCase {
         do {
             try await manager.selectModel("not-a-real-model")
             XCTFail("expected selectModel to throw for an unknown id")
-        } catch let error as WhisperModelManagerError {
+        } catch let error as SpeechModelManagerError {
             XCTAssertEqual(error, .unknownModel("not-a-real-model"))
         } catch {
-            XCTFail("expected WhisperModelManagerError, got \(error)")
+            XCTFail("expected SpeechModelManagerError, got \(error)")
         }
 
         do {
             try await manager.downloadModel("not-a-real-model") { _ in }
             XCTFail("expected downloadModel to throw for an unknown id")
-        } catch let error as WhisperModelManagerError {
+        } catch let error as SpeechModelManagerError {
             XCTAssertEqual(error, .unknownModel("not-a-real-model"))
         } catch {
-            XCTFail("expected WhisperModelManagerError, got \(error)")
+            XCTFail("expected SpeechModelManagerError, got \(error)")
         }
 
         do {
             try await manager.removeModel("not-a-real-model")
             XCTFail("expected removeModel to throw for an unknown id")
-        } catch let error as WhisperModelManagerError {
+        } catch let error as SpeechModelManagerError {
             XCTAssertEqual(error, .unknownModel("not-a-real-model"))
         } catch {
-            XCTFail("expected WhisperModelManagerError, got \(error)")
+            XCTFail("expected SpeechModelManagerError, got \(error)")
         }
     }
 }

@@ -20,13 +20,13 @@ struct SpeechBackendGraph {
         let appleTTS = AppleTTSBackend()
         let kokoroEngine: any KokoroEngine = FluidAudioKokoroEngine()
         let kokoroTTS = KokoroTTSBackend(engine: kokoroEngine)
-        let kokoroModelManager = KokoroModelManager(engine: kokoroEngine)
+        let kokoroModelManager = SingleModelManager.kokoro(engine: kokoroEngine)
         let pocketEngine: any PocketTTSEngine = FluidAudioPocketTTSEngine()
         let pocketTTS = PocketTTSBackend(engine: pocketEngine)
-        let pocketModelManager = PocketTTSModelManager(engine: pocketEngine)
+        let pocketModelManager = SingleModelManager.pocketTTS(engine: pocketEngine)
 
         let appleSpeech = AppleSpeechBackend()
-        let appleSpeechModelManager = AppleSpeechModelManager()
+        let appleSpeechModelManager = SingleModelManager.appleSpeech
         // razor: both engines may stay resident (~600 MB each); unload on switch if memory matters
         let parakeetEngines = ParakeetEngines(
             unifiedEnglish: FluidAudioParakeetEngine(model: .unifiedEnglish),

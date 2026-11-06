@@ -6,9 +6,9 @@ import XCTest
 final class KokoroModelManagerTests: XCTestCase {
     func testOneModelIsAlwaysSelectedAndPresenceControlsInstallState() async {
         let engine = FakeManagerKokoroEngine(present: false)
-        let manager = KokoroModelManager(engine: engine)
+        let manager = SingleModelManager.kokoro(engine: engine)
         var rows = await manager.models()
-        XCTAssertEqual(rows.map(\.id), [KokoroModelManager.modelID])
+        XCTAssertEqual(rows.map(\.id), [manager.descriptor.id])
         XCTAssertEqual(rows[0].capabilities, [.download, .select, .remove])
         XCTAssertEqual(rows[0].installState, .notDownloaded)
         XCTAssertTrue(rows[0].isSelected)
@@ -20,8 +20,8 @@ final class KokoroModelManagerTests: XCTestCase {
 
     func testDownloadUsesExplicitDownloadLoad() async throws {
         let engine = FakeManagerKokoroEngine(present: false)
-        let manager = KokoroModelManager(engine: engine)
-        try await manager.downloadModel(KokoroModelManager.modelID) { _ in }
+        let manager = SingleModelManager.kokoro(engine: engine)
+        try await manager.downloadModel(manager.descriptor.id) { _ in }
         let downloadCount = await engine.downloadCount
         let localCount = await engine.localCount
         XCTAssertEqual(downloadCount, 1)
@@ -30,9 +30,9 @@ final class KokoroModelManagerTests: XCTestCase {
 
     func testRemoveDelegatesToEngine() async throws {
         let engine = FakeManagerKokoroEngine(present: true)
-        let manager = KokoroModelManager(engine: engine)
+        let manager = SingleModelManager.kokoro(engine: engine)
 
-        try await manager.removeModel(KokoroModelManager.modelID)
+        try await manager.removeModel(manager.descriptor.id)
 
         let removeCount = await engine.removeCount
         XCTAssertEqual(removeCount, 1)

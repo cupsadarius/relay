@@ -132,7 +132,7 @@ final class SpeechModelRowPresentationTests: XCTestCase {
     }
 
     /// A model can be reported selected+downloaded by its manager (e.g.
-    /// `AppleSpeechModelManager`'s always-downloaded façade) even while the OWNING backend isn't
+    /// `SingleModelManager.appleSpeech`'s always-downloaded façade) even while the OWNING backend isn't
     /// actually usable (`BackendStatus.State` other than `.ready`, e.g. `.unsupported` on a Mac
     /// where Apple Speech isn't available). `backendReady: false` must suppress "Active" in that
     /// case -- a model can never show as in-use on a backend that can't run it -- falling back to
@@ -232,7 +232,7 @@ final class CollapsedProviderSubtitleTests: XCTestCase {
     /// .testNotActiveWhenBackendIsNotReadyEvenIfSelectedAndDownloaded`, one level up: a
     /// downloaded+selected model on a backend that isn't ready (e.g. Apple Speech reported
     /// `.unsupported` by `AppleSpeechBackend.availability()`, even though
-    /// `AppleSpeechModelManager` always reports its one model downloaded+selected) must show the
+    /// `SingleModelManager.appleSpeech` always reports its one model downloaded+selected) must show the
     /// real status label, not the model's name -- the collapsed subtitle must never claim a model
     /// is in use on a backend that can't run it.
     func testFallsBackToStatusLabelWhenBackendIsNotReady() {
