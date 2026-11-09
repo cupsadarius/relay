@@ -49,6 +49,7 @@ Background agent sessions remain silent — but the last-active session keeps re
 - **Read Selection**, **Replay Last** and **Speak Latest** interrupt current speech and clear the queue.
 - Starting dictation stops current speech and clears the queue. A response that arrives during dictation waits in the queue and plays when the dictation ends.
 - A response that fails the focus check is not spoken, but it stays available to **Replay Last** / **Speak Latest**.
+- In Rex, Relay reads the title of the Rex window ("<tab> - <session label>") through Accessibility to find the session on screen, because Rex has no API for it yet. Two sessions with the same label fall back to the most-recently-prompted session.
 
 ## Principles
 

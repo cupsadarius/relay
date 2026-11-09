@@ -1,14 +1,25 @@
+import ApplicationServices
 import Foundation
 
 /// Focus for agents inside Rex blocks. Agents run under the Rex server, not the Rex app, so the
 /// generic process-ancestry check can never match them.
-// razor: Rex has no API for the session the app shows, so every Rex session whose own focused
-// block is the agent's counts; the coordinator breaks ties by latest prompt. Use the API once Rex ships one.
+// razor: Rex has no API for the session the app shows, so the Rex window title ("<tab> - <session
+// label>") stands in for it; duplicate labels fall back to the latest-prompt tie-break. Use the API once Rex ships one.
 struct RexFocusResolver: FocusResolver {
     static let appBundlePrefix = "com.superlogical.rex"
 
     let id = "rex"
     let rex: any RexQuerying
+    /// The title of the given app's focused window, or `nil` when it cannot be read.
+    let focusedWindowTitle: @Sendable (Int32) async -> String?
+
+    init(
+        rex: any RexQuerying,
+        focusedWindowTitle: @escaping @Sendable (Int32) async -> String? = RexFocusResolver.accessibilityWindowTitle
+    ) {
+        self.rex = rex
+        self.focusedWindowTitle = focusedWindowTitle
+    }
 
     func supports(_ session: AgentSession) -> Bool {
         session.terminalContext.rexSessionID != nil && session.terminalContext.rexBlockID != nil
@@ -19,23 +30,46 @@ struct RexFocusResolver: FocusResolver {
         guard let sessionID = terminal.rexSessionID, let block = terminal.rexBlockID else {
             return .unknown(resolverID: id, reason: "missing Rex identifiers")
         }
-        guard context.frontmostApplication?.bundleIdentifier?.hasPrefix(Self.appBundlePrefix) == true else {
+        guard let app = context.frontmostApplication, app.bundleIdentifier?.hasPrefix(Self.appBundlePrefix) == true else {
             return .notFocused(resolverID: id, reason: "Rex is not the frontmost application")
         }
+        let view: RexSessionView
         do {
-            let focused = try await rex.focusedBlockID(server: terminal.rexServer, sessionID: sessionID)
-            return focused == block
-                ? .focused(resolverID: id, reason: "producing block is focused in its Rex session")
-                : .notFocused(resolverID: id, reason: "another block is focused in this Rex session")
+            view = try await rex.sessionView(server: terminal.rexServer, sessionID: sessionID)
         } catch {
             return .unknown(resolverID: id, reason: "Rex focus query failed")
         }
+        if let label = view.label, !label.isEmpty, let title = await focusedWindowTitle(app.pid),
+            title != label, !title.hasSuffix(" - \(label)")
+        {
+            return .notFocused(resolverID: id, reason: "Rex is showing another session")
+        }
+        return view.focusedBlockID == block
+            ? .focused(resolverID: id, reason: "producing block is focused in its Rex session")
+            : .notFocused(resolverID: id, reason: "another block is focused in this Rex session")
+    }
+
+    @Sendable static func accessibilityWindowTitle(pid: Int32) async -> String? {
+        let app = AXUIElementCreateApplication(pid)
+        var window: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &window) == .success,
+            let window, CFGetTypeID(window) == AXUIElementGetTypeID()
+        else { return nil }
+        var title: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window as! AXUIElement, kAXTitleAttribute as CFString, &title) == .success
+        else { return nil }
+        return title as? String
     }
 }
 
-protocol RexQuerying: Sendable {
+struct RexSessionView: Equatable, Sendable {
+    let label: String?
     /// The focused block of the session's active window, or `nil` when it has none.
-    func focusedBlockID(server: String?, sessionID: String) async throws -> String?
+    let focusedBlockID: String?
+}
+
+protocol RexQuerying: Sendable {
+    func sessionView(server: String?, sessionID: String) async throws -> RexSessionView
 }
 
 /// Asks the Rex server through the `rex` CLI (`session.view`).
@@ -61,17 +95,17 @@ struct RexClient: RexQuerying {
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 
-    func focusedBlockID(server: String?, sessionID: String) async throws -> String? {
+    func sessionView(server: String?, sessionID: String) async throws -> RexSessionView {
         guard let executable else { throw QueryError.notInstalled }
         let input = try JSONSerialization.data(withJSONObject: ["session_id": sessionID])
         var arguments = server.map { ["-S", $0] } ?? []
         arguments += ["--autostart=false", "--timeout", "1s", "api", "call", "session.view", String(decoding: input, as: UTF8.self)]
         let result = try await runner.run(executable: executable, arguments: arguments, timeout: 2, maxOutputBytes: 1 << 20)
         guard result.terminationStatus == 0 else { throw QueryError.failed }
-        return try Self.focusedBlockID(inSessionView: result.stdout)
+        return try Self.sessionView(from: result.stdout)
     }
 
-    static func focusedBlockID(inSessionView data: Data) throws -> String? {
+    static func sessionView(from data: Data) throws -> RexSessionView {
         struct Window: Decodable {
             let windowID: String
             let focusedBlockID: String?
@@ -81,14 +115,19 @@ struct RexClient: RexQuerying {
             }
         }
         struct View: Decodable {
+            let label: String?
             let activeWindowID: String?
             let windows: [Window]?
             enum CodingKeys: String, CodingKey {
+                case label
                 case activeWindowID = "active_window_id"
                 case windows
             }
         }
         let view = try JSONDecoder().decode(View.self, from: data)
-        return view.windows?.first { $0.windowID == view.activeWindowID }?.focusedBlockID
+        return RexSessionView(
+            label: view.label,
+            focusedBlockID: view.windows?.first { $0.windowID == view.activeWindowID }?.focusedBlockID
+        )
     }
 }

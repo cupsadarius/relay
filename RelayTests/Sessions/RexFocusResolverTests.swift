@@ -47,13 +47,63 @@ final class RexFocusResolverTests: XCTestCase {
     }
 
     func testFocusedBlockComesFromTheActiveWindow() throws {
-        let view = """
-            {"active_window_id":"window:2","windows":[
+        let json = """
+            {"label":"relay","active_window_id":"window:2","windows":[
               {"window_id":"window:1","focused_block_id":"block:1"},
               {"window_id":"window:2","focused_block_id":"block:2"}]}
             """
 
-        XCTAssertEqual(try RexClient.focusedBlockID(inSessionView: Data(view.utf8)), "block:2")
+        let view = try RexClient.sessionView(from: Data(json.utf8))
+
+        XCTAssertEqual(view, RexSessionView(label: "relay", focusedBlockID: "block:2"))
+    }
+
+    func testRexWindowShowingAnotherSessionIsNotFocused() async {
+        let resolver = RexFocusResolver(
+            rex: StubRexQuery(focusedBlockID: "block:a", label: "relay"),
+            focusedWindowTitle: { _ in "Review PR - inquest-pr-4361" }
+        )
+        let session = makeRexSession(block: "block:a")
+
+        let decision = await resolver.resolve(session: session, context: rexContext(session, bundleID: "com.superlogical.rex"))
+
+        XCTAssertEqual(decision.state, .notFocused)
+    }
+
+    func testRexWindowShowingThisSessionChecksTheFocusedBlock() async {
+        let resolver = RexFocusResolver(
+            rex: StubRexQuery(focusedBlockID: "block:a", label: "relay"),
+            focusedWindowTitle: { _ in "Fix the pill - relay" }
+        )
+        let session = makeRexSession(block: "block:a")
+
+        let decision = await resolver.resolve(session: session, context: rexContext(session, bundleID: "com.superlogical.rex"))
+
+        XCTAssertEqual(decision.state, .focused)
+    }
+
+    func testLabelMustMatchTheWholeTitleSuffix() async {
+        let resolver = RexFocusResolver(
+            rex: StubRexQuery(focusedBlockID: "block:a", label: "reading"),
+            focusedWindowTitle: { _ in "Tables - tts-table-reading" }
+        )
+        let session = makeRexSession(block: "block:a")
+
+        let decision = await resolver.resolve(session: session, context: rexContext(session, bundleID: "com.superlogical.rex"))
+
+        XCTAssertEqual(decision.state, .notFocused)
+    }
+
+    func testUnreadableWindowTitleFallsBackToTheFocusedBlock() async {
+        let resolver = RexFocusResolver(
+            rex: StubRexQuery(focusedBlockID: "block:a", label: "relay"),
+            focusedWindowTitle: { _ in nil }
+        )
+        let session = makeRexSession(block: "block:a")
+
+        let decision = await resolver.resolve(session: session, context: rexContext(session, bundleID: "com.superlogical.rex"))
+
+        XCTAssertEqual(decision.state, .focused)
     }
 }
 
@@ -61,10 +111,11 @@ private struct StubRexQuery: RexQuerying {
     struct Failure: Error {}
     /// `nil` makes the query throw.
     let focusedBlockID: String?
+    var label: String?
 
-    func focusedBlockID(server: String?, sessionID: String) async throws -> String? {
+    func sessionView(server: String?, sessionID: String) async throws -> RexSessionView {
         guard let focusedBlockID else { throw Failure() }
-        return focusedBlockID
+        return RexSessionView(label: label, focusedBlockID: focusedBlockID)
     }
 }
 
