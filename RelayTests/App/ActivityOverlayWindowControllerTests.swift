@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 @testable import Relay
@@ -439,5 +440,38 @@ private final class FakeOverlayPanelHost: ActivityOverlayPanelHosting {
 
     func orderOut() {
         orderOutCount += 1
+    }
+}
+
+@MainActor
+final class ActivityOverlayPanelHostTests: XCTestCase {
+    /// Stands in for a panel that lost its all-Spaces membership: AppKit orders it in, but on a
+    /// Space the user is not looking at.
+    private final class StrandedPanel: NSPanel {
+        override var isOnActiveSpace: Bool { false }
+    }
+
+    func testOrderFrontMovesContentToNewPanelWhenPanelIsNotOnActiveSpace() throws {
+        let stranded = StrandedPanel()
+        let fresh = NSPanel()
+        var panels: [NSPanel] = [stranded, fresh]
+        let host = ActivityOverlayPanelHost(makePanel: { panels.removeFirst() })
+        let frame = CGRect(x: 40, y: 60, width: 330, height: 110)
+
+        try host.createIfNeeded()
+        host.setContent(model: ActivityOverlayModel(), style: .interactive, onAction: { _ in })
+        let content = try XCTUnwrap(stranded.contentView)
+        host.setFrame(origin: frame.origin, size: frame.size, animated: false)
+        host.setIgnoresMouseEvents(false)
+        try host.orderFront()
+
+        XCTAssertFalse(stranded.isVisible)
+        XCTAssertTrue(fresh.isVisible)
+        XCTAssertIdentical(fresh.contentView, content)
+        XCTAssertEqual(fresh.frame, frame)
+        XCTAssertFalse(fresh.ignoresMouseEvents)
+
+        host.orderOut()
+        XCTAssertFalse(fresh.isVisible)
     }
 }

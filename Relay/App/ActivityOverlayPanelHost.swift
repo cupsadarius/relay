@@ -55,10 +55,19 @@ private enum ActivityOverlayHostError: Error {
 @MainActor
 final class ActivityOverlayPanelHost: ActivityOverlayPanelHosting {
     private static let resizeAnimationDuration: TimeInterval = 0.18
-    private var panel: NonActivatingOverlayPanel?
+    private let makePanel: @MainActor () -> NSPanel
+    private var panel: NSPanel?
+
+    init(makePanel: @escaping @MainActor () -> NSPanel = ActivityOverlayPanelHost.makeOverlayPanel) {
+        self.makePanel = makePanel
+    }
 
     func createIfNeeded() throws {
         guard panel == nil else { return }
+        panel = makePanel()
+    }
+
+    private static func makeOverlayPanel() -> NSPanel {
         let panel = NonActivatingOverlayPanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -75,7 +84,7 @@ final class ActivityOverlayPanelHost: ActivityOverlayPanelHosting {
         panel.isOpaque = false
         panel.hasShadow = false
         panel.animationBehavior = .none
-        self.panel = panel
+        return panel
     }
 
     func setContent(
@@ -116,6 +125,19 @@ final class ActivityOverlayPanelHost: ActivityOverlayPanelHosting {
     func orderFront() throws {
         guard let panel else { throw ActivityOverlayHostError.panelNotCreated }
         panel.orderFrontRegardless()
+        guard !panel.isOnActiveSpace else { return }
+
+        // A long-lived panel can lose its all-Spaces membership. It then orders in on a hidden
+        // Space, and resetting collectionBehavior does not repair it; only a new panel does.
+        let fresh = makePanel()
+        let content = panel.contentView
+        panel.contentView = NSView()
+        fresh.contentView = content
+        fresh.setFrame(panel.frame, display: false)
+        fresh.ignoresMouseEvents = panel.ignoresMouseEvents
+        panel.orderOut(nil)
+        self.panel = fresh
+        fresh.orderFrontRegardless()
     }
 
     func orderOut() {
