@@ -22,7 +22,7 @@ struct RulesSpeechPreprocessor {
     private static let whitespace = try! NSRegularExpression(pattern: #"\s+"#)
 
     func prepare(text: String) -> String {
-        var prepared = replacingFencedCode(in: text)
+        var prepared = Self.replacingTables(in: replacingFencedCode(in: text))
         for rule in Self.rules {
             prepared = Self.replacingMatches(in: prepared, using: rule.expression, with: rule.template)
         }
@@ -41,6 +41,90 @@ struct RulesSpeechPreprocessor {
             range: NSRange(text.startIndex..., in: text),
             withTemplate: template
         )
+    }
+
+    private static let cellSeparators: Set<Character> = ["│", "┃", "|"]
+    private static let tableJunctions: Set<Character> = cellSeparators.union("┌┐└┘├┤┬┴┼╭╮╯╰┏┓┗┛┣┫┳┻╋+")
+    private static let ruleCharacters: Set<Character> = tableJunctions.union("─━═-=: \t")
+
+    private static let maxSpokenTableRows = 15
+    private static let maxSpokenTableColumns = 5
+
+    /// Box-drawn rows (`│`) can wrap over several lines, so their fragments merge until the
+    /// next rule line; pipe rows are one line each. A table ends at the first non-table line.
+    private static func replacingTables(in text: String) -> String {
+        var result: [String] = []
+        var rows: [[String]] = []
+        var row: [[String]] = []
+
+        func endRow() {
+            let cells = row.map { $0.filter { !$0.isEmpty }.joined(separator: " ") }
+            if cells.contains(where: { !$0.isEmpty }) { rows.append(cells) }
+            row = []
+        }
+
+        func endTable() {
+            endRow()
+            if !rows.isEmpty { result.append(spokenTable(rows)) }
+            rows = []
+        }
+
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty, trimmed.allSatisfy(ruleCharacters.contains),
+                trimmed.contains(where: tableJunctions.contains)
+            {
+                endRow()
+                continue
+            }
+            guard let first = trimmed.first, cellSeparators.contains(first) else {
+                endTable()
+                result.append(String(line))
+                continue
+            }
+            let cells = trimmed.split(separator: first, omittingEmptySubsequences: false)
+                .dropFirst().dropLast(trimmed.count > 1 && trimmed.last == first ? 1 : 0)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+            for (index, cell) in cells.enumerated() {
+                if index < row.count { row[index].append(cell) } else { row.append([cell]) }
+            }
+            if first == "|" { endRow() }
+        }
+        endTable()
+        return result.joined(separator: "\n")
+    }
+
+    /// `rows[0]` is the header. Each body row is labelled by its first cell; other cells are
+    /// prefixed with their column name unless the table has only two columns.
+    private static func spokenTable(_ rows: [[String]]) -> String {
+        let header = rows[0]
+        let body = rows.dropFirst()
+        guard !body.isEmpty else {
+            return header.filter { !$0.isEmpty }.map(sentence).joined(separator: " ")
+        }
+
+        let rowCount = body.count == 1 ? "1 row" : "\(body.count) rows"
+        guard body.count <= maxSpokenTableRows, header.count <= maxSpokenTableColumns else {
+            return "There is a table on screen with \(rowCount). Please read it there."
+        }
+
+        let intro =
+            header.count == 2
+            ? "Table with \(rowCount), by \(header[0]) and \(header[1])."
+            : "Table with \(rowCount). Columns: \(header.joined(separator: ", "))."
+        let spokenRows = body.map { cells in
+            let label = cells[0].isEmpty ? [] : [cells[0] + ":"]
+            let values = cells.indices.dropFirst().filter { !cells[$0].isEmpty }.map { index in
+                header.count == 2 || index >= header.count
+                    ? sentence(cells[index]) : "\(header[index]) \(sentence(cells[index]))"
+            }
+            return (label + values).joined(separator: " ")
+        }
+        return ([intro] + spokenRows + ["End of table."]).joined(separator: "\n")
+    }
+
+    private static func sentence(_ text: String) -> String {
+        ".!?:;".contains(text.last ?? ".") ? text : text + "."
     }
 
     private func replacingFencedCode(in text: String) -> String {
