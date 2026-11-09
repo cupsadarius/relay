@@ -65,6 +65,8 @@ final class SpeechCoordinator: SpeechCoordinating {
     /// `.userRequested` requests — those interrupt immediately instead of queueing. Capped at
     /// `queueCap`, dropping the oldest entry first.
     private var pendingAutomaticQueue: [SpeechRequest] = []
+    /// While `true`, `.automatic` requests wait in the queue, so they never play over a dictation.
+    private var automaticHeld = false
 
     init(
         router: TTSRouter,
@@ -87,6 +89,11 @@ final class SpeechCoordinator: SpeechCoordinating {
             interrupt()
             try await start(request)
         case .automatic:
+            if automaticHeld {
+                request.tracer?.start(.speak, "Waiting for dictation to end")
+                enqueue(request)
+                return
+            }
             if case .active = inFlight {
                 request.tracer?.start(.speak, "Queued behind other speech")
                 enqueue(request)
@@ -94,6 +101,11 @@ final class SpeechCoordinator: SpeechCoordinating {
             }
             try await start(request)
         }
+    }
+
+    func holdAutomaticSpeech(_ held: Bool) {
+        automaticHeld = held
+        if !held, case .idle = inFlight { drainQueueIfNeeded() }
     }
 
     func stop() {
@@ -252,7 +264,7 @@ final class SpeechCoordinator: SpeechCoordinating {
 
     /// Starts the next queued automatic request, if any.
     private func drainQueueIfNeeded() {
-        guard !pendingAutomaticQueue.isEmpty else { return }
+        guard !automaticHeld, !pendingAutomaticQueue.isEmpty else { return }
         let next = pendingAutomaticQueue.removeFirst()
         Task { [weak self] in
             try? await self?.speak(next)

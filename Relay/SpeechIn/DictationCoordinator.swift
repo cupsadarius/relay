@@ -47,13 +47,21 @@ final class DictationCoordinator: DictationCoordinating {
     private let processor: RulesTranscriptProcessor
     private let textInserter: any TextInserting
     private let stopSpeech: () -> Void
+    /// `true` while a dictation runs, `false` when it ends, so automatic speech waits for it.
+    private let holdSpeech: (Bool) -> Void
     private let activity: any DictationActivityPublishing
     private let diagnostics: DiagnosticsRecorder?
     private let pipeline: PipelineEventBus?
     /// Announces the current or last run; a new one per `start()`.
     private var tracer: PipelineTracer?
     private let status: (String) -> Void
-    private var state: State = .idle
+    private var state: State = .idle {
+        didSet {
+            let wasIdle = if case .idle = oldValue { true } else { false }
+            let isIdle = if case .idle = state { true } else { false }
+            if wasIdle != isIdle { holdSpeech(!isIdle) }
+        }
+    }
     /// Read once per `start()` to decide whether to start a `LiveTranscription`.
     private let liveTranscriptionEnabled: () -> Bool
 
@@ -63,6 +71,7 @@ final class DictationCoordinator: DictationCoordinating {
         processor: RulesTranscriptProcessor,
         textInserter: any TextInserting,
         stopSpeech: @escaping () -> Void,
+        holdSpeech: @escaping (Bool) -> Void = { _ in },
         status: @escaping (String) -> Void,
         activity: any DictationActivityPublishing,
         diagnostics: DiagnosticsRecorder? = nil,
@@ -75,6 +84,7 @@ final class DictationCoordinator: DictationCoordinating {
         self.processor = processor
         self.textInserter = textInserter
         self.stopSpeech = stopSpeech
+        self.holdSpeech = holdSpeech
         self.status = status
         self.activity = activity
         self.diagnostics = diagnostics

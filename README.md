@@ -47,7 +47,7 @@ Background agent sessions remain silent — but the last-active session keeps re
 
 - A response that passes the focus check is queued as **automatic** speech. If nothing is speaking it starts at once; otherwise it waits in a first-in-first-out queue (up to 8 responses, oldest dropped first) and plays when the current speech finishes.
 - **Read Selection**, **Replay Last** and **Speak Latest** interrupt current speech and clear the queue.
-- Starting dictation stops current speech and clears the queue.
+- Starting dictation stops current speech and clears the queue. A response that arrives during dictation waits in the queue and plays when the dictation ends.
 - A response that fails the focus check is not spoken, but it stays available to **Replay Last** / **Speak Latest**.
 
 ## Principles

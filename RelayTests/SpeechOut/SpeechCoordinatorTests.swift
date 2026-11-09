@@ -77,6 +77,20 @@ final class SpeechCoordinatorTests: XCTestCase {
         }
     }
 
+    func testHeldAutomaticSpeechWaitsUntilTheHoldEnds() async throws {
+        let backend = FakeTTSBackend(id: .appleTTS)
+        let coordinator = makeCoordinator(backend: backend)
+
+        coordinator.holdAutomaticSpeech(true)
+        try await coordinator.speak(request(text: "reply", mode: .automatic))
+        await pumpMainActor()
+        XCTAssertEqual(backend.spoken.map(\.text), [])
+
+        coordinator.holdAutomaticSpeech(false)
+        await pumpMainActor()
+        XCTAssertEqual(backend.spoken.map(\.text), ["reply"])
+    }
+
     func testQueueCapDropsOldestBeyondEightPending() async throws {
         let backend = FakeTTSBackend(id: .appleTTS)
         let overlay = ActivityOverlayModel(scheduler: FakeOverlayScheduler())

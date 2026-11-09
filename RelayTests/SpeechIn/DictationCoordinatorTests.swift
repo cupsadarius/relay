@@ -15,6 +15,31 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(events.values, ["speech.stop", "microphone.start", "overlay.listen"])
     }
 
+    func testHoldsSpeechFromStartUntilTheDictationEnds() async {
+        var holds: [Bool] = []
+        let events = EventLog()
+        let overlay = RecordingActivityOverlay()
+        let coordinator = DictationCoordinator(
+            microphone: FakeMicrophone(events: events),
+            sttRouter: router(events: events),
+            processor: RulesTranscriptProcessor(),
+            textInserter: FakeTextInserter(events: events),
+            stopSpeech: {},
+            holdSpeech: { holds.append($0) },
+            status: { _ in },
+            activity: overlay
+        )
+
+        await coordinator.start()
+        XCTAssertEqual(holds, [true])
+        await coordinator.finish()
+        XCTAssertEqual(holds, [true, false])
+
+        await coordinator.start()
+        await coordinator.cancel(sessionID: overlay.sessionID!)
+        XCTAssertEqual(holds, [true, false, true, false])
+    }
+
     func testDictationRunAnnouncesHotkeyCleanUpAndInsert() async {
         let events = EventLog()
         let recorder = PipelineEventRecorder()

@@ -207,6 +207,7 @@ final class RelayRuntime {
             processor: RulesTranscriptProcessor(),
             textInserter: TextInsertionService(gate: clipboardGate),
             stopSpeech: { coordinator.stop() },
+            holdSpeech: { coordinator.holdAutomaticSpeech($0) },
             status: { status.post($0) },
             activity: overlayModel,
             diagnostics: diagnostics,
