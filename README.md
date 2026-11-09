@@ -43,6 +43,8 @@ Relay can integrate with coding agents such as:
 
 When the currently focused agent finishes responding, Relay can automatically read the response aloud.
 
+Before it speaks, Relay removes markdown. A code block becomes a short cue to read it on screen. A table is announced with its row count and columns, then read row by row: each row starts with its first cell, and each value comes after its column name. A table with more than 15 rows or 5 columns becomes a cue to read it on screen.
+
 Background agent sessions remain silent — but the last-active session keeps reading when you tab away to a non-agent app, provided no other agent session is confidently focused. Whether a response is spoken depends only on focus, never on whether something is already playing:
 
 - A response that passes the focus check is queued as **automatic** speech. If nothing is speaking it starts at once; otherwise it waits in a first-in-first-out queue (up to 8 responses, oldest dropped first) and plays when the current speech finishes.
